@@ -1,0 +1,79 @@
+# ====================
+# Java / Gradle
+# ====================
+*.class
+*.jar
+*.war
+*.ear
+
+/build/
+/out/
+
+.gradle/
+# gradle wrapper 파일은 포함
+!gradlew
+!gradlew.bat
+!gradle/wrapper/
+
+*.log
+*.tmp
+*.swp
+
+# ====================
+# Spring Boot
+# ====================
+# 민감한 설정 파일은 제외
+application-dev.yml
+application-prod.yml
+
+# 공통 설정은 포함 (Git에 올라가도록 허용)
+# application.yml 은 Git에 커밋 가능
+# application.yml.example 은 명시적 예시로 커밋 추천
+
+*.yaml
+*.yml
+!application.yml
+!application.yml.example
+
+.env*
+docker-compose.yml
+
+# ====================
+# IDE
+# ====================
+.idea/
+*.iml
+.vscode/
+
+# ====================
+# OS
+# ====================
+.DS_Store
+Thumbs.db
+
+# ====================
+# AWS / secrets
+# ====================
+.aws/
+**/credentials
+**/secrets
+*.key
+*.pem
+*.crt
+
+# ====================
+# Test
+# ====================
+test-output/
+reports/
+jacoco.exec
+
+# ====================
+# DB
+# ====================
+*.db
+
+# ====================
+# 기타
+# ====================
+logs/
