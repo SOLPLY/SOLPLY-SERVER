@@ -1,0 +1,28 @@
+services:
+  mysql:
+    container_name: solply-mysql
+    image: mysql:8.0
+    restart: always
+    ports:
+      - "13306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpwd
+      MYSQL_DATABASE: solply-local-db
+      MYSQL_USER: solplyuser
+      MYSQL_PASSWORD: solplyuserpwd
+    volumes:
+      - solply-mysql-data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  redis:
+    image: redis:7
+    container_name: solply-redis
+    ports:
+      - "6381:6379"
+    command: [ "redis-server", "--requirepass", "solplyredispwd" ]
+    volumes:
+      - solply-redis-data:/data
+
+volumes:
+  solply-mysql-data:
+  solply-redis-data:
