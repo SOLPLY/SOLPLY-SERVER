@@ -1,6 +1,6 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.5.3'
+	id 'org.springframework.boot' version '3.3.5'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -21,6 +21,11 @@ configurations {
 
 repositories {
 	mavenCentral()
+}
+
+// ⭐ Spring Cloud 버전 관리 추가
+ext {
+	set('springCloudVersion', "2023.0.3")  // Spring Boot 3.3.x와 호환
 }
 
 dependencies {
@@ -77,6 +82,13 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Spring Cloud BOM 추가
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+	}
 }
 
 tasks.named('test') {
