@@ -15,14 +15,14 @@ body:
   - type: checkboxes
     id: solve-steps
     attributes:
-      label: 해결 방식(Optional)
-      description: 순서대로 어떻게 해결할지 써주세요.
+      label: 작업할 내용
+      description: 기능을 구현하기 위해 작업할 내용을 작성해 주세요.
       options:
         - label: "Step 1: "
         - label: "Step 2: "
         - label: "Step 3: "
     validations:
-      required: false
+      required: true
   - type: textarea
     id: consider
     attributes:
