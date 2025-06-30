@@ -1,13 +1,4 @@
 services:
-  app:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - SPRING_PROFILES_ACTIVE=local  # 명시적으로 설정
-    depends_on:
-      - postgresql
-      - redis
   postgresql:
     container_name: solply-postgresql
     image: postgres:16-alpine
@@ -31,6 +22,18 @@ services:
     command: [ "redis-server", "--requirepass", "solplyredispwd" ]
     volumes:
       - solply-redis-data:/data
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+#    environment:
+#      DOZZLE_USERNAME: username
+#      DOZZLE_PASSWORD: userpwd
+#      restart: always //서버 재부팅 시 자동실행 옵션
 
 volumes:
   solply-postgresql-data:
