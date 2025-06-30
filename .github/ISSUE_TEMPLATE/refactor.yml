@@ -7,14 +7,14 @@ body:
   - type: textarea
     id: refactor-contents
     attributes:
-      label: 리팩토링 부분 설명
+      label: 🎨 리팩토링 부분 설명
       description: 자세한 리팩토링 사항을 설명해 주세요.
     validations:
       required: true
   - type: textarea
     id: solve-steps
     attributes:
-      label: 작업할 내용
+      label: ✅ 작업할 내용
       description: 리팩토링하기 위해 작업할 내용을 체크박스 형태로 작성해 주세요.
       value: |
         - [ ] 작업
@@ -25,7 +25,7 @@ body:
   - type: textarea
     id: consider
     attributes:
-      label: 주의할 점(Optional)
+      label: ⚠️ 주의할 점(Optional)
       description: 주의해야할 점을 써주세요
       placeholder: "ex. 검색시 여러 칼럼을 동시에 봐야한다"
     validations:

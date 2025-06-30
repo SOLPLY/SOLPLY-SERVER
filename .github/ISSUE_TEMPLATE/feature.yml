@@ -7,7 +7,7 @@ body:
   - type: textarea
     id: feature-contents
     attributes:
-      label: 이슈 설명
+      label: 💬 이슈 설명
       description: 작업할 기능에 대한 자세한 설명을 적어주세요.
       placeholder: "ex. 검색기능 : 장소, 제목을 키워드로 최신순으로 정렬해 퍼블릭 코스를 검색하는 기능"
     validations:
@@ -15,7 +15,7 @@ body:
   - type: textarea
     id: solve-steps
     attributes:
-      label: 작업할 내용
+      label: ✅ 작업할 내용
       description: 기능을 구현하기 위해 작업할 내용을 체크박스 형태로 작성해 주세요.
       value: |
         - [ ] 작업
@@ -26,7 +26,7 @@ body:
   - type: textarea
     id: consider
     attributes:
-      label: 주의할 점(Optional)
+      label: ⚠️ 주의할 점(Optional)
       description: 기능을 구현할 때 주의해야할 점을 써주세요
       placeholder: "ex. 검색시 여러 칼럼을 동시에 봐야한다"
     validations:
