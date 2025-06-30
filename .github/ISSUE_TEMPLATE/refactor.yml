@@ -16,7 +16,7 @@ body:
     attributes:
       label: 작업할 내용
       description: 리팩토링하기 위해 작업할 내용을 체크박스 형태로 작성해 주세요.
-      default: |
+      value: |
         - [ ] 작업
         - [ ] 
         - [ ]
