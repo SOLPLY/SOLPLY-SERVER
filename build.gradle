@@ -31,6 +31,7 @@ ext {
 dependencies {
 	// ✅ Web
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
 	// ✅ 보안
 	implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -38,7 +39,8 @@ dependencies {
 
 	// ✅ JPA + DB
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-	runtimeOnly 'com.mysql:mysql-connector-j'
+//	runtimeOnly 'com.mysql:mysql-connector-j'
+	runtimeOnly 'org.postgresql:postgresql'
 
 	// ✅ Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
@@ -65,7 +67,6 @@ dependencies {
 
 	// ✅ Flyway
 	implementation 'org.flywaydb:flyway-core'
-	implementation 'org.flywaydb:flyway-mysql'
 
 	// ✅ Feign Client
 	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'

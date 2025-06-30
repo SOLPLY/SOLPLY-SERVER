@@ -1,18 +1,27 @@
 services:
-  mysql:
-    container_name: solply-mysql
-    image: mysql:8.0
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=local  # 명시적으로 설정
+    depends_on:
+      - postgresql
+      - redis
+  postgresql:
+    container_name: solply-postgresql
+    image: postgres:16-alpine
     restart: always
     ports:
-      - "13306:3306"
+      - "5432:5432"
     environment:
-      MYSQL_ROOT_PASSWORD: rootpwd
-      MYSQL_DATABASE: solply-local-db
-      MYSQL_USER: solplyuser
-      MYSQL_PASSWORD: solplyuserpwd
+      POSTGRES_DB: solply_local_db
+      POSTGRES_USER: solplyuser
+      POSTGRES_PASSWORD: solplyuserpwd
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"  # UTF-8 인코딩
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - solply-mysql-data:/var/lib/mysql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      - solply-postgresql-data:/var/lib/postgresql/data
 
   redis:
     image: redis:7
@@ -24,5 +33,5 @@ services:
       - solply-redis-data:/data
 
 volumes:
-  solply-mysql-data:
+  solply-postgresql-data:
   solply-redis-data:
