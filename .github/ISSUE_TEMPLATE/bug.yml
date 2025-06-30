@@ -1,6 +1,6 @@
 name: Bug Template
 description: 버그 제보
-title: "[Fix]: Bug Title"
+title: "[Fix] Bug Title"
 labels: ["fix"]
 
 body:
@@ -12,15 +12,15 @@ body:
       placeholder: "ex. !!! 상황에서 ~~~한 버그가 난다."
     validations:
       required: true
-  - type: checkboxes
+  - type: textarea
     id: solve-steps
     attributes:
       label: 해결 방식
-      description: 어떻게 해결할지 써주세요.
-      options:
-        - label: "Step 1: "
-        - label: "Step 2: "
-        - label: "Step 3: "
+      description: 어떻게 해결할지 체크박스 형태로 써주세요.
+      default: |
+        - [ ] 작업
+        - [ ] 
+        - [ ]
     validations:
       required: true
   - type: textarea

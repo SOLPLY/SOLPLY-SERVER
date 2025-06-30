@@ -1,6 +1,6 @@
 name: Feature Template
 description: 기능 개발
-title: "[Feat]: Feature Title"
+title: "[Feat] Feature Title"
 labels: ["feature"]
 
 body:
@@ -12,15 +12,15 @@ body:
       placeholder: "ex. 검색기능 : 장소, 제목을 키워드로 최신순으로 정렬해 퍼블릭 코스를 검색하는 기능"
     validations:
       required: true
-  - type: checkboxes
+  - type: textarea
     id: solve-steps
     attributes:
       label: 작업할 내용
-      description: 기능을 구현하기 위해 작업할 내용을 작성해 주세요.
-      options:
-        - label: "Step 1: "
-        - label: "Step 2: "
-        - label: "Step 3: "
+      description: 기능을 구현하기 위해 작업할 내용을 체크박스 형태로 작성해 주세요.
+      default: |
+        - [ ] 작업
+        - [ ] 
+        - [ ]
     validations:
       required: true
   - type: textarea
