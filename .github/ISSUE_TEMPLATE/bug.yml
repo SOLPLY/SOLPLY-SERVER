@@ -17,7 +17,7 @@ body:
     attributes:
       label: 해결 방식
       description: 어떻게 해결할지 체크박스 형태로 써주세요.
-      default: |
+      value: |
         - [ ] 작업
         - [ ] 
         - [ ]
