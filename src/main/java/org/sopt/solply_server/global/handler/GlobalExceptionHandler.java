@@ -2,8 +2,10 @@ package org.sopt.solply_server.global.handler;
 
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.global.dto.ErrorResponse;
+import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.exception.BusinessValidationException;
@@ -25,39 +27,43 @@ public class GlobalExceptionHandler {
 
     // 400: 컨트롤러 진입 전 RequestBody 파싱 과정(@Valid)에서 발생하는 binding error
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidationException(
-            final MethodArgumentNotValidException e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleValidationException(
+            final MethodArgumentNotValidException e) {
         log.error("Validation failed: {}", e.getBindingResult().getAllErrors());
-        return ErrorResponse.of(ErrorCode.INVALID_REQUEST_BODY, request.getRequestURI());
+        Map<String, String> details = new HashMap<>();
+        e.getBindingResult().getFieldErrors().forEach(error ->
+                details.put(error.getField(), error.getDefaultMessage())
+        );
+        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY, details);
     }
 
     // 400: 특정 파라미터의 타입이 잘못된 경우
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ErrorResponse> handleTypeMismatchException(
-            final MethodArgumentTypeMismatchException e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleTypeMismatchException(
+            final MethodArgumentTypeMismatchException e) {
         log.error("Type mismatch - parameter: {}, value: {}, required: {}",
                 e.getName(), e.getValue(), e.getRequiredType());
-        return ErrorResponse.of(ErrorCode.INVALID_ARGUMENT_TYPE, request.getRequestURI());
+        Map<String, String> details = new HashMap<>();
+        details.put("parameter", e.getName());
+        details.put("invalidValue", String.valueOf(e.getValue()));
+        details.put("expectedType", e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "Unknown");
+        return CustomApiResponse.error(ErrorCode.INVALID_ARGUMENT_TYPE, details);
     }
 
     // 400: JSON 파싱 자체가 실패한 경우
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleMessageNotReadableException(
-            final HttpMessageNotReadableException e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleMessageNotReadableException(
+            final HttpMessageNotReadableException e) {
         log.error("JSON parse error: {}", e.getMessage());
-        return ErrorResponse.of(ErrorCode.INVALID_JSON_FORMAT, request.getRequestURI());
+        return CustomApiResponse.error(ErrorCode.INVALID_JSON_FORMAT);
     }
 
     // 400: 비즈니스 로직 내에서 입력값 검증이 실패한 경우
     @ExceptionHandler(BusinessValidationException.class)
-    public ResponseEntity<ErrorResponse> handleBusinessValidationException(
-            final BusinessValidationException e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleBusinessValidationException(
+            final BusinessValidationException e) {
         log.error("Business validation failed: {}", e.getMessage());
-        return ErrorResponse.of(ErrorCode.INVALID_REQUEST_BODY, request.getRequestURI());
+        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY);
     }
 
     /**
@@ -65,67 +71,54 @@ public class GlobalExceptionHandler {
      */
 
     @ExceptionHandler(JwtTokenException.class)
-    public ResponseEntity<ErrorResponse> handleTokenException(
-            final JwtTokenException e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleTokenException(
+            final JwtTokenException e) {
         log.error("{}: {}", e.getErrorCode(), e.getMessage());
-        return ErrorResponse.of(e.getErrorCode(), request.getRequestURI());
+        return CustomApiResponse.error(e.getErrorCode());
     }
 
 
     // 401: 인증되지 않은 사용자
     @ExceptionHandler(UnauthorizedException.class)
-    public ResponseEntity<ErrorResponse> unauthorizedException(
-            final UnauthorizedException exception,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> unauthorizedException(
+            final UnauthorizedException exception) {
         log.error("Unauthorized access attempt", exception);
-        return ErrorResponse.of(ErrorCode.UNAUTHORIZED_USER, request.getRequestURI());
+        return CustomApiResponse.error(ErrorCode.UNAUTHORIZED_USER);
     }
 
     // 404 - 데이터가 없음
     @ExceptionHandler(EntityNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleEntityNotFound(
-            final EntityNotFoundException e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleEntityNotFound(
+            final EntityNotFoundException e) {
         log.error("Entity not found: {}", e.getMessage());
-        return ErrorResponse.of(
-                ErrorCode.NOT_FOUND_ENTITY,  // "요청한 리소스를 찾을 수 없습니다"
-                request.getRequestURI()
-        );
+        return CustomApiResponse.error(ErrorCode.NOT_FOUND_ENTITY);
     }
 
     // 404: API 경로가 없음
     @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNoResourceFound(
+    public ResponseEntity<CustomApiResponse<Void>> handleNoResourceFound(
             final NoResourceFoundException e,
             final HttpServletRequest request) {
         log.error("No API handler found: {} {}", request.getMethod(), request.getRequestURI());
-        return ErrorResponse.of(
-                ErrorCode.NOT_FOUND_ENDPOINT,
-                request.getRequestURI()
-        );
+        return CustomApiResponse.error(ErrorCode.NOT_FOUND_ENDPOINT);
     }
 
     // 405: 메소드가 지원되지 않음
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ErrorResponse> handleMethodNotSupported(
+    public ResponseEntity<CustomApiResponse<Void>> handleMethodNotSupported(
             final HttpRequestMethodNotSupportedException e,
             final HttpServletRequest request) {
         log.error("Method not allowed: {} {} (supported: {})",
                 request.getMethod(),
                 request.getRequestURI(),
                 e.getSupportedHttpMethods());
-        return ErrorResponse.of(
-                ErrorCode.METHOD_NOT_ALLOWED,
-                request.getRequestURI()
-        );
+        return CustomApiResponse.error(ErrorCode.METHOD_NOT_ALLOWED);
     }
 
     // 400 ~ 500: 비즈니스 로직에서 발생한 예외
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ErrorResponse> handleBusinessException(
-            final BusinessException e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleBusinessException(
+            final BusinessException e) {
         ErrorCode errorCode = e.getErrorCode();
         HttpStatus.Series series = errorCode.getHttpStatus().series();
 
@@ -137,16 +130,15 @@ public class GlobalExceptionHandler {
             log.warn("Client error: {}", e.getMessage());
         }
 
-        return ErrorResponse.of(errorCode, request.getRequestURI());
+        return CustomApiResponse.error(errorCode);
     }
 
     // 500: 위에서 정의한 Exception을 제외한 모든 예외
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleUnhandledException(
-            final Exception e,
-            final HttpServletRequest request) {
+    public ResponseEntity<CustomApiResponse<Void>> handleUnhandledException(
+            final Exception e) {
         log.error("Unhandled Exception: {}", e.getMessage(), e);
-        return ErrorResponse.of(ErrorCode.INTERNAL_SERVER_ERROR, request.getRequestURI());
+        return CustomApiResponse.error(ErrorCode.INTERNAL_SERVER_ERROR);
     }
 
 }
