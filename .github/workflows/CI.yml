@@ -26,7 +26,7 @@ jobs:
           cd src/main/resources
           touch ./application.yml
             
-          # GitHub Actions 시크릿 변수에 설정한 값을 application.yml 파일에 작성
+          # GitHub Actions 시크릿 변수 -> application.yml 파일에 작성
           echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application.yml
           working-directory: ${{ env.working-directory }}
 
