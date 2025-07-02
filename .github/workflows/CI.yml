@@ -20,7 +20,7 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Build with Gradle
+      - name: Create application.yml
         run: |
           # create application.yml
           cd src/main/resources
