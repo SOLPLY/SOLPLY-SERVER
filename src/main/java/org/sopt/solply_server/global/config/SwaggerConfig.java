@@ -6,37 +6,60 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class SwaggerConfig {
 
+    private static final String ACCESS_TOKEN_SCHEME = "AccessToken";
+    private static final String REFRESH_TOKEN_SCHEME = "RefreshToken";
+
+    /**
+     * Swagger UI에 표시될 API 문서의 기본 정보 설정
+     */
+    private Info apiInfo() {
+        return new Info()
+                .title("SOLPLY API")
+                .description("SOPT 앱잼 - SOLPLY API 문서입니다.")
+                .version("1.0.0");
+    }
+
     @Bean
-    public OpenAPI SOLPLY_API(){
-        Info info=new Info()
-                .title("솔플리_API")
-                .description("SOPT 앱잼 - SOLPLY API입니다")
-                .version("1.0");
+    public OpenAPI openAPI() {
+        return new OpenAPI()
+                .addServersItem(new Server().url("/"))
+                .info(apiInfo())
+                .components(new Components()
+                        .addSecuritySchemes(ACCESS_TOKEN_SCHEME, accessTokenSecurityScheme())
+                        .addSecuritySchemes(REFRESH_TOKEN_SCHEME, refreshTokenSecurityScheme()))
+                .security(List.of(
+                        new SecurityRequirement().addList(ACCESS_TOKEN_SCHEME),
+                        new SecurityRequirement().addList(REFRESH_TOKEN_SCHEME)
+                ));
+    }
 
-        // 모든 엔드포인트에 JWT 인증 요구사항 적용 (추후 다시 고려. 필요에 따라 개별 API에 @SecurityRequirement 적용 가능)
-        String jwtSchemeName = "JWTToken";
-        SecurityRequirement securityRequirement = new SecurityRequirement().addList(jwtSchemeName);
-
-        // JWT 인증을 위한 SecurityScheme 추가
-        SecurityScheme bearerAuth = new SecurityScheme()
+    /**
+     * AccessToken 인증 방식 설정
+     */
+    private SecurityScheme accessTokenSecurityScheme() {
+        return new SecurityScheme()
                 .type(SecurityScheme.Type.HTTP)
                 .scheme("bearer")
                 .bearerFormat("JWT")
                 .in(SecurityScheme.In.HEADER)
                 .name("Authorization");
+    }
 
-        return new OpenAPI()
-                .addServersItem(new Server().url("/"))
-                .info(info)
-                .addSecurityItem(securityRequirement)
-                .components(new Components().addSecuritySchemes(jwtSchemeName, bearerAuth));
-
+    /**
+     * RefreshToken 인증 방식 설정 (Header에 입력)
+     */
+    private SecurityScheme refreshTokenSecurityScheme() {
+        return new SecurityScheme()
+                .type(SecurityScheme.Type.APIKEY)
+                .in(SecurityScheme.In.HEADER)
+                .name("Refresh-Token");
     }
 
 }
