@@ -74,6 +74,6 @@ jobs:
           host: ${{ secrets.SERVER_PUBLIC_IP }}
           key: ${{ secrets.EC2_ACCESS_KEY }}
           script: |
-            echo "${{ secrets.DOCKER_COMPOSE_DEV_YML }}" > docker-compose.yml
-            chmod +x ./solply/scripts/deploy.sh
-            ./solply/scripts/deploy.sh "$(cat docker-compose.yml)"
+            echo "${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}" | base64 -d > docker-compose.yml
+            chmod +x ./solply-server/scripts/deploy.sh
+            ./solply-server/scripts/deploy.sh "$(cat docker-compose.yml)"
