@@ -55,6 +55,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Upload deploy.sh to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EC2_ACCESS_KEY }}
+          source: ./scripts/deploy.sh
+          target: /home/ubuntu/solply-server/scripts/
+
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
@@ -62,7 +71,7 @@ jobs:
           host: ${{ secrets.SERVER_PUBLIC_IP }}
           key: ${{ secrets.EC2_ACCESS_KEY }}
           script: |
-            chmod +x ./solply/scripts/deploy.sh
-            ./solply/scripts/deploy.sh \
+            chmod +x ~/solply-server/scripts/deploy.sh
+            ~/solply-server/scripts/deploy.sh \
               "${{ secrets.DOCKERHUB_LOGIN_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:dev-latest" \
               "${{ secrets.DOCKER_COMPOSE_DEV_YML }}"
