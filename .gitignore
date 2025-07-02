@@ -32,8 +32,8 @@ application-prod.yml
 
 *.yaml
 *.yml
-!application.yml
-!application.yml.example
+!CI.yml
+!CD.yml
 
 .env*
 docker-compose.yml
