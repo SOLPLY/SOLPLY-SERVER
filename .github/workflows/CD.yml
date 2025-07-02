@@ -65,7 +65,7 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_ACCESS_KEY }}
           source: ./scripts/deploy.sh
-          target: /home/ubuntu/solply-server/scripts/
+          target: /home/ubuntu/solply-server/
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
