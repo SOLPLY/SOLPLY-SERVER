@@ -36,6 +36,7 @@ application-prod.yml
 !CD.yml
 
 .env*
+!docker-compose.yml
 
 # ====================
 # IDE
