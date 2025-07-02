@@ -1,0 +1,37 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    branches: [ "develop" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      working-directory: .
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Build with Gradle
+        run: |
+          # create application.yml
+          cd src/main/resources
+          touch ./application.yml
+            
+          # GitHub Actions 시크릿 변수에 설정한 값을 application.yml 파일에 작성
+          echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application.yml
+          working-directory: ${{ env.working-directory }}
+
+      - name: Build with Gradle
+        run: |
+          chmod +x gradlew
+          ./gradlew build -x test
+        shell: bash
