@@ -28,7 +28,7 @@ jobs:
             
           # GitHub Actions 시크릿 변수 -> application.yml 파일에 작성
           echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application.yml
-          working-directory: ${{ env.working-directory }}
+        working-directory: ${{ env.working-directory }}
 
       - name: Build with Gradle
         run: |
