@@ -62,7 +62,7 @@ jobs:
           host: ${{ secrets.SERVER_PUBLIC_IP }}
           key: ${{ secrets.EC2_ACCESS_KEY }}
           script: |
-            chmod +x ./scripts/deploy.sh
-            ./scripts/deploy.sh \
+            chmod +x ./solply/scripts/deploy.sh
+            ./solply/scripts/deploy.sh \
               "${{ secrets.DOCKERHUB_LOGIN_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:dev-latest" \
               "${{ secrets.DOCKER_COMPOSE_DEV_YML }}"

@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgresql:
     container_name: solply-postgresql
