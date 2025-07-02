@@ -24,7 +24,7 @@ jobs:
       - name: Create application.yml
         run: |
           cd src/main/resources
-          echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application.yml
+          echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application-dev.yml
         working-directory: ${{ env.working-directory }}
 
       - name: Build with Gradle
