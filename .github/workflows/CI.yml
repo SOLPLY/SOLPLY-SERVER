@@ -20,15 +20,15 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Build with Gradle
+      - name: Create application.yml
         run: |
           # create application.yml
           cd src/main/resources
           touch ./application.yml
             
-          # GitHub Actions 시크릿 변수에 설정한 값을 application.yml 파일에 작성
+          # GitHub Actions 시크릿 변수 -> application.yml 파일에 작성
           echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application.yml
-          working-directory: ${{ env.working-directory }}
+        working-directory: ${{ env.working-directory }}
 
       - name: Build with Gradle
         run: |
