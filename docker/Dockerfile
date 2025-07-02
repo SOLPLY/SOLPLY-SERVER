@@ -4,7 +4,7 @@ WORKDIR /solply
 
 ENV TZ=Asia/Seoul
 
-COPY ./build/libs/solply-0.0.1-SNAPSHOT.jar /solply/solply.jar
+COPY ./build/libs/solply-server-0.0.1-SNAPSHOT.jar /solply/solply.jar
 
 EXPOSE 8080
 
