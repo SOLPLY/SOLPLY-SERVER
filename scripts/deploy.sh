@@ -8,9 +8,7 @@ echo "🚀 배포 시작: $IMAGE_NAME"
 cd /home/ubuntu/solply-server
 
 # docker-compose.yml 안전하게 생성
-cat > docker-compose.yml << EOF
-$COMPOSE_CONTENT
-EOF
+printf '%s\n' "$COMPOSE_CONTENT" > docker-compose.yml
 
 echo "✅ docker-compose.yml 생성 완료"
 
