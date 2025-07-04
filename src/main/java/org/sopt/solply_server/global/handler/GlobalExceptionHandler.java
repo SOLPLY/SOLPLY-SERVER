@@ -26,6 +26,18 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class GlobalExceptionHandler {
 
     // 400: 컨트롤러 진입 전 RequestBody 파싱 과정(@Valid)에서 발생하는 binding error
+    /**
+     * {
+     *   "success": false,
+     *   "errorCode": "INVALID_REQUEST_BODY",
+     *   "message": "요청 본문이 올바르지 않습니다",
+     *   "details": {
+     *     "name": "이름은 필수입니다",
+     *     "email": "이메일 형식이 올바르지 않습니다"
+     *   },
+     *   "data": null
+     * }
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<CustomApiResponse<Void>> handleValidationException(
             final MethodArgumentNotValidException e) {
@@ -38,6 +50,19 @@ public class GlobalExceptionHandler {
     }
 
     // 400: 특정 파라미터의 타입이 잘못된 경우
+    /**
+     * {
+     *   "success": false,
+     *   "errorCode": "INVALID_ARGUMENT_TYPE",
+     *   "message": "인자 타입이 올바르지 않습니다",
+     *   "details": {
+     *     "parameter": "userId",
+     *     "invalidValue": "abc",
+     *     "expectedType": "Long"
+     *   },
+     *   "data": null
+     * }
+     */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<CustomApiResponse<Void>> handleTypeMismatchException(
             final MethodArgumentTypeMismatchException e) {
@@ -109,10 +134,18 @@ public class GlobalExceptionHandler {
             final HttpRequestMethodNotSupportedException e,
             final HttpServletRequest request) {
         log.error("Method not allowed: {} {} (supported: {})",
-                request.getMethod(),
-                request.getRequestURI(),
-                e.getSupportedHttpMethods());
-        return CustomApiResponse.error(ErrorCode.METHOD_NOT_ALLOWED);
+                request.getMethod(), request.getRequestURI(), e.getSupportedHttpMethods());
+
+        Map<String, String> details = new HashMap<>();
+        details.put("requestedMethod", request.getMethod());
+        details.put("endpoint", request.getRequestURI());
+        details.put("supportedMethods",
+                e.getSupportedHttpMethods() != null ?
+                        // [GET, POST, PUT, DELETE] -> "GET, POST, PUT, DELETE"
+                        e.getSupportedHttpMethods().toString().replaceAll("[\\[\\]]", "") :
+                        "None");
+
+        return CustomApiResponse.error(ErrorCode.METHOD_NOT_ALLOWED, details);
     }
 
     // 400 ~ 500: 비즈니스 로직에서 발생한 예외
@@ -138,6 +171,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<CustomApiResponse<Void>> handleUnhandledException(
             final Exception e) {
         log.error("Unhandled Exception: {}", e.getMessage(), e);
+
         return CustomApiResponse.error(ErrorCode.INTERNAL_SERVER_ERROR);
     }
 
