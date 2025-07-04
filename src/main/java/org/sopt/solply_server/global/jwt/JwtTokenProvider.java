@@ -21,7 +21,7 @@ public class JwtTokenProvider {
     private final long refreshTokenExpireTime;
 
     public JwtTokenProvider(
-            @Value("${jwt.secret}") String secretKey,
+            @Value("${jwt.secret-key}") String secretKey,
             @Value("${jwt.access-token-expire-time}") long accessTokenExpireTime,
             @Value("${jwt.refresh-token-expire-time}") long refreshTokenExpireTime
     ) {
@@ -53,29 +53,44 @@ public class JwtTokenProvider {
                 .compact();
     }
 
-    // 토큰 유효성 검증
-    public boolean validateToken(String token) {
+    // Access 토큰 유효성 검증
+    public boolean validateAccessToken(String accessToken) {
         try {
-            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
+            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(accessToken);
             return true;
-        } catch (io.jsonwebtoken.security.SecurityException | MalformedJwtException e) {
-            throw new JwtTokenException(ErrorCode.INVALID_ACCESS_TOKEN);
         } catch (ExpiredJwtException e) {
             throw new JwtTokenException(ErrorCode.EXPIRED_ACCESS_TOKEN);
-        } catch (UnsupportedJwtException e) {
-            throw new JwtTokenException(ErrorCode.UNSUPPORTED_OAUTH_PROVIDER);
-        } catch (IllegalArgumentException e) {
+        } catch (Exception e) {
             throw new JwtTokenException(ErrorCode.INVALID_ACCESS_TOKEN);
+        }
+    }
+
+    // Refresh 토큰 유효성 검증
+    public boolean validateRefreshToken(String refreshToken) {
+        try {
+            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(refreshToken);
+            return true;
+        } catch (ExpiredJwtException e) {
+            throw new JwtTokenException(ErrorCode.EXPIRED_REFRESH_TOKEN);
+        } catch (Exception e) {
+            throw new JwtTokenException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
     }
 
     // 토큰에서 memberId 추출
     public Long getMemberIdFromToken(String token) {
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(key)
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-        return Long.parseLong(claims.getSubject());
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(key)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+            return Long.parseLong(claims.getSubject());
+        } catch (ExpiredJwtException e) {
+            // 토큰이 만료되었더라도 memberId는 추출해야 재발급 가능
+            return Long.parseLong(e.getClaims().getSubject());
+        } catch (Exception e) {
+            throw new JwtTokenException(ErrorCode.INVALID_ACCESS_TOKEN);
+        }
     }
 }
