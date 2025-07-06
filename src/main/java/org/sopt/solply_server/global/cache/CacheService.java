@@ -45,12 +45,6 @@ public interface CacheService {
     long getTtl(String key, TimeUnit timeUnit);
 
     /**
-     * 배치 조회 / 저장 (TTL X)
-     */
-    <T extends Serializable> Map<String, T> multiGet(Set<String> keys, Class<T> clazz);
-    <T extends Serializable> void multiSet(Map<String, T> keyValueMap);
-
-    /**
      * 패턴으로 키 검색
      */
     Set<String> findKeys(String pattern);
@@ -72,5 +66,19 @@ public interface CacheService {
      */
     <T extends Serializable> void warmUp(String keyPrefix, Map<String, Supplier<T>> dataSuppliers,
             int timeout, TimeUnit timeUnit);
+
+    /**
+     * 배치 조회 / 저장(TTL X)
+     */
+//    <T extends Serializable> Map<String, T> multiGet(Set<String> keys, Class<T> clazz);
+//    <T extends Serializable> void multiSet(Map<String, T> keyValueMap);
+
+    /**
+     * 배치 조회 / 저장(TTL O)
+     */
+//    <T extends Serializable> Map<String, T> multiGet(Set<String> keys, Class<T> clazz, int timeout, TimeUnit timeUnit);
+//    <T extends Serializable> void multiSet(Map<String, T> keyValueMap, int timeout, TimeUnit timeUnit);
+
+
 
 }
