@@ -29,7 +29,7 @@ public class GlobalExceptionHandler {
     /**
      * {
      *   "success": false,
-     *   "errorCode": "INVALID_REQUEST_BODY",
+     *   "code": "COMMON-001",
      *   "message": "요청 본문이 올바르지 않습니다",
      *   "errorDetails": {
      *     "name": "이름은 필수입니다",
@@ -53,7 +53,7 @@ public class GlobalExceptionHandler {
     /**
      * {
      *   "success": false,
-     *   "errorCode": "INVALID_ARGUMENT_TYPE",
+     *   "code": "COMMON-002",
      *   "message": "인자 타입이 올바르지 않습니다",
      *   "errorDetails": {
      *     "parameter": "userId",
