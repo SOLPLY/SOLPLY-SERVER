@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 
 public record CustomApiResponse<T>(
         boolean success,
-        int code,
+        String code,
         String message,
         T data,
         Map<String, String> errorDetails,
@@ -19,7 +19,7 @@ public record CustomApiResponse<T>(
         return ResponseEntity.status(status)
                 .body(new CustomApiResponse<>(
                         true,
-                        status.value(),
+                        String.valueOf(status.value()),
                         message,
                         data,
                         null,
@@ -37,7 +37,7 @@ public record CustomApiResponse<T>(
         return ResponseEntity.status(errorCode.getHttpStatus())
                 .body(new CustomApiResponse<>(
                         false,
-                        errorCode.getHttpStatus().value(),
+                        errorCode.getCode(),
                         errorCode.getMessage(),
                         null,
                         null,
@@ -50,7 +50,7 @@ public record CustomApiResponse<T>(
         return ResponseEntity.status(errorCode.getHttpStatus())
                 .body(new CustomApiResponse<>(
                         false,
-                        errorCode.getHttpStatus().value(),
+                        errorCode.getCode(),
                         errorCode.getMessage(),
                         null,
                         errorDetails,
