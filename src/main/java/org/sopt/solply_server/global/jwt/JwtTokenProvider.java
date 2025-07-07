@@ -16,19 +16,18 @@ import java.util.Date;
 @Component
 public class JwtTokenProvider {
 
-    private final Key key;
+    private final Key accessKey;
+    private final Key refreshKey;
     private final long accessTokenExpireTime;
     private final long refreshTokenExpireTime;
 
-    public JwtTokenProvider(
-            @Value("${jwt.secret-key}") String secretKey,
-            @Value("${jwt.access-token-expire-time}") long accessTokenExpireTime,
-            @Value("${jwt.refresh-token-expire-time}") long refreshTokenExpireTime
-    ) {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        this.key = Keys.hmacShaKeyFor(keyBytes);
-        this.accessTokenExpireTime = accessTokenExpireTime;
-        this.refreshTokenExpireTime = refreshTokenExpireTime;
+    public JwtTokenProvider(JwtProperties jwtProperties) {
+        byte[] accessKeyBytes = Decoders.BASE64.decode(jwtProperties.getAccessSecretKey());
+        this.accessKey = Keys.hmacShaKeyFor(accessKeyBytes);
+        byte[] refreshKeyBytes = Decoders.BASE64.decode(jwtProperties.getRefreshSecretKey());
+        this.refreshKey = Keys.hmacShaKeyFor(refreshKeyBytes);
+        this.accessTokenExpireTime = jwtProperties.getAccessTokenExpireTime();
+        this.refreshTokenExpireTime = jwtProperties.getRefreshTokenExpireTime();
     }
 
     // Access Token 생성
