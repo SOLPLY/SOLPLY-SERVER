@@ -4,8 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.service.AuthService;
 import org.sopt.solply_server.global.common.SuccessMessage;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
-import org.sopt.solply_server.global.dto.TokenDto;
-import org.springframework.http.HttpStatus;
+import org.sopt.solply_server.domain.auth.dto.TokenDto;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

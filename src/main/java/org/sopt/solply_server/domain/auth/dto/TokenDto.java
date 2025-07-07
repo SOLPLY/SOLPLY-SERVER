@@ -1,4 +1,4 @@
-package org.sopt.solply_server.global.dto;
+package org.sopt.solply_server.domain.auth.dto;
 
 import lombok.Builder;
 

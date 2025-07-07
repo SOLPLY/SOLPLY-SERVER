@@ -2,7 +2,7 @@ package org.sopt.solply_server.domain.auth.service;
 
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
-import org.sopt.solply_server.global.dto.TokenDto;
+import org.sopt.solply_server.domain.auth.dto.TokenDto;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.jwt.JwtTokenProvider;
