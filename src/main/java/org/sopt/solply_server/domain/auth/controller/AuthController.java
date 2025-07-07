@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.auth.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.service.AuthService;
+import org.sopt.solply_server.global.common.SuccessMessage;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.sopt.solply_server.global.dto.TokenDto;
 import org.springframework.http.HttpStatus;
@@ -23,12 +24,12 @@ public class AuthController {
 
         Long memberId = 1L; // 임시 memberId
         TokenDto tokenDto = authService.socialLogin(memberId);
-        return CustomApiResponse.success(HttpStatus.OK, "로그인에 성공했습니다.", tokenDto);
+        return CustomApiResponse.success(SuccessMessage.LOGIN_SUCCESS, tokenDto);
     }
 
     @PostMapping("/reissue")
     public ResponseEntity<CustomApiResponse<TokenDto>> reissue(@RequestHeader("Refresh-Token") String refreshToken) {
         TokenDto tokenDto = authService.reissueToken(refreshToken);
-        return CustomApiResponse.success(HttpStatus.OK, "토큰 재발급에 성공했습니다.", tokenDto);
+        return CustomApiResponse.success(SuccessMessage.REISSUE_SUCCESS, tokenDto);
     }
 }
