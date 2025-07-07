@@ -88,20 +88,4 @@ public class JwtTokenProvider {
         }
     }
 
-//    // 토큰에서 memberId 추출
-//    public Long getMemberIdFromToken(String token) {
-//        try {
-//            Claims claims = Jwts.parserBuilder()
-//                    .setSigningKey(key)
-//                    .build()
-//                    .parseClaimsJws(token)
-//                    .getBody();
-//            return Long.parseLong(claims.getSubject());
-//        } catch (ExpiredJwtException e) {
-//            // 토큰이 만료되었더라도 memberId는 추출해야 재발급 가능
-//            return Long.parseLong(e.getClaims().getSubject());
-//        } catch (Exception e) {
-//            throw new JwtTokenException(ErrorCode.INVALID_ACCESS_TOKEN);
-//        }
-//    }
 }
