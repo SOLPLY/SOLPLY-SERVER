@@ -22,6 +22,7 @@ import java.util.Collections;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final JwtTokenResolver jwtTokenResolver;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -30,10 +31,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String accessToken = resolveToken(request);
 
         if (StringUtils.hasText(accessToken) && jwtTokenProvider.validateAccessToken(accessToken)) {
-            Long memberId = jwtTokenProvider.getMemberIdFromToken(accessToken);
+            Long userId = jwtTokenResolver.getUserIdFromToken(accessToken);
 
             // 인증 정보 생성
-            UserDetails userDetails = new User(memberId.toString(), "", Collections.emptyList());
+            UserDetails userDetails = new User(userId.toString(), "", Collections.emptyList());
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                     userDetails, null, userDetails.getAuthorities());
 

@@ -6,6 +6,7 @@ import org.sopt.solply_server.domain.auth.dto.TokenDto;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.jwt.JwtTokenProvider;
+import org.sopt.solply_server.global.jwt.JwtTokenResolver;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,9 +21,10 @@ public class AuthService {
 
     @Value("${jwt.refresh-token-expire-time}")
     private long refreshTokenExpireTime;
+    private final JwtTokenResolver jwtTokenResolver;
 
     public TokenDto socialLogin(Long memberId) {
-        // 소셜 로그인 정보를 바탕으로 우리 서비스의 memberId를 가져온 상태라고 가정
+        // 소셜 로그인 정보를 바탕으로 우리 서비스의 userId를 가져온 상태라고 가정
 
         String accessToken = jwtTokenProvider.generateAccessToken(memberId);
         String refreshToken = jwtTokenProvider.generateRefreshToken(memberId);
@@ -40,17 +42,17 @@ public class AuthService {
     public TokenDto reissueToken(String refreshToken) {
         jwtTokenProvider.validateRefreshToken(refreshToken);
 
-        Long memberId = jwtTokenProvider.getMemberIdFromToken(refreshToken);
+        Long userId = jwtTokenResolver.getUserIdFromToken(refreshToken);
 
-        String storedRefreshToken = refreshTokenRepository.findByMemberId(memberId);
+        String storedRefreshToken = refreshTokenRepository.findByMemberId(userId);
         if (storedRefreshToken == null || !storedRefreshToken.equals(refreshToken)) {
             throw new JwtTokenException(ErrorCode.NOT_MATCH_REFRESH_TOKEN);
         }
 
-        String newAccessToken = jwtTokenProvider.generateAccessToken(memberId);
-        String newRefreshToken = jwtTokenProvider.generateRefreshToken(memberId);
+        String newAccessToken = jwtTokenProvider.generateAccessToken(userId);
+        String newRefreshToken = jwtTokenProvider.generateRefreshToken(userId);
 
-        refreshTokenRepository.save(memberId, newRefreshToken, refreshTokenExpireTime);
+        refreshTokenRepository.save(userId, newRefreshToken, refreshTokenExpireTime);
 
         return TokenDto.of(newAccessToken, newRefreshToken);
     }
