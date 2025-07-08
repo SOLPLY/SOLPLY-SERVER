@@ -1,12 +1,16 @@
 package org.sopt.solply_server.domain.auth.service;
 
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.auth.dto.response.LoginResponse;
+import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
-import org.sopt.solply_server.domain.auth.dto.TokenDto;
+import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.jwt.JwtTokenProvider;
 import org.sopt.solply_server.global.jwt.JwtTokenResolver;
+import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,20 +22,19 @@ public class AuthService {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserRepository userRepository;
 
     @Value("${jwt.refresh-token-expire-time}")
     private long refreshTokenExpireTime;
     private final JwtTokenResolver jwtTokenResolver;
 
-    public TokenDto socialLogin(Long memberId) {
-        // 소셜 로그인 정보를 바탕으로 우리 서비스의 userId를 가져온 상태라고 가정
+    public LoginResponse socialLogin(Long userId) {
+//        User user =
 
-        String accessToken = jwtTokenProvider.generateAccessToken(memberId);
-        String refreshToken = jwtTokenProvider.generateRefreshToken(memberId);
-
-        refreshTokenRepository.save(memberId, refreshToken, refreshTokenExpireTime);
-
-        return TokenDto.of(accessToken, refreshToken);
+        return LoginResponse.of(
+                saveTokenCollection(userId),
+//                isNewUser
+        );
     }
 
     public void logout(Long memberId) {
@@ -39,7 +42,7 @@ public class AuthService {
     }
 
     // 토큰 재발급
-    public TokenDto reissueToken(String refreshToken) {
+    public RefreshResponse refreshToken(String refreshToken) {
         jwtTokenProvider.validateRefreshToken(refreshToken);
 
         Long userId = jwtTokenResolver.getUserIdFromToken(refreshToken);
@@ -49,11 +52,14 @@ public class AuthService {
             throw new JwtTokenException(ErrorCode.NOT_MATCH_REFRESH_TOKEN);
         }
 
-        String newAccessToken = jwtTokenProvider.generateAccessToken(userId);
-        String newRefreshToken = jwtTokenProvider.generateRefreshToken(userId);
+        TokenCollectionDto newTokens = saveTokenCollection(userId);
 
-        refreshTokenRepository.save(userId, newRefreshToken, refreshTokenExpireTime);
+        return RefreshResponse.of(newTokens);
+    }
 
-        return TokenDto.of(newAccessToken, newRefreshToken);
+    private TokenCollectionDto saveTokenCollection(Long userId) {
+        TokenCollectionDto newTokens = jwtTokenProvider.createTokenCollection(userId);
+        refreshTokenRepository.save(userId, newTokens.refreshToken(), refreshTokenExpireTime);
+        return newTokens;
     }
 }
