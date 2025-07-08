@@ -18,6 +18,7 @@ public class SocialUserService {
     private final SocialUserInfoRepository socialUserInfoRepository;
     private final UserRepository userRepository;
 
+    @Transactional
     public User createSocialUser(final SocialPlatform socialPlatform, final String socialId, final String email, final String nickname) {
         String socialCode = createSocialCode(socialPlatform, socialId);
         // 1. 동일한 소셜 계정 확인
