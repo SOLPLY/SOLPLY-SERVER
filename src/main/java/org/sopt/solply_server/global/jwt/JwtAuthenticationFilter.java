@@ -35,7 +35,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = jwtTokenResolver.getUserIdFromToken(accessToken);
 
             // 인증 정보 생성
-            UserDetails userDetails = principalDetailsService.loadUserByUsername(userId.toString()g);
+            UserDetails userDetails = principalDetailsService.loadUserByUsername(userId.toString());
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                     userDetails, null, userDetails.getAuthorities());
 
