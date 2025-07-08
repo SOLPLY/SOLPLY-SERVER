@@ -19,7 +19,7 @@ public class OAuthServiceProvider {
                 .filter(service -> service.support(socialPlatform))
                 .findFirst()
                 .orElseThrow(() ->
-                        new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR) // 구현체가 없는 경우
+                        new BusinessException(ErrorCode.UNSUPPORTED_OAUTH_PROVIDER) // 구현체가 없는 경우(코드 실수)
                 );
     }
 }
