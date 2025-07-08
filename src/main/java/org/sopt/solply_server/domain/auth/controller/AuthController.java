@@ -28,7 +28,7 @@ public class AuthController {
         return CustomApiResponse.success(
                 HttpStatus.OK,
                 "소셜 로그인에 성공했습니다.",
-                authService.socialLogin(userId, socialPlatform, socialLoginRequest.oauthAccessToken())
+                authService.socialLogin(userId, socialPlatform, socialLoginRequest)
         );
     }
 

@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.auth.service;
 
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
 import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
@@ -27,9 +28,9 @@ public class AuthService {
 
     private final JwtTokenResolver jwtTokenResolver;
 
-    public SocialLoginResponse socialLogin(Long userId, SocialPlatform socialPlatform, String oauthAccessToken) {
+    public SocialLoginResponse socialLogin(Long userId, SocialPlatform socialPlatform, SocialLoginRequest request) {
         OAuthService oAuthService = oAuthServiceProvider.getService(socialPlatform);
-        User user = oAuthService.socialLogin(oauthAccessToken);
+        User user = oAuthService.socialLogin(request.oauthAccessToken());
 
         return SocialLoginResponse.of(
                 saveTokenCollection(userId),
