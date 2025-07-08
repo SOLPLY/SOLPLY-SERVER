@@ -25,6 +25,9 @@ public class User {
     private Long id;
 
     @Column(nullable = false)
+    private String nickname;
+
+    @Column(nullable = false)
     private String email;
 
     @Column(nullable = false)

@@ -2,7 +2,8 @@ package org.sopt.solply_server.domain.auth.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
-import org.sopt.solply_server.domain.auth.dto.response.LoginResponse;
+import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
+import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.service.AuthService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -20,14 +21,20 @@ public class AuthController {
 
     // 카카오 로그인 성공 후 -> 우리 서버의 토큰 발급
     @PostMapping("/social/{soicialPlatform}/login")
-    public ResponseEntity<CustomApiResponse<LoginResponse>> kakaoLogin(
+    public ResponseEntity<CustomApiResponse<SocialLoginResponse>> kakaoLogin(
             @CurrentUserId Long userId,
-            @PathVariable("soicialPlatform") SocialPlatform socialPlatform
+            @PathVariable("soicialPlatform") SocialPlatform socialPlatform,
+            @RequestBody SocialLoginRequest socialLoginRequest
+
     ) {
         // kakaoAccessToken으로 카카오 서버에서 사용자 정보 받아오기
         // 받아온 정보로 우리 서비스에 회원가입 또는 로그인 처리 -> memberId 반환
 
-        return CustomApiResponse.success(HttpStatus.OK, "소셜 로그인에 성공했습니다.", authService.socialLogin(userId));
+        return CustomApiResponse.success(
+                HttpStatus.OK,
+                "소셜 로그인에 성공했습니다.",
+                authService.socialLogin(userId, socialPlatform, socialLoginRequest.oauthAccessToken())
+        );
     }
 
     @PostMapping("/reissue")

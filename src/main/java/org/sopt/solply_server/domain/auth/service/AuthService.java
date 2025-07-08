@@ -1,11 +1,11 @@
 package org.sopt.solply_server.domain.auth.service;
 
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.auth.dto.response.LoginResponse;
+import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
 import org.sopt.solply_server.domain.user.entity.User;
-import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.jwt.JwtTokenProvider;
@@ -22,16 +22,17 @@ public class AuthService {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final UserRepository userRepository;
+    private final OAuthServiceProvider oAuthServiceProvider;
 
     @Value("${jwt.refresh-token-expire-time}")
     private long refreshTokenExpireTime;
     private final JwtTokenResolver jwtTokenResolver;
 
-    public LoginResponse socialLogin(Long userId) {
-//        User user =
+    public SocialLoginResponse socialLogin(Long userId, SocialPlatform socialPlatform, String oauthAccessToken) {
+        OAuthService oAuthService = oAuthServiceProvider.getService(socialPlatform);
+        User user = oAuthService.socialLogin(oauthAccessToken);
 
-        return LoginResponse.of(
+        return SocialLoginResponse.of(
                 saveTokenCollection(userId),
 //                isNewUser
         );
