@@ -2,16 +2,19 @@ package org.sopt.solply_server.global.jwt;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtTokenResolver {
@@ -51,8 +54,10 @@ public class JwtTokenResolver {
             if ("refresh".equals(type)) {
                 return Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getRefreshSecretKey()));
             }
-        } catch(Exception e) {
-            //
+        } catch (JwtException | IllegalArgumentException e) {
+            // 예외 처리: 잘못된 토큰
+            log.error("JWT 파싱 실패", e);
+            throw new JwtTokenException(ErrorCode.INVALID_TOKEN);
         }
 
         return Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getAccessSecretKey()));

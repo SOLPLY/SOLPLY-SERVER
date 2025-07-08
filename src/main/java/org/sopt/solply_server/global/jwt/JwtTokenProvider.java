@@ -6,7 +6,7 @@ import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
-import org.springframework.beans.factory.annotation.Value;
+import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -28,6 +28,14 @@ public class JwtTokenProvider {
         this.refreshKey = Keys.hmacShaKeyFor(refreshKeyBytes);
         this.accessTokenExpireTime = jwtProperties.getAccessTokenExpireTime();
         this.refreshTokenExpireTime = jwtProperties.getRefreshTokenExpireTime();
+    }
+
+    // JwtTokenCollection(AccessToken, RefreshToken) 생성
+    public TokenCollectionDto createTokenCollection(Long memberId) {
+        return TokenCollectionDto.of(
+                generateAccessToken(memberId),
+                generateRefreshToken(memberId)
+        );
     }
 
     // Access Token 생성
