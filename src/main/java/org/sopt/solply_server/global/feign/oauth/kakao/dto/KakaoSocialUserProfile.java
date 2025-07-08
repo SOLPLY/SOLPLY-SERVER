@@ -1,4 +1,4 @@
-package org.sopt.solply_server.global.feign.oauth.kakao;
+package org.sopt.solply_server.global.feign.oauth.kakao.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;

@@ -1,5 +1,6 @@
 package org.sopt.solply_server.global.feign.oauth.kakao;
 
+import org.sopt.solply_server.global.feign.oauth.kakao.dto.KakaoSocialUserProfile;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.PostMapping;
