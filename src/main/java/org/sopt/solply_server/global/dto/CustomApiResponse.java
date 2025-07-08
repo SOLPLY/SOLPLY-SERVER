@@ -2,6 +2,8 @@ package org.sopt.solply_server.global.dto;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+
+import org.sopt.solply_server.global.common.SuccessCode;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,13 +16,14 @@ public record CustomApiResponse<T>(
         Map<String, String> errorDetails,
         LocalDateTime timestamp
 ) {
+
     // 성공 응답
-    public static <T> ResponseEntity<CustomApiResponse<T>> success(HttpStatus status, String message, T data) {
-        return ResponseEntity.status(status)
+    public static <T> ResponseEntity<CustomApiResponse<T>> success(SuccessCode successCode, T data) {
+        return ResponseEntity.status(successCode.getHttpStatus())
                 .body(new CustomApiResponse<>(
                         true,
-                        String.valueOf(status.value()),
-                        message,
+                        String.valueOf(successCode.getHttpStatus().value()),
+                        successCode.getMessage(),
                         data,
                         null,
                         LocalDateTime.now()
@@ -28,8 +31,8 @@ public record CustomApiResponse<T>(
     }
 
     // 성공 응답 (데이터 없음)
-    public static <T> ResponseEntity<CustomApiResponse<T>> success(HttpStatus status, String message) {
-        return success(status, message, null);
+    public static <T> ResponseEntity<CustomApiResponse<T>> success(SuccessCode successCode) {
+        return success(successCode, null);
     }
 
     // 실패 응답 (에러 코드만)
