@@ -1,7 +1,9 @@
 package org.sopt.solply_server.domain.auth.service;
 
+import jakarta.annotation.PostConstruct;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -10,7 +12,6 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class OAuthServiceProvider {
-
     private final List<OAuthService> socialServices;
 
     public OAuthService getService(final SocialPlatform socialPlatform) {

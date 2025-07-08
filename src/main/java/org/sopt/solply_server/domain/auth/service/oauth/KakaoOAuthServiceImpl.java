@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public abstract class KakaoOAuthServiceImpl implements OAuthService {
+public class KakaoOAuthServiceImpl implements OAuthService {
 
     private final JwtProperties jwtProperties;
     private final KakaoServerClient kakaoServerClient;

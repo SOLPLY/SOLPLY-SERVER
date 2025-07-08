@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -46,34 +47,47 @@ public class RedisConfig {
     }
 
     /**
-     * 객체를 JSON으로 저장/조회하기 위한 ObjectMapper 설정
+     * 객체를 JSON으로 저장/조회하기 위한 ObjectMapper 설정 -> 엑세스 토큰 파싱 과정에서 문제가 생김
      */
-    @Bean
-    public ObjectMapper redisObjectMapper() {
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY); // 직렬화/역직렬화 대상 설정
-        // 복원할 때 클래스 타입 정보를 포함하도록 설정
-        objectMapper.activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.PROPERTY
-        );
-        objectMapper.registerModule(new JavaTimeModule()); // LocalDateTime, LocalDate 등 타입 지원
-        objectMapper.findAndRegisterModules();
-        return objectMapper;
-    }
+//    @Bean
+//    public ObjectMapper redisObjectMapper() {
+//        ObjectMapper objectMapper = new ObjectMapper();
+//        objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY); // 직렬화/역직렬화 대상 설정
+//        // 복원할 때 클래스 타입 정보를 포함하도록 설정
+//        objectMapper.activateDefaultTyping(
+//                LaissezFaireSubTypeValidator.instance,
+//                ObjectMapper.DefaultTyping.NON_FINAL,
+//                JsonTypeInfo.As.PROPERTY
+//        );
+//        objectMapper.registerModule(new JavaTimeModule()); // LocalDateTime, LocalDate 등 타입 지원
+//        objectMapper.findAndRegisterModules();
+//        return objectMapper;
+//    }
 
     /**
      * 범용 RedisTemplate 설정
      */
     @Bean
     @Primary
-    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory factory, ObjectMapper redisObjectMapper) {
+    public RedisTemplate<String, Object> redisTemplate(
+            RedisConnectionFactory factory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(factory);
 
-        // 위에서 정의한 ObjectMapper 기반 JSON 직렬화
-        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(redisObjectMapper);
+        // Redis 전용 ObjectMapper를 메서드 내부에서 직접 생성
+        ObjectMapper redisOnlyMapper = new ObjectMapper();
+        redisOnlyMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
+        redisOnlyMapper.activateDefaultTyping(
+                LaissezFaireSubTypeValidator.instance,
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                JsonTypeInfo.As.PROPERTY
+        );
+        redisOnlyMapper.registerModule(new JavaTimeModule());
+        redisOnlyMapper.findAndRegisterModules();
+
+        // Redis 전용 ObjectMapper 사용
+        GenericJackson2JsonRedisSerializer jsonSerializer =
+                new GenericJackson2JsonRedisSerializer(redisOnlyMapper);
         StringRedisSerializer stringSerializer = new StringRedisSerializer();
 
         // 직렬화 설정
