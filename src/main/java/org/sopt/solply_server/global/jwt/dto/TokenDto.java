@@ -1,8 +1,6 @@
-package org.sopt.solply_server.domain.auth.dto;
+package org.sopt.solply_server.global.jwt.dto;
 
-import lombok.Builder;
 
-@Builder
 public record TokenDto(
         String accessToken,
         String refreshToken
