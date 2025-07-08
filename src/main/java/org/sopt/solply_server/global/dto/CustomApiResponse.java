@@ -2,6 +2,8 @@ package org.sopt.solply_server.global.dto;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+
+import org.sopt.solply_server.global.common.SuccessMessage;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -54,6 +56,19 @@ public record CustomApiResponse<T>(
                         errorCode.getMessage(),
                         null,
                         errorDetails,
+                        LocalDateTime.now()
+                ));
+    }
+
+    // SuccessMessage를 사용하는 성공 응답
+    public static <T> ResponseEntity<CustomApiResponse<T>> success(SuccessMessage successMessage, T data) {
+        return ResponseEntity.status(successMessage.getHttpStatus())
+                .body(new CustomApiResponse<>(
+                        true,
+                        String.valueOf(successMessage.getHttpStatus().value()),
+                        successMessage.getMessage(),
+                        data,
+                        null,
                         LocalDateTime.now()
                 ));
     }
