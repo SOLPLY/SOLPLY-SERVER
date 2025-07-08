@@ -22,6 +22,9 @@ public enum ErrorCode {
     NOT_FOUND_ENDPOINT(HttpStatus.NOT_FOUND, "COMMON-005", "요청한 API 엔드포인트를 찾을 수 없습니다."),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "COMMON-006", "지원하지 않는 HTTP 메소드입니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON-007", "서버 내부 오류가 발생했습니다."),
+    REDIS_SERIALIZATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON-008", "Redis 직렬화에 실패했습니다."),
+    REDIS_OPERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "COMMON-009", "Redis 캐시 연산에 실패했습니다."),
+
 
 
     // 인증/인가 관련 (AUTH-xxx)

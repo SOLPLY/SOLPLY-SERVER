@@ -15,13 +15,16 @@ public class PresignedUrlProvider {
     @Value("${aws.s3.bucket}")
     private String bucketName;
 
+    @Value("${aws.s3.presigned-url.expiration-seconds}")
+    private int expirationSeconds;
+
     private final S3Presigner s3Presigner;
 
     public String generatePresignedUrlToRead(final String fileKey) {
         if (InputValidator.isNull(fileKey)) return null;
 
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofHours(1))
+                .signatureDuration(Duration.ofHours(expirationSeconds))
                 .getObjectRequest(req -> req
                         .bucket(bucketName)
                         .key(fileKey)
