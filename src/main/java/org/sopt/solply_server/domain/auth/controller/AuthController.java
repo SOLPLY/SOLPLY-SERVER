@@ -26,7 +26,6 @@ public class AuthController {
             @PathVariable("soicialPlatform") SocialPlatform socialPlatform,
             @RequestBody SocialLoginRequest socialLoginRequest) {
         return CustomApiResponse.success(
-                HttpStatus.OK,
                 "소셜 로그인에 성공했습니다.",
                 authService.socialLogin(userId, socialPlatform, socialLoginRequest)
         );
@@ -36,7 +35,6 @@ public class AuthController {
     public ResponseEntity<CustomApiResponse<RefreshResponse>> refresh(
             @RequestHeader("Refresh-Token") String refreshToken) {
         return CustomApiResponse.success(
-                HttpStatus.OK,
                 "토큰 재발급에 성공했습니다.",
                 authService.refreshToken(refreshToken)
         );

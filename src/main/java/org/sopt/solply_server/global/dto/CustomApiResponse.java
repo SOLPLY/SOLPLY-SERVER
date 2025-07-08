@@ -17,11 +17,11 @@ public record CustomApiResponse<T>(
 ) {
 
     // 성공 응답
-    public static <T> ResponseEntity<CustomApiResponse<T>> success(HttpStatus httpStatus, String successMessage, T data) {
-        return ResponseEntity.status(httpStatus)
+    public static <T> ResponseEntity<CustomApiResponse<T>> success(String successMessage, T data) {
+        return ResponseEntity.status(HttpStatus.OK)
                 .body(new CustomApiResponse<>(
                         true,
-                        String.valueOf(httpStatus.value()),
+                        String.valueOf(HttpStatus.OK.value()),
                         successMessage,
                         data,
                         null,
@@ -30,8 +30,8 @@ public record CustomApiResponse<T>(
     }
 
     // 성공 응답 (데이터 없음)
-    public static <T> ResponseEntity<CustomApiResponse<T>> success(HttpStatus httpStatus, String successMessage) {
-        return success(httpStatus, successMessage, null);
+    public static <T> ResponseEntity<CustomApiResponse<T>> success(String successMessage) {
+        return success(successMessage, null);
     }
 
     // 실패 응답 (에러 코드만)
