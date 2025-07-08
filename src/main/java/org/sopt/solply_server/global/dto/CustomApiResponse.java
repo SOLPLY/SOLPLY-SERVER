@@ -3,7 +3,6 @@ package org.sopt.solply_server.global.dto;
 import java.time.LocalDateTime;
 import java.util.Map;
 
-import org.sopt.solply_server.global.common.SuccessCode;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,12 +17,12 @@ public record CustomApiResponse<T>(
 ) {
 
     // 성공 응답
-    public static <T> ResponseEntity<CustomApiResponse<T>> success(SuccessCode successCode, T data) {
-        return ResponseEntity.status(successCode.getHttpStatus())
+    public static <T> ResponseEntity<CustomApiResponse<T>> success(HttpStatus httpStatus, String successMessage, T data) {
+        return ResponseEntity.status(httpStatus)
                 .body(new CustomApiResponse<>(
                         true,
-                        String.valueOf(successCode.getHttpStatus().value()),
-                        successCode.getMessage(),
+                        String.valueOf(httpStatus.value()),
+                        successMessage,
                         data,
                         null,
                         LocalDateTime.now()
@@ -31,8 +30,8 @@ public record CustomApiResponse<T>(
     }
 
     // 성공 응답 (데이터 없음)
-    public static <T> ResponseEntity<CustomApiResponse<T>> success(SuccessCode successCode) {
-        return success(successCode, null);
+    public static <T> ResponseEntity<CustomApiResponse<T>> success(HttpStatus httpStatus, String successMessage) {
+        return success(httpStatus, successMessage, null);
     }
 
     // 실패 응답 (에러 코드만)
