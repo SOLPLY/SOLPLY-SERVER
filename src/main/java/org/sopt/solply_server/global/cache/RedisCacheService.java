@@ -48,23 +48,38 @@ public class RedisCacheService implements CacheService {
 
     @Override
     public <T extends Serializable> T get(String key, Class<T> clazz, Supplier<T> supplier) {
-        try {
-            T cachedValue = get(key, clazz);
-            if (cachedValue != null) {
-                return cachedValue;
-            }
+        // 캐시 조회
+        T cachedValue = safeGet(key, clazz);
+        if (cachedValue != null) {
+            return cachedValue;
+        }
 
-            // 캐시 미스 시 supplier로부터 데이터 조회
-            T value = supplier.get();
-            if (value != null) {
-                set(key, value);
-                log.debug("캐시 미스 - supplier를 통해 복원 완료 - 키: {}", key);
-            }
-            return value;
+        // DB 조회
+        T value = supplier.get();
+
+        // 캐시 저장 (실패해도 무시)
+        if (value != null) {
+            safeSet(key, value);
+        }
+
+        return value;
+    }
+
+    private <T extends Serializable> T safeGet(String key, Class<T> clazz) {
+        try {
+            return get(key, clazz);
         } catch (Exception e) {
-            log.error("supplier를 통한 캐시 조회 실패 - 키: {}", key, e);
-            // 캐시 실패 시에도 원본 데이터는 반환
-            return supplier.get();
+            log.warn("캐시 조회 실패 - 키: {}", key, e);
+            return null;
+        }
+    }
+
+    private <T extends Serializable> void safeSet(String key, T value) {
+        try {
+            set(key, value);
+            log.debug("캐시 저장 완료 - 키: {}", key);
+        } catch (Exception e) {
+            log.warn("캐시 저장 실패 - 키: {}", key, e);
         }
     }
 
