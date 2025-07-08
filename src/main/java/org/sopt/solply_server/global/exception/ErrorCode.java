@@ -37,6 +37,7 @@ public enum ErrorCode {
     FORBIDDEN(HttpStatus.FORBIDDEN, "AUTH-006", "접근 권한이 없습니다."),
     FORBIDDEN_RESOURCE(HttpStatus.FORBIDDEN, "AUTH-007", "해당 리소스에 대한 권한이 없습니다."),
     FORBIDDEN_ACTION(HttpStatus.FORBIDDEN, "AUTH-008", "해당 작업을 수행할 권한이 없습니다."),
+    INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH-009", "유효하지 않은 토큰입니다."),
 
     // 소셜 로그인 관련 (SOCIAL-xxx)
     UNSUPPORTED_OAUTH_PROVIDER(HttpStatus.BAD_REQUEST, "SOCIAL-001", "지원하지 않는 OAuth 플랫폼입니다."),
