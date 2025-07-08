@@ -1,5 +1,6 @@
 package org.sopt.solply_server.global.handler;
 
+import feign.FeignException;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
@@ -164,6 +165,22 @@ public class GlobalExceptionHandler {
         }
 
         return CustomApiResponse.error(errorCode);
+    }
+
+
+    @ExceptionHandler(FeignException.Unauthorized.class)
+    public ResponseEntity<CustomApiResponse<Void>> handleFeignUnauthorized(FeignException.Unauthorized e) {
+        return CustomApiResponse.error(ErrorCode.INVALID_SOCIAL_TOKEN);
+    }
+
+    @ExceptionHandler(FeignException.BadRequest.class)
+    public ResponseEntity<CustomApiResponse<Void>> handleFeignBadRequest(FeignException.BadRequest e) {
+        return CustomApiResponse.error(ErrorCode.SOCIAL_API_BAD_REQUEST);
+    }
+
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<CustomApiResponse<Void>> handleFeignException(FeignException e) {
+        return CustomApiResponse.error(ErrorCode.SOCIAL_API_ERROR);
     }
 
     // 500: 위에서 정의한 Exception을 제외한 모든 예외
