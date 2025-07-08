@@ -24,8 +24,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final OAuthServiceProvider oAuthServiceProvider;
 
-    @Value("${jwt.refresh-token-expire-time}")
-    private long refreshTokenExpireTime;
+
     private final JwtTokenResolver jwtTokenResolver;
 
     public SocialLoginResponse socialLogin(Long userId, SocialPlatform socialPlatform, String oauthAccessToken) {
@@ -34,7 +33,7 @@ public class AuthService {
 
         return SocialLoginResponse.of(
                 saveTokenCollection(userId),
-//                isNewUser
+                user.isNewUser()
         );
     }
 
@@ -60,7 +59,7 @@ public class AuthService {
 
     private TokenCollectionDto saveTokenCollection(Long userId) {
         TokenCollectionDto newTokens = jwtTokenProvider.createTokenCollection(userId);
-        refreshTokenRepository.save(userId, newTokens.refreshToken(), refreshTokenExpireTime);
+        refreshTokenRepository.save(userId, newTokens.refreshToken());
         return newTokens;
     }
 }
