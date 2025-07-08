@@ -44,7 +44,6 @@ public class AuthService {
     // 토큰 재발급
     public RefreshResponse refreshToken(String refreshToken) {
         jwtTokenProvider.validateRefreshToken(refreshToken);
-
         Long userId = jwtTokenResolver.getUserIdFromToken(refreshToken);
 
         String storedRefreshToken = refreshTokenRepository.findByMemberId(userId);

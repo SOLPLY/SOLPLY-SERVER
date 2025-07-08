@@ -24,12 +24,7 @@ public class AuthController {
     public ResponseEntity<CustomApiResponse<SocialLoginResponse>> kakaoLogin(
             @CurrentUserId Long userId,
             @PathVariable("soicialPlatform") SocialPlatform socialPlatform,
-            @RequestBody SocialLoginRequest socialLoginRequest
-
-    ) {
-        // kakaoAccessToken으로 카카오 서버에서 사용자 정보 받아오기
-        // 받아온 정보로 우리 서비스에 회원가입 또는 로그인 처리 -> memberId 반환
-
+            @RequestBody SocialLoginRequest socialLoginRequest) {
         return CustomApiResponse.success(
                 HttpStatus.OK,
                 "소셜 로그인에 성공했습니다.",
@@ -37,8 +32,13 @@ public class AuthController {
         );
     }
 
-    @PostMapping("/reissue")
-    public ResponseEntity<CustomApiResponse<RefreshResponse>> reissue(@RequestHeader("Refresh-Token") String refreshToken) {
-        return CustomApiResponse.success(HttpStatus.OK, "토큰 재발급에 성공했습니다..", authService.refreshToken(refreshToken));
+    @PostMapping("/refresh")
+    public ResponseEntity<CustomApiResponse<RefreshResponse>> refresh(
+            @RequestHeader("Refresh-Token") String refreshToken) {
+        return CustomApiResponse.success(
+                HttpStatus.OK,
+                "토큰 재발급에 성공했습니다.",
+                authService.refreshToken(refreshToken)
+        );
     }
 }
