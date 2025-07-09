@@ -1,11 +1,6 @@
 package org.sopt.solply_server.domain.user.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,19 +19,32 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(unique = true, length = 30)
     private String nickname;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String email;
 
     @Column(nullable = false)
     private boolean isNewUser;
+
+    private String favoriteTowns;
+
+    @Enumerated(EnumType.STRING)
+    private Persona persona;
 
     public static User create(String email) {
         return User.builder()
                 .email(email)
                 .isNewUser(true)
                 .build();
+    }
+
+    public void updateOnboardingInfo(String nickname, String favoriteTowns, Persona persona) {
+        this.nickname = nickname;
+        this.favoriteTowns = favoriteTowns;
+        this.persona = persona;
+        this.isNewUser = false; // 온보딩 완료
     }
 
 }
