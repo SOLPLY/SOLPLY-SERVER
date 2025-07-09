@@ -60,8 +60,11 @@ public class Place extends BaseTimeEntity {
 
     private String openingHours;
 
-    @Column(columnDefinition = "geography(POINT, 4326)")
-    private Point location;
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
 
     @Column(nullable = false)
     private Long placeDefaultId;
