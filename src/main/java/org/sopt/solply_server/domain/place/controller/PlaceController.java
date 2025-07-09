@@ -24,7 +24,7 @@ public class PlaceController {
     @Operation(summary = "장소 상세 조회", description = "장소 ID를 통해 장소의 상세 정보를 조회합니다.")
     @GetMapping("/{placeId}")
     public ResponseEntity<CustomApiResponse<PlaceAllGetResponse>> findPlaceDetailsbyId(
-            @CurrentUserId String userId,
+            @CurrentUserId Longad userId,
             @PathVariable Long placeId) {
         return CustomApiResponse.success(
                 "장소 상세 조회 성공",

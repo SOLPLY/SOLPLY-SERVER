@@ -32,7 +32,7 @@ public class Tag {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String name;
+    private TagName name;
 
     @Enumerated(EnumType.STRING)
     private TagType type;

@@ -11,6 +11,7 @@ import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
+import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
@@ -31,14 +32,11 @@ public class PlaceService {
     private final UserRepository userRepository;
 
     public PlaceAllGetResponse findPlaceDetailsById(Long userId, Long placeId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
-
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
 
         // MAIN에 해당하는 태그를 가져와서 저장
-        String primaryTag = place.getPlaceTags().stream()
+        TagName primaryTag = place.getPlaceTags().stream()
                 .map(PlaceTag::getTag)
                 .filter(tag -> tag.getType() == TagType.MAIN)
                 .findFirst()

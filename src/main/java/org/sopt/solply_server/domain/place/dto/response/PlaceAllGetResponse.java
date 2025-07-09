@@ -5,12 +5,13 @@ import lombok.Builder;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.SnsLinkDto;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.tag.entity.TagName;
 
 @Builder
 public record PlaceAllGetResponse(
         long placeId,
         String placeName,
-        String primaryTag,
+        TagName primaryTag,
         String introduction,
         List<PlaceImageInfoDto> imageInfos,
         String address,
@@ -24,7 +25,7 @@ public record PlaceAllGetResponse(
         long placeDefaultId
 ) {
 
-    public static PlaceAllGetResponse of(Place place, String primaryTag, List<PlaceImageInfoDto> placeImageInfos, boolean isBookmarked) {
+    public static PlaceAllGetResponse of(Place place, TagName primaryTag, List<PlaceImageInfoDto> placeImageInfos, boolean isBookmarked) {
         return PlaceAllGetResponse.builder()
                 .placeId(place.getId())
                 .placeName(place.getName())
