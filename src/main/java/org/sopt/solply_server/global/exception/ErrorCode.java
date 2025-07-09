@@ -25,8 +25,6 @@ public enum ErrorCode {
     REDIS_SERIALIZATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON-008", "Redis 직렬화에 실패했습니다."),
     REDIS_OPERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "COMMON-009", "Redis 캐시 연산에 실패했습니다."),
 
-
-
     // 인증/인가 관련 (AUTH-xxx)
     UNAUTHORIZED_USER(HttpStatus.UNAUTHORIZED, "AUTH-001", "인증되지 않은 사용자입니다."),
     INVALID_ACCESS_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH-002", "유효하지 않은 액세스 토큰입니다."),
@@ -47,7 +45,6 @@ public enum ErrorCode {
 
     // 유저 관련 (USER-xxx)
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다.");
-
 
 
     private final HttpStatus httpStatus;
