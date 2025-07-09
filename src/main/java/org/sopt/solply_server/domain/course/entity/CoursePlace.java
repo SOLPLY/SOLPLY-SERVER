@@ -11,14 +11,16 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
 @Table(name = "course_place",
         indexes = {
                 @Index(name = "idx_course_place_course_id_place_id", columnList = "course_id, place_id", unique = true),
+                @Index(name = "idx_course_place_place_id", columnList = "place_id")
         }
 )
-public class CoursePlace {
+public class CoursePlace extends BaseTimeEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
