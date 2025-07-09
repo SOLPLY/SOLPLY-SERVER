@@ -100,13 +100,32 @@ public class GlobalExceptionHandler {
     // 400: 필수 RequestParam이 누락된 경우
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<CustomApiResponse<Void>> handleMissingRequestParameterException(
-            final MissingServletRequestParameterException e) {
+            final MissingServletRequestParameterException e,
+            final HttpServletRequest request) {
         log.error("Missing request parameter: {} (type: {})", e.getParameterName(), e.getParameterType());
+
+        // 요청에 포함된 파라미터들 확인
+        String receivedParams = getReceivedParameterNames(request);
+
         Map<String, String> details = new HashMap<>();
-        details.put("parameter", e.getParameterName());
-        details.put("type", e.getParameterType());
-        details.put("message", e.getParameterName() + "은(는) 필수 파라미터입니다");
-        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY, details);
+        details.put("missingParameter", e.getParameterName());
+        details.put("parameterType", e.getParameterType());
+        details.put("receivedParameters", receivedParams);
+
+        // 파라미터 오타 가능성 체크
+        if (!receivedParams.isEmpty()) {
+            details.put("suggestion", "파라미터 이름을 확인해주세요. 필요한 파라미터: " + e.getParameterName());
+        }
+
+        return CustomApiResponse.error(ErrorCode.MISSING_REQUIRED_PARAMETER, details);
+    }
+
+    // 요청에 포함된 파라미터 이름들을 추출하는 헬퍼 메서드
+    private String getReceivedParameterNames(HttpServletRequest request) {
+        if (request.getParameterMap().isEmpty()) {
+            return "없음";
+        }
+        return String.join(", ", request.getParameterMap().keySet());
     }
 
     // 400: JSON 파싱 자체가 실패한 경우
