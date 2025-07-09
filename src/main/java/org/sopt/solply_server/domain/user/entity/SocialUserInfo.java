@@ -11,7 +11,7 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
                 @UniqueConstraint(columnNames = {"social_code"})
         },
         indexes = {
-                @Index(name = "idx_user_platform", columnList = "user_id, social_platform")
+                @Index(name = "idx_user_social_platform", columnList = "user_id, social_platform")
         }
 )
 @Getter
