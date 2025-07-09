@@ -4,11 +4,11 @@ public class InputValidator {
 
     public static boolean isNull(final Object object) {
         if (object == null) {
-            return false;
+            return true;
         }
         if (object instanceof String) {
-            return !((String) object).isEmpty();
+            return ((String) object).isEmpty();
         }
-        return true;
+        return false;
     }
 }

@@ -45,7 +45,10 @@ public enum ErrorCode {
     SOCIAL_API_ERROR(HttpStatus.BAD_GATEWAY, "SOCIAL-004", "소셜 API 서버 오류입니다."),
 
     // 유저 관련 (USER-xxx)
-    NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다.");
+    NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
+
+    // 장소 관련 (PLACE-xxx)
+    PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-001", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다.");
 
 
     private final HttpStatus httpStatus;

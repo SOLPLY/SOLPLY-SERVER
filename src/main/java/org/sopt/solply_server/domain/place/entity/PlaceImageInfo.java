@@ -3,8 +3,10 @@ package org.sopt.solply_server.domain.place.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import lombok.Data;
+import lombok.Getter;
 
 @Embeddable
+@Getter
 public class PlaceImageInfo {
 
     @Column(name = "image_file_key", columnDefinition = "TEXT", nullable = false)
