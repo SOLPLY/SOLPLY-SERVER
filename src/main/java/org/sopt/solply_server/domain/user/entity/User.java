@@ -31,7 +31,7 @@ public class User {
     private String favoriteTowns;
 
     @Enumerated(EnumType.STRING)
-    private Persona persona;
+    private UserPersona userPersona;
 
     public static User create(String email) {
         return User.builder()
@@ -40,10 +40,10 @@ public class User {
                 .build();
     }
 
-    public void updateOnboardingInfo(String nickname, String favoriteTowns, Persona persona) {
+    public void updateOnboardingInfo(String nickname, String favoriteTowns, UserPersona userPersona) {
         this.nickname = nickname;
         this.favoriteTowns = favoriteTowns;
-        this.persona = persona;
+        this.userPersona = userPersona;
         this.isNewUser = false; // 온보딩 완료
     }
 
