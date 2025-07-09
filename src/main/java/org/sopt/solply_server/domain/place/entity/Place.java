@@ -26,6 +26,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.sopt.solply_server.domain.town.entity.Town;
+import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
 @Getter
@@ -36,7 +37,7 @@ import org.sopt.solply_server.domain.town.entity.Town;
                 @Index(name = "idx_places_town_id", columnList = "town_id")
         }
 )
-public class Place {
+public class Place extends BaseTimeEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
