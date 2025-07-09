@@ -1,0 +1,6 @@
+package org.sopt.solply_server.domain.test.dto;
+
+public record TestWithdrawRequest(
+        Long userId
+) {
+}
