@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.entity;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -14,6 +15,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.MapKeyColumn;
 import jakarta.persistence.MapKeyEnumerated;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.awt.Point;
@@ -50,8 +52,13 @@ public class Place extends BaseTimeEntity {
 
     private String address;
 
+    @OneToMany(mappedBy = "place", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<PlaceTag> placeTags = new ArrayList<>();
+
     @Column(columnDefinition = "TEXT")
     private String contactNumber;
+
+    private String openingHours;
 
     @Column(columnDefinition = "geography(POINT, 4326)")
     private Point location;

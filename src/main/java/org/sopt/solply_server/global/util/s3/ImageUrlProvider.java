@@ -10,10 +10,10 @@ import org.springframework.stereotype.Component;
 public class ImageUrlProvider {
 
     @Value("${aws.cloudfront.domain}")
-    private String cloudfrontDomain;
+    private static String cloudfrontDomain;
 
     // 공개 이미지 파일용 URL 생성기
-    public String getImageUrl(String fileKey) {
+    public static String getImageUrl(String fileKey) {
         if (InputValidator.isNull(fileKey)) return null;
 
         // cloudfront를 통해 s3에 저장된 이미지 파일에 접근하는 url 생성
