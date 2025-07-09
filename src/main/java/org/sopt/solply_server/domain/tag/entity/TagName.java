@@ -30,13 +30,13 @@ public enum TagName {
     BAR_TABLE("바테이블"),
 
     // ===== 음식 추천 옵션 1 =====
-    KOREAN("한식"),
-    CHINESE("중식"),
-    JAPANESE("일식"),
-    WESTERN("양식"),
+    KOREAN_FOOD("한식"),
+    CHINESE_FOOD("중식"),
+    JAPANESE_FOOD("일식"),
+    WESTERN_FOOD("양식"),
     BAR("바/술집"),
     BAKERY("베이커리"),
-    ASIAN("아시안푸드"),
+    ASIAN_FOOD("아시안푸드"),
 
     // ===== 음식 추천 옵션 2 =====
     SINGLE_MENU("1인메뉴"),
@@ -48,7 +48,8 @@ public enum TagName {
 
     // ===== 쇼핑 추천 옵션 =====
     LIFESTYLE_SHOP("소품샵"),
-    VINTAGE_SHOP("빈티지샵");
+    VINTAGE_SHOP("빈티지샵"),
+    POPUP_MARKET("팝업/플리마켓");
 
     private final String displayName;
 }
