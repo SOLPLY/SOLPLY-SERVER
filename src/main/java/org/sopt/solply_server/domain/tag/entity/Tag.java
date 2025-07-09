@@ -10,13 +10,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import java.util.ArrayList;
-import java.util.List;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.sopt.solply_server.domain.tag.constant.TagName;
 
 @Entity
 @Getter
@@ -30,7 +27,7 @@ public class Tag {
     private Long id;
 
     @Enumerated(EnumType.STRING)
-    private TagName name;
+    private TagType name;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")

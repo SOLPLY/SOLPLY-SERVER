@@ -1,14 +1,13 @@
 package org.sopt.solply_server.domain.auth.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
 import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.service.AuthService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

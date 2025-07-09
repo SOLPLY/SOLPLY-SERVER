@@ -2,7 +2,7 @@ package org.sopt.solply_server.domain.user.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity

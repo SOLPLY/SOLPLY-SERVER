@@ -25,8 +25,6 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.ToString;
-import org.sopt.solply_server.domain.place.constant.SnsPlatform;
 import org.sopt.solply_server.domain.town.entity.Town;
 
 @Entity
