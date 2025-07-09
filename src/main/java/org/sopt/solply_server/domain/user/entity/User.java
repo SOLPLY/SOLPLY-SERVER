@@ -33,7 +33,6 @@ public class User {
     private boolean isNewUser;
 
 
-
     public static User create(String email) {
         return User.builder()
                 .email(email)
