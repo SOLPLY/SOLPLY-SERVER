@@ -32,6 +32,8 @@ public class User {
     @Column(nullable = false)
     private boolean isNewUser;
 
+
+
     public static User create(String email) {
         return User.builder()
                 .email(email)
