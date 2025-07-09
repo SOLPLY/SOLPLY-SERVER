@@ -1,6 +1,5 @@
 package org.sopt.solply_server.domain.user.service;
 
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;

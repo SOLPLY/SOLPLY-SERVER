@@ -1,6 +1,6 @@
 package org.sopt.solply_server.global.http;
 
-import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.springframework.core.convert.converter.Converter;
 
 public class SocialPlatformRequestConverter implements Converter<String, SocialPlatform> {

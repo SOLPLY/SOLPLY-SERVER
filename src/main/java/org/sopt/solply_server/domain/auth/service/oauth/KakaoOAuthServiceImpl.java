@@ -2,13 +2,10 @@ package org.sopt.solply_server.domain.auth.service.oauth;
 
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.service.OAuthService;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.service.SocialUserService;
-import org.sopt.solply_server.domain.user.service.UserService;
-import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.feign.oauth.kakao.KakaoServerClient;
 import org.sopt.solply_server.global.feign.oauth.kakao.dto.KakaoSocialUserProfile;
 import org.sopt.solply_server.global.jwt.JwtProperties;

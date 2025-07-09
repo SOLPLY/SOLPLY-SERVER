@@ -1,7 +1,7 @@
 package org.sopt.solply_server.domain.auth.service;
 
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
 import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
@@ -12,7 +12,6 @@ import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.jwt.JwtTokenProvider;
 import org.sopt.solply_server.global.jwt.JwtTokenResolver;
 import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

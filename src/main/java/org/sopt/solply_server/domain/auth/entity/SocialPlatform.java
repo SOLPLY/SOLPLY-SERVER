@@ -1,7 +1,6 @@
-package org.sopt.solply_server.domain.auth.constant;
+package org.sopt.solply_server.domain.auth.entity;
 
 import java.util.Arrays;
-import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.sopt.solply_server.global.exception.BusinessException;
