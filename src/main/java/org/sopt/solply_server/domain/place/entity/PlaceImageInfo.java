@@ -5,7 +5,6 @@ import jakarta.persistence.Embeddable;
 import lombok.Data;
 
 @Embeddable
-@Data
 public class PlaceImageInfo {
 
     @Column(name = "image_file_key", columnDefinition = "TEXT", nullable = false)
