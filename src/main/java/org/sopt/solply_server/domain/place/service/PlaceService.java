@@ -29,7 +29,7 @@ public class PlaceService {
 
     private final PlaceRepository placeRepository;
     private final PlaceBookmarkRepository placeBookmarkRepository;
-    private final UserRepository userRepository;
+    private final ImageUrlProvider imageUrlProvider;
 
     public PlaceAllGetResponse findPlaceDetailsById(Long userId, Long placeId) {
         Place place = placeRepository.findById(placeId)
@@ -46,7 +46,7 @@ public class PlaceService {
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(
                         info.getDisplayOrder(),
-                        ImageUrlProvider.getImageUrl(info.getImageFileKey())
+                        imageUrlProvider.getImageUrl(info.getImageFileKey())
                 ))
                 .toList();
 
