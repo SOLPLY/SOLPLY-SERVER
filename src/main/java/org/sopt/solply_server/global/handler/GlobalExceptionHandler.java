@@ -5,6 +5,9 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
+
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -17,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -50,6 +54,23 @@ public class GlobalExceptionHandler {
         return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY, details);
     }
 
+    // 400: RequestParam/PathVariable 검증 실패 (@Validated 어노테이션)
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<CustomApiResponse<Void>> handleConstraintViolationException(
+            final ConstraintViolationException e) {
+        log.error("RequestParam/PathVariable validation failed: {}", e.getMessage());
+        Map<String, String> details = new HashMap<>();
+
+        for (ConstraintViolation<?> violation : e.getConstraintViolations()) {
+            String propertyPath = violation.getPropertyPath().toString();
+            // "methodName.parameterName" 형태에서 parameterName만 추출
+            String fieldName = propertyPath.substring(propertyPath.lastIndexOf('.') + 1);
+            details.put(fieldName, violation.getMessage());
+        }
+
+        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY, details);
+    }
+
     // 400: 특정 파라미터의 타입이 잘못된 경우
     /**
      * {
@@ -74,6 +95,37 @@ public class GlobalExceptionHandler {
         details.put("invalidValue", String.valueOf(e.getValue()));
         details.put("expectedType", e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "Unknown");
         return CustomApiResponse.error(ErrorCode.INVALID_ARGUMENT_TYPE, details);
+    }
+
+    // 400: 필수 RequestParam이 누락된 경우
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<CustomApiResponse<Void>> handleMissingRequestParameterException(
+            final MissingServletRequestParameterException e,
+            final HttpServletRequest request) {
+        log.error("Missing request parameter: {} (type: {})", e.getParameterName(), e.getParameterType());
+
+        // 요청에 포함된 파라미터들 확인
+        String receivedParams = getReceivedParameterNames(request);
+
+        Map<String, String> details = new HashMap<>();
+        details.put("missingParameter", e.getParameterName());
+        details.put("parameterType", e.getParameterType());
+        details.put("receivedParameters", receivedParams);
+
+        // 파라미터 오타 가능성 체크
+        if (!receivedParams.isEmpty()) {
+            details.put("suggestion", "파라미터 이름을 확인해주세요. 필요한 파라미터: " + e.getParameterName());
+        }
+
+        return CustomApiResponse.error(ErrorCode.MISSING_REQUIRED_PARAMETER, details);
+    }
+
+    // 요청에 포함된 파라미터 이름들을 추출하는 헬퍼 메서드
+    private String getReceivedParameterNames(HttpServletRequest request) {
+        if (request.getParameterMap().isEmpty()) {
+            return "없음";
+        }
+        return String.join(", ", request.getParameterMap().keySet());
     }
 
     // 400: JSON 파싱 자체가 실패한 경우
