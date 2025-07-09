@@ -41,7 +41,7 @@ public class PlaceService {
                 .filter(tag -> tag.getType() == TagType.MAIN)
                 .findFirst()
                 .map(Tag::getName)
-                .orElse(null);
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_TAG_REQUIRED));
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(
