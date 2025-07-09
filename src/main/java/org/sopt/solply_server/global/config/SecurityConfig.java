@@ -21,6 +21,7 @@ public class SecurityConfig {
             "/api/auth/**", // 로그인, 회원가입, 토큰 재발급
             "/swagger-ui/**",
             "/v3/api-docs/**",
+            "/api/test/**", // 테스트용 API
     };
 
     @Bean
