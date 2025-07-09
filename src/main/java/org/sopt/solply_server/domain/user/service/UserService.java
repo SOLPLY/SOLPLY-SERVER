@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.user.service;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.constant.SocialPlatform;
+import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.entity.SocialUserInfo;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
@@ -15,5 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class UserService {
 
+    private final UserRepository userRepository;
+
+    public NicknameCheckResponse checkNickname(String nickname) {
+        boolean isDuplicated = userRepository.existsByNickname(nickname);
+
+        return NicknameCheckResponse.of(isDuplicated);
+    }
 
 }
