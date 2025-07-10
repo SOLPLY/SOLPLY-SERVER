@@ -1,0 +1,15 @@
+package org.sopt.solply_server.domain.town.dto;
+
+import lombok.Getter;
+import org.sopt.solply_server.domain.town.entity.Town;
+
+import java.util.List;
+
+@Getter
+
+public class TownParentDto {
+    private Long townid;
+    private String townname;
+    private List<TownChildDto> subTowns;
+}
+
