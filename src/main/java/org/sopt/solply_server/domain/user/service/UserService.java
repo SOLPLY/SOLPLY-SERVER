@@ -43,6 +43,7 @@ public class UserService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
 
         return UserProfileGetResponse.of(user, selectedTown);
+    }
 
     /**
      * 회원 정보 업데이트 (온보딩 완료)
