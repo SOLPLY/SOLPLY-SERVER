@@ -1,14 +1,6 @@
 package org.sopt.solply_server.domain.town.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,7 +12,12 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "towns")
+@Table(
+        name = "towns",
+        indexes = {
+                @Index(name = "idx_town_parent_id", columnList = "parent_id")
+        }
+)
 public class Town {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -74,6 +74,10 @@ dependencies {
 	// ✅ Apple 로그인
 	implementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
 
+	// ✅ Spring Retry
+	implementation 'org.springframework.retry:spring-retry'
+	implementation 'org.springframework:spring-aspects'
+
 	// ✅ 개발 편의
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
