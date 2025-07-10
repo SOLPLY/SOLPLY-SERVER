@@ -1,6 +1,5 @@
 package org.sopt.solply_server.domain.place.service;
 
-import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -106,7 +105,7 @@ public class PlaceService {
         }
 
         // 메인 태그로만 조회
-        if (InputValidator.isNull(subTagAIdList) && InputValidator.isNull(subTagBIdList)) {
+        if (InputValidator.isBlank(subTagAIdList) && InputValidator.isBlank(subTagBIdList)) {
             log.info("메인 태그로만 장소 조회: {}", mainTagId);
             return placeRepository.findPlacesByTownAndMainTag(selectedTown, mainTagId);
         }
