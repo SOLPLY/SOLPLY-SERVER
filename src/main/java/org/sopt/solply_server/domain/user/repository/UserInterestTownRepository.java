@@ -12,4 +12,8 @@ public interface UserInterestTownRepository extends JpaRepository<UserInterestTo
 
     @Query("SELECT uit FROM UserInterestTown uit JOIN FETCH uit.town WHERE uit.user = :user")
     Optional<UserInterestTown> findByUserWithTown(@Param("user") User user);
+
+    boolean existsByUserIdAndTownId(Long userId, Long townId);
+
+    void deleteByUserIdAndTownId(Long userId, Long townId);
 }

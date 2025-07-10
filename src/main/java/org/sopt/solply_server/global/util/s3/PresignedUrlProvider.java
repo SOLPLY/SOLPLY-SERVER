@@ -21,7 +21,7 @@ public class PresignedUrlProvider {
     private final S3Presigner s3Presigner;
 
     public String generatePresignedUrlToRead(final String fileKey) {
-        if (InputValidator.isNull(fileKey)) return null;
+        if (InputValidator.isBlank(fileKey)) return null;
 
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
                 .signatureDuration(Duration.ofHours(expirationSeconds))

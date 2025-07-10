@@ -15,7 +15,7 @@ public class ImageUrlProvider {
     private String cloudFrontDomain;
 
     public String getImageUrl(String fileKey) {
-        if (InputValidator.isNull(fileKey)) return null;
+        if (InputValidator.isBlank(fileKey)) return null;
         return String.format("https://%s/%s", cloudFrontDomain, fileKey);
     }
 }
