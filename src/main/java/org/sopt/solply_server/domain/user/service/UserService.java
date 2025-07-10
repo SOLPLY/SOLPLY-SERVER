@@ -27,8 +27,7 @@ public class UserService {
     }
 
     public UserProfileGetResponse getUserProfile(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+        User user = userRepository.getReferenceById(userId);
 
         SelectedTownDto selectedTown = userInterestTownRepository.findByUserWithTown(user)
                 .map(userInterestTown -> SelectedTownDto.of(
