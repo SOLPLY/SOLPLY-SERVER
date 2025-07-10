@@ -48,7 +48,17 @@ public enum ErrorCode {
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
 
     // 장소 관련 (PLACE-xxx)
-    PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-001", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다.");
+    PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-001", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
+
+    // 동네 관련 (TOWN-xxx)
+    NOT_FOUND_TOWN(HttpStatus.NOT_FOUND, "TOWN-001" , "존재하지 않는 동네입니다."),
+
+
+    // 태그 관련 (TAG-xxx)
+    NOT_FOUND_TAG(HttpStatus.NOT_FOUND, "T001", "존재하지 않는 태그입니다."),
+    INVALID_MAIN_TAG(HttpStatus.BAD_REQUEST, "T002", "유효하지 않은 메인 태그입니다."),
+    INVALID_SUB_TAG(HttpStatus.BAD_REQUEST, "T003", "유효하지 않은 서브 태그입니다."),
+    INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "T004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다.");
 
 
     private final HttpStatus httpStatus;
