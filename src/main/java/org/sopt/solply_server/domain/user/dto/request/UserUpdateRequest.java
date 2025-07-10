@@ -6,8 +6,8 @@ import jakarta.validation.constraints.Size;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
 public record UserUpdateRequest(
-        @NotBlank(message = "관심 동네는 필수입니다")
-        String favoriteTowns,
+        @NotNull(message = "관심 동네는 필수입니다")
+        Long favoriteTown,
 
         @NotNull(message = "유저 성향은 필수입니다")
         UserPersona persona,

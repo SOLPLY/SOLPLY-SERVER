@@ -28,8 +28,6 @@ public class User {
     @Column(nullable = false)
     private boolean isNewUser;
 
-    private String favoriteTowns;
-
     @Enumerated(EnumType.STRING)
     private UserPersona persona;
 
@@ -40,8 +38,7 @@ public class User {
                 .build();
     }
 
-    public void updateOnboardingInfo(String favoriteTowns, UserPersona persona, String nickname) {
-        this.favoriteTowns = favoriteTowns;
+    public void updateOnboardingInfo(UserPersona persona, String nickname) {
         this.persona = persona;
         this.nickname = nickname;
         this.isNewUser = false; // 온보딩 완료
