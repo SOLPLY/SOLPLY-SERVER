@@ -10,9 +10,11 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import lombok.Getter;
 import org.sopt.solply_server.domain.town.entity.Town;
 
 @Entity
+@Getter
 @Table(name = "user_town",
         uniqueConstraints = {
                 @UniqueConstraint(columnNames = {"user_id", "town_id"}) // 한 유자가 같은 동네를 여러 번 관심 등록하지 X
