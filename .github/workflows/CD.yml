@@ -76,5 +76,5 @@ jobs:
           script: |
             cd /home/ubuntu/solply-server
             echo "${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}" | base64 -d > docker-compose.yml
-            chmod +x ./solply-server/scripts/deploy.sh
+            chmod +x ./scripts/deploy.sh
             ./solply-server/scripts/deploy.sh
