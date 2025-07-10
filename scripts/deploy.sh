@@ -1,11 +1,8 @@
 #!/bin/bash
+echo "🚀 배포 시작: $IMAGE_NAME"
 
-echo "🚀 배포 시작"
-
-cd /home/ubuntu/solply-server
-
-echo "✅ docker-compose.yml 내용 확인"
-cat docker-compose.yml  # 디버깅용
+echo "✅ docker-compose.yml 존재 확인:"
+cat /home/ubuntu/docker-compose.yml
 
 # 배포 실행
 docker-compose pull app || true
