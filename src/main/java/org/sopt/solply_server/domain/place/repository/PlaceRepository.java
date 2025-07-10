@@ -20,17 +20,35 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
             @Param("mainTagId") Long mainTagId
     );
 
-    @Query("SELECT DISTINCT p FROM Place p " +
-            "JOIN p.placeTags pt1 " +
-            "JOIN pt1.tag t1 " +
-            "JOIN p.placeTags pt2 " +
-            "JOIN pt2.tag t2 " +
-            "WHERE t1.id = :mainTagId AND t1.type = 'MAIN' " +
-            "AND t2.id IN :subTagIds AND t2.type IN ('OPTION1', 'OPTION2') " +
-            "AND p.town = :town")
+
+    @Query("""
+        SELECT DISTINCT p FROM Place p
+        JOIN p.placeTags pt1
+        JOIN pt1.tag t1
+        WHERE t1.id = :mainTagId AND t1.type = 'MAIN'
+          AND p.town = :town
+          AND (
+            (:subTagOptionAIds IS NULL OR EXISTS (
+                SELECT pt2 FROM PlaceTag pt2
+                WHERE pt2.place = p
+                  AND pt2.tag.id IN :subTagOptionAIds
+                  AND pt2.tag.type = 'OPTION1'
+            ))
+            AND
+            (:subTagOptionBIds IS NULL OR EXISTS (
+                SELECT pt3 FROM PlaceTag pt3
+                WHERE pt3.place = p
+                  AND pt3.tag.id IN :subTagOptionBIds
+                  AND pt3.tag.type = 'OPTION2'
+            ))
+          )
+    """)
     List<Place> findPlacesByTownAndMainTagAndSubTags(
             @Param("town") Town town,
             @Param("mainTagId") Long mainTagId,
-            @Param("subTagIds") List<Long> subTagIds
+            @Param("subTagOptionAIds") List<Long> subTagOptionAIds,
+            @Param("subTagOptionBIds") List<Long> subTagOptionBIds
     );
+
+
 }

@@ -6,7 +6,6 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Component;
 
@@ -14,34 +13,26 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class TagValidator {
 
-    public void validateMainTag(Tag mainTag)  {
-        if (mainTag.getType() != TagType.MAIN) {
-            throw new BusinessException(ErrorCode.INVALID_MAIN_TAG);
+    private final TagRepository tagRepository;
+
+    public void validateTagType(Long tagId, TagType tagType) {
+        Tag tag = tagRepository.findById(tagId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
+        if (tag.getType() != tagType) {
+            throw new BusinessException(ErrorCode.INVALID_TAG_TYPE);
         }
     }
 
-    public void validateSubTag(Tag subTag)  {
-        if (subTag.getType() != TagType.MAIN) {
-            throw new BusinessException(ErrorCode.INVALID_SUB_TAG);
+    public void validateTagListRelation(Long mainTagId, List<Long> subTagIds) {
+        Tag mainTag = tagRepository.findById(mainTagId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
+        for (Long subTagId : subTagIds) {
+            Tag subtag = tagRepository.findById(subTagId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
+            if (!subtag.getParent().equals(mainTag)) {
+                throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
+            }
         }
     }
 
-    public void validateMainTagAndSubTag(Tag mainTag, List<Tag> subTagList) {
-        validateMainTag(mainTag);
-        for (Tag subTag : subTagList) {
-            validateSubTag(subTag);
-            validateTagRelation(mainTag, subTag);
-        }
-    }
-
-    public void validateTagRelation(Tag mainTag, Tag subTag) {
-        if (subTag.getType() != TagType.OPTION1 && subTag.getType() != TagType.OPTION2) {
-            throw new BusinessException(ErrorCode.INVALID_SUB_TAG);
-        }
-
-        // mainTag, subTag 관계 검증
-        if (subTag.getParent() == null || !subTag.getParent().equals(mainTag)) {
-            throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
-        }
-    }
 }

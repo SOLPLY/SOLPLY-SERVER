@@ -55,10 +55,10 @@ public enum ErrorCode {
 
 
     // 태그 관련 (TAG-xxx)
-    NOT_FOUND_TAG(HttpStatus.NOT_FOUND, "T001", "존재하지 않는 태그입니다."),
-    INVALID_MAIN_TAG(HttpStatus.BAD_REQUEST, "T002", "유효하지 않은 메인 태그입니다."),
-    INVALID_SUB_TAG(HttpStatus.BAD_REQUEST, "T003", "유효하지 않은 서브 태그입니다."),
-    INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "T004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다.");
+    NOT_FOUND_TAG(HttpStatus.NOT_FOUND, "TAG-001", "존재하지 않는 태그입니다."),
+    INVALID_TAG_TYPE(HttpStatus.BAD_REQUEST, "TAG-002", "잘못된 타입의 태그입니다."),
+    INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "TAG-004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다."),
+    NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다."),;
 
 
     private final HttpStatus httpStatus;
