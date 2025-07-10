@@ -39,12 +39,11 @@ public class UserService {
             throw new BusinessException(ErrorCode.ONBOARDING_ALREADY_COMPLETED);
         }
 
-        // 3. 동네 존재 여부 검증
         if (!townRepository.existsByName(request.favoriteTowns())) {
+            log.warn("존재하지 않는 동네: favoriteTowns={}", request.favoriteTowns());
             throw new BusinessException(ErrorCode.TOWN_NOT_FOUND);
         }
 
-        // 4. 닉네임 중복검사
         if (userRepository.existsByNickname(request.nickname())) {
             log.warn("중복된 닉네임 사용 시도: nickname={}", request.nickname());
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
@@ -62,6 +61,7 @@ public class UserService {
             return UserUpdateResponse.of(savedUser);
 
         } catch (DataIntegrityViolationException e) {
+            log.error("DB 제약조건 위반: userId={}, nickname={}", userId, request.nickname(), e);
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
     }
