@@ -49,11 +49,19 @@ public enum ErrorCode {
     DUPLICATE_NICKNAME(HttpStatus.BAD_REQUEST, "USER-002", "이미 사용 중인 닉네임입니다."),
     ONBOARDING_ALREADY_COMPLETED(HttpStatus.BAD_REQUEST, "USER-003", "이미 온보딩이 완료된 사용자입니다."),
 
-    // 동네 관련 (TOWN-xxx)
-    TOWN_NOT_FOUND(HttpStatus.BAD_REQUEST, "TOWN-001", "존재하지 않는 동네입니다."),
 
     // 장소 관련 (PLACE-xxx)
-    PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-001", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다.");
+    PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-001", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
+
+    // 동네 관련 (TOWN-xxx)
+    NOT_FOUND_TOWN(HttpStatus.NOT_FOUND, "TOWN-001" , "존재하지 않는 동네입니다."),
+
+
+    // 태그 관련 (TAG-xxx)
+    NOT_FOUND_TAG(HttpStatus.NOT_FOUND, "TAG-001", "존재하지 않는 태그입니다."),
+    INVALID_TAG_TYPE(HttpStatus.BAD_REQUEST, "TAG-002", "잘못된 타입의 태그입니다."),
+    INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "TAG-004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다."),
+    NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다."),;
 
 
     private final HttpStatus httpStatus;

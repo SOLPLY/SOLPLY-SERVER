@@ -23,7 +23,8 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
         indexes = {
                 @Index(name = "idx_place_tag_place_id", columnList = "place_id"),
                 @Index(name = "idx_place_tag_tag_id", columnList = "tag_id"),
-                @Index(name = "idx_place_tag_place_id_tag_id", columnList = "place_id, tag_id", unique = true)
+                @Index(name = "idx_place_tag_place_id_tag_id", columnList = "place_id, tag_id", unique = true),
+                @Index(name = "idx_place_tag_tag_id_place_id", columnList = "tag_id, place_id")
         }
 )
 public class PlaceTag {

@@ -27,7 +27,7 @@ public class TownService {
         return townRepository.findById(townId)
                 .orElseThrow(() -> {
                     log.warn("존재하지 않는 동네 ID: townId={}", townId);
-                    return new BusinessException(ErrorCode.TOWN_NOT_FOUND);
+                    return new BusinessException(ErrorCode.NOT_FOUND_TOWN);
                 });
     }
 
