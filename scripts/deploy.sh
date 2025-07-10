@@ -1,12 +1,11 @@
 #!/bin/bash
-COMPOSE_CONTENT="$1"
 
-echo "🚀 배포 시작: $IMAGE_NAME"
+echo "🚀 배포 시작"
 
 cd /home/ubuntu/solply-server
 
-echo "$COMPOSE_CONTENT" > docker-compose.yml
-echo "✅ docker-compose.yml 생성 완료"
+echo "✅ docker-compose.yml 내용 확인"
+cat docker-compose.yml  # 디버깅용
 
 # 배포 실행
 docker-compose pull app || true
