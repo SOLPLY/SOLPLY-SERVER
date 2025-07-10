@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -47,5 +48,14 @@ public class UserController {
     ) {
         UserUpdateResponse response = userService.updateUser(userId, request);
         return CustomApiResponse.success("회원정보 업데이트에 성공했습니다", response);
+    }
+  
+    @Operation(summary = "회원 정보 조회", description = "현재 로그인한 사용자의 정보를 조회합니다.")
+    @GetMapping
+    public ResponseEntity<CustomApiResponse<UserProfileGetResponse>> getUserProfile(
+            @CurrentUserId Long userId
+    ) {
+        UserProfileGetResponse response = userService.getUserProfile(userId);
+        return CustomApiResponse.success("유저 정보 조회에 성공하였습니다.", response);
     }
 }
