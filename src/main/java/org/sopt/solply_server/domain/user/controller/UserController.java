@@ -3,18 +3,19 @@ package org.sopt.solply_server.domain.user.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
+import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "User", description = "사용자 관련 API")
 @RestController
@@ -36,5 +37,15 @@ public class UserController {
     ) {
         NicknameCheckResponse response = userService.checkNickname(nickname);
         return CustomApiResponse.success("닉네임 중복검사에 성공했습니다", response);
+    }
+
+    @Operation(summary = "회원 정보 업데이트", description = "온보딩 완료 후 회원 정보를 업데이트합니다.")
+    @PatchMapping("")
+    public ResponseEntity<CustomApiResponse<UserUpdateResponse>> updateUser(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody UserUpdateRequest request
+    ) {
+        UserUpdateResponse response = userService.updateUser(userId, request);
+        return CustomApiResponse.success("회원정보 업데이트에 성공했습니다", response);
     }
 }
