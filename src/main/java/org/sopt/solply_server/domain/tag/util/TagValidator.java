@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.tag.util;
 
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -25,10 +26,12 @@ public class TagValidator {
         }
     }
 
-    public void validateMainTagAndSubTag(Tag mainTag, Tag subTag) {
+    public void validateMainTagAndSubTag(Tag mainTag, List<Tag> subTagList) {
         validateMainTag(mainTag);
-        validateSubTag(subTag);
-        validateTagRelation(mainTag, subTag);
+        for (Tag subTag : subTagList) {
+            validateSubTag(subTag);
+            validateTagRelation(mainTag, subTag);
+        }
     }
 
     public void validateTagRelation(Tag mainTag, Tag subTag) {

@@ -5,10 +5,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
-import org.sopt.solply_server.domain.place.dto.response.PlaceGetResponse;
+import org.sopt.solply_server.domain.place.dto.PlaceGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceFilteringGetResponse;
 import org.sopt.solply_server.domain.place.service.PlaceService;
-import org.sopt.solply_server.domain.tag.entity.TagName;
-import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -39,7 +38,7 @@ public class PlaceController {
 
     @Operation(summary = "장소 태그 필터링", description = "장소 태그를 통해 장소를 필터링합니다.")
     @GetMapping()
-    public ResponseEntity<CustomApiResponse<PlaceGetResponse>> findPlacesByTag(
+    public ResponseEntity<CustomApiResponse<PlaceFilteringGetResponse>> findPlacesByTag(
             @CurrentUserId Long userId,
             @RequestParam Long townId,
             @RequestParam(required = false) Long mainTagId,

@@ -1,11 +1,15 @@
 package org.sopt.solply_server.domain.place.service;
 
+import static java.util.stream.Collectors.toList;
+
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
+import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
-import org.sopt.solply_server.domain.place.dto.response.PlaceGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceFilteringGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.place.entity.PlaceImageInfo;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
@@ -59,7 +63,8 @@ public class PlaceService {
         );
     }
 
-    public PlaceGetResponse findPlacesByTownAndTag(final Long userId, final Long townId, final Long mainTagId, final List<Long> subTagIdList) {
+    public PlaceFilteringGetResponse findPlacesByTownAndTag(
+            final Long userId, final Long townId, final Long mainTagId, final List<Long> subTagIdList) {
         Town selectedTown = townRepository.findById(townId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));
 
@@ -86,7 +91,18 @@ public class PlaceService {
             places = placeRepository.findAll();
         }
 
-        return PlaceGetResponse.of(/* 변환 로직 */);
+        List<PlaceThumbnailDto> placeThumbnailDtoList = places.stream()
+                .map(place -> PlaceThumbnailDto.of(place.getId(),
+                                place.getName(),
+                                imageUrlProvider.getImageUrl(getThumbnailFileKey(place)),
+                                getPrimaryTag(place),
+                                placeBookmarkRepository.existsByPlaceIdAndUserId(place.getId(), userId)
+                        )
+                )
+                .toList();
+
+
+        return PlaceFilteringGetResponse.from(placeThumbnailDtoList);
     }
 
 
@@ -97,5 +113,12 @@ public class PlaceService {
                 .findFirst()
                 .map(Tag::getName)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_TAG_REQUIRED));
+    }
+
+    public String getThumbnailFileKey(Place place) {
+        return place.getPlaceImageInfos().stream()
+                .findFirst()
+                .map(PlaceImageInfo::getImageFileKey)
+                .orElse(null);
     }
 }

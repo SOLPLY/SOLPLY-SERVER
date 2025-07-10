@@ -92,4 +92,5 @@ public class Place extends BaseTimeEntity {
     @JoinColumn(name = "town_id", nullable = false)
     private Town town;
 
+
 }
