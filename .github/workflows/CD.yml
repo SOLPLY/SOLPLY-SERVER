@@ -75,4 +75,5 @@ jobs:
           key: ${{ secrets.EC2_ACCESS_KEY }}
           script: |
             chmod +x ./solply-server/scripts/deploy.sh
-            ./solply-server/scripts/deploy.sh "$(cat docker-compose.yml)"
+            ./solply-server/scripts/deploy.sh 
+            "$(echo "${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}" | base64 -d)"
