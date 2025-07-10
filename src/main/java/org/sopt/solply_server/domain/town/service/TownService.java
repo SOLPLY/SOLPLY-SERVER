@@ -21,18 +21,20 @@ public class TownService {
 
     public TownResponse getAllTowns() {
         List<Town> parentTowns = townRepository.findByParentIsNull();
-        List<TownDto> townDtoList = parentTowns.stream()
-                .map(this::mapParentWithChildren)
-                .collect(Collectors.toList());
+        List<Town> childTowns = parentTowns.stream()
+                .map(this::getChildTowns).toList();
 
-        return new TownResponse(townDtoList);
+        List<TownDto> childTownDtoList = childTowns.stream()
+                .map(town -> TownDto.of(town, null)).toList();
+
+        return new TownResponse(
+                parentTowns.stream()
+                        .map(town -> TownDto.of(town, childTownDtoList))
+                        .toList()
+        );
     }
 
-    private TownDto mapParentWithChildren(Town parentTown) {
-        List<TownDto> subTowns = townRepository.findByParent(parentTown).stream()
-                .map(sub -> new TownDto(sub.getId(), sub.getName(), null))
-                .collect(Collectors.toList());
-
-        return new TownDto(parentTown.getId(), parentTown.getName(), subTowns);
+    private Town getChildTowns(Town parentTown) {
+        return townRepository.findByParent(parentTown);
     }
 }
