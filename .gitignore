@@ -35,6 +35,8 @@ application-prod.yml
 !CI.yml
 !CD.yml
 
+.docker/init/init_role.sql
+
 .env*
 
 # ====================
