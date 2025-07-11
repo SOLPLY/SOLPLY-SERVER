@@ -8,7 +8,7 @@ public record TagDto(
     String name,
     Long parentId
 ){
-    public static TagDto of(Tag tag){
+    public static TagDto from(Tag tag){
         return new TagDto(
                 tag.getId(),
                 tag.getType().name(),
