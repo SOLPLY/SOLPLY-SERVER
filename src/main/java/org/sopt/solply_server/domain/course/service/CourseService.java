@@ -1,7 +1,7 @@
 package org.sopt.solply_server.domain.course.service;
 
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailDto;
+import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
@@ -57,8 +57,8 @@ public class CourseService {
         // 장소 북마크 상태를 한번에 조회
         Map<Long, Boolean> placeBookmarkMap = getPlaceBookmarkMap(placeIds, userId);
 
-        List<CoursePlaceDetailDto> coursePlaces = course.getCoursePlaces().stream()
-                .map(coursePlace -> convertToCoursePlaceDto(coursePlace, placeBookmarkMap))
+        List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
+                .map(coursePlace -> convertToCoursePlaceDetailsDto(coursePlace, placeBookmarkMap))
                 .toList();
 
         return CourseDetailGetResponse.of(course, isCourseBookmarked, coursePlaces);
@@ -81,14 +81,14 @@ public class CourseService {
     /**
      * CoursePlace를 CoursePlaceDetailDto로 변환
      */
-    private CoursePlaceDetailDto convertToCoursePlaceDto(CoursePlace coursePlace, Map<Long, Boolean> placeBookmarkMap) {
+    private CoursePlaceDetailsDto convertToCoursePlaceDetailsDto(CoursePlace coursePlace, Map<Long, Boolean> placeBookmarkMap) {
         Place place = coursePlace.getPlace();
 
         TagName primaryTag = getPrimaryTag(place);
         String thumbnailUrl = getThumbnailUrl(place);
         boolean isPlaceBookmarked = placeBookmarkMap.getOrDefault(place.getId(), false);
 
-        return CoursePlaceDetailDto.of(
+        return CoursePlaceDetailsDto.of(
                 place,
                 thumbnailUrl,
                 primaryTag,

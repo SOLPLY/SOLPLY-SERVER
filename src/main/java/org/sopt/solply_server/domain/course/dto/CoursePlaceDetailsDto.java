@@ -5,7 +5,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 
 @Builder
-public record CoursePlaceDetailDto (
+public record CoursePlaceDetailsDto(
         Long placeId,
         String placeName,
         String thumbnailUrl,
@@ -18,9 +18,9 @@ public record CoursePlaceDetailDto (
         String placeType,
         Long placeDefaultId
 ){
-    public static CoursePlaceDetailDto of(Place place, String thumbnailUrl, TagName primaryTag,
-                                          boolean isBookmarked, int placeOrder) {
-        return CoursePlaceDetailDto.builder()
+    public static CoursePlaceDetailsDto of(Place place, String thumbnailUrl, TagName primaryTag,
+                                           boolean isBookmarked, int placeOrder) {
+        return CoursePlaceDetailsDto.builder()
                 .placeId(place.getId())
                 .placeName(place.getName())
                 .thumbnailUrl(thumbnailUrl)

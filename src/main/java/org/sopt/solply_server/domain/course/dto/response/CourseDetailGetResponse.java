@@ -2,7 +2,7 @@ package org.sopt.solply_server.domain.course.dto.response;
 
 import java.util.List;
 import lombok.Builder;
-import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailDto;
+import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.entity.Course;
 
 @Builder
@@ -11,9 +11,9 @@ public record CourseDetailGetResponse(
         String courseName,
         String introduction,
         boolean isBookmarked,
-        List<CoursePlaceDetailDto> places
+        List<CoursePlaceDetailsDto> places
 ) {
-    public static CourseDetailGetResponse of(Course course, boolean isBookmarked, List<CoursePlaceDetailDto> places) {
+    public static CourseDetailGetResponse of(Course course, boolean isBookmarked, List<CoursePlaceDetailsDto> places) {
         return CourseDetailGetResponse.builder()
                 .courseId(course.getId())
                 .courseName(course.getName())
