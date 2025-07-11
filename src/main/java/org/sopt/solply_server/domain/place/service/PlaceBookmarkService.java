@@ -1,5 +1,10 @@
 package org.sopt.solply_server.domain.place.service;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
@@ -40,7 +45,7 @@ public class PlaceBookmarkService {
      * 북마크 생성
      */
     @Transactional
-    public void createPlaceBookmark(Long userId, Long placeId) {
+    public void createPlaceBookmark(final Long userId, final Long placeId) {
         // 사용자 및 장소 검증
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
@@ -80,10 +85,10 @@ public class PlaceBookmarkService {
     }
 
     /**
-     * 북마크 삭제
+     * 북마크 삭제(단일)
      */
     @Transactional
-    public void deletePlaceBookmark(Long userId, Long placeId) {
+    public void deletePlaceBookmark(final Long userId, final Long placeId) {
         String bookmarkKey = generateBookmarkKey(userId, placeId);
         String userBookmarkKey = generateUserBookmarkKey(userId);
 
@@ -104,17 +109,30 @@ public class PlaceBookmarkService {
         }
     }
 
+    /**
+     * 북마크 배치 삭제
+     * - DB에서 북마크 삭제
+     * - Redis에서도 플러쉬되지 않도록 삭제 마커 부여
+     */
+    @Transactional
+    public void deletePlaceBookmarks(final Long userId, final List<Long> placeIds) {
+        for (Long placeId : placeIds) {
+            deletePlaceBookmark(userId, placeId);
+        }
+    }
+
+
     // === Private Methods ===
 
-    private String generateBookmarkKey(Long userId, Long placeId) {
+    private String generateBookmarkKey(final Long userId, final Long placeId) {
         return String.format("%s:%d:%d", BOOKMARK_KEY_PREFIX, userId, placeId);
     }
 
-    private String generateUserBookmarkKey(Long userId) {
+    private String generateUserBookmarkKey(final Long userId) {
         return String.format("%s:%d", BOOKMARK_USER_KEY_PREFIX, userId);
     }
 
-    private void addToUserBookmarkList(String userBookmarkKey, Long placeId) {
+    private void addToUserBookmarkList(final String userBookmarkKey, final Long placeId) {
         try {
             List<Long> bookmarks = cacheService.getList(userBookmarkKey, Long.class);
             if (bookmarks != null && !bookmarks.contains(placeId)) {
@@ -128,11 +146,10 @@ public class PlaceBookmarkService {
         }
     }
 
-    private void removeFromUserBookmarkList(String userBookmarkKey, Long placeId) {
+    private void removeFromUserBookmarkList(final String userBookmarkKey, final Long placeId) {
         try {
             List<Long> bookmarks = cacheService.getList(userBookmarkKey, Long.class);
             if (bookmarks != null && bookmarks.remove(placeId)) {
-                // 수정된 setList 메서드 사용
                 cacheService.setList(userBookmarkKey, bookmarks, 24, TimeUnit.HOURS);
                 log.info("사용자 북마크 목록에서 제거 완료 - key: {}, placeId: {}", userBookmarkKey, placeId);
             } else {
@@ -143,7 +160,7 @@ public class PlaceBookmarkService {
         }
     }
 
-    private void saveToDatabase(PlaceBookmark bookmark) {
+    private void saveToDatabase(final PlaceBookmark bookmark) {
         try {
             placeBookmarkRepository.save(bookmark);
         } catch (DataIntegrityViolationException e) {

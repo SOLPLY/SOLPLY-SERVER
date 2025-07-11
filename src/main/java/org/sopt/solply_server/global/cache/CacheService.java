@@ -18,6 +18,9 @@ public interface CacheService {
 
     void delete(String key);
 
+    // 배치 삭제
+    void deleteBatch(List<String> keys);
+
     // == 컬렉션 전용 메서드 == //
     <T> List<T> getList(String key, Class<T> elementType);
     <T> List<T> getList(String key, Class<T> elementType, Supplier<List<T>> supplier);
@@ -46,4 +49,5 @@ public interface CacheService {
     // == 캐시 워밍업 == //
     <T> void warmUp(String keyPrefix, Map<String, Supplier<T>> dataSuppliers,
             int timeout, TimeUnit timeUnit);
+
 }

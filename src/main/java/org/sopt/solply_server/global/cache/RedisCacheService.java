@@ -103,6 +103,11 @@ public class RedisCacheService implements CacheService {
         }
     }
 
+    @Override
+    public void deleteBatch(List<String> keys) {
+
+    }
+
 
     //== 컬렉션 전용 메서드 ==//
     @Override

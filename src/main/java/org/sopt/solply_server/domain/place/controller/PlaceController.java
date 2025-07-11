@@ -2,6 +2,10 @@ package org.sopt.solply_server.domain.place.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
@@ -17,6 +21,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "장소 API", description = "장소 관련 API")
@@ -73,5 +78,16 @@ public class PlaceController {
         return CustomApiResponse.success("내 장소에서 삭제했습니다.");
     }
 
+    @Operation(summary = "장소 북마크 리스트 삭제", description = "장소 북마크를 삭제합니다.")
+    @PostMapping("/bookmark/delete")
+    public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlaces(
+            @CurrentUserId Long userId,
+            @RequestParam("placeIds")
+            @NotBlank(message = "placeIds는 null 혹은 비어있을 수 없습니다")
+            @Size(max = 100, message = "한 번에 최대 100개까지 조회 가능합니다")
+            List<Long> placeIds) {
+        placeBookmarkService.deletePlaceBookmarks(userId, placeIds);
+        return CustomApiResponse.success("내 장소에서 장소들을 삭제했습니다.");
+    }
 
 }
