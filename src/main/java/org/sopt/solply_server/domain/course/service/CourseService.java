@@ -43,18 +43,21 @@ public class CourseService {
         Course course = courseRepository.findByIdWithPlaces(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
 
+        // 코스 북마크 여부 확인 (TODO: Redis로 변경 필요)
+        boolean isCourseBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
+
+        if (course.getCoursePlaces().isEmpty()) {
+            return CourseDetailGetResponse.of(course, isCourseBookmarked, List.of());
+        }
+
         List<Long> placeIds = course.getCoursePlaces().stream()
                 .map(cp -> cp.getPlace().getId())
                 .toList();
 
-        if (!placeIds.isEmpty()) {
-            // 영속성 컨텍스트에 태그 정보 로드
-            courseRepository.findPlacesWithTagsByIds(placeIds);
-        }
+        // 장소 태그 정보를 영속성 컨텍스트에 로드
+        courseRepository.findPlacesWithTagsByIds(placeIds);
 
-        boolean isCourseBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
-
-        // 장소 북마크 상태를 한번에 조회
+        // 장소 북마크 상태를 한번에 조회 (TODO: Redis로 변경 필요)
         Map<Long, Boolean> placeBookmarkMap = getPlaceBookmarkMap(placeIds, userId);
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
@@ -69,6 +72,7 @@ public class CourseService {
             return Map.of();
         }
 
+        // TODO: Redis 기반 북마크 조회로 변경 필요
         Set<Long> bookmarkedPlaceIds = placeBookmarkRepository.findBookmarkedPlaceIdsByUserIdAndPlaceIds(userId, placeIds);
 
         return placeIds.stream()
@@ -79,44 +83,25 @@ public class CourseService {
     }
 
     /**
-     * CoursePlace를 CoursePlaceDetailDto로 변환
+     * CoursePlace를 CoursePlaceDetailsDto로 변환
      */
     private CoursePlaceDetailsDto convertToCoursePlaceDetailsDto(CoursePlace coursePlace, Map<Long, Boolean> placeBookmarkMap) {
         Place place = coursePlace.getPlace();
 
-        TagName primaryTag = getPrimaryTag(place);
-        String thumbnailUrl = getThumbnailUrl(place);
-        boolean isPlaceBookmarked = placeBookmarkMap.getOrDefault(place.getId(), false);
-
         return CoursePlaceDetailsDto.of(
                 place,
-                thumbnailUrl,
-                primaryTag,
-                isPlaceBookmarked,
+                getThumbnailUrl(place),
+                place.getPrimaryTag(), // Place 엔티티 메서드 활용
+                placeBookmarkMap.getOrDefault(place.getId(), false),
                 coursePlace.getPlaceOrder()
         );
-    }
-
-    /**
-     * 장소의 1차 태그(MAIN) 추출
-     */
-    private TagName getPrimaryTag(Place place) {
-        return place.getPlaceTags().stream()
-                .map(PlaceTag::getTag)
-                .filter(tag -> tag.getType() == TagType.MAIN)
-                .findFirst()
-                .map(Tag::getName)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_TAG_REQUIRED));
     }
 
     /**
      * 장소의 썸네일 이미지 URL 생성
      */
     private String getThumbnailUrl(Place place) {
-        return place.getPlaceImageInfos().stream()
-                .findFirst()
-                .map(PlaceImageInfo::getImageFileKey)
-                .map(imageUrlProvider::getImageUrl)
-                .orElse(null);
+        String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
+        return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
     }
 }

@@ -8,18 +8,13 @@ import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceImageInfo;
-import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
-import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.InputValidator;
@@ -37,7 +32,6 @@ public class PlaceService {
     private final PlaceBookmarkRepository placeBookmarkRepository;
     private final ImageUrlProvider imageUrlProvider;
     private final TownRepository townRepository;
-    private final TagRepository tagRepository;
     private final TagValidator tagValidator;
 
     /**
@@ -46,9 +40,6 @@ public class PlaceService {
     public PlaceAllGetResponse findPlaceDetailsById(final Long userId, final Long placeId) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
-
-        // MAIN에 해당하는 태그를 가져와서 저장
-        TagName primaryTag = getPrimaryTag(place);
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(
@@ -61,7 +52,7 @@ public class PlaceService {
 
         return PlaceAllGetResponse.of(
                 place,
-                primaryTag,
+                place.getPrimaryTag(),
                 imageInfos,
                 isBookmarked
         );
@@ -85,8 +76,8 @@ public class PlaceService {
                 .map(place -> PlaceThumbnailDto.of(
                         place.getId(),
                         place.getName(),
-                        imageUrlProvider.getImageUrl(getThumbnailFileKey(place)),
-                        getPrimaryTag(place),
+                        getThumbnailUrl(place),
+                        place.getPrimaryTag(),
                         placeBookmarkRepository.existsByPlaceIdAndUserId(place.getId(), userId)
                 ))
                 .toList();;
@@ -130,27 +121,16 @@ public class PlaceService {
         tagValidator.validateTagListRelation(mainTagId, subTagIdList);
     }
 
-    // 1차 태그를 가져오는 메서드
-    private static TagName getPrimaryTag(Place place) {
-        return place.getPlaceTags().stream()
-                .map(PlaceTag::getTag)
-                .filter(tag -> tag.getType() == TagType.MAIN)
-                .findFirst()
-                .map(Tag::getName)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_TAG_REQUIRED));
-    }
-
     // 동네 ID를 통해 동네를 검증하고 가져오는 메서드
     private Town validateAndGetTown(Long townId) {
         return townRepository.findById(townId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));
     }
 
-    // 썸네일 이미지 파일 키를 가져오는 메서드
-    public String getThumbnailFileKey(Place place) {
-        return place.getPlaceImageInfos().stream()
-                .findFirst()
-                .map(PlaceImageInfo::getImageFileKey)
-                .orElse(null);
+    // 썸네일 URL 생성
+    private String getThumbnailUrl(Place place) {
+        String fileKey = place.getThumbnailFileKey();
+        return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
     }
+
 }
