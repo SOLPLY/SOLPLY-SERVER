@@ -51,7 +51,10 @@ public enum ErrorCode {
 
 
     // 장소 관련 (PLACE-xxx)
-    PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-001", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
+    NOT_FOUND_PLACE(HttpStatus.NOT_FOUND, "PlACE-001", "존재하지 않는 장소입니다."),
+    PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
+    ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
+
 
     // 동네 관련 (TOWN-xxx)
     NOT_FOUND_TOWN(HttpStatus.NOT_FOUND, "TOWN-001" , "존재하지 않는 동네입니다."),
@@ -61,7 +64,7 @@ public enum ErrorCode {
     NOT_FOUND_TAG(HttpStatus.NOT_FOUND, "TAG-001", "존재하지 않는 태그입니다."),
     INVALID_TAG_TYPE(HttpStatus.BAD_REQUEST, "TAG-002", "잘못된 타입의 태그입니다."),
     INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "TAG-004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다."),
-    NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다."),;
+    NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다.");
 
 
     private final HttpStatus httpStatus;

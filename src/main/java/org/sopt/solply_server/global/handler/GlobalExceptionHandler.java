@@ -14,10 +14,13 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.exception.BusinessValidationException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.exception.RedisFlushException;
+import org.sopt.solply_server.global.exception.RedisSchedulerException;
 import org.sopt.solply_server.global.exception.UnauthorizedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -233,6 +236,38 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(FeignException.class)
     public ResponseEntity<CustomApiResponse<Void>> handleFeignException(FeignException e) {
         return CustomApiResponse.error(ErrorCode.SOCIAL_API_ERROR);
+    }
+
+    /**
+     * 스케줄러에서 발생하는 Redis 관련 예외 처리
+     * 스케줄러는 백그라운드 작업이므로 HTTP 응답이 아닌 로깅 처리
+     */
+    @ExceptionHandler(value = {
+            RedisSchedulerException.class,
+            RedisFlushException.class
+    })
+    @Async // 비동기로 처리하여 스케줄러 성능에 영향 최소화
+    public void handleSchedulerException(RuntimeException e) {
+        if (e instanceof RedisSchedulerException schedulerException) {
+
+            log.error("Redis 스케줄러 예외 - 도메인: {}, 작업: {}, 메시지: {}",
+                    schedulerException.getDomainName(),
+                    schedulerException.getTaskName(),
+                    schedulerException.getMessage(),
+                    e);
+
+            // TODO: 모니터링 시스템에 알림 전송
+
+        } else if (e instanceof RedisFlushException flushException) {
+
+            log.error("Redis 플러시 예외 - 키: {}, 데이터: {}, 메시지: {}",
+                    flushException.getRedisKey(),
+                    flushException.getData(),
+                    flushException.getMessage(),
+                    e);
+
+            // TODO: 실패한 데이터를 별도 저장소에 백업
+        }
     }
 
     // 500: 위에서 정의한 Exception을 제외한 모든 예외
