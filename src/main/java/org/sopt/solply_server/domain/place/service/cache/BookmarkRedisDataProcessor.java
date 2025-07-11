@@ -39,7 +39,7 @@ public class BookmarkRedisDataProcessor implements RedisDataProcessor {
 
     @Override
     public void flushToDatabase(String bookmarkKey) {
-        // 사용자 북마크 목록 키는 스킵
+        // 사용자 북마크 목록 키는 조회용이기 때문에 스킵
         if (bookmarkKey.contains("bookmark:user:")) {
             log.debug("사용자 목록 키 스킵 - key: {}", bookmarkKey);
             return;
@@ -75,9 +75,10 @@ public class BookmarkRedisDataProcessor implements RedisDataProcessor {
             return;
         }
 
-        // 엔티티 조회 및 저장
-        User user = findUserById(bookmarkData.userId());
-        Place place = findPlaceById(bookmarkData.placeId());
+        User user = userRepository.findById(bookmarkData.userId())
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+        Place place = placeRepository.findById(bookmarkData.placeId())
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
 
         PlaceBookmark bookmark = PlaceBookmark.builder()
                 .user(user)
@@ -134,21 +135,5 @@ public class BookmarkRedisDataProcessor implements RedisDataProcessor {
         }
 
         return successCount;
-    }
-
-    /**
-     * 사용자 엔티티 조회
-     */
-    private User findUserById(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-    }
-
-    /**
-     * 장소 엔티티 조회
-     */
-    private Place findPlaceById(Long placeId) {
-        return placeRepository.findById(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
     }
 }
