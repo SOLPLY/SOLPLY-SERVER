@@ -58,7 +58,7 @@ public class PlaceBookmarkService {
 
         try {
             // 북마크 DTO 생성 (Record의 정적 팩토리 메서드 사용)
-            BookmarkRedisDto bookmarkData = BookmarkRedisDto.of(userId, placeId);
+            BookmarkRedisDto bookmarkData = BookmarkRedisDto.createActive(userId, placeId);
 
             // 개별 북마크 정보 저장 (TTL 1시간)
             cacheService.set(bookmarkKey, bookmarkData, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
@@ -77,6 +77,33 @@ public class PlaceBookmarkService {
             saveToDatabase(bookmark);
             log.debug("북마크 DB 저장 완료 - userId: {}, placeId: {}", user.getId(), place.getId());
         }
+    }
+
+    /**
+     * 북마크 삭제
+     */
+    @Transactional
+    public void deletePlaceBookmark(Long userId, Long placeId) {
+        String bookmarkKey = generateBookmarkKey(userId, placeId);
+        String userBookmarkKey = generateUserBookmarkKey(userId);
+
+        // 1. Redis에서 현재 상태 확인
+        BookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
+
+        if (currentBookmark != null && currentBookmark.isActive()) {
+            // 2. 삭제 마커로 업데이트 (DB 쿼리 없음!)
+            BookmarkRedisDto deleteMarker = BookmarkRedisDto.createDeleted(userId, placeId);
+            cacheService.set(bookmarkKey, deleteMarker, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+
+            // 3. 사용자 목록에서 제거
+            removeFromUserBookmarkList(userBookmarkKey, placeId);
+
+            log.info("북마크 삭제 마커 설정 완료 - userId: {}, placeId: {}", userId, placeId);
+        } else {
+            log.warn("삭제할 활성 북마크가 없음 - userId: {}, placeId: {}", userId, placeId);
+        }
+
+        // ✅ DB 쿼리 전혀 없음!
     }
 
     // === Private Methods ===
@@ -103,6 +130,21 @@ public class PlaceBookmarkService {
         }
     }
 
+    private void removeFromUserBookmarkList(String userBookmarkKey, Long placeId) {
+        try {
+            List<Long> bookmarks = cacheService.getList(userBookmarkKey, Long.class);
+            if (bookmarks != null && bookmarks.remove(placeId)) {
+                // 수정된 setList 메서드 사용
+                cacheService.setList(userBookmarkKey, bookmarks, 24, TimeUnit.HOURS);
+                log.info("사용자 북마크 목록에서 제거 완료 - key: {}, placeId: {}", userBookmarkKey, placeId);
+            } else {
+                log.warn("제거할 북마크가 목록에 없음 - key: {}, placeId: {}", userBookmarkKey, placeId);
+            }
+        } catch (Exception e) {
+            log.error("사용자 북마크 목록 제거 실패 - key: {}", userBookmarkKey, e);
+        }
+    }
+
     private void saveToDatabase(PlaceBookmark bookmark) {
         try {
             placeBookmarkRepository.save(bookmark);
@@ -110,4 +152,5 @@ public class PlaceBookmarkService {
             log.info("북마크 중복 저장 시도 (무시) - bookmarkId: {}", bookmark.getId());
         }
     }
+
 }

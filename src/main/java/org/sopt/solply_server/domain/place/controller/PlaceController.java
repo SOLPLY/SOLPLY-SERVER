@@ -62,7 +62,15 @@ public class PlaceController {
             @PathVariable("placeId") Long placeId) {
         placeBookmarkService.createPlaceBookmark(userId, placeId);
         return CustomApiResponse.success("내 장소에 저장했습니다.");
+    }
 
+    @Operation(summary = "장소 북마크 삭제", description = "장소 북마크를 삭제합니다.")
+    @PostMapping("/{placeId}/bookmark/delete")
+    public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlace(
+            @CurrentUserId Long userId,
+            @PathVariable("placeId") Long placeId) {
+        placeBookmarkService.deletePlaceBookmark(userId, placeId);
+        return CustomApiResponse.success("내 장소에서 삭제했습니다.");
     }
 
 

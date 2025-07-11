@@ -53,6 +53,18 @@ public class BookmarkRedisDataProcessor implements RedisDataProcessor {
             return;
         }
 
+        // 북마크 상태에 따라 처리
+        if (bookmarkData.isActive()) {
+            saveActiveBookmark(bookmarkKey, bookmarkData);
+        } else if (bookmarkData.isDeleted()) {
+            deleteBookmark(bookmarkKey, bookmarkData);
+        }
+    }
+
+    /**
+     * 활성 북마크 처리
+     */
+    private void saveActiveBookmark(String bookmarkKey, BookmarkRedisDto bookmarkData) {
         // 중복 체크
         if (placeBookmarkRepository.existsByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId())) {
             log.debug("이미 DB에 존재하는 북마크 - userId: {}, placeId: {}",
@@ -72,7 +84,30 @@ public class BookmarkRedisDataProcessor implements RedisDataProcessor {
                 .place(place)
                 .build();
         placeBookmarkRepository.save(bookmark);
-        cacheService.delete(bookmarkKey); // db에 저장 후 Redis에서 삭제
+
+        // DB 저장 후 Redis에서 삭제
+        cacheService.delete(bookmarkKey);
+
+        log.debug("활성 북마크 DB 저장 완료 - userId: {}, placeId: {}",
+                bookmarkData.userId(), bookmarkData.placeId());
+    }
+
+    /**
+     * 삭제 마커 처리
+     */
+    private void deleteBookmark(String bookmarkKey, BookmarkRedisDto bookmarkData) {
+        try {
+            // DB에서 삭제
+            placeBookmarkRepository.deleteByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId());
+
+            // 삭제 처리 완료 후 Redis에서도 제거
+            cacheService.delete(bookmarkKey);
+
+        } catch (Exception e) {
+            log.error("북마크 DB 삭제 실패 - userId: {}, placeId: {}",
+                    bookmarkData.userId(), bookmarkData.placeId(), e);
+            throw e;
+        }
     }
 
     /**
@@ -100,7 +135,6 @@ public class BookmarkRedisDataProcessor implements RedisDataProcessor {
 
         return successCount;
     }
-
 
     /**
      * 사용자 엔티티 조회

@@ -8,4 +8,6 @@ public interface PlaceBookmarkRepository extends JpaRepository<PlaceBookmark, Lo
     boolean existsByPlaceIdAndUserId(Long placeId, Long placeId1);
 
     boolean existsByUserIdAndPlaceId(Long userId, Long placeId);
+
+    void deleteByUserIdAndPlaceId(Long userId, Long placeId);
 }
