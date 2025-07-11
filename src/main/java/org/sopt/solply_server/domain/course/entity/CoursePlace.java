@@ -10,10 +10,12 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.Getter;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
+@Getter
 @Table(name = "course_place",
         indexes = {
                 @Index(name = "idx_course_place_course_id_place_id", columnList = "course_id, place_id", unique = true),
