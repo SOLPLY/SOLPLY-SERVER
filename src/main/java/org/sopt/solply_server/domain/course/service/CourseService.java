@@ -22,6 +22,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -51,24 +54,39 @@ public class CourseService {
 
         boolean isCourseBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
 
+        // 장소 북마크 상태를 한번에 조회
+        Map<Long, Boolean> placeBookmarkMap = getPlaceBookmarkMap(placeIds, userId);
+
         List<CoursePlaceDetailDto> coursePlaces = course.getCoursePlaces().stream()
-                .map(coursePlace -> convertToCoursePlaceDto(coursePlace, userId))
+                .map(coursePlace -> convertToCoursePlaceDto(coursePlace, placeBookmarkMap, userId))
                 .toList();
 
         return CourseDetailGetResponse.of(course, isCourseBookmarked, coursePlaces);
     }
 
+    private Map<Long, Boolean> getPlaceBookmarkMap(List<Long> placeIds, Long userId) {
+        if (placeIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<Long> bookmarkedPlaceIds = placeBookmarkRepository.findBookmarkedPlaceIdsByUserIdAndPlaceIdIn(userId, placeIds);
+
+        return placeIds.stream()
+                .collect(Collectors.toMap(
+                        placeId -> placeId,
+                        bookmarkedPlaceIds::contains
+                ));
+    }
+
     /**
      * CoursePlace를 CoursePlaceDetailDto로 변환
      */
-    private CoursePlaceDetailDto convertToCoursePlaceDto(CoursePlace coursePlace, Long userId) {
+    private CoursePlaceDetailDto convertToCoursePlaceDto(CoursePlace coursePlace, Map<Long, Boolean> placeBookmarkMap, Long userId) {
         Place place = coursePlace.getPlace();
 
         TagName primaryTag = getPrimaryTag(place);
-
         String thumbnailUrl = getThumbnailUrl(place);
-
-        boolean isPlaceBookmarked = placeBookmarkRepository.existsByPlaceIdAndUserId(place.getId(), userId);
+        boolean isPlaceBookmarked = placeBookmarkMap.getOrDefault(place.getId(), false);
 
         return CoursePlaceDetailDto.of(
                 place,
