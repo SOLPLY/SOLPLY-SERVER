@@ -87,23 +87,21 @@ public class PlaceBookmarkService {
         String bookmarkKey = generateBookmarkKey(userId, placeId);
         String userBookmarkKey = generateUserBookmarkKey(userId);
 
-        // 1. Redis에서 현재 상태 확인
+        // Redis에서 현재 상태 확인
         BookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
 
         if (currentBookmark != null && currentBookmark.isActive()) {
-            // 2. 삭제 마커로 업데이트 (DB 쿼리 없음!)
+            // 삭제 마커로 업데이트 (DB 쿼리 없음!)
             BookmarkRedisDto deleteMarker = BookmarkRedisDto.createDeleted(userId, placeId);
             cacheService.set(bookmarkKey, deleteMarker, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
 
-            // 3. 사용자 목록에서 제거
+            // 조회용 키도 제거
             removeFromUserBookmarkList(userBookmarkKey, placeId);
 
             log.info("북마크 삭제 마커 설정 완료 - userId: {}, placeId: {}", userId, placeId);
         } else {
             log.warn("삭제할 활성 북마크가 없음 - userId: {}, placeId: {}", userId, placeId);
         }
-
-        // ✅ DB 쿼리 전혀 없음!
     }
 
     // === Private Methods ===
