@@ -39,7 +39,6 @@ public class TownService {
         List<Town> parentTowns = townRepository.findByParentIsNull();
         List<Town> childTowns = parentTowns.stream()
                 .map(this::getChildTowns).toList();
-
         List<TownDto> childTownDtoList = childTowns.stream()
                 .map(town -> TownDto.of(town, null)).toList();
 
