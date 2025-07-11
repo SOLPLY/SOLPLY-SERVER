@@ -16,9 +16,9 @@ public class TagValidator {
     private final TagRepository tagRepository;
 
     public void validateTagType(Long tagId, TagType tagType) {
-        Tag tag = tagRepository.findById(tagId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
-        if (tag.getType() != tagType) {
+        if (!tagRepository.existsById(tagId)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
+        } else if (!tagRepository.existsByIdAndType(tagId, tagType)) {
             throw new BusinessException(ErrorCode.INVALID_TAG_TYPE);
         }
     }

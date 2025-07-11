@@ -1,84 +1,53 @@
 package org.sopt.solply_server.global.cache;
 
-import java.io.Serializable;
-import java.util.Map;
+import com.fasterxml.jackson.core.type.TypeReference;
+import java.util.List;
 import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 public interface CacheService {
 
-    /**
-     * 캐시에서 값 조회(T: 직렬화 가능한 타입)
-      */
-    <T extends Serializable> T get(String key, Class<T> clazz);
+    // == 기본 CRUD == //
+    <T> T get(String key, Class<T> clazz);
+    <T> T get(String key, Class<T> clazz, Supplier<T> supplier);
 
-    /**
-     * 캐시 미스 시, Supplier가 호출되어 DB나 다른 소스에서 값을 가져오는 로직을 수행
-     * -> Lazy Evaluation 방식
-     */
-    <T extends Serializable> T get(String key, Class<T> clazz, Supplier<T> supplier);
+    <T> void set(String key, T valueObject);
+    <T> void set(String key, T valueObject, int timeout, TimeUnit timeUnit);
 
-    /**
-     * 캐시에 값 저장
-     */
-    <T extends Serializable> void set(String key, T valueObject);
-
-    /**
-     * TTL을 설정하고 값 저장
-     */
-    <T extends Serializable> void set(String key, T valueObject, int timeout, TimeUnit timeUnit);
-
-    /**
-     * 캐시에서 값 삭제
-     */
     void delete(String key);
 
-    /**
-     * 키 존재 여부 확인
-     */
+    // 배치 삭제
+    void deleteBatch(List<String> keys);
+
+    // == 컬렉션 전용 메서드 == //
+    <T> List<T> getList(String key, Class<T> elementType);
+    <T> List<T> getList(String key, Class<T> elementType, Supplier<List<T>> supplier);
+
+    <T> Set<T> getSet(String key, Class<T> elementType);
+    <T> Set<T> getSet(String key, Class<T> elementType, Supplier<Set<T>> supplier);
+
+    // 컬렉션 저장 전용 메서드
+    <T> void setList(String key, List<T> list);
+    <T> void setList(String key, List<T> list, int timeout, TimeUnit timeUnit);
+
+    <T> void setSet(String key, Set<T> set);
+    <T> void setSet(String key, Set<T> set, int timeout, TimeUnit timeUnit);
+
+    // == 추가 기능 == //
     boolean exists(String key);
-
-    /**
-     * TTL 조회
-     */
     long getTtl(String key, TimeUnit timeUnit);
-
-    /**
-     * 패턴으로 키 검색
-     */
     Set<String> findKeys(String pattern);
 
-    /**
-     * 원자적 증가 연산
-     */
+    // == 증감 연산 == //
     long increment(String key);
     long increment(String key, long delta);
-
-    /**
-     * 원자적 감소 연산
-     */
     long decrement(String key);
     long decrement(String key, long delta);
 
-    /**
-     * 캐시에 미리 데이터를 적재
-     */
-    <T extends Serializable> void warmUp(String keyPrefix, Map<String, Supplier<T>> dataSuppliers,
+    // == 캐시 워밍업 == //
+    <T> void warmUp(String keyPrefix, Map<String, Supplier<T>> dataSuppliers,
             int timeout, TimeUnit timeUnit);
-
-    /**
-     * 배치 조회 / 저장(TTL X)
-     */
-//    <T extends Serializable> Map<String, T> multiGet(Set<String> keys, Class<T> clazz);
-//    <T extends Serializable> void multiSet(Map<String, T> keyValueMap);
-
-    /**
-     * 배치 조회 / 저장(TTL O)
-     */
-//    <T extends Serializable> Map<String, T> multiGet(Set<String> keys, Class<T> clazz, int timeout, TimeUnit timeUnit);
-//    <T extends Serializable> void multiSet(Map<String, T> keyValueMap, int timeout, TimeUnit timeUnit);
-
-
 
 }

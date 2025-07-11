@@ -15,9 +15,6 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.sopt.solply_server.domain.tag.util.TagValidator;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 
 @Entity
 @Getter
@@ -26,7 +23,9 @@ import org.sopt.solply_server.global.exception.ErrorCode;
 @Table(
         name = "tags",
         indexes = {
-                @Index(name = "idx_tag_parent_id", columnList = "parent_id")
+                @Index(name = "idx_tag_parent_id", columnList = "parent_id"),
+                @Index(name = "idx_tag_id_type", columnList = "id, type"),
+                @Index(name = "idx_tag_type_parent", columnList = "type, parent_id")
         }
 )
 public class Tag {
@@ -44,7 +43,5 @@ public class Tag {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private Tag parent;
-
-
 
 }
