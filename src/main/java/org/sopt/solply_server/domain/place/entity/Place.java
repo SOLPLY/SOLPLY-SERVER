@@ -27,8 +27,13 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.sopt.solply_server.domain.tag.entity.Tag;
+import org.sopt.solply_server.domain.tag.entity.TagName;
+import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 
 @Entity
 @Getter
@@ -52,7 +57,7 @@ public class Place extends BaseTimeEntity {
 
     private String address;
 
-    @OneToMany(mappedBy = "place", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "place", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PlaceTag> placeTags = new ArrayList<>();
 
     @Column(columnDefinition = "TEXT")
@@ -92,5 +97,28 @@ public class Place extends BaseTimeEntity {
     @JoinColumn(name = "town_id", nullable = false)
     private Town town;
 
+    // === 편의 메서드 추가 ===
+
+    /**
+     * 장소의 1차 태그(MAIN) 추출
+     */
+    public TagName getPrimaryTag() {
+        return this.placeTags.stream()
+                .map(PlaceTag::getTag)
+                .filter(tag -> tag.getType() == TagType.MAIN)
+                .findFirst()
+                .map(Tag::getName)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_TAG_REQUIRED));
+    }
+
+    /**
+     * 썸네일 이미지 파일 키 추출 (첫 번째 이미지)
+     */
+    public String getThumbnailFileKey() {
+        return this.placeImageInfos.stream()
+                .findFirst()
+                .map(PlaceImageInfo::getImageFileKey)
+                .orElse(null);
+    }
 
 }

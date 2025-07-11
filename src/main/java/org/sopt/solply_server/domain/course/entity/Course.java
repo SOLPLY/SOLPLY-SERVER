@@ -26,7 +26,12 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "courses")
+@Table(name = "courses",
+        indexes = {
+                @Index(name = "idx_course_town_id", columnList = "town_id"),
+                @Index(name = "idx_course_is_shared", columnList = "is_shared")
+        }
+)
 public class Course extends BaseTimeEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,6 +42,9 @@ public class Course extends BaseTimeEntity {
 
     @Column(nullable = false)
     private String introduction;
+
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT false")
+    private boolean isShared;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "town_id", nullable = false)
