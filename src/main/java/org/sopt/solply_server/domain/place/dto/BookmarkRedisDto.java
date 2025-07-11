@@ -1,7 +1,14 @@
 package org.sopt.solply_server.domain.place.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.time.LocalDateTime;
 
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.CLASS,
+        include = JsonTypeInfo.As.PROPERTY,
+        property = "@class"
+)
 public record BookmarkRedisDto(
         Long userId,
         Long placeId,
@@ -14,10 +21,12 @@ public record BookmarkRedisDto(
         DELETED    // 삭제 마커
     }
 
+    @JsonIgnore
     public boolean isActive() {
         return status == BookmarkStatus.ACTIVE;
     }
 
+    @JsonIgnore
     public boolean isDeleted() {
         return status == BookmarkStatus.DELETED;
     }
