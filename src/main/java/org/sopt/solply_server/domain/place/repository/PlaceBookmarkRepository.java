@@ -13,5 +13,5 @@ public interface PlaceBookmarkRepository extends JpaRepository<PlaceBookmark, Lo
     boolean existsByPlaceIdAndUserId(Long placeId, Long placeId1);
 
     @Query("SELECT pb.place.id FROM PlaceBookmark pb WHERE pb.user.id = :userId AND pb.place.id IN :placeIds")
-    Set<Long> findBookmarkedPlaceIdsByUserIdAndPlaceIdIn(@Param("userId") Long userId, @Param("placeIds") List<Long> placeIds);
+    Set<Long> findBookmarkedPlaceIdsByUserIdAndPlaceIds(@Param("userId") Long userId, @Param("placeIds") List<Long> placeIds);
 }

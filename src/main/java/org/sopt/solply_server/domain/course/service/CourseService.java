@@ -58,7 +58,7 @@ public class CourseService {
         Map<Long, Boolean> placeBookmarkMap = getPlaceBookmarkMap(placeIds, userId);
 
         List<CoursePlaceDetailDto> coursePlaces = course.getCoursePlaces().stream()
-                .map(coursePlace -> convertToCoursePlaceDto(coursePlace, placeBookmarkMap, userId))
+                .map(coursePlace -> convertToCoursePlaceDto(coursePlace, placeBookmarkMap))
                 .toList();
 
         return CourseDetailGetResponse.of(course, isCourseBookmarked, coursePlaces);
@@ -69,7 +69,7 @@ public class CourseService {
             return Map.of();
         }
 
-        Set<Long> bookmarkedPlaceIds = placeBookmarkRepository.findBookmarkedPlaceIdsByUserIdAndPlaceIdIn(userId, placeIds);
+        Set<Long> bookmarkedPlaceIds = placeBookmarkRepository.findBookmarkedPlaceIdsByUserIdAndPlaceIds(userId, placeIds);
 
         return placeIds.stream()
                 .collect(Collectors.toMap(
@@ -81,7 +81,7 @@ public class CourseService {
     /**
      * CoursePlace를 CoursePlaceDetailDto로 변환
      */
-    private CoursePlaceDetailDto convertToCoursePlaceDto(CoursePlace coursePlace, Map<Long, Boolean> placeBookmarkMap, Long userId) {
+    private CoursePlaceDetailDto convertToCoursePlaceDto(CoursePlace coursePlace, Map<Long, Boolean> placeBookmarkMap) {
         Place place = coursePlace.getPlace();
 
         TagName primaryTag = getPrimaryTag(place);
