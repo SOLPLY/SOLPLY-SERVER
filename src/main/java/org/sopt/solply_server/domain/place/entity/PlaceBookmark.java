@@ -10,15 +10,21 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.sopt.solply_server.domain.user.entity.User;
 
 @Entity
+@Getter
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "place_bookmark",
         indexes = {
-                @Index(name = "idx_place_bookmark_user_place",
-                        columnList = "user_id, place_id",
-                        unique = true
-                )
+                @Index(name = "idx_place_bookmark_user_place", columnList = "user_id, place_id", unique = true)
         }
 )
 public class PlaceBookmark {
@@ -34,5 +40,12 @@ public class PlaceBookmark {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    public static PlaceBookmark create(Place place, User user) {
+        return PlaceBookmark.builder()
+                .place(place)
+                .user(user)
+                .build();
+    }
 
 }

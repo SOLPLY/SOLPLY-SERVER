@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface PlaceBookmarkRepository extends JpaRepository<PlaceBookmark, Long> {
 
     boolean existsByPlaceIdAndUserId(Long placeId, Long placeId1);
+
+    boolean existsByUserIdAndPlaceId(Long userId, Long placeId);
 }

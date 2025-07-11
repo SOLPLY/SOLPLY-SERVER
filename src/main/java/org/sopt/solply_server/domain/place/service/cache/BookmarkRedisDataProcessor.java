@@ -1,5 +1,6 @@
-package org.sopt.solply_server.domain.place.service;
+package org.sopt.solply_server.domain.place.service.cache;
 
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
@@ -11,7 +12,6 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataProcessor;
-import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Component;
@@ -74,6 +74,33 @@ public class BookmarkRedisDataProcessor implements RedisDataProcessor {
         placeBookmarkRepository.save(bookmark);
         cacheService.delete(bookmarkKey); // db에 저장 후 Redis에서 삭제
     }
+
+    /**
+     * 배치로 모든 pending 북마크 처리
+     */
+    public int flushAllPendingBookmarks() {
+        Set<String> keys = cacheService.findKeys(getKeyPattern());
+
+        if (keys.isEmpty()) {
+            log.debug("플러시할 북마크 데이터 없음");
+            return 0;
+        }
+
+        log.info("북마크 플러시 대상: {}개", keys.size());
+
+        int successCount = 0;
+        for (String key : keys) {
+            try {
+                flushToDatabase(key);
+                successCount++;
+            } catch (Exception e) {
+                log.error("북마크 개별 키 처리 실패 - key: {}", key, e);
+            }
+        }
+
+        return successCount;
+    }
+
 
     /**
      * 사용자 엔티티 조회
