@@ -43,13 +43,6 @@ public class CourseBookmarkService {
 
         String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
-        // 중복 체크
-        CourseBookmarkRedisDto existingBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
-        if (existingBookmark != null && existingBookmark.isActive()) {
-            log.warn("이미 북마크된 코스 - userId: {}, courseId: {}", userId, courseId);
-            throw new BusinessException(ErrorCode.ALREADY_BOOKMARKED_COURSE);
-        }
-
         try {
             CourseBookmarkRedisDto bookmarkData = CourseBookmarkRedisDto.createActive(userId, courseId);
             cacheService.set(bookmarkKey, bookmarkData);
@@ -72,17 +65,10 @@ public class CourseBookmarkService {
     public void deleteCourseBookmark(final Long userId, final Long courseId) {
         String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
-        CourseBookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
+        CourseBookmarkRedisDto deleteMarker = CourseBookmarkRedisDto.createDeleted(userId, courseId);
+        cacheService.set(bookmarkKey, deleteMarker);
 
-        if (currentBookmark != null && currentBookmark.isActive()) {
-            // 삭제 마커로 업데이트
-            CourseBookmarkRedisDto deleteMarker = CourseBookmarkRedisDto.createDeleted(userId, courseId);
-            cacheService.set(bookmarkKey, deleteMarker);
-
-            log.info("코스 북마크 삭제 마커 설정 완료 - userId: {}, courseId: {}", userId, courseId);
-        } else {
-            log.warn("삭제할 활성 코스 북마크가 없음 - userId: {}, courseId: {}", userId, courseId);
-        }
+        log.info("코스 북마크 삭제 마커 설정 완료 - userId: {}, courseId: {}", userId, courseId);
     }
 
     /**

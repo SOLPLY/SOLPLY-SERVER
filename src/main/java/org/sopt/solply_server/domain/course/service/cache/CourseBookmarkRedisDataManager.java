@@ -14,6 +14,7 @@ import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataManager;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -80,16 +81,9 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
     }
 
     /**
-     * 활성 코스 북마크 동기화 - DB에 없으면 생성
+     * 활성 코스 북마크 동기화 - Redis ACTIVE 상태와 DB 상태 비교
      */
     private void syncActiveCourseBookmark(CourseBookmarkRedisDto bookmarkData) {
-        // DB에 이미 존재하면 동기화 완료
-        if (courseBookmarkRepository.existsByCourseIdAndUserId(bookmarkData.courseId(), bookmarkData.userId())) {
-            log.debug("DB 동기화 완료 (이미 존재) - userId: {}, courseId: {}",
-                    bookmarkData.userId(), bookmarkData.courseId());
-            return;
-        }
-
         try {
             User user = userRepository.findById(bookmarkData.userId())
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
@@ -100,6 +94,11 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
             courseBookmarkRepository.save(bookmark);
 
             log.debug("활성 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
+                    bookmarkData.userId(), bookmarkData.courseId());
+
+        } catch (DataIntegrityViolationException e) {
+            // UNIQUE 제약조건 위반 - 이미 존재하는 북마크
+            log.debug("코스 북마크 이미 존재함 (제약조건) - userId: {}, courseId: {}",
                     bookmarkData.userId(), bookmarkData.courseId());
         } catch (Exception e) {
             log.error("활성 코스 북마크 동기화 실패 - userId: {}, courseId: {}",
