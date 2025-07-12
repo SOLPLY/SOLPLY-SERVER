@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface CourseBookmarkRepository extends JpaRepository<CourseBookmark, Long> {
 
     boolean existsByCourseIdAndUserId(Long courseId, Long userId);
+
+    void deleteByUserIdAndCourseId(Long userId, Long courseId);
 }
