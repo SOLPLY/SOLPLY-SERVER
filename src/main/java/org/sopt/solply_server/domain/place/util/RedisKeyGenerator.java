@@ -1,7 +1,6 @@
 package org.sopt.solply_server.domain.place.util;
 
 import static org.sopt.solply_server.domain.place.constant.CachePrefix.BOOKMARK_KEY_PREFIX;
-import static org.sopt.solply_server.domain.place.constant.CachePrefix.BOOKMARK_USER_KEY_PREFIX;
 
 public class RedisKeyGenerator {
 
@@ -9,8 +8,5 @@ public class RedisKeyGenerator {
         return String.format("%s:%d:%d", BOOKMARK_KEY_PREFIX, userId, placeId);
     }
 
-    public static String generateUserBookmarkKey(final Long userId) {
-        return String.format("%s:%d", BOOKMARK_USER_KEY_PREFIX, userId);
-    }
 
 }
