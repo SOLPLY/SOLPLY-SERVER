@@ -111,17 +111,11 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
      * 삭제 마커 동기화 - DB에서 삭제
      */
     private void syncDeletedCourseBookmark(CourseBookmarkRedisDto bookmarkData) {
-        try {
-            // DB에서 삭제 (없어도 에러 발생하지 않음)
-            courseBookmarkRepository.deleteByUserIdAndCourseId(bookmarkData.userId(), bookmarkData.courseId());
+        // DB에서 삭제 (없어도 에러 발생하지 않음)
+        courseBookmarkRepository.deleteByUserIdAndCourseId(bookmarkData.userId(), bookmarkData.courseId());
 
-            log.debug("삭제 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
-                    bookmarkData.userId(), bookmarkData.courseId());
-        } catch (Exception e) {
-            log.error("삭제 코스 북마크 동기화 실패 - userId: {}, courseId: {}",
-                    bookmarkData.userId(), bookmarkData.courseId(), e);
-            throw e;
-        }
+        log.debug("삭제 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
+                bookmarkData.userId(), bookmarkData.courseId());
     }
 
 }

@@ -84,7 +84,7 @@ public class CourseBookmarkService {
         for (Long courseId : courseIds) {
             deleteCourseBookmark(userId, courseId);
         }
-        log.info("코스 북마크 배치 삭제 완료 - userId: {}, 삭제 대상: {}개", userId, courseIds.size());
+        log.info("코스 북마크 리스트 삭제 완료 - userId: {}, 삭제 대상: {}개", userId, courseIds.size());
     }
 
     // === Private Methods ===
