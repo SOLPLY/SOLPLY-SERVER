@@ -33,13 +33,13 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
 
     @Override
     public String getKeyPattern() {
-        // 개별 코스 북마크 키만 처리 (사용자 목록 키는 제외)
-        return "bookmark:*:*";
+        // 코스 북마크 전용 키 패턴
+        return "course_bookmark:*:*";
     }
 
     @Override
     public void flushToDatabase(String courseBookmarkKey) {
-        // Redis에서 북마크 데이터 조회
+        // Redis에서 코스 북마크 데이터 조회
         CourseBookmarkRedisDto bookmarkData = cacheService.get(courseBookmarkKey, CourseBookmarkRedisDto.class);
 
         if (bookmarkData == null) {
@@ -47,12 +47,7 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
             return;
         }
 
-        // courseId가 있는 경우만 코스 북마크로 처리 (placeId는 place bookmark에서 처리)
-        if (bookmarkData.courseId() == null) {
-            log.debug("장소 북마크 키 스킵 - key: {}", courseBookmarkKey);
-            return;
-        }
-
+        // 코스 북마크 처리
         if (bookmarkData.isActive()) {
             saveActiveCourseBookmark(courseBookmarkKey, bookmarkData);
         } else if (bookmarkData.isDeleted()) {
@@ -66,17 +61,22 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
 
         if (keys.isEmpty()) {
             log.debug("플러시할 코스 북마크 데이터 없음");
+            return;
         }
 
         log.info("코스 북마크 플러시 대상: {}개", keys.size());
 
+        int processedCount = 0;
         for (String key : keys) {
             try {
                 flushToDatabase(key);
+                processedCount++;
             } catch (Exception e) {
                 log.error("코스 북마크 개별 키 처리 실패 - key: {}", key, e);
             }
         }
+
+        log.info("코스 북마크 플러시 완료 - 처리: {}개", processedCount);
     }
 
     /**
@@ -117,6 +117,9 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
 
             // 삭제 처리 완료 후 Redis에서도 제거
             cacheService.delete(courseBookmarkKey);
+
+            log.debug("코스 북마크 DB 삭제 완료 - userId: {}, courseId: {}",
+                    bookmarkData.userId(), bookmarkData.courseId());
 
         } catch (Exception e) {
             log.error("코스 북마크 DB 삭제 실패 - userId: {}, courseId: {}",

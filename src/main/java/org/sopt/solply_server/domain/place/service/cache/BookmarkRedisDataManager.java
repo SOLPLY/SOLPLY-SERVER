@@ -1,8 +1,5 @@
 package org.sopt.solply_server.domain.place.service.cache;
 
-
-import static org.sopt.solply_server.global.cache.CachePrefix.BOOKMARK;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +12,7 @@ import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataManager;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
@@ -33,13 +31,14 @@ public class BookmarkRedisDataManager implements RedisDataManager {
 
     @Override
     public String getDomainName() {
-        return "BOOKMARK";
+        return "PLACE_BOOKMARK";
     }
 
     @Override
     public String getKeyPattern() {
         // 개별 북마크 키만 처리 (사용자 목록 키는 제외)
-        return "bookmark:*:*";
+        // Place 북마크 전용 키 패턴
+        return "place_bookmark:*:*";
     }
 
     @Override
@@ -93,7 +92,8 @@ public class BookmarkRedisDataManager implements RedisDataManager {
 
         try {
             // 사용자의 모든 북마크 키 스캔
-            String userBookmarkPattern = String.format("%s:%d:*", BOOKMARK, userId);
+            String userBookmarkPattern = String.format("%s:%d:*",
+                    CachePrefix.PLACE_BOOKMARK.getPrefix(), userId);
             Set<String> userBookmarkKeys = cacheService.findKeys(userBookmarkPattern);
 
             for (String bookmarkKey : userBookmarkKeys) {

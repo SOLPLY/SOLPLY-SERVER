@@ -44,7 +44,7 @@ public class CourseBookmarkService {
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
 
-        String bookmarkKey = RedisKeyGenerator.generateKey(CachePrefix.BOOKMARK, userId, courseId);
+        String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
         // 중복 체크 (Redis에서 먼저 확인)
         if (cacheService.exists(bookmarkKey)) {
@@ -54,7 +54,6 @@ public class CourseBookmarkService {
 
         try {
             CourseBookmarkRedisDto bookmarkData = CourseBookmarkRedisDto.createActive(userId, courseId);
-
             cacheService.set(bookmarkKey, bookmarkData, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
 
             log.info("코스 북마크 Redis 저장 완료 - userId: {}, courseId: {}", userId, courseId);
@@ -73,7 +72,7 @@ public class CourseBookmarkService {
      */
     @Transactional
     public void deleteCourseBookmark(final Long userId, final Long courseId) {
-        String bookmarkKey = RedisKeyGenerator.generateKey(CachePrefix.BOOKMARK, userId, courseId);
+        String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
         CourseBookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
 
