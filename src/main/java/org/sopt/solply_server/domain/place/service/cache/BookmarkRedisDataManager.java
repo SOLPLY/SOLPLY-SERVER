@@ -19,6 +19,7 @@ import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataManager;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -132,44 +133,39 @@ public class BookmarkRedisDataManager implements RedisDataManager {
      * 활성 북마크 처리
      */
     private void saveActiveBookmark(BookmarkRedisDto bookmarkData) {
-        // 중복 체크
-        if (placeBookmarkRepository.existsByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId())) {
+        try {
+            User user = userRepository.findById(bookmarkData.userId())
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+            Place place = placeRepository.findById(bookmarkData.placeId())
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+
+            PlaceBookmark bookmark = PlaceBookmark.builder()
+                    .user(user)
+                    .place(place)
+                    .build();
+            placeBookmarkRepository.save(bookmark);
+
+            log.debug("활성 북마크 DB 저장 완료 - userId: {}, placeId: {}",
+                    bookmarkData.userId(), bookmarkData.placeId());
+
+        } catch (DataIntegrityViolationException e) {
             log.debug("이미 DB에 존재하는 북마크 - userId: {}, placeId: {}",
                     bookmarkData.userId(), bookmarkData.placeId());
-            return;
         }
-
-        User user = userRepository.findById(bookmarkData.userId())
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-        Place place = placeRepository.findById(bookmarkData.placeId())
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
-
-        PlaceBookmark bookmark = PlaceBookmark.builder()
-                .user(user)
-                .place(place)
-                .build();
-        placeBookmarkRepository.save(bookmark);
-
-        log.debug("활성 북마크 DB 저장 완료 - userId: {}, placeId: {}",
-                bookmarkData.userId(), bookmarkData.placeId());
     }
 
     /**
      * 삭제 마커 처리
      */
     private void deleteBookmark(String bookmarkKey, BookmarkRedisDto bookmarkData) {
-        try {
-            // DB에서 삭제
-            placeBookmarkRepository.deleteByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId());
+        // DB에서 삭제 (존재하지 않아도 에러 발생하지 않음)
+        placeBookmarkRepository.deleteByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId());
 
-            // 삭제 처리 완료 후 Redis에서도 제거
-            cacheService.delete(bookmarkKey);
+        // 삭제 처리 완료 후 Redis에서도 제거
+        cacheService.delete(bookmarkKey);
 
-        } catch (Exception e) {
-            log.error("북마크 DB 삭제 실패 - userId: {}, placeId: {}",
-                    bookmarkData.userId(), bookmarkData.placeId(), e);
-            throw e;
-        }
+        log.debug("북마크 삭제 완료 - userId: {}, placeId: {}",
+                bookmarkData.userId(), bookmarkData.placeId());
     }
 
 }
