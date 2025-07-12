@@ -139,10 +139,7 @@ public class BookmarkRedisDataManager implements RedisDataManager {
             Place place = placeRepository.findById(bookmarkData.placeId())
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
 
-            PlaceBookmark bookmark = PlaceBookmark.builder()
-                    .user(user)
-                    .place(place)
-                    .build();
+            PlaceBookmark bookmark = PlaceBookmark.create(place, user);
             placeBookmarkRepository.save(bookmark);
 
             log.debug("활성 북마크 DB 저장 완료 - userId: {}, placeId: {}",
