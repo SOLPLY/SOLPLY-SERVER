@@ -9,15 +9,13 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
 @Getter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "course_bookmark",
@@ -43,7 +41,10 @@ public class CourseBookmark extends BaseTimeEntity {
     private User user;
 
     public static CourseBookmark create(Course course, User user) {
-        return new CourseBookmark(null, course, user);
+        return CourseBookmark.builder()
+                .course(course)
+                .user(user)
+                .build();
     }
 
 }

@@ -49,9 +49,9 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
 
         // 코스 북마크 처리
         if (bookmarkData.isActive()) {
-            saveActiveCourseBookmark(courseBookmarkKey, bookmarkData);
+            syncActiveCourseBookmark(bookmarkData);
         } else if (bookmarkData.isDeleted()) {
-            deleteCourseBookmark(courseBookmarkKey, bookmarkData);
+            syncDeletedCourseBookmark(bookmarkData);
         }
     }
 
@@ -80,49 +80,46 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
     }
 
     /**
-     * 활성 코스 북마크 처리
+     * 활성 코스 북마크 동기화 - DB에 없으면 생성
      */
-    private void saveActiveCourseBookmark(String courseBookmarkKey, CourseBookmarkRedisDto bookmarkData) {
+    private void syncActiveCourseBookmark(CourseBookmarkRedisDto bookmarkData) {
+        // DB에 이미 존재하면 동기화 완료
         if (courseBookmarkRepository.existsByCourseIdAndUserId(bookmarkData.courseId(), bookmarkData.userId())) {
-            log.debug("이미 DB에 존재하는 코스 북마크 - userId: {}, courseId: {}",
+            log.debug("DB 동기화 완료 (이미 존재) - userId: {}, courseId: {}",
                     bookmarkData.userId(), bookmarkData.courseId());
-
-            // 이미 DB에 있으면 Redis에서 삭제
-            cacheService.delete(courseBookmarkKey);
             return;
         }
 
-        User user = userRepository.findById(bookmarkData.userId())
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-        Course course = courseRepository.findById(bookmarkData.courseId())
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+        try {
+            User user = userRepository.findById(bookmarkData.userId())
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+            Course course = courseRepository.findById(bookmarkData.courseId())
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
 
-        CourseBookmark bookmark = CourseBookmark.create(course, user);
-        courseBookmarkRepository.save(bookmark);
+            CourseBookmark bookmark = CourseBookmark.create(course, user);
+            courseBookmarkRepository.save(bookmark);
 
-        // DB 저장 후 Redis에서 삭제
-        cacheService.delete(courseBookmarkKey);
-
-        log.debug("활성 코스 북마크 DB 저장 완료 - userId: {}, courseId: {}",
-                bookmarkData.userId(), bookmarkData.courseId());
+            log.debug("활성 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
+                    bookmarkData.userId(), bookmarkData.courseId());
+        } catch (Exception e) {
+            log.error("활성 코스 북마크 동기화 실패 - userId: {}, courseId: {}",
+                    bookmarkData.userId(), bookmarkData.courseId(), e);
+            throw e;
+        }
     }
 
     /**
-     * 삭제 마커 처리
+     * 삭제 마커 동기화 - DB에서 삭제
      */
-    private void deleteCourseBookmark(String courseBookmarkKey, CourseBookmarkRedisDto bookmarkData) {
+    private void syncDeletedCourseBookmark(CourseBookmarkRedisDto bookmarkData) {
         try {
-            // DB에서 삭제
+            // DB에서 삭제 (없어도 에러 발생하지 않음)
             courseBookmarkRepository.deleteByUserIdAndCourseId(bookmarkData.userId(), bookmarkData.courseId());
 
-            // 삭제 처리 완료 후 Redis에서도 제거
-            cacheService.delete(courseBookmarkKey);
-
-            log.debug("코스 북마크 DB 삭제 완료 - userId: {}, courseId: {}",
+            log.debug("삭제 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
                     bookmarkData.userId(), bookmarkData.courseId());
-
         } catch (Exception e) {
-            log.error("코스 북마크 DB 삭제 실패 - userId: {}, courseId: {}",
+            log.error("삭제 코스 북마크 동기화 실패 - userId: {}, courseId: {}",
                     bookmarkData.userId(), bookmarkData.courseId(), e);
             throw e;
         }

@@ -18,7 +18,6 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.service.TownService;
-import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
@@ -28,7 +27,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -42,8 +40,6 @@ public class CourseService {
     private final TownService townService;
     private final ImageUrlProvider imageUrlProvider;
     private final CacheService cacheService;
-
-    private static final int BOOKMARK_CACHE_TTL = 1; // 1시간 TTL
 
     /**
      * 코스 상세 정보 조회
@@ -113,7 +109,7 @@ public class CourseService {
         Map<Long, Boolean> bookmarkMap = new HashMap<>();
 
         for (Long placeId : placeIds) {
-            String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, placeId);
+            String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
 
             try {
                 // Redis에서 북마크 상태 조회
@@ -127,7 +123,7 @@ public class CourseService {
                     bookmarkMap.put(placeId, isBookmarked);
 
                     // Redis에 캐싱 (실패해도 무시)
-                    cacheService.set(bookmarkKey, isBookmarked, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+                    cacheService.set(bookmarkKey, isBookmarked);
                 }
             } catch (Exception e) {
                 log.warn("장소 북마크 상태 조회 실패 - userId: {}, placeId: {}", userId, placeId, e);

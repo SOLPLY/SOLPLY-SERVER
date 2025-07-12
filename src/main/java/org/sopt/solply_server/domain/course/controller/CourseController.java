@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.List;
+
 @Tag(name = "코스 API", description = "코스 관련 API")
 @RestController
 @RequiredArgsConstructor
@@ -68,5 +70,17 @@ public class CourseController {
             @PathVariable("courseId") Long courseId) {
         courseBookmarkService.deleteCourseBookmark(userId, courseId);
         return CustomApiResponse.success("코스를 수집함에서 삭제했습니다.");
+    }
+
+    @Operation(summary = "선택한 코스 북마크 리스트 삭제", description = "여러 코스 북마크를 한번에 삭제합니다.")
+    @DeleteMapping("/bookmarks")
+    public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkCourses(
+            @CurrentUserId Long userId,
+            @Parameter(description = "삭제할 코스 ID 목록", required = true)
+            @RequestParam("courseIds")
+            @NotNull(message = "courseIds는 null 혹은 비어있을 수 없습니다")
+            List<Long> courseIds) {
+        courseBookmarkService.deleteCourseBookmarks(userId, courseIds);
+        return CustomApiResponse.success("선택한 코스를 수집함에서 삭제했습니다.");
     }
 }

@@ -9,7 +9,6 @@ import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
-import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -19,7 +18,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.concurrent.TimeUnit;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -31,8 +30,6 @@ public class CourseBookmarkService {
     private final CourseRepository courseRepository;
     private final CourseBookmarkRepository courseBookmarkRepository;
     private final CacheService cacheService;
-
-    private static final int BOOKMARK_CACHE_TTL = 1; // 1시간 TTL
 
     /**
      * 코스 북마크 생성
@@ -46,15 +43,16 @@ public class CourseBookmarkService {
 
         String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
-        // 중복 체크 (Redis에서 먼저 확인)
-        if (cacheService.exists(bookmarkKey)) {
+        // 중복 체크
+        CourseBookmarkRedisDto existingBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
+        if (existingBookmark != null && existingBookmark.isActive()) {
             log.warn("이미 북마크된 코스 - userId: {}, courseId: {}", userId, courseId);
             throw new BusinessException(ErrorCode.ALREADY_BOOKMARKED_COURSE);
         }
 
         try {
             CourseBookmarkRedisDto bookmarkData = CourseBookmarkRedisDto.createActive(userId, courseId);
-            cacheService.set(bookmarkKey, bookmarkData, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+            cacheService.set(bookmarkKey, bookmarkData);
 
             log.info("코스 북마크 Redis 저장 완료 - userId: {}, courseId: {}", userId, courseId);
 
@@ -79,12 +77,28 @@ public class CourseBookmarkService {
         if (currentBookmark != null && currentBookmark.isActive()) {
             // 삭제 마커로 업데이트
             CourseBookmarkRedisDto deleteMarker = CourseBookmarkRedisDto.createDeleted(userId, courseId);
-            cacheService.set(bookmarkKey, deleteMarker, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+            cacheService.set(bookmarkKey, deleteMarker);
 
             log.info("코스 북마크 삭제 마커 설정 완료 - userId: {}, courseId: {}", userId, courseId);
         } else {
             log.warn("삭제할 활성 코스 북마크가 없음 - userId: {}, courseId: {}", userId, courseId);
         }
+    }
+
+    /**
+     * 코스 북마크 리스트 삭제
+     */
+    @Transactional
+    public void deleteCourseBookmarks(final Long userId, final List<Long> courseIds) {
+        if (courseIds == null || courseIds.isEmpty()) {
+            log.warn("삭제할 코스 ID 목록이 비어있음 - userId: {}", userId);
+            return;
+        }
+
+        for (Long courseId : courseIds) {
+            deleteCourseBookmark(userId, courseId);
+        }
+        log.info("코스 북마크 배치 삭제 완료 - userId: {}, 삭제 대상: {}개", userId, courseIds.size());
     }
 
     // === Private Methods ===
