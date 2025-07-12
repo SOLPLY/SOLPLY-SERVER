@@ -1,9 +1,7 @@
 package org.sopt.solply_server.domain.place.service;
 
-import static org.sopt.solply_server.domain.place.util.RedisKeyGenerator.generateBookmarkKey;
+import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generateKey;
 
-import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
@@ -13,11 +11,11 @@ import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
-import org.sopt.solply_server.global.util.InputValidator;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,7 +47,7 @@ public class PlaceBookmarkService {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
 
-        String bookmarkKey = generateBookmarkKey(userId, placeId);
+        String bookmarkKey = generateKey(CachePrefix.BOOKMARK, userId, placeId);
 
         // 중복 체크 (Redis에서 먼저 확인)
         if (cacheService.exists(bookmarkKey)) {
@@ -82,7 +80,7 @@ public class PlaceBookmarkService {
      */
     @Transactional
     public void deletePlaceBookmark(final Long userId, final Long placeId) {
-        String bookmarkKey = generateBookmarkKey(userId, placeId);
+        String bookmarkKey = generateKey(CachePrefix.BOOKMARK, userId, placeId);
 
         // Redis에서 현재 상태 확인
         BookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, BookmarkRedisDto.class);

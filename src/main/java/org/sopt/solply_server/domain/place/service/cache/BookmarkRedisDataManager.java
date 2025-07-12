@@ -1,7 +1,7 @@
 package org.sopt.solply_server.domain.place.service.cache;
 
 
-import static org.sopt.solply_server.domain.place.constant.CachePrefix.BOOKMARK_KEY_PREFIX;
+import static org.sopt.solply_server.global.cache.CachePrefix.BOOKMARK;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -93,7 +93,7 @@ public class BookmarkRedisDataManager implements RedisDataManager {
 
         try {
             // 사용자의 모든 북마크 키 스캔
-            String userBookmarkPattern = String.format("%s:%d:*", BOOKMARK_KEY_PREFIX, userId);
+            String userBookmarkPattern = String.format("%s:%d:*", BOOKMARK, userId);
             Set<String> userBookmarkKeys = cacheService.findKeys(userBookmarkPattern);
 
             for (String bookmarkKey : userBookmarkKeys) {
