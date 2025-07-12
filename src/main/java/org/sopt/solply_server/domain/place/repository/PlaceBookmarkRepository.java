@@ -19,26 +19,4 @@ public interface PlaceBookmarkRepository extends JpaRepository<PlaceBookmark, Lo
 
     void deleteByUserIdAndPlaceId(Long userId, @Param("placeId") Long placeId);
 
-    List<Long> findPlaceIdsByUserId(Long userId);
-
-
-    // 사용자의 모든 북마크 조회 (필요한 연관관계 모두 FETCH JOIN)
-    @Query("SELECT pb FROM PlaceBookmark pb " +
-            "JOIN FETCH pb.place p " +
-            "JOIN FETCH p.town t " +
-            "WHERE pb.user.id = :userId " +
-            "ORDER BY pb.createdAt DESC")
-    List<PlaceBookmark> findAllByUserId(@Param("userId") Long userId);
-
-    // 특정 장소들의 북마크만 조회 (필요한 연관관계 모두 FETCH JOIN)
-    @Query("SELECT pb FROM PlaceBookmark pb " +
-            "JOIN FETCH pb.place p " +
-            "JOIN FETCH p.town t " +
-            "WHERE pb.user.id = :userId " +
-            "AND pb.place.id IN :placeIds " +
-            "ORDER BY pb.createdAt DESC")
-    List<PlaceBookmark> findAllByUserIdAndPlaceIds(
-            @Param("userId") Long userId,
-            @Param("placeIds") List<Long> placeIds);
-
 }

@@ -118,8 +118,8 @@ public class PlaceService {
 
     //===편의 메서드===//
 
-    private List<Place> getPlacesByTagCondition(Town selectedTown, Long mainTagId,
-            List<Long> subTagAIdList, List<Long> subTagBIdList) {
+    private List<Place> getPlacesByTagCondition(final Town selectedTown, final Long mainTagId,
+            final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         // 전체 조회
         if (mainTagId == null) {
             return placeRepository.findAll();
@@ -141,7 +141,7 @@ public class PlaceService {
     }
 
     // 서브 태그 검증 메서드
-    private void validateSubTags(Long mainTagId, List<Long> subTagIdList, TagType tagType) {
+    private void validateSubTags(final Long mainTagId, final List<Long> subTagIdList, final TagType tagType) {
         if (subTagIdList == null) {
             return; // 서브 태그가 없는 경우는 검증하지 않음
         }
@@ -152,7 +152,7 @@ public class PlaceService {
     }
 
     // 동네 ID를 통해 동네를 검증하고 가져오는 메서드
-    private Town validateAndGetTown(Long townId) {
+    private Town validateAndGetTown(final Long townId) {
         return townRepository.findById(townId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));
     }
@@ -160,7 +160,7 @@ public class PlaceService {
     /**
      * Redis 북마크 데이터를 기반으로 동네별 최신 북마크 장소를 필터링 (효율성 개선)
      */
-    private List<Place> getRecentPlacesByTown(List<BookmarkRedisDto> bookmarkRedisDtos) {
+    private List<Place> getRecentPlacesByTown(final List<BookmarkRedisDto> bookmarkRedisDtos) {
         if (bookmarkRedisDtos.isEmpty()) {
             return List.of();
         }
