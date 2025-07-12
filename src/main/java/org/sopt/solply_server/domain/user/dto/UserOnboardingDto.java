@@ -2,12 +2,12 @@ package org.sopt.solply_server.domain.user.dto;
 
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
-public record UserPersonaDto(
+public record UserOnboardingDto(
         String personaType,
         String description
 ){
-    public static UserPersonaDto from(UserPersona persona){
-        return new UserPersonaDto(
+    public static UserOnboardingDto from(UserPersona persona){
+        return new UserOnboardingDto(
             persona.name(), persona.getDescription()
         );
     }
