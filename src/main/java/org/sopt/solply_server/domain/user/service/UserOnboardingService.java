@@ -1,7 +1,7 @@
 package org.sopt.solply_server.domain.user.service;
 
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.user.dto.UserOnboardingDto;
+import org.sopt.solply_server.domain.user.dto.UserPersonaDto;
 import org.sopt.solply_server.domain.user.dto.response.UserPersonaListGetResponse;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.springframework.stereotype.Service;
@@ -16,8 +16,8 @@ import java.util.List;
 public class UserOnboardingService {
 
     public UserPersonaListGetResponse getUserPersonaList() {
-        List<UserOnboardingDto> personaDtos = Arrays.stream(UserPersona.values())
-                .map(UserOnboardingDto::from)
+        List<UserPersonaDto> personaDtos = Arrays.stream(UserPersona.values())
+                .map(UserPersonaDto::from)
                 .toList();
 
         return UserPersonaListGetResponse.from(personaDtos);
