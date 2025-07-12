@@ -60,7 +60,7 @@ public class BookmarkRedisDataManager implements RedisDataManager {
 
         // 북마크 상태에 따라 처리
         if (bookmarkData.isActive()) {
-            saveActiveBookmark(bookmarkKey, bookmarkData);
+            saveActiveBookmark(bookmarkData);
         } else if (bookmarkData.isDeleted()) {
             deleteBookmark(bookmarkKey, bookmarkData);
         }
@@ -84,6 +84,19 @@ public class BookmarkRedisDataManager implements RedisDataManager {
             }
         }
     }
+
+    /**
+     * 북마크 키로부터 BookmarkRedisDto를 조회하는 메서드
+     */
+    public BookmarkRedisDto getBookmarkDto(String bookmarkKey) {
+        try {
+            return cacheService.get(bookmarkKey, BookmarkRedisDto.class);
+        } catch (Exception e) {
+            log.warn("북마크 DTO 조회 실패 - key: {}", bookmarkKey, e);
+            return null;
+        }
+    }
+
 
     /**
      * 활성 북마크의 전체 정보(DTO)를 반환하는 메서드
@@ -118,14 +131,11 @@ public class BookmarkRedisDataManager implements RedisDataManager {
     /**
      * 활성 북마크 처리
      */
-    private void saveActiveBookmark(String bookmarkKey, BookmarkRedisDto bookmarkData) {
+    private void saveActiveBookmark(BookmarkRedisDto bookmarkData) {
         // 중복 체크
         if (placeBookmarkRepository.existsByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId())) {
             log.debug("이미 DB에 존재하는 북마크 - userId: {}, placeId: {}",
                     bookmarkData.userId(), bookmarkData.placeId());
-
-            // 이미 DB에 있으면 Redis에서 삭제
-            cacheService.delete(bookmarkKey);
             return;
         }
 
@@ -139,9 +149,6 @@ public class BookmarkRedisDataManager implements RedisDataManager {
                 .place(place)
                 .build();
         placeBookmarkRepository.save(bookmark);
-
-        // DB 저장 후 Redis에서 삭제
-        cacheService.delete(bookmarkKey);
 
         log.debug("활성 북마크 DB 저장 완료 - userId: {}, placeId: {}",
                 bookmarkData.userId(), bookmarkData.placeId());

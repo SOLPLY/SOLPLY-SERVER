@@ -34,8 +34,6 @@ public class PlaceBookmarkService {
     private final PlaceRepository placeRepository;
     private final CacheService cacheService;
 
-   private static final int BOOKMARK_CACHE_TTL = 1; // 1시간 TTL
-
     /**
      * 북마크 생성
      */
@@ -60,7 +58,7 @@ public class PlaceBookmarkService {
             BookmarkRedisDto bookmarkData = BookmarkRedisDto.createActive(userId, placeId);
 
             // 개별 북마크 정보 저장 (TTL 1시간)
-            cacheService.set(bookmarkKey, bookmarkData, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+            cacheService.set(bookmarkKey, bookmarkData);
 
             log.info("북마크 Redis 저장 완료 - userId: {}, placeId: {}", userId, placeId);
 
@@ -88,7 +86,7 @@ public class PlaceBookmarkService {
         if (currentBookmark != null && currentBookmark.isActive()) {
             // 삭제 마커로 업데이트 (DB 쿼리 X)
             BookmarkRedisDto deleteMarker = BookmarkRedisDto.createDeleted(userId, placeId);
-            cacheService.set(bookmarkKey, deleteMarker, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+            cacheService.set(bookmarkKey, deleteMarker);
 
             log.info("북마크 삭제 마커 설정 완료 - userId: {}, placeId: {}", userId, placeId);
         } else {
