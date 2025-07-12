@@ -4,7 +4,7 @@ package org.sopt.solply_server.domain.recommend.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.dto.response.PlaceRecommendationGetResponse;
+import org.sopt.solply_server.domain.recommend.dto.response.PlaceRecommendationGetResponse;
 import org.sopt.solply_server.domain.recommend.service.RecommendService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;

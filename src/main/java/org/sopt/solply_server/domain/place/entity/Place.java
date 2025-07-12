@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -97,6 +98,7 @@ public class Place extends BaseTimeEntity {
     @JoinColumn(name = "town_id", nullable = false)
     private Town town;
 
+
     // === 편의 메서드 추가 ===
 
     /**
@@ -119,6 +121,18 @@ public class Place extends BaseTimeEntity {
                 .findFirst()
                 .map(PlaceImageInfo::getImageFileKey)
                 .orElse(null);
+    }
+
+    public List<Tag> getTags() {
+        return placeTags.stream()
+                .map(PlaceTag::getTag)
+                .collect(Collectors.toList());
+    }
+
+    public List<TagName> getTagNames() {
+        return placeTags.stream()
+                .map(placeTag -> placeTag.getTag().getName())
+                .collect(Collectors.toList());
     }
 
 }
