@@ -1,7 +1,6 @@
 package org.sopt.solply_server.domain.place.service;
 
 import static org.sopt.solply_server.domain.place.util.RedisKeyGenerator.generateBookmarkKey;
-import static org.sopt.solply_server.domain.place.util.RedisKeyGenerator.generateUserBookmarkKey;
 
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -51,7 +50,6 @@ public class PlaceBookmarkService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
 
         String bookmarkKey = generateBookmarkKey(userId, placeId);
-        String userBookmarkKey = generateUserBookmarkKey(userId);
 
         // 중복 체크 (Redis에서 먼저 확인)
         if (cacheService.exists(bookmarkKey)) {
@@ -85,13 +83,12 @@ public class PlaceBookmarkService {
     @Transactional
     public void deletePlaceBookmark(final Long userId, final Long placeId) {
         String bookmarkKey = generateBookmarkKey(userId, placeId);
-        String userBookmarkKey = generateUserBookmarkKey(userId);
 
         // Redis에서 현재 상태 확인
         BookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
 
         if (currentBookmark != null && currentBookmark.isActive()) {
-            // 삭제 마커로 업데이트 (DB 쿼리 없음!)
+            // 삭제 마커로 업데이트 (DB 쿼리 X)
             BookmarkRedisDto deleteMarker = BookmarkRedisDto.createDeleted(userId, placeId);
             cacheService.set(bookmarkKey, deleteMarker, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
 
@@ -122,58 +119,6 @@ public class PlaceBookmarkService {
         } catch (DataIntegrityViolationException e) {
             log.info("북마크 중복 저장 시도 (무시) - bookmarkId: {}", bookmark.getId());
         }
-    }
-
-    /**
-     * 사용자별 활성 북마크 장소 썸네일 리스트 조회
-     * - Redis에서 활성 북마크 ID 목록을 가져오고, 동네별로 가장 최근에 북마크한 장소를 조회
-     * - 만약 Redis에 활성 북마크가 없다면, DB에서 동네별로 가장 최근에 북마크한 장소를 조회
-     */
-    public List<PlaceBookmark> getRecentBookmarkPlacesByTown(Long userId, List<Long> bookmarkPlaceIds) {
-        List<PlaceBookmark> allBookmarks;
-
-        // bookmarkPlaceIds가 비어있으면, DB에서 모든 북마크 조회
-        if (InputValidator.isBlank(bookmarkPlaceIds)) {
-            log.info("DB에서 사용자의 모든 북마크 조회 후 동네별 필터링 - userId: {}", userId);
-            allBookmarks = placeBookmarkRepository.findAllByUserId(userId);
-        } else {
-            // Redis에서 가져온 활성 북마크
-            log.info("Redis 활성 북마크 {}개에 해당하는 모든 북마크 조회 후 동네별 필터링 - userId: {}", bookmarkPlaceIds.size(), userId);
-            allBookmarks = placeBookmarkRepository.findAllByUserIdAndPlaceIds(userId, bookmarkPlaceIds);
-        }
-
-        log.info("조회된 전체 북마크: {}개", allBookmarks.size());
-
-        // 서비스단에서 동네별 최근 북마크만 필터링
-        List<PlaceBookmark> recentBookmarksByTown = filterRecentBookmarksByTown(allBookmarks);
-
-        log.info("동네별 최근 북마크 필터링 완료 - userId: {}, count: {}", userId, recentBookmarksByTown.size());
-
-        return recentBookmarksByTown;
-    }
-
-    /**
-     * 동네별로 가장 최근 북마크만 필터링
-     */
-    private List<PlaceBookmark> filterRecentBookmarksByTown(List<PlaceBookmark> allBookmarks) {
-        if (allBookmarks.isEmpty()) {
-            return List.of();
-        }
-
-        // 동네별로 가장 최근 북마크만 선택
-        Map<Long, PlaceBookmark> recentByTown = allBookmarks.stream()
-                .collect(Collectors.toMap(
-                        bookmark -> bookmark.getPlace().getTown().getId(),
-                        bookmark -> bookmark,
-                        (existing, replacement) -> // 같은 동네인 경우 최신 북마크 선택
-                                replacement.getCreatedAt().isAfter(existing.getCreatedAt())
-                                        ? replacement : existing
-                ));
-
-        // 최신순으로 정렬해서 반환
-        return recentByTown.values().stream()
-                .sorted((b1, b2) -> b2.getCreatedAt().compareTo(b1.getCreatedAt()))
-                .collect(Collectors.toList());
     }
 
 

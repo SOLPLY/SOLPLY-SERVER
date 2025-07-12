@@ -18,6 +18,7 @@ import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -76,7 +77,7 @@ public class PlaceController {
     // == 장소 북마크 관련 API === //
 
     @Operation(summary = "장소 북마크 저장", description = "장소를 북마크에 등록합니다.")
-    @PostMapping("/{placeId}/bookmark/")
+    @PostMapping("/{placeId}/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> bookmarkPlace(
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId) {
@@ -85,7 +86,7 @@ public class PlaceController {
     }
 
     @Operation(summary = "장소 북마크 삭제", description = "장소 북마크를 삭제합니다.")
-    @PostMapping("/{placeId}/bookmark/delete")
+    @PostMapping("/{placeId}/bookmarks/delete")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlace(
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId) {
@@ -94,7 +95,7 @@ public class PlaceController {
     }
 
     @Operation(summary = "장소 북마크 리스트 삭제", description = "장소 북마크를 삭제합니다.")
-    @PostMapping("/bookmark/delete")
+    @DeleteMapping("/bookmarks/delete")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlaces(
             @CurrentUserId Long userId,
             @RequestParam("placeIds")
