@@ -83,7 +83,7 @@ public class CourseService {
     public CourseRecommendGetResponse findRecommendCourses(final Long userId, final Long townId) {
         townService.findTownById(townId);
 
-        List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithDetails(townId);
+        List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
 
         if (sharedCourses.isEmpty()) {
             log.info("동네 ID {}에 공유된 코스가 없습니다.", townId);
@@ -93,6 +93,9 @@ public class CourseService {
         List<Long> courseIds = sharedCourses.stream()
                 .map(Course::getId)
                 .toList();
+
+        // 장소 태그 정보를 미리 로드 (영속성 컨텍스트에 적재)
+        courseRepository.findPlacesWithTagsByCourseIds(courseIds);
 
         Map<Long, Boolean> courseBookmarkMap = getCourseBookmarkMap(courseIds, userId);
 
