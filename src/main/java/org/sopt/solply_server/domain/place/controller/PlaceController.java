@@ -86,7 +86,7 @@ public class PlaceController {
     }
 
     @Operation(summary = "장소 북마크 삭제", description = "장소 북마크를 삭제합니다.")
-    @PostMapping("/{placeId}/bookmarks/delete")
+    @DeleteMapping("/{placeId}/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlace(
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId) {
@@ -95,7 +95,7 @@ public class PlaceController {
     }
 
     @Operation(summary = "장소 북마크 리스트 삭제", description = "장소 북마크를 삭제합니다.")
-    @DeleteMapping("/bookmarks/delete")
+    @DeleteMapping("/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlaces(
             @CurrentUserId Long userId,
             @RequestParam("placeIds")
