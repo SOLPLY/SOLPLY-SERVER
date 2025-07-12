@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class BookmarkFlushScheduler implements RedisFlushScheduler {
 
-    private final BookmarkRedisDataManager bookmarkProcessor;
+    private final BookmarkRedisDataManager bookmarkRedisDataManager;
 
     @Override
     public String getDomainName() {
@@ -38,7 +38,7 @@ public class BookmarkFlushScheduler implements RedisFlushScheduler {
      */
     private void flushRedisData() {
         log.info("Redis 데이터 플러시 시작");
-        bookmarkProcessor.flushAllPendingData();
+        bookmarkRedisDataManager.flushAllPendingData();
         log.info("Redis 데이터 플러시 완료");
     }
 
