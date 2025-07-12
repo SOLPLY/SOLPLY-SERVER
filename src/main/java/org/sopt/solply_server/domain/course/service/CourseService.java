@@ -11,7 +11,6 @@ import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceImageInfo;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
@@ -19,7 +18,6 @@ import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.service.TownService;
 import org.sopt.solply_server.global.cache.CacheService;
-import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -28,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -130,7 +127,7 @@ public class CourseService {
                     bookmarkMap.put(placeId, isBookmarked);
 
                     // Redis에 캐싱 (실패해도 무시)
-                    safeSetCache(bookmarkKey, isBookmarked);
+                    cacheService.set(bookmarkKey, isBookmarked, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
                 }
             } catch (Exception e) {
                 log.warn("장소 북마크 상태 조회 실패 - userId: {}, placeId: {}", userId, placeId, e);
@@ -162,7 +159,7 @@ public class CourseService {
                     boolean isBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
                     bookmarkMap.put(courseId, isBookmarked);
 
-                    safeSetCache(bookmarkKey, isBookmarked);
+                    cacheService.set(bookmarkKey, isBookmarked, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
                 }
             } catch (Exception e) {
                 log.warn("코스 북마크 상태 조회 실패 - userId: {}, courseId: {}", userId, courseId, e);
@@ -186,7 +183,7 @@ public class CourseService {
 
             // Redis에 없으면 DB 조회 후 캐싱
             boolean isBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
-            safeSetCache(bookmarkKey, isBookmarked);
+            cacheService.set(bookmarkKey, isBookmarked, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
 
             return isBookmarked;
         } catch (Exception e) {
@@ -206,7 +203,7 @@ public class CourseService {
 
         return CoursePlaceDetailsDto.of(
                 place,
-                getThumbnailUrl(place),
+                getImageUrl(place),
                 place.getPrimaryTag(), // Place 엔티티 메서드 활용
                 placeBookmarkMap.getOrDefault(place.getId(), false),
                 coursePlace.getPlaceOrder()
@@ -255,14 +252,14 @@ public class CourseService {
         return course.getCoursePlaces().stream()
                 .findFirst()
                 .map(CoursePlace::getPlace)
-                .map(this::getThumbnailUrl)
+                .map(this::getImageUrl)
                 .orElse(null);
     }
 
     /**
      * 장소의 썸네일 이미지 URL 생성
      */
-    private String getThumbnailUrl(final Place place) {
+    private String getImageUrl(final Place place) {
         String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
         return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
     }
@@ -275,13 +272,5 @@ public class CourseService {
 
     private String generateCourseBookmarkKey(final Long userId, final Long courseId) {
         return String.format("%s:%d:%d", COURSE_BOOKMARK_KEY_PREFIX, userId, courseId);
-    }
-
-    private void safeSetCache(final String key, final Object value) {
-        try {
-            cacheService.set(key, value, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
-        } catch (Exception e) {
-            log.warn("캐시 저장 실패 - key: {}", key, e);
-        }
     }
 }
