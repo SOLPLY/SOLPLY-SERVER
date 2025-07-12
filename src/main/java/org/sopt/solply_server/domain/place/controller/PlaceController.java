@@ -65,18 +65,6 @@ public class PlaceController {
         );
     }
 
-    //==장소 추천 API==//
-    @Operation(summary = "장소 추천 조회", description = "장소 추천을 위한 썸네일 리스트를 조회합니다.")
-    @GetMapping("/recommendations")
-    public ResponseEntity<CustomApiResponse<PlaceRecommendationGetResponse>> recommendPlaces(
-            @CurrentUserId Long userId,
-            @RequestParam Long townId) {
-        return CustomApiResponse.success(
-                "장소 추천 조회 성공",
-                placeService.getRecommendPlaces(userId, townId)
-        );
-    }
-
 
     //== 장소 북마크 관련 API==//
 

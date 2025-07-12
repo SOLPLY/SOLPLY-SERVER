@@ -251,9 +251,4 @@ public class PlaceService {
         log.info("조회된 최종 북마크 장소들 개수: {}", result.size());
         return result;
     }
-
-
-    public PlaceRecommendationGetResponse getRecommendPlaces(Long userId, Long townId) {
-
-    }
 }
