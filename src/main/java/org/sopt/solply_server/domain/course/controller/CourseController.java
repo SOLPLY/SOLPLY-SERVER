@@ -60,4 +60,14 @@ public class CourseController {
                 courseService.findRecommendCourses(userId, townId)
         );
     }
+
+    @Operation(summary = "코스 북마크 삭제", description = "코스 북마크를 삭제합니다.")
+    @DeleteMapping("/{courseId}/bookmarks")
+    public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkCourse(
+            @CurrentUserId Long userId,
+            @Parameter(description = "코스 ID", required = true)
+            @PathVariable("courseId") Long courseId) {
+        courseBookmarkService.deleteCourseBookmark(userId, courseId);
+        return CustomApiResponse.success("코스를 수집함에서 삭제했습니다.");
+    }
 }
