@@ -55,6 +55,9 @@ public enum ErrorCode {
     PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
 
+    // 코스 관련 (COURSE-xxx)
+    NOT_FOUND_COURSE(HttpStatus.NOT_FOUND, "COURSE-001", "존재하지 않는 코스입니다."),
+    ALREADY_BOOKMARKED_COURSE(HttpStatus.CONFLICT, "COURSE-002", "이미 북마크된 코스입니다."),
 
     // 동네 관련 (TOWN-xxx)
     NOT_FOUND_TOWN(HttpStatus.NOT_FOUND, "TOWN-001" , "존재하지 않는 동네입니다."),

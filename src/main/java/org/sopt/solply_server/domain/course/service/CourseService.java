@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.course.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.CourseRecommendDto;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
@@ -18,6 +19,7 @@ import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.service.TownService;
 import org.sopt.solply_server.global.cache.CacheService;
+import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -25,7 +27,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -39,11 +40,6 @@ public class CourseService {
     private final TownService townService;
     private final ImageUrlProvider imageUrlProvider;
     private final CacheService cacheService;
-
-    // Redis 키 상수
-    private static final String PLACE_BOOKMARK_KEY_PREFIX = "bookmark";
-    private static final String COURSE_BOOKMARK_KEY_PREFIX = "course_bookmark";
-    private static final int BOOKMARK_CACHE_TTL = 1; // 1시간 TTL
 
     /**
      * 코스 상세 정보 조회
@@ -113,7 +109,7 @@ public class CourseService {
         Map<Long, Boolean> bookmarkMap = new HashMap<>();
 
         for (Long placeId : placeIds) {
-            String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
+            String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
 
             try {
                 // Redis에서 북마크 상태 조회
@@ -127,7 +123,7 @@ public class CourseService {
                     bookmarkMap.put(placeId, isBookmarked);
 
                     // Redis에 캐싱 (실패해도 무시)
-                    cacheService.set(bookmarkKey, isBookmarked, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+                    cacheService.set(bookmarkKey, isBookmarked);
                 }
             } catch (Exception e) {
                 log.warn("장소 북마크 상태 조회 실패 - userId: {}, placeId: {}", userId, placeId, e);
@@ -148,18 +144,17 @@ public class CourseService {
         Map<Long, Boolean> bookmarkMap = new HashMap<>();
 
         for (Long courseId : courseIds) {
-            String bookmarkKey = generateCourseBookmarkKey(userId, courseId);
+            String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
             try {
-                Boolean cachedBookmark = cacheService.get(bookmarkKey, Boolean.class);
+                CourseBookmarkRedisDto cachedBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
 
                 if (cachedBookmark != null) {
-                    bookmarkMap.put(courseId, cachedBookmark);
+                    bookmarkMap.put(courseId, cachedBookmark.isActive());
                 } else {
+                    // Redis에 없으면 DB 조회만 (캐싱 X)
                     boolean isBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
                     bookmarkMap.put(courseId, isBookmarked);
-
-                    cacheService.set(bookmarkKey, isBookmarked, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
                 }
             } catch (Exception e) {
                 log.warn("코스 북마크 상태 조회 실패 - userId: {}, courseId: {}", userId, courseId, e);
@@ -172,20 +167,17 @@ public class CourseService {
     }
 
     private boolean isCourseBookmarked(final Long userId, final Long courseId) {
-        String bookmarkKey = generateCourseBookmarkKey(userId, courseId);
+        String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
         try {
-            Boolean cachedBookmark = cacheService.get(bookmarkKey, Boolean.class);
+            CourseBookmarkRedisDto cachedBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
 
             if (cachedBookmark != null) {
-                return cachedBookmark;
+                return cachedBookmark.isActive();
             }
 
-            // Redis에 없으면 DB 조회 후 캐싱
-            boolean isBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
-            cacheService.set(bookmarkKey, isBookmarked, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+            return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
 
-            return isBookmarked;
         } catch (Exception e) {
             log.warn("코스 북마크 상태 조회 실패 - userId: {}, courseId: {}", userId, courseId, e);
             return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
@@ -262,15 +254,5 @@ public class CourseService {
     private String getImageUrl(final Place place) {
         String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
         return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
-    }
-
-    //===Helper 메서드===//
-
-    private String generatePlaceBookmarkKey(final Long userId, final Long placeId) {
-        return String.format("%s:%d:%d", PLACE_BOOKMARK_KEY_PREFIX, userId, placeId);
-    }
-
-    private String generateCourseBookmarkKey(final Long userId, final Long courseId) {
-        return String.format("%s:%d:%d", COURSE_BOOKMARK_KEY_PREFIX, userId, courseId);
     }
 }
