@@ -143,7 +143,6 @@ public class CourseService {
         return bookmarkMap;
     }
 
-    // TODO: Redis 기반 북마크 조회로 변경, 배치 조회 메서드 추가 필요
     private Map<Long, Boolean> getCourseBookmarkMap(final List<Long> courseIds, final Long userId) {
         if (courseIds.isEmpty()) {
             return Map.of();
@@ -219,7 +218,7 @@ public class CourseService {
      */
     private CourseRecommendDto convertToCourseRecommendDto(final Course course,
                                                            final Map<Long, Boolean> courseBookmarkMap) {
-        List<TagName> mainTags = extractMainTagsFromCourse(course);
+        List<TagName> mainTags = extractTopTwoPlaceMainTags(course);
 
         String thumbnailUrl = getCourseThumbnailUrl(course);
 
@@ -232,17 +231,20 @@ public class CourseService {
     }
 
     /**
-     * 코스에서 메인 태그들 추출 (중복 제거)
+     * 코스에서 상위 2개 장소의 메인 태그를 순서대로 추출 (중복 허용)
      */
-    private List<TagName> extractMainTagsFromCourse(final Course course) {
+    private List<TagName> extractTopTwoPlaceMainTags(final Course course) {
         return course.getCoursePlaces().stream()
+                .sorted(Comparator.comparing(CoursePlace::getPlaceOrder))
+                .limit(2)
                 .map(CoursePlace::getPlace)
-                .flatMap(place -> place.getPlaceTags().stream())
-                .map(PlaceTag::getTag)
-                .filter(tag -> tag.getType() == TagType.MAIN)
-                .map(Tag::getName)
-                .distinct()
-                .sorted(Comparator.comparing(TagName::name)) // 정렬로 일관성 보장
+                .map(place -> place.getPlaceTags().stream()
+                        .map(PlaceTag::getTag)
+                        .filter(tag -> tag.getType() == TagType.MAIN)
+                        .map(Tag::getName)
+                        .findFirst()
+                        .orElse(null))
+                .filter(Objects::nonNull)
                 .toList();
     }
 
