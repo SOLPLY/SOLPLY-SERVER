@@ -1,9 +1,7 @@
 package org.sopt.solply_server.domain.place.service.cache;
 
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.global.cache.RedisFlushScheduler;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -14,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class BookmarkFlushScheduler implements RedisFlushScheduler {
 
-    private final BookmarkRedisDataProcessor bookmarkProcessor;
+    private final BookmarkRedisDataManager bookmarkProcessor;
 
     @Override
     public String getDomainName() {
@@ -28,11 +26,8 @@ public class BookmarkFlushScheduler implements RedisFlushScheduler {
         log.info("=== {} 전체 플러시 시작 ===", getDomainName());
 
         try {
-            // 1. Redis → DB 저장/삭제 처리
-            int processedCount = flushRedisData();
-
-            log.info("=== {} 전체 플러시 완료 - 처리: {}건 ===", getDomainName(), processedCount);
-
+            // Redis → DB 저장/삭제 처리
+            flushRedisData();
         } catch (Exception e) {
             log.error("{} 플러시 실패", getDomainName(), e);
         }
@@ -41,13 +36,10 @@ public class BookmarkFlushScheduler implements RedisFlushScheduler {
     /**
      * Redis 데이터 처리
      */
-    private int flushRedisData() {
+    private void flushRedisData() {
         log.info("Redis 데이터 플러시 시작");
-
-        int processedCount = bookmarkProcessor.flushAllPendingBookmarks();
-
-        log.info("Redis 데이터 플러시 완료 - 처리: {}건", processedCount);
-        return processedCount;
+        bookmarkProcessor.flushAllPendingData();
+        log.info("Redis 데이터 플러시 완료");
     }
 
 }

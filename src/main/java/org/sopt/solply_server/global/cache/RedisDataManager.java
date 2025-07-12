@@ -1,6 +1,6 @@
 package org.sopt.solply_server.global.cache;
 
-public interface RedisDataProcessor {
+public interface RedisDataManager {
 
     // 도메인 이름(로깅용)
     String getDomainName();
@@ -14,4 +14,9 @@ public interface RedisDataProcessor {
      * 개별 아이템 처리 로직
      */
     void flushToDatabase(String key);
+
+    /**
+     * 배치 처리 로직
+     */
+    void flushAllPendingData();
 }

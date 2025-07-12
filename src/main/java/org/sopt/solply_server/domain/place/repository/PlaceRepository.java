@@ -51,4 +51,8 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     );
 
 
+    @Query("SELECT p FROM Place p " +
+            "JOIN FETCH p.town " +
+            "WHERE p.id IN :placeIds")
+    List<Place> findAllByIdsWithTown(@Param("placeIds") List<Long> placeIds);
 }

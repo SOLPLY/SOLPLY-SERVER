@@ -7,15 +7,18 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceThumbnailListGetResponse;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,7 +43,7 @@ public class PlaceController {
             @PathVariable Long placeId) {
         return CustomApiResponse.success(
                 "장소 상세 조회 성공",
-                placeService.findPlaceDetailsById(userId, placeId)
+                placeService.getPlaceDetailsById(userId, placeId)
         );
     }
 
@@ -51,7 +54,7 @@ public class PlaceController {
             @Validated @ModelAttribute PlaceFilterGetRequest placeFilterGetRequest) {
         return CustomApiResponse.success(
                 "장소 태그 필터링 성공",
-                placeService.findPlacesByTownAndTag(userId,
+                placeService.getPlacesByTownAndTag(userId,
                         placeFilterGetRequest.townId(),
                         placeFilterGetRequest.mainTagId(),
                         placeFilterGetRequest.subTagAIdList(),
@@ -60,8 +63,21 @@ public class PlaceController {
         );
     }
 
+    @Operation(summary = "나만의 장소 썸네일 리스트 조회", description = "나만의 장소 썸네일 리스트를 조회합니다.")
+    @GetMapping("/bookmarks/folders/preview")
+    public ResponseEntity<CustomApiResponse<PlaceThumbnailListGetResponse>> findMyPlaceThumbnailList(
+            @CurrentUserId Long userId) {
+        return CustomApiResponse.success(
+                "나만의 장소 썸네일 리스트 조회 성공",
+                placeService.getBookmarkPlaceThumnbnailList(userId)
+        );
+    }
+
+
+    // == 장소 북마크 관련 API === //
+
     @Operation(summary = "장소 북마크 저장", description = "장소를 북마크에 등록합니다.")
-    @PostMapping("/{placeId}/bookmark/")
+    @PostMapping("/{placeId}/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> bookmarkPlace(
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId) {
@@ -70,7 +86,7 @@ public class PlaceController {
     }
 
     @Operation(summary = "장소 북마크 삭제", description = "장소 북마크를 삭제합니다.")
-    @PostMapping("/{placeId}/bookmark/delete")
+    @DeleteMapping("/{placeId}/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlace(
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId) {
@@ -79,7 +95,7 @@ public class PlaceController {
     }
 
     @Operation(summary = "장소 북마크 리스트 삭제", description = "장소 북마크를 삭제합니다.")
-    @PostMapping("/bookmark/delete")
+    @DeleteMapping("/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlaces(
             @CurrentUserId Long userId,
             @RequestParam("placeIds")

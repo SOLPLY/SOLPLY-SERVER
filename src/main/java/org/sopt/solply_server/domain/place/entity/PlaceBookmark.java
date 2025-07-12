@@ -16,6 +16,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
 @Getter
@@ -24,10 +25,11 @@ import org.sopt.solply_server.domain.user.entity.User;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "place_bookmark",
         indexes = {
-                @Index(name = "idx_place_bookmark_user_place", columnList = "user_id, place_id", unique = true)
+                @Index(name = "idx_place_bookmark_user_place", columnList = "user_id, place_id", unique = true),
+                @Index(name = "idx_place_bookmark_user_created", columnList = "user_id, created_at")
         }
 )
-public class PlaceBookmark {
+public class PlaceBookmark extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
