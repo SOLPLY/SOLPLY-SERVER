@@ -72,6 +72,30 @@ public class CourseBookmarkService {
         }
     }
 
+    /**
+     * 코스 북마크 삭제
+     */
+    @Transactional
+    public void deleteCourseBookmark(final Long userId, final Long courseId) {
+        String bookmarkKey = generateCourseBookmarkKey(userId, courseId);
+        String userBookmarkKey = generateUserCourseBookmarkKey(userId);
+
+        CourseBookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
+
+        if (currentBookmark != null && currentBookmark.isActive()) {
+            // 삭제 마커로 업데이트
+            CourseBookmarkRedisDto deleteMarker = CourseBookmarkRedisDto.createDeleted(userId, courseId);
+            cacheService.set(bookmarkKey, deleteMarker, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
+
+            // 조회용 키도 제거
+            removeFromUserCourseBookmarkList(userBookmarkKey, courseId);
+
+            log.info("코스 북마크 삭제 마커 설정 완료 - userId: {}, courseId: {}", userId, courseId);
+        } else {
+            log.warn("삭제할 활성 코스 북마크가 없음 - userId: {}, courseId: {}", userId, courseId);
+        }
+    }
+
     // === Private Methods ===
 
     private String generateCourseBookmarkKey(final Long userId, final Long courseId) {
@@ -94,6 +118,20 @@ public class CourseBookmarkService {
             }
         } catch (Exception e) {
             log.warn("사용자 코스 북마크 목록 업데이트 실패 - key: {}", userBookmarkKey, e);
+        }
+    }
+
+    private void removeFromUserCourseBookmarkList(final String userBookmarkKey, final Long courseId) {
+        try {
+            java.util.List<Long> bookmarks = cacheService.getList(userBookmarkKey, Long.class);
+            if (bookmarks != null && bookmarks.remove(courseId)) {
+                cacheService.setList(userBookmarkKey, bookmarks, 24, TimeUnit.HOURS);
+                log.info("사용자 코스 북마크 목록에서 제거 완료 - key: {}, courseId: {}", userBookmarkKey, courseId);
+            } else {
+                log.warn("제거할 코스 북마크가 목록에 없음 - key: {}, courseId: {}", userBookmarkKey, courseId);
+            }
+        } catch (Exception e) {
+            log.error("사용자 코스 북마크 목록 제거 실패 - key: {}", userBookmarkKey, e);
         }
     }
 

@@ -38,6 +38,13 @@ public record CourseBookmarkRedisDto(
         return new CourseBookmarkRedisDto(userId, courseId, LocalDateTime.now(), BookmarkStatus.ACTIVE);
     }
 
+    /**
+     * 삭제 마커 생성
+     */
+    public static CourseBookmarkRedisDto createDeleted(Long userId, Long courseId) {
+        return new CourseBookmarkRedisDto(userId, courseId, LocalDateTime.now(), BookmarkStatus.DELETED);
+    }
+
     public static CourseBookmarkRedisDto of(Long userId, Long courseId) {
         return createActive(userId, courseId);
     }
