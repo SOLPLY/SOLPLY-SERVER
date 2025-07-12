@@ -1,6 +1,6 @@
 package org.sopt.solply_server.domain.place.service;
 
-import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generateKey;
+import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlaceBookmarkKey;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -12,10 +12,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
 import org.sopt.solply_server.domain.place.dto.FolderThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
+import org.sopt.solply_server.domain.place.dto.PlaceInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderThumbnailListGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceRecommendationGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
@@ -134,9 +136,7 @@ public class PlaceService {
             log.info("북마크된 장소만 조회");
             List<Place> bookmarkedPlaces = getPlacesByTown(false, selectedTownId, bookmarkRedisDtos);
             log.info("북마크 조회 성공");
-            return bookmarkedPlaces.stream()
-                    .filter(place -> place.getTown().getId().equals(selectedTownId))
-                    .collect(Collectors.toList());
+            return bookmarkedPlaces;
         }
 
         // 메인 태그로만 조회
@@ -178,7 +178,7 @@ public class PlaceService {
     private boolean isBookmarked(final Long userId, final Long placeId) {
         try {
             // Redis 먼저 확인
-            String bookmarkKey = generateKey(CachePrefix.BOOKMARK, userId, placeId);
+            String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
             BookmarkRedisDto bookmarkData = bookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
 
             if (bookmarkData != null && bookmarkData.isActive()) {
@@ -253,4 +253,7 @@ public class PlaceService {
     }
 
 
+    public PlaceRecommendationGetResponse getRecommendPlaces(Long userId, Long townId) {
+
+    }
 }
