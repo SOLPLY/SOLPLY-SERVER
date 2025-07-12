@@ -7,9 +7,12 @@ import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceThumbnailListGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.service.cache.BookmarkRedisDataManager;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
@@ -33,11 +36,13 @@ public class PlaceService {
     private final ImageUrlProvider imageUrlProvider;
     private final TownRepository townRepository;
     private final TagValidator tagValidator;
+    private final BookmarkRedisDataManager bookmarkRedisDataManager;
+    private final PlaceBookmarkService placeBookmarkService;
 
     /**
      * 장소 상세 정보 조회
      */
-    public PlaceAllGetResponse findPlaceDetailsById(final Long userId, final Long placeId) {
+    public PlaceAllGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
 
@@ -61,7 +66,7 @@ public class PlaceService {
     /**
      * 동네와 태그 조건에 따른 장소 조회
      */
-    public PlaceFilterGetResponse findPlacesByTownAndTag(
+    public PlaceFilterGetResponse getPlacesByTownAndTag(
             final Long userId, final Long townId, final Long mainTagId,
             final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
 
@@ -83,6 +88,31 @@ public class PlaceService {
                 .toList();;
 
         return PlaceFilterGetResponse.from(placeThumbnailDtoList);
+    }
+
+    public PlaceThumbnailListGetResponse getBookmarkPlaceThumnailList(Long userId) {
+        // Redis에서 활성화된 북마크 장소(가장 최근에 북마크한 장소들) ID 목록 가져오기
+        List<Long> bookmarkPlaceIds = bookmarkRedisDataManager.getActiveBookmarkPlaceIds(userId);
+
+        // 동네별 최근 저장 장소 정보 조회
+        List<PlaceBookmark> recentPlacesByTown =
+                placeBookmarkService.getRecentBookmarkPlacesByTown(userId, bookmarkPlaceIds);
+
+        return PlaceThumbnailListGetResponse.from(
+                recentPlacesByTown.stream()
+                    .map(bookmark -> {
+                        // 1차 캐시에서 Place 엔티티를 가져온다
+                        Place place = bookmark.getPlace();
+                        return PlaceThumbnailDto.of(
+                                place.getId(),
+                                place.getName(),
+                                getThumbnailUrl(place),
+                                place.getPrimaryTag(),
+                                true // 북마크된 상태이므로 true
+                        );
+                    })
+                    .toList()
+        );
     }
 
 
@@ -120,6 +150,8 @@ public class PlaceService {
         }
         tagValidator.validateTagListRelation(mainTagId, subTagIdList);
     }
+
+
 
     // 동네 ID를 통해 동네를 검증하고 가져오는 메서드
     private Town validateAndGetTown(Long townId) {
