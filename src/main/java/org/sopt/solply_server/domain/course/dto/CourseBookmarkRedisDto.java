@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 public record CourseBookmarkRedisDto(
         Long userId,
         Long courseId,
+        Long placeId, // Place 북마크와 구분 (Course 북마크에서는 null)
         LocalDateTime createdAt,
         BookmarkStatus status
 ) {
@@ -32,17 +33,17 @@ public record CourseBookmarkRedisDto(
     }
 
     /**
-     * 활성 북마크 생성
+     * 활성 코스 북마크 생성
      */
     public static CourseBookmarkRedisDto createActive(Long userId, Long courseId) {
-        return new CourseBookmarkRedisDto(userId, courseId, LocalDateTime.now(), BookmarkStatus.ACTIVE);
+        return new CourseBookmarkRedisDto(userId, courseId, null, LocalDateTime.now(), BookmarkStatus.ACTIVE);
     }
 
     /**
-     * 삭제 마커 생성
+     * 삭제 코스 북마크 마커 생성
      */
     public static CourseBookmarkRedisDto createDeleted(Long userId, Long courseId) {
-        return new CourseBookmarkRedisDto(userId, courseId, LocalDateTime.now(), BookmarkStatus.DELETED);
+        return new CourseBookmarkRedisDto(userId, courseId, null, LocalDateTime.now(), BookmarkStatus.DELETED);
     }
 
     public static CourseBookmarkRedisDto of(Long userId, Long courseId) {

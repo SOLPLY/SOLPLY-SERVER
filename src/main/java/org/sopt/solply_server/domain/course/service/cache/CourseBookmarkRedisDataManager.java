@@ -11,7 +11,7 @@ import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
-import org.sopt.solply_server.global.cache.RedisDataProcessor;
+import org.sopt.solply_server.global.cache.RedisDataManager;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Component;
@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class CourseBookmarkRedisDataProcessor implements RedisDataProcessor {
+public class CourseBookmarkRedisDataManager implements RedisDataManager {
 
     private final CacheService cacheService;
     private final UserRepository userRepository;
@@ -34,17 +34,11 @@ public class CourseBookmarkRedisDataProcessor implements RedisDataProcessor {
     @Override
     public String getKeyPattern() {
         // 개별 코스 북마크 키만 처리 (사용자 목록 키는 제외)
-        return "course_bookmark:*:*";
+        return "bookmark:*:*";
     }
 
     @Override
     public void flushToDatabase(String courseBookmarkKey) {
-        // 사용자 북마크 목록 키는 조회용이기 때문에 스킵
-        if (courseBookmarkKey.contains("course_bookmark:user:")) {
-            log.debug("사용자 코스 목록 키 스킵 - key: {}", courseBookmarkKey);
-            return;
-        }
-
         // Redis에서 북마크 데이터 조회
         CourseBookmarkRedisDto bookmarkData = cacheService.get(courseBookmarkKey, CourseBookmarkRedisDto.class);
 
@@ -53,10 +47,35 @@ public class CourseBookmarkRedisDataProcessor implements RedisDataProcessor {
             return;
         }
 
+        // courseId가 있는 경우만 코스 북마크로 처리 (placeId는 place bookmark에서 처리)
+        if (bookmarkData.courseId() == null) {
+            log.debug("장소 북마크 키 스킵 - key: {}", courseBookmarkKey);
+            return;
+        }
+
         if (bookmarkData.isActive()) {
             saveActiveCourseBookmark(courseBookmarkKey, bookmarkData);
         } else if (bookmarkData.isDeleted()) {
             deleteCourseBookmark(courseBookmarkKey, bookmarkData);
+        }
+    }
+
+    @Override
+    public void flushAllPendingData() {
+        Set<String> keys = cacheService.findKeys(getKeyPattern());
+
+        if (keys.isEmpty()) {
+            log.debug("플러시할 코스 북마크 데이터 없음");
+        }
+
+        log.info("코스 북마크 플러시 대상: {}개", keys.size());
+
+        for (String key : keys) {
+            try {
+                flushToDatabase(key);
+            } catch (Exception e) {
+                log.error("코스 북마크 개별 키 처리 실패 - key: {}", key, e);
+            }
         }
     }
 
@@ -106,29 +125,4 @@ public class CourseBookmarkRedisDataProcessor implements RedisDataProcessor {
         }
     }
 
-    /**
-     * 배치로 모든 pending 코스 북마크 처리
-     */
-    public int flushAllPendingCourseBookmarks() {
-        Set<String> keys = cacheService.findKeys(getKeyPattern());
-
-        if (keys.isEmpty()) {
-            log.debug("플러시할 코스 북마크 데이터 없음");
-            return 0;
-        }
-
-        log.info("코스 북마크 플러시 대상: {}개", keys.size());
-
-        int successCount = 0;
-        for (String key : keys) {
-            try {
-                flushToDatabase(key);
-                successCount++;
-            } catch (Exception e) {
-                log.error("코스 북마크 개별 키 처리 실패 - key: {}", key, e);
-            }
-        }
-
-        return successCount;
-    }
 }
