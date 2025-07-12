@@ -3,7 +3,6 @@ package org.sopt.solply_server.domain.place.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -11,7 +10,7 @@ import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
-import org.sopt.solply_server.domain.place.dto.response.PlaceThumbnailListGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceFolderThumbnailListGetResponse;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -47,15 +46,17 @@ public class PlaceController {
         );
     }
 
-    @Operation(summary = "장소 태그 필터링", description = "장소 태그를 통해 장소를 필터링합니다.")
+    @Operation(summary = "장소 리스트 조회", description = "동네, 장소 태그, 북마크 여부를 기반으로 장소를 필터링합니다.")
     @GetMapping
     public ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>> findPlacesByTag(
             @CurrentUserId Long userId,
             @Validated @ModelAttribute PlaceFilterGetRequest placeFilterGetRequest) {
         return CustomApiResponse.success(
-                "장소 태그 필터링 성공",
-                placeService.getPlacesByTownAndTag(userId,
+                "장소 리스트 조회 성공",
+                placeService.getPlacesByTownAndTag(
+                        userId,
                         placeFilterGetRequest.townId(),
+                        placeFilterGetRequest.bookmarked(),
                         placeFilterGetRequest.mainTagId(),
                         placeFilterGetRequest.subTagAIdList(),
                         placeFilterGetRequest.subTagBIdList()
@@ -63,18 +64,18 @@ public class PlaceController {
         );
     }
 
+
+    // == 장소 북마크 관련 API === //
+
     @Operation(summary = "나만의 장소 썸네일 리스트 조회", description = "나만의 장소 썸네일 리스트를 조회합니다.")
     @GetMapping("/bookmarks/folders/preview")
-    public ResponseEntity<CustomApiResponse<PlaceThumbnailListGetResponse>> findMyPlaceThumbnailList(
+    public ResponseEntity<CustomApiResponse<PlaceFolderThumbnailListGetResponse>> findMyPlaceThumbnailList(
             @CurrentUserId Long userId) {
         return CustomApiResponse.success(
                 "나만의 장소 썸네일 리스트 조회 성공",
                 placeService.getBookmarkPlaceThumnbnailList(userId)
         );
     }
-
-
-    // == 장소 북마크 관련 API === //
 
     @Operation(summary = "장소 북마크 저장", description = "장소를 북마크에 등록합니다.")
     @PostMapping("/{placeId}/bookmarks")
@@ -100,10 +101,11 @@ public class PlaceController {
             @CurrentUserId Long userId,
             @RequestParam("placeIds")
             @NotBlank(message = "placeIds는 null 혹은 비어있을 수 없습니다")
-            @Size(max = 100, message = "한 번에 최대 100개까지 조회 가능합니다")
             List<Long> placeIds) {
         placeBookmarkService.deletePlaceBookmarks(userId, placeIds);
         return CustomApiResponse.success("내 장소에서 장소들을 삭제했습니다.");
     }
+
+
 
 }

@@ -3,7 +3,6 @@ package org.sopt.solply_server.domain.place.repository;
 import io.lettuce.core.dynamic.annotation.Param;
 import java.util.List;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -14,9 +13,9 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
             "JOIN p.placeTags pt " +
             "JOIN pt.tag t " +
             "WHERE t.id = :mainTagId AND t.type = 'MAIN' " +
-            "AND p.town = :town")
-    List<Place> findPlacesByTownAndMainTag(
-            @Param("town") Town town,
+            "AND p.town.id = :townId")
+    List<Place> findPlacesByTownIdAndMainTag(
+            @Param("townId") Long townId,
             @Param("mainTagId") Long mainTagId
     );
 
@@ -26,7 +25,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
         JOIN p.placeTags pt1
         JOIN pt1.tag t1
         WHERE t1.id = :mainTagId AND t1.type = 'MAIN'
-          AND p.town = :town
+          AND p.town.id = :townId
           AND (
             (:subTagOptionAIds IS NULL OR EXISTS (
                 SELECT pt2 FROM PlaceTag pt2
@@ -44,7 +43,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
           )
     """)
     List<Place> findPlacesByTownAndMainTagAndSubTags(
-            @Param("town") Town town,
+            @Param("townId") Long townId,
             @Param("mainTagId") Long mainTagId,
             @Param("subTagOptionAIds") List<Long> subTagOptionAIds,
             @Param("subTagOptionBIds") List<Long> subTagOptionBIds
