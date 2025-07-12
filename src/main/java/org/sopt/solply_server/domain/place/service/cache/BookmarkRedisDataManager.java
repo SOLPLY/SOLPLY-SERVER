@@ -2,13 +2,10 @@ package org.sopt.solply_server.domain.place.service.cache;
 
 
 import static org.sopt.solply_server.domain.place.constant.CachePrefix.BOOKMARK_KEY_PREFIX;
-import static org.sopt.solply_server.domain.place.constant.CachePrefix.BOOKMARK_USER_KEY_PREFIX;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
@@ -16,7 +13,6 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.place.util.RedisKeyGenerator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
@@ -96,24 +92,7 @@ public class BookmarkRedisDataManager implements RedisDataManager {
         List<BookmarkRedisDto> activeBookmarkDtos = new ArrayList<>();
 
         try {
-            // 1. 먼저 사용자별 북마크 목록 키에서 placeId 조회
-            String userBookmarkKey = String.format("%s:%d", BOOKMARK_USER_KEY_PREFIX, userId);
-            List<Long> cachedPlaceIds = cacheService.getList(userBookmarkKey, Long.class);
-
-            if (cachedPlaceIds != null && !cachedPlaceIds.isEmpty()) {
-                // 각 placeId에 대해 상세 정보 조회
-                for (Long placeId : cachedPlaceIds) {
-                    BookmarkRedisDto bookmarkDto = getBookmarkDto(userId, placeId);
-                    if (bookmarkDto != null && bookmarkDto.isActive()) {
-                        activeBookmarkDtos.add(bookmarkDto);
-                    }
-                }
-                log.info("사용자별 목록 키에서 북마크 DTO 조회 - userId: {}, 총 {}개 중 활성 {}개",
-                        userId, cachedPlaceIds.size(), activeBookmarkDtos.size());
-                return activeBookmarkDtos;
-            }
-
-            // 2. 사용자별 목록이 없으면 개별 북마크 키들을 스캔
+            // 사용자의 모든 북마크 키 스캔
             String userBookmarkPattern = String.format("%s:%d:*", BOOKMARK_KEY_PREFIX, userId);
             Set<String> userBookmarkKeys = cacheService.findKeys(userBookmarkPattern);
 
@@ -124,38 +103,17 @@ public class BookmarkRedisDataManager implements RedisDataManager {
                 }
             }
 
-            // 3. 조회된 활성 북마크의 placeId로 사용자별 목록 키 업데이트
-            if (!activeBookmarkDtos.isEmpty()) {
-                List<Long> activePlaceIds = activeBookmarkDtos.stream()
-                        .map(BookmarkRedisDto::placeId)
-                        .collect(Collectors.toList());
-                cacheService.setList(userBookmarkKey, activePlaceIds);
-            }
-
-            log.info("개별 키 스캔으로 북마크 DTO 조회 - userId: {}, 활성 북마크 {}개", userId, activeBookmarkDtos.size());
+            log.info("패턴 스캔으로 활성 북마크 조회 - userId: {}, 활성 북마크 {}개",
+                    userId, activeBookmarkDtos.size());
 
         } catch (Exception e) {
-            log.error("Redis에서 북마크 DTO 목록 조회 실패 - userId: {}", userId, e);
+            log.error("Redis에서 북마크 조회 실패 - userId: {}", userId, e);
             return new ArrayList<>();
         }
 
         return activeBookmarkDtos;
     }
 
-
-    /**
-     * 특정 북마크가 활성 상태인지 확인
-     */
-    private boolean isBookmarkActive(Long userId, Long placeId) {
-        try {
-            String bookmarkKey = RedisKeyGenerator.generateBookmarkKey(userId, placeId);
-            BookmarkRedisDto bookmarkData = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
-            return bookmarkData != null && bookmarkData.isActive();
-        } catch (Exception e) {
-            log.warn("북마크 상태 확인 실패 - userId: {}, placeId: {}", userId, placeId, e);
-            return false;
-        }
-    }
 
     /**
      * 활성 북마크 처리
@@ -204,16 +162,6 @@ public class BookmarkRedisDataManager implements RedisDataManager {
             log.error("북마크 DB 삭제 실패 - userId: {}, placeId: {}",
                     bookmarkData.userId(), bookmarkData.placeId(), e);
             throw e;
-        }
-    }
-
-    private BookmarkRedisDto getBookmarkDto(Long userId, Long placeId) {
-        try {
-            String bookmarkKey = String.format("%s:%d:%d", BOOKMARK_KEY_PREFIX, userId, placeId);
-            return cacheService.get(bookmarkKey, BookmarkRedisDto.class);
-        } catch (Exception e) {
-            log.warn("개별 북마크 DTO 조회 실패 - userId: {}, placeId: {}", userId, placeId, e);
-            return null;
         }
     }
 
