@@ -42,4 +42,8 @@ public class CourseBookmark extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    public static CourseBookmark create(Course course, User user) {
+        return new CourseBookmark(null, course, user);
+    }
+
 }
