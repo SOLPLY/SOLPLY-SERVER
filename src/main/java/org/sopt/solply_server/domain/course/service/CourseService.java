@@ -17,7 +17,9 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.service.TownService;
+import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
+import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -40,9 +42,6 @@ public class CourseService {
     private final ImageUrlProvider imageUrlProvider;
     private final CacheService cacheService;
 
-    // Redis 키 상수
-    private static final String PLACE_BOOKMARK_KEY_PREFIX = "bookmark";
-    private static final String COURSE_BOOKMARK_KEY_PREFIX = "course_bookmark";
     private static final int BOOKMARK_CACHE_TTL = 1; // 1시간 TTL
 
     /**
@@ -113,7 +112,7 @@ public class CourseService {
         Map<Long, Boolean> bookmarkMap = new HashMap<>();
 
         for (Long placeId : placeIds) {
-            String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
+            String bookmarkKey = RedisKeyGenerator.generateKey(CachePrefix.BOOKMARK, userId, placeId);
 
             try {
                 // Redis에서 북마크 상태 조회
@@ -148,7 +147,7 @@ public class CourseService {
         Map<Long, Boolean> bookmarkMap = new HashMap<>();
 
         for (Long courseId : courseIds) {
-            String bookmarkKey = generateCourseBookmarkKey(userId, courseId);
+            String bookmarkKey = RedisKeyGenerator.generateKey(CachePrefix.BOOKMARK, userId, courseId);
 
             try {
                 Boolean cachedBookmark = cacheService.get(bookmarkKey, Boolean.class);
@@ -172,7 +171,7 @@ public class CourseService {
     }
 
     private boolean isCourseBookmarked(final Long userId, final Long courseId) {
-        String bookmarkKey = generateCourseBookmarkKey(userId, courseId);
+        String bookmarkKey = RedisKeyGenerator.generateKey(CachePrefix.BOOKMARK, userId, courseId);
 
         try {
             Boolean cachedBookmark = cacheService.get(bookmarkKey, Boolean.class);
@@ -262,15 +261,5 @@ public class CourseService {
     private String getImageUrl(final Place place) {
         String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
         return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
-    }
-
-    //===Helper 메서드===//
-
-    private String generatePlaceBookmarkKey(final Long userId, final Long placeId) {
-        return String.format("%s:%d:%d", PLACE_BOOKMARK_KEY_PREFIX, userId, placeId);
-    }
-
-    private String generateCourseBookmarkKey(final Long userId, final Long courseId) {
-        return String.format("%s:%d:%d", COURSE_BOOKMARK_KEY_PREFIX, userId, courseId);
     }
 }
