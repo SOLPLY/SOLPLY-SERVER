@@ -69,7 +69,7 @@ public class PlaceController {
             @CurrentUserId Long userId) {
         return CustomApiResponse.success(
                 "나만의 장소 썸네일 리스트 조회 성공",
-                placeService.getBookmarkPlaceThumnailList(userId)
+                placeService.getBookmarkPlaceThumnbnailList(userId)
         );
     }
 

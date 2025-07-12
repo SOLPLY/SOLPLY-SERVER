@@ -93,7 +93,7 @@ public class PlaceService {
         return PlaceFilterGetResponse.from(placeThumbnailDtoList);
     }
 
-    public PlaceThumbnailListGetResponse getBookmarkPlaceThumnailList(Long userId) {
+    public PlaceThumbnailListGetResponse getBookmarkPlaceThumnbnailList(Long userId) {
         // Redis에서 활성화된 북마크 장소(가장 최근에 북마크한 장소들) ID 목록 가져오기
         List<BookmarkRedisDto> placeBookmarkList = bookmarkRedisDataManager.getActiveBookmarkDtos(userId);
 
@@ -166,14 +166,14 @@ public class PlaceService {
         }
 
         // 모든 place ID로 Place 정보 조회
-        List<Long> allPlaceIds = bookmarkRedisDtos.stream()
+        List<Long> bookmarkPlaceIdList = bookmarkRedisDtos.stream()
                 .map(BookmarkRedisDto::placeId)
                 .collect(Collectors.toList());
 
-        List<Place> allPlaces = placeRepository.findAllByIdsWithTown(allPlaceIds);
+        List<Place> bookmarkedPlaceList = placeRepository.findAllByIdsWithTown(bookmarkPlaceIdList);
 
         // Map -> Place ID : Place 객체
-        Map<Long, Place> placeMap = allPlaces.stream()
+        Map<Long, Place> placeMap = bookmarkedPlaceList.stream()
                 .collect(Collectors.toMap(Place::getId, place -> place));
 
         // Map -> Place ID : BookmarkRedisDto
