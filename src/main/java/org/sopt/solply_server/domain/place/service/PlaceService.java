@@ -119,7 +119,7 @@ public class PlaceService {
     }
 
 
-    //===편의 메서드===//
+    //=== Private Methods ===//
 
     private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final Boolean bookmarked,
             final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {

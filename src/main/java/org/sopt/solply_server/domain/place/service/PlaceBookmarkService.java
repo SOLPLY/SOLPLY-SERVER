@@ -107,7 +107,7 @@ public class PlaceBookmarkService {
     }
 
 
-    // === Private Methods ===
+    //=== Private Methods ===//
 
     private void saveToDatabase(final PlaceBookmark bookmark) {
         try {
