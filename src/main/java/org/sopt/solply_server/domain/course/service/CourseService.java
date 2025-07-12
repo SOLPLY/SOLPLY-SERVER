@@ -108,7 +108,7 @@ public class CourseService {
 
     //===Redis 활용 북마크 조회 메서드===//
 
-    private Map<Long, Boolean> getPlaceBookmarkMap(List<Long> placeIds, Long userId) {
+    private Map<Long, Boolean> getPlaceBookmarkMap(final List<Long> placeIds, final Long userId) {
         if (placeIds.isEmpty()) {
             return Map.of();
         }
@@ -144,7 +144,7 @@ public class CourseService {
     }
 
     // TODO: Redis 기반 북마크 조회로 변경, 배치 조회 메서드 추가 필요
-    private Map<Long, Boolean> getCourseBookmarkMap(List<Long> courseIds, Long userId) {
+    private Map<Long, Boolean> getCourseBookmarkMap(final List<Long> courseIds, final Long userId) {
         if (courseIds.isEmpty()) {
             return Map.of();
         }
@@ -175,7 +175,7 @@ public class CourseService {
         return bookmarkMap;
     }
 
-    private boolean isCourseBookmarked(Long userId, Long courseId) {
+    private boolean isCourseBookmarked(final Long userId, final Long courseId) {
         String bookmarkKey = generateCourseBookmarkKey(userId, courseId);
 
         try {
@@ -201,7 +201,8 @@ public class CourseService {
     /**
      * CoursePlace를 CoursePlaceDetailsDto로 변환
      */
-    private CoursePlaceDetailsDto convertToCoursePlaceDetailsDto(CoursePlace coursePlace, Map<Long, Boolean> placeBookmarkMap) {
+    private CoursePlaceDetailsDto convertToCoursePlaceDetailsDto(final CoursePlace coursePlace,
+                                                                 final Map<Long, Boolean> placeBookmarkMap) {
         Place place = coursePlace.getPlace();
 
         return CoursePlaceDetailsDto.of(
@@ -216,7 +217,8 @@ public class CourseService {
     /**
      * Course를 CourseRecommendDto로 변환
      */
-    private CourseRecommendDto convertToCourseRecommendDto(Course course, Map<Long, Boolean> courseBookmarkMap) {
+    private CourseRecommendDto convertToCourseRecommendDto(final Course course,
+                                                           final Map<Long, Boolean> courseBookmarkMap) {
         List<TagName> mainTags = extractMainTagsFromCourse(course);
 
         String thumbnailUrl = getCourseThumbnailUrl(course);
@@ -232,7 +234,7 @@ public class CourseService {
     /**
      * 코스에서 메인 태그들 추출 (중복 제거)
      */
-    private List<TagName> extractMainTagsFromCourse(Course course) {
+    private List<TagName> extractMainTagsFromCourse(final Course course) {
         return course.getCoursePlaces().stream()
                 .map(CoursePlace::getPlace)
                 .flatMap(place -> place.getPlaceTags().stream())
@@ -247,7 +249,7 @@ public class CourseService {
     /**
      * 코스의 썸네일 URL 생성 (첫 번째 장소의 썸네일 사용)
      */
-    private String getCourseThumbnailUrl(Course course) {
+    private String getCourseThumbnailUrl(final Course course) {
         return course.getCoursePlaces().stream()
                 .findFirst()
                 .map(CoursePlace::getPlace)
@@ -258,22 +260,22 @@ public class CourseService {
     /**
      * 장소의 썸네일 이미지 URL 생성
      */
-    private String getThumbnailUrl(Place place) {
+    private String getThumbnailUrl(final Place place) {
         String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
         return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
     }
 
     //===Helper 메서드===//
 
-    private String generatePlaceBookmarkKey(Long userId, Long placeId) {
+    private String generatePlaceBookmarkKey(final Long userId, final Long placeId) {
         return String.format("%s:%d:%d", PLACE_BOOKMARK_KEY_PREFIX, userId, placeId);
     }
 
-    private String generateCourseBookmarkKey(Long userId, Long courseId) {
+    private String generateCourseBookmarkKey(final Long userId, final Long courseId) {
         return String.format("%s:%d:%d", COURSE_BOOKMARK_KEY_PREFIX, userId, courseId);
     }
 
-    private void safeSetCache(String key, Object value) {
+    private void safeSetCache(final String key, final Object value) {
         try {
             cacheService.set(key, value, BOOKMARK_CACHE_TTL, TimeUnit.HOURS);
         } catch (Exception e) {
