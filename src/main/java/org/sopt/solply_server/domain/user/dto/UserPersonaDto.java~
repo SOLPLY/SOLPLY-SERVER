@@ -1,0 +1,16 @@
+package org.sopt.solply_server.domain.user.dto;
+
+import org.sopt.solply_server.domain.user.entity.UserPersona;
+
+public record UserPersonaDto(
+        String personatype,
+        String description
+){
+    public static UserPersonaDto from(UserPersona Persona){
+        return new UserPersonaDto(
+            Persona.name(), Persona.getDescription()
+        );
+    }
+}
+
+

@@ -1,0 +1,4 @@
+package org.sopt.solply_server.domain.user.repository;
+
+public interface UserPersonaRepository {
+}
