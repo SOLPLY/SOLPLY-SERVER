@@ -24,7 +24,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserInterestTownRepository userInterestTownRepository;
     private final UserValidator userValidator;
-    private final OnboardingService onboardingService;
+    private final UserOnboardingService userOnboardingService;
 
     public NicknameCheckResponse checkNickname(String nickname) {
         boolean isDuplicated = userValidator.isNicknameDuplicated(nickname);
@@ -51,7 +51,7 @@ public class UserService {
      */
     @Transactional
     public UserUpdateResponse updateUser(Long userId, UserUpdateRequest request) {
-        return onboardingService.completeOnboarding(userId, request);
+        return userOnboardingService.completeOnboarding(userId, request);
     }
 
 }

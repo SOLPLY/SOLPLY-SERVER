@@ -1,5 +1,7 @@
 package org.sopt.solply_server.domain.place.service;
 
+import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlaceBookmarkKey;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
@@ -7,6 +9,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.service.cache.PlaceBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
@@ -17,9 +20,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Service
@@ -31,6 +32,7 @@ public class PlaceBookmarkService {
     private final PlaceBookmarkRepository placeBookmarkRepository;
     private final PlaceRepository placeRepository;
     private final CacheService cacheService;
+    private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
 
     /**
      * 북마크 생성
@@ -88,37 +90,19 @@ public class PlaceBookmarkService {
     }
 
     /**
-     * 여러 장소의 북마크 상태를 조회
+     * 사용자가 해당 장소를 북마크했는지 체크
      */
-    public Map<Long, Boolean> getPlaceBookmarkMap(List<Long> placeIds, Long userId) {
-        if (placeIds.isEmpty()) {
-            return Map.of();
+    public boolean isBookmarked(final Long userId, final Long placeId) {
+        String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
+        BookmarkRedisDto bookmarkData = placeBookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
+
+        if (bookmarkData != null && bookmarkData.isActive()) {
+            return true;
         }
 
-        Map<Long, Boolean> bookmarkMap = new HashMap<>();
-
-        for (Long placeId : placeIds) {
-            String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
-
-            try {
-                Boolean cachedBookmark = cacheService.get(bookmarkKey, Boolean.class);
-
-                if (cachedBookmark != null) {
-                    bookmarkMap.put(placeId, cachedBookmark);
-                } else {
-                    boolean isBookmarked = placeBookmarkRepository.existsByUserIdAndPlaceId(userId, placeId);
-                    bookmarkMap.put(placeId, isBookmarked);
-                    cacheService.set(bookmarkKey, isBookmarked);
-                }
-            } catch (Exception e) {
-                log.warn("장소 북마크 상태 조회 실패 - userId: {}, placeId: {}", userId, placeId, e);
-                boolean isBookmarked = placeBookmarkRepository.existsByUserIdAndPlaceId(userId, placeId);
-                bookmarkMap.put(placeId, isBookmarked);
-            }
-        }
-
-        return bookmarkMap;
+        return placeBookmarkRepository.existsByPlaceIdAndUserId(placeId, userId);
     }
+
 
 
     //=== Private Methods ===//

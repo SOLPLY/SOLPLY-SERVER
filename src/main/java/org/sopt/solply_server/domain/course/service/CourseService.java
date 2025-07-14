@@ -15,10 +15,11 @@ import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.mapper.CourseMapper;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
-import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
+import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
+import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
@@ -52,6 +53,7 @@ public class CourseService {
     private final ImageUrlProvider imageUrlProvider;
     private final CourseMapper courseMapper;
     private final CourseBookmarkService courseBookmarkService;
+    private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
     private final CourseNameGenerator courseNameGenerator;
 
     /**
@@ -63,7 +65,7 @@ public class CourseService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
 
         validateCourseRequest(request);
-        List<Place> places = validateAndGetPlaces(request);
+        List<Place> places = getPlacesByPlaceIds(request);
 
         // 모든 장소가 같은 동네에 속하는지 검증
         Town town = places.get(0).getTown();
@@ -93,7 +95,7 @@ public class CourseService {
         Course course = courseRepository.findByIdWithPlaces(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
 
-        boolean isCourseBookmarked = courseBookmarkService.isCourseBookmarked(userId, courseId);
+        boolean isCourseBookmarked = courseBookmarkService.isBookmarked(userId, courseId);
 
         if (course.getCoursePlaces().isEmpty()) {
             return CourseDetailGetResponse.of(course, isCourseBookmarked, List.of());
@@ -106,7 +108,11 @@ public class CourseService {
         // 장소 태그 정보를 영속성 컨텍스트에 로드
         courseRepository.findPlacesWithTagsByIds(placeIds);
 
-        Map<Long, Boolean> placeBookmarkMap = placeBookmarkService.getPlaceBookmarkMap(placeIds, userId);
+        Map<Long, Boolean> placeBookmarkMap = placeIds.isEmpty() ? Map.of() :
+                placeIds.stream().collect(Collectors.toMap(
+                        placeId -> placeId,
+                        placeId -> placeBookmarkService.isBookmarked(userId, placeId)
+                ));
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
                 .map(coursePlace -> courseMapper.toCoursePlaceDetailsDto(coursePlace, placeBookmarkMap))
@@ -119,8 +125,7 @@ public class CourseService {
      * 추천 코스 목록 조회
      */
     public CourseRecommendGetResponse findRecommendCourses(final Long userId, final Long townId) {
-        // TODO: 검증 메서드 만들기?
-        townService.findTownById(townId);
+        townService.existsById(townId);
 
         List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
 
@@ -136,7 +141,11 @@ public class CourseService {
         // 장소 태그 정보를 미리 로드 (영속성 컨텍스트에 적재)
         courseRepository.findPlacesWithTagsByCourseIds(courseIds);
 
-        Map<Long, Boolean> courseBookmarkMap = courseBookmarkService.getCourseBookmarkMap(courseIds, userId);
+        Map<Long, Boolean> courseBookmarkMap = courseIds.isEmpty() ? Map.of() :
+                courseIds.stream().collect(Collectors.toMap(
+                        courseId -> courseId,
+                        courseId -> courseBookmarkService.isBookmarked(userId, courseId)
+                ));
 
         List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
                 .map(course -> {
@@ -155,7 +164,7 @@ public class CourseService {
      */
     public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
         // Redis에서 활성화된 코스 북마크 데이터 조회
-        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkService.getActiveCourseBookmarks(userId);
+        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
 
         if (activeBookmarks.isEmpty()) {
             log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
@@ -189,6 +198,7 @@ public class CourseService {
 
         return CourseFolderPreviewListGetResponse.from(folderDtos);
     }
+
 
     //=== 코스 생성 관련 Private Methods ===//
 
@@ -229,12 +239,16 @@ public class CourseService {
         }
     }
 
-    private List<Place> validateAndGetPlaces(CourseCreateRequest request) {
+    private List<Place> getPlacesByPlaceIds(CourseCreateRequest request) {
         List<Long> placeIds = request.places().stream()
                 .map(CourseCreateRequest.CoursePlaceRequest::placeId)
                 .toList();
 
-        return placeService.validateAndGetPlacesWithTown(placeIds);
+        if (placeIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "장소 목록이 비어있습니다.");
+        }
+
+        return placeService.getPlacesWithTownByPlaceIds(placeIds);
     }
 
     private void validateSameTown(List<Place> places, Town referenceTown) {
@@ -242,24 +256,21 @@ public class CourseService {
                 .allMatch(place -> place.getTown().getId().equals(referenceTown.getId()));
 
         if (!allInSameTown) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                    "모든 장소는 같은 동네에 속해야 합니다.");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "모든 장소는 같은 동네에 속해야 합니다.");
         }
     }
 
     /**
      * 중복되지 않는 코스명 생성
      */
-    private String generateUniqueCourseName(String userInputName, Town town) {
-        String baseName = userInputName;
-
-        String namePattern = baseName + "%";
+    private String generateUniqueCourseName(String originalName, Town town) {
+        String namePattern = originalName + "%";
         List<String> existingNames = courseRepository
                 .findCourseNamesByTownAndNamePattern(town.getId(), namePattern);
 
-        log.debug("기존 코스명들 조회 완료 - baseName: '{}', 조회된 코스명 개수: {}", baseName, existingNames.size());
+        log.debug("기존 코스명들 조회 완료 - baseName: '{}', 조회된 코스명 개수: {}", originalName, existingNames.size());
 
-        return courseNameGenerator.generateUniqueName(baseName, existingNames);
+        return courseNameGenerator.generateUniqueName(originalName, existingNames);
     }
 
     /**
@@ -295,7 +306,6 @@ public class CourseService {
         return originalCourse.getIntroduction();
     }
 
-    //===편의 메서드===//
 
     /**
      * 코스에서 상위 2개 장소의 메인 태그를 순서대로 추출 (중복 허용)
@@ -322,16 +332,9 @@ public class CourseService {
         return course.getCoursePlaces().stream()
                 .findFirst()
                 .map(CoursePlace::getPlace)
-                .map(this::getImageUrl)
+                .map(Place::getThumbnailFileKey)
+                .map(imageUrlProvider::getImageUrl)
                 .orElse(null);
-    }
-
-    /**
-     * 장소의 썸네일 이미지 URL 생성
-     */
-    private String getImageUrl(final Place place) {
-        String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
-        return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
     }
 
     /**
