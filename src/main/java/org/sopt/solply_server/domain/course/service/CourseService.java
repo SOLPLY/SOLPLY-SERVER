@@ -75,7 +75,7 @@ public class CourseService {
         Town town = places.get(0).getTown();
         validateSameTown(places, town);
 
-        String courseName = generateUniqueCourseName(request.originalCourseId(), town);
+        String courseName = generateUniqueCourseName(request.courseName(), town);
         Course course = createNewCourse(courseName, town, places, request);
 
         Course savedCourse = courseRepository.save(course);
@@ -207,6 +207,11 @@ public class CourseService {
                     "원본 코스 ID는 필수입니다.");
         }
 
+        if (request.courseName() == null || request.courseName().trim().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                    "코스 이름은 필수입니다.");
+        }
+
         // 순서 검증 (1부터 연속)
         List<Integer> sequences = places.stream()
                 .map(CourseCreateRequest.CoursePlaceRequest::sequence)
@@ -267,11 +272,8 @@ public class CourseService {
     /**
      * 중복되지 않는 코스명 생성
      */
-    private String generateUniqueCourseName(Long originalCourseId, Town town) {
-        Course originalCourse = courseRepository.findById(originalCourseId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
-
-        String baseName = originalCourse.getName();
+    private String generateUniqueCourseName(String userInputName, Town town) {
+        String baseName = userInputName;
 
         String namePattern = baseName + "%";
         List<String> existingNames = courseRepository
