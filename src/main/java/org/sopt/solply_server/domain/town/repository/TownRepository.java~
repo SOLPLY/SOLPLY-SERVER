@@ -7,5 +7,5 @@ import java.util.List;
 
 public interface TownRepository extends JpaRepository<Town, Long> {
     List<Town> findByParentIsNull();
-    List<Town> findByParent(Town parent);
+    Town findByParent(Town parent);
 }
