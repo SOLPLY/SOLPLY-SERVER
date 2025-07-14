@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
 import org.sopt.solply_server.domain.place.dto.FolderThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
+import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
 import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -117,41 +118,51 @@ public class PlaceService {
 
     //=== Private Methods ===//
 
-    private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final Boolean bookmarked,
+    private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean bookmarked,
             final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
-        // 전체 조회
-        if (mainTagId == null && !bookmarked) {
-            return placeRepository.findAll();
+        // 태그 검증 (태그 조건이 있을 때만)
+        if (mainTagId != null) {
+            validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
         }
 
-        // 북마크된 장소만 조회
+        // 북마크한 장소 조회할 때만 사용
+        List<Long> bookmarkedPlaceIds = null;
         if (bookmarked) {
-            List<BookmarkRedisDto> bookmarkRedisDtos = bookmarkRedisDataManager.getActiveBookmarkDtos(userId);
-            log.info("북마크된 장소만 조회");
-            List<Place> bookmarkedPlaces = getPlacesByTown(false, selectedTownId, bookmarkRedisDtos);
-            log.info("북마크 조회 성공");
-            return bookmarkedPlaces;
+            bookmarkedPlaceIds = getBookmarkedPlaceIds(userId);
+            log.info("북마크된 장소 ID 목록 조회 완료: {} 개", bookmarkedPlaceIds.size());
         }
 
-        // 메인 태그로만 조회
-        if (InputValidator.isBlank(subTagAIdList) && InputValidator.isBlank(subTagBIdList)) {
-            log.info("메인 태그로만 장소 조회: {}", mainTagId);
+        // 조회 조건 생성
+        PlaceSearchConditionDto condition = PlaceSearchConditionDto.of(
+                selectedTownId,
+                bookmarked,
+                bookmarkedPlaceIds,
+                mainTagId,
+                subTagAIdList,
+                subTagBIdList
+        );
 
-        }
+        // 통합 조회
+        List<Place> places = placeRepository.findPlacesByConditions(condition);
 
+        log.info("장소 조회 완료 - townId: {}, bookmarked: {}, mainTagId: {}, 결과: {} 개",
+                selectedTownId, bookmarked, mainTagId, places.size());
+
+        return places;
+    }
+
+    private void validateTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
+        // 메인 태그 검증
         tagValidator.validateTagType(mainTagId, TagType.MAIN);
 
+        // 서브 태그 검증
         validateSubTags(mainTagId, subTagAIdList, TagType.OPTION1);
         validateSubTags(mainTagId, subTagBIdList, TagType.OPTION2);
-
-        return placeRepository.findPlacesByTagConditions(
-                selectedTownId, mainTagId, subTagAIdList, subTagBIdList
-        );
     }
 
     // 서브 태그 검증 메서드
     private void validateSubTags(final Long mainTagId, final List<Long> subTagIdList, final TagType tagType) {
-        if (subTagIdList == null) {
+        if (subTagIdList == null || subTagIdList.isEmpty()) {
             return; // 서브 태그가 없는 경우는 검증하지 않음
         }
         for (Long subTagId : subTagIdList) {
@@ -245,5 +256,12 @@ public class PlaceService {
 
         log.info("조회된 최종 북마크 장소들 개수: {}", result.size());
         return result;
+    }
+
+    private List<Long> getBookmarkedPlaceIds(Long userId) {
+        List<BookmarkRedisDto> bookmarkDtos = bookmarkRedisDataManager.getActiveBookmarkDtos(userId);
+        return bookmarkDtos.stream()
+                .map(BookmarkRedisDto::placeId)
+                .collect(Collectors.toList());
     }
 }
