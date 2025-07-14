@@ -52,10 +52,13 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
      * 사용자의 북마크된 코스 목록을 모든 연관 데이터와 함께 조회
      * Course, Town, CoursePlace, Place, PlaceTag, Tag 정보를 한 번의 쿼리로 가져옴
      */
-    @Query("SELECT DISTINCT c FROM Course c " +
-            "JOIN FETCH c.town t " +
-            "JOIN FETCH c.coursePlaces cp " +
-            "JOIN FETCH cp.place p " +
-            "WHERE c.id IN :courseIds")
+    @Query("""
+        SELECT c FROM Course c
+        JOIN FETCH c.town t
+        JOIN FETCH c.coursePlaces cp
+        JOIN FETCH cp.place p
+        WHERE c.id IN :courseIds
+        ORDER BY c.id
+        """)
     List<Course> findBookmarkedCoursesWithDetailsById(@Param("courseIds") List<Long> courseIds);
 }

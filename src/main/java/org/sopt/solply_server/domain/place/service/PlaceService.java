@@ -20,7 +20,6 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
-import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -174,7 +173,7 @@ public class PlaceService {
     private boolean isBookmarked(final Long userId, final Long placeId) {
         try {
             // Redis 먼저 확인
-            String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, placeId);
+            String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
             BookmarkRedisDto bookmarkData = bookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
 
             if (bookmarkData != null && bookmarkData.isActive()) {
