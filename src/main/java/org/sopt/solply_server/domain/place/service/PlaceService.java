@@ -1,9 +1,5 @@
 package org.sopt.solply_server.domain.place.service;
 
-import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generateKey;
-
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -178,7 +174,7 @@ public class PlaceService {
     private boolean isBookmarked(final Long userId, final Long placeId) {
         try {
             // Redis 먼저 확인
-            String bookmarkKey = generateKey(CachePrefix.BOOKMARK, userId, placeId);
+            String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, placeId);
             BookmarkRedisDto bookmarkData = bookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
 
             if (bookmarkData != null && bookmarkData.isActive()) {

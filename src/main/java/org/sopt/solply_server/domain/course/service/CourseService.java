@@ -3,11 +3,14 @@ package org.sopt.solply_server.domain.course.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
+import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.CourseRecommendDto;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
+import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.course.entity.Course;
+import org.sopt.solply_server.domain.course.entity.CourseBookmark;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
@@ -18,6 +21,7 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.service.TownService;
+import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
@@ -27,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -97,6 +102,40 @@ public class CourseService {
                 .toList();
 
         return CourseRecommendGetResponse.from(courseRecommendDtos);
+    }
+
+    /**
+     * 코스 북마크 폴더 프리뷰 조회
+     * 동네별로 가장 최근에 북마크한 코스를 반환
+     */
+    public CourseFolderPreviewGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
+        // Redis에서 활성화된 코스 북마크 데이터 조회
+        List<CourseBookmarkRedisDto> activeBookmarks = getActiveCourseBookmarks(userId);
+
+        if (activeBookmarks.isEmpty()) {
+            log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
+            return CourseFolderPreviewGetResponse.from(List.of());
+        }
+
+        // 동네별 최신 북마크 코스 필터링
+        Map<Long, CourseBookmarkRedisDto> latestBookmarkByTown = getLatestBookmarkByTown(activeBookmarks);
+
+        // 코스 정보와 장소 정보 배치 조회
+        List<Long> courseIds = latestBookmarkByTown.values().stream()
+                .map(CourseBookmarkRedisDto::courseId)
+                .toList();
+
+        List<Course> courses = courseRepository.findBookmarkedCoursesWithDetailsById(courseIds);
+
+        // 장소 태그 정보 미리 로드
+        courseRepository.findPlacesWithTagsByCourseIds(courseIds);
+
+        // DTO 변환
+        List<CourseFolderDto> folderDtos = courses.stream()
+                .map(this::convertToCourseFolderDto)
+                .toList();
+
+        return CourseFolderPreviewGetResponse.from(folderDtos);
     }
 
     //===Redis 활용 북마크 조회 메서드===//
@@ -254,5 +293,61 @@ public class CourseService {
     private String getImageUrl(final Place place) {
         String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
         return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
+    }
+
+    /**
+     * Course를 CourseFolderDto로 변환
+     */
+    private List<CourseBookmarkRedisDto> getActiveCourseBookmarks(final Long userId) {
+        try {
+            String userCourseBookmarkPattern = String.format("%s:%d:*",
+                    CachePrefix.COURSE_BOOKMARK.getPrefix(), userId);
+            Set<String> userBookmarkKeys = cacheService.findKeys(userCourseBookmarkPattern);
+
+            List<CourseBookmarkRedisDto> activeBookmarks = new ArrayList<>();
+            for (String bookmarkKey : userBookmarkKeys) {
+                CourseBookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
+                if (bookmarkDto != null && bookmarkDto.isActive()) {
+                    activeBookmarks.add(bookmarkDto);
+                }
+            }
+
+            log.info("사용자 {}의 활성 코스 북마크 {}개 조회", userId, activeBookmarks.size());
+            return activeBookmarks;
+
+        } catch (Exception e) {
+            log.error("Redis에서 코스 북마크 조회 실패 - userId: {}", userId, e);
+            return new ArrayList<>();
+        }
+    }
+
+    private Map<Long, CourseBookmarkRedisDto> getLatestBookmarkByTown(List<CourseBookmarkRedisDto> activeBookmarks) {
+        List<Long> courseIds = activeBookmarks.stream()
+                .map(CourseBookmarkRedisDto::courseId)
+                .toList();
+
+        Map<Long, Long> courseToTownMap = courseRepository.findAllById(courseIds).stream()
+                .collect(Collectors.toMap(
+                        Course::getId,
+                        course -> course.getTown().getId()
+                ));
+
+        // 동네별 최신 북마크 필터링
+        return activeBookmarks.stream()
+                .filter(bookmark -> courseToTownMap.containsKey(bookmark.courseId()))
+                .collect(Collectors.toMap(
+                        bookmark -> courseToTownMap.get(bookmark.courseId()), // townId를 키로 사용
+                        bookmark -> bookmark,
+                        (existing, replacement) ->
+                                replacement.createdAt().isAfter(existing.createdAt()) ? replacement : existing
+                ));
+    }
+
+    private CourseFolderDto convertToCourseFolderDto(final Course course) {
+        String townName = course.getTown().getName();
+        List<TagName> primaryTags = extractTopTwoPlaceMainTags(course);
+        String thumbnailUrl = getCourseThumbnailUrl(course);
+
+        return CourseFolderDto.of(townName, course, primaryTags, thumbnailUrl);
     }
 }
