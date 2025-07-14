@@ -3,8 +3,11 @@ package org.sopt.solply_server.domain.course.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
+import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
@@ -27,6 +30,17 @@ public class CourseController {
 
     private final CourseService courseService;
     private final CourseBookmarkService courseBookmarkService;
+
+    @Operation(summary = "코스 생성", description = "새로운 코스를 생성합니다.")
+    @PostMapping
+    public ResponseEntity<CustomApiResponse<CourseCreateResponse>> createCourse(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody CourseCreateRequest request) {
+        return CustomApiResponse.success(
+                "코스 생성을 완료했습니다.",
+                courseService.createCourse(userId, request)
+        );
+    }
 
     @Operation(summary = "코스 상세 조회", description = "코스 ID를 통해 코스의 상세 정보를 조회합니다.")
     @GetMapping("/{courseId}")
