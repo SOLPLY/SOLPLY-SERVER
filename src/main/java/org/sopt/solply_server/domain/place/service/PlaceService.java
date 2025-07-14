@@ -11,7 +11,7 @@ import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
-import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
+import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
@@ -79,8 +79,8 @@ public class PlaceService {
         List<Place> places = getPlacesByCondition(userId, townId, isBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList);
 
         // DTO 변환
-        List<PlaceThumbnailDto> placeThumbnailDtoList = places.stream()
-                .map(place -> PlaceThumbnailDto.of(
+        List<PlacePreviewDto> placePreviewDtoList = places.stream()
+                .map(place -> PlacePreviewDto.of(
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
@@ -89,7 +89,7 @@ public class PlaceService {
                 ))
                 .toList();;
 
-        return PlaceFilterGetResponse.from(placeThumbnailDtoList);
+        return PlaceFilterGetResponse.from(placePreviewDtoList);
     }
 
 
