@@ -41,8 +41,8 @@ public class Course extends BaseTimeEntity {
     @JoinColumn(name = "town_id", nullable = false)
     private Town town;
 
-    @ManyToOne(fetch = FetchType.LAZY) // 추가
-    @JoinColumn(name = "created_by", nullable = false) // 추가
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
     private User createdBy;
 
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)

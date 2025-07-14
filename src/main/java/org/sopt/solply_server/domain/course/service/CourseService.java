@@ -14,13 +14,10 @@ import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetRespo
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.mapper.CourseMapper;
-import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
-import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
@@ -30,9 +27,6 @@ import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.service.TownService;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
-import org.sopt.solply_server.global.cache.CachePrefix;
-import org.sopt.solply_server.global.cache.CacheService;
-import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -51,8 +45,6 @@ import java.util.stream.Collectors;
 public class CourseService {
 
     private final CourseRepository courseRepository;
-    private final CourseBookmarkRepository courseBookmarkRepository;
-    private final PlaceBookmarkRepository placeBookmarkRepository;
     private final PlaceBookmarkService placeBookmarkService;;
     private final PlaceService placeService;
     private final UserRepository userRepository;
@@ -78,7 +70,7 @@ public class CourseService {
         validateSameTown(places, town);
 
         String courseName = generateUniqueCourseName(request.courseName(), town);
-        Course course = createNewCourse(courseName, town, places, request);
+        Course course = createNewCourse(courseName, town, places, request, user);
 
         Course savedCourse = courseRepository.save(course);
 
@@ -273,10 +265,10 @@ public class CourseService {
     /**
      * 새 코스 생성
      */
-    private Course createNewCourse(String courseName, Town town, List<Place> places, CourseCreateRequest request) {
+    private Course createNewCourse(String courseName, Town town, List<Place> places, CourseCreateRequest request, User user) {
         // 원본 코스의 소개글 가져오기
         String introduction = getOriginalCourseIntroduction(request.originalCourseId());
-        Course course = Course.createUserCourse(courseName, introduction, town);
+        Course course = Course.createUserCourse(courseName, introduction, town, user);
 
         // 장소들 순서대로 매핑
         Map<Long, Place> placeMap = places.stream()
