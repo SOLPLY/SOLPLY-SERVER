@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
-import org.sopt.solply_server.domain.place.dto.response.PlaceFolderThumbnailListGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -36,7 +36,7 @@ public class PlaceController {
 
     @Operation(summary = "장소 상세 조회", description = "장소 ID를 통해 장소의 상세 정보를 조회합니다.")
     @GetMapping("/{placeId}")
-    public ResponseEntity<CustomApiResponse<PlaceAllGetResponse>> findPlaceDetailsbyId(
+    public ResponseEntity<CustomApiResponse<PlaceAllGetResponse>> getPlaceDetailsbyId(
             @CurrentUserId Long userId,
             @PathVariable Long placeId) {
         return CustomApiResponse.success(
@@ -47,7 +47,7 @@ public class PlaceController {
 
     @Operation(summary = "장소 리스트 조회", description = "동네, 장소 태그, 북마크 여부를 기반으로 장소를 필터링합니다.")
     @GetMapping
-    public ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>> findPlacesByTag(
+    public ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>> getPlacesByTag(
             @CurrentUserId Long userId,
             @Validated @ModelAttribute PlaceFilterGetRequest placeFilterGetRequest) {
         return CustomApiResponse.success(
@@ -68,11 +68,11 @@ public class PlaceController {
 
     @Operation(summary = "나만의 장소 썸네일 리스트 조회", description = "나만의 장소 썸네일 리스트를 조회합니다.")
     @GetMapping("/bookmarks/folders/preview")
-    public ResponseEntity<CustomApiResponse<PlaceFolderThumbnailListGetResponse>> findMyPlaceThumbnailList(
+    public ResponseEntity<CustomApiResponse<PlaceFolderPreviewListGetResponse>> getMyPlaceFolderPreviewList(
             @CurrentUserId Long userId) {
         return CustomApiResponse.success(
                 "나만의 장소 썸네일 리스트 조회 성공",
-                placeService.getBookmarkPlaceThumnbnailList(userId)
+                placeService.getBookmarkedPlaceFolderPreviewList(userId)
         );
     }
 

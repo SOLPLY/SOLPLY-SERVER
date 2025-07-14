@@ -130,7 +130,7 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                 .exists();
     }
 
-    //
+
     private BooleanExpression createSubTagExistsCondition(QPlace place, List<Long> tagIds, TagType tagType) {
         QPlaceTag subPlaceTag = new QPlaceTag("subPlaceTag" + tagType.name()); // 이름을 다르게 지정하여 충돌 방지
         QTag subTag = new QTag("subTag" + tagType.name());
