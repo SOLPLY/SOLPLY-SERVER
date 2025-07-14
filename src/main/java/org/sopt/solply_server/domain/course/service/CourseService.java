@@ -130,7 +130,13 @@ public class CourseService {
                 .map(CourseBookmarkRedisDto::courseId)
                 .toList();
 
-        List<Course> courses = courseRepository.findBookmarkedCoursesWithDetailsById(courseIds);
+        List<Course> courses = courseRepository.findBookmarkedCoursesWithPlacesByIds(courseIds);
+
+        if (courses.isEmpty()) {
+            return CourseFolderPreviewListGetResponse.from(List.of());
+        }
+
+        courseRepository.findPlacesWithTagsByCourseIds(courseIds);
 
         // DTO 변환
         List<CourseFolderDto> folderDtos = courses.stream()
