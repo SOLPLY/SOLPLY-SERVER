@@ -20,7 +20,6 @@ import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
-import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.service.TownService;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
@@ -156,7 +155,6 @@ public class CourseService {
                     List<TagName> primaryTags = extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = getCourseThumbnailUrl(course);
                     return CourseFolderDto.of(
-                            course.getTown().getName(),
                             course,
                             primaryTags,
                             thumbnailUrl

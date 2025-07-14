@@ -8,15 +8,16 @@ import java.util.List;
 
 @Builder
 public record CourseFolderDto(
+        Long townId,
         String townName,
         String courseName,
         List<TagName> primaryTags,
         String thumbnailUrl
 ) {
-    public static CourseFolderDto of(String townName, Course course,
-                                     List<TagName> primaryTags, String thumbnailUrl) {
+    public static CourseFolderDto of(Course course, List<TagName> primaryTags, String thumbnailUrl) {
         return CourseFolderDto.builder()
-                .townName(townName)
+                .townId(course.getTown().getId())
+                .townName(course.getTown().getName())
                 .courseName(course.getName())
                 .primaryTags(primaryTags)
                 .thumbnailUrl(thumbnailUrl)
