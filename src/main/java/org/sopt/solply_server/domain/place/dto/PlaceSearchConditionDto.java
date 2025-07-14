@@ -25,4 +25,27 @@ public record PlaceSearchConditionDto(
                 .subTagOptionBIds(subTagOptionBIds)
                 .build();
     }
+
+
+    //== 편의 메서드 ==//
+
+    public boolean hasMainTag() {
+        return mainTagId != null;
+    }
+
+    public boolean hasSubTagA() {
+        return subTagOptionAIds != null && !subTagOptionAIds.isEmpty();
+    }
+
+    public boolean hasSubTagB() {
+        return subTagOptionBIds != null && !subTagOptionBIds.isEmpty();
+    }
+
+    public boolean isBookmarkSearch() {
+        return bookmarked != null && bookmarked;
+    }
+
+    public boolean hasBookmarkedPlaces() {
+        return bookmarkedPlaceIds != null && !bookmarkedPlaceIds.isEmpty();
+    }
 }

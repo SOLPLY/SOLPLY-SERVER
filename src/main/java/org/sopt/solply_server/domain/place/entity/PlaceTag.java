@@ -12,6 +12,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,22 +25,18 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "place_tag",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_place_tag_place_tag", columnNames = {"place_id", "tag_id"})
+        },
         indexes = {
                 @Index(name = "idx_place_tag_place_id", columnList = "place_id"),
-                @Index(name = "idx_place_tag_tag_id", columnList = "tag_id"),
-                @Index(name = "idx_place_tag_place_id_tag_id", columnList = "place_id, tag_id", unique = true),
-                @Index(name = "idx_place_tag_tag_id_place_id", columnList = "tag_id, place_id"),
-                @Index(name = "idx_place_tag_id_tag_type_place", columnList = "tag_id, tag_type, place_id")
+                @Index(name = "idx_place_tag_tag_id", columnList = "tag_id")
         }
 )
 public class PlaceTag {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "tag_type", nullable = false)
-    private TagType tagType;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "place_id", nullable = false)

@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.place.repository;
+package org.sopt.solply_server.domain.place.repository.querydsl;
 
 import java.util.List;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
