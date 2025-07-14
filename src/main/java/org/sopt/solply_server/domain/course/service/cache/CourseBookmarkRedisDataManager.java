@@ -149,70 +149,35 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
      */
     public List<CourseBookmarkRedisDto> getActiveBookmarkDtos(Long userId) {
         List<CourseBookmarkRedisDto> activeBookmarkDtos = new ArrayList<>();
+        String userBookmarkPattern = String.format("%s:%d:*", CachePrefix.COURSE_BOOKMARK.getPrefix(), userId);
 
         try {
-            String userBookmarkPattern = String.format("%s:%d:*",
-                    CachePrefix.COURSE_BOOKMARK.getPrefix(), userId);
             Set<String> userBookmarkKeys = cacheService.findKeys(userBookmarkPattern);
-
             log.info("사용자 {}의 코스 북마크 키 {}개 발견", userId, userBookmarkKeys.size());
 
             for (String bookmarkKey : userBookmarkKeys) {
                 try {
-                    // 먼저 Object로 조회해서 타입 확인
-                    Object rawData = cacheService.get(bookmarkKey, Object.class);
+                    // CourseBookmarkRedisDto 타입으로 직접 조회 시도
+                    CourseBookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
 
-                    if (rawData == null) {
-                        log.debug("null 데이터 스킵 - key: {}", bookmarkKey);
-                        continue;
-                    }
-
-                    // boolean 타입 (잘못된 데이터)인 경우 삭제
-                    if (rawData instanceof Boolean) {
-                        log.warn("Boolean 타입의 잘못된 데이터 삭제 - key: {}, value: {}", bookmarkKey, rawData);
-                        cacheService.delete(bookmarkKey);
-                        continue;
-                    }
-
-                    // @class 정보가 있는 경우 직접 조회
-                    if (rawData instanceof Map && ((Map<?, ?>) rawData).containsKey("@class")) {
-                        try {
-                            CourseBookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
-                            if (bookmarkDto != null && bookmarkDto.isActive()) {
-                                activeBookmarkDtos.add(bookmarkDto);
-                                log.debug("활성 북마크 추가 - key: {}, courseId: {}", bookmarkKey, bookmarkDto.courseId());
-                            } else if (bookmarkDto != null) {
-                                log.debug("비활성 북마크 스킵 - key: {}, status: {}", bookmarkKey, bookmarkDto.status());
-                            }
-                        } catch (Exception e) {
-                            log.warn("@class 정보가 있지만 변환 실패, 키 삭제 - key: {}", bookmarkKey, e);
-                            cacheService.delete(bookmarkKey);
-                        }
-                    } else {
-                        log.warn("@class 정보가 없는 데이터 삭제 - key: {}, type: {}",
-                                bookmarkKey, rawData.getClass().getSimpleName());
+                    if (bookmarkDto != null && bookmarkDto.isActive()) {
+                        activeBookmarkDtos.add(bookmarkDto);
+                    } else if (bookmarkDto == null) {
+                        // 데이터가 null이거나 타입이 맞지 않아 변환 실패한 경우
+                        log.warn("잘못된 북마크 데이터 발견, 키 삭제 - key: {}", bookmarkKey);
                         cacheService.delete(bookmarkKey);
                     }
-
                 } catch (Exception e) {
-                    log.warn("개별 키 처리 실패, 키 삭제 - key: {}", bookmarkKey, e);
-                    try {
-                        cacheService.delete(bookmarkKey);
-                    } catch (Exception deleteError) {
-                        log.error("키 삭제 실패 - key: {}", bookmarkKey, deleteError);
-                    }
+                    // Redis 조회 또는 타입 변환 중 에러 발생 시
+                    log.error("개별 북마크 키 처리 실패, 키 삭제 - key: {}", bookmarkKey, e);
+                    cacheService.delete(bookmarkKey); // 문제가 있는 키는 삭제하여 정합성 유지
                 }
             }
-
             log.info("최종 활성 코스 북마크 조회 완료 - userId: {}, 활성 북마크 {}개", userId, activeBookmarkDtos.size());
-
         } catch (Exception e) {
-            log.error("Redis에서 코스 북마크 조회 실패 - userId: {}", userId, e);
-            return new ArrayList<>();
+            log.error("Redis에서 코스 북마크 키 조회 실패 - userId: {}", userId, e);
         }
 
         return activeBookmarkDtos;
     }
-
-
 }
