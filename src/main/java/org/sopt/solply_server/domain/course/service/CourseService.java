@@ -21,6 +21,8 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
+import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -51,11 +53,11 @@ public class CourseService {
     private final CourseRepository courseRepository;
     private final CourseBookmarkRepository courseBookmarkRepository;
     private final PlaceBookmarkRepository placeBookmarkRepository;
-    private final PlaceRepository placeRepository;
+    private final PlaceBookmarkService placeBookmarkService;;
+    private final PlaceService placeService;
     private final UserRepository userRepository;
     private final TownService townService;
     private final ImageUrlProvider imageUrlProvider;
-    private final CacheService cacheService;
     private final CourseMapper courseMapper;
     private final CourseBookmarkService courseBookmarkService;
     private final CourseNameGenerator courseNameGenerator;
@@ -99,7 +101,7 @@ public class CourseService {
         Course course = courseRepository.findByIdWithPlaces(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
 
-        boolean isCourseBookmarked = isCourseBookmarked(userId, courseId);
+        boolean isCourseBookmarked = courseBookmarkService.isCourseBookmarked(userId, courseId);
 
         if (course.getCoursePlaces().isEmpty()) {
             return CourseDetailGetResponse.of(course, isCourseBookmarked, List.of());
@@ -112,7 +114,7 @@ public class CourseService {
         // 장소 태그 정보를 영속성 컨텍스트에 로드
         courseRepository.findPlacesWithTagsByIds(placeIds);
 
-        Map<Long, Boolean> placeBookmarkMap = getPlaceBookmarkMap(placeIds, userId);
+        Map<Long, Boolean> placeBookmarkMap = placeBookmarkService.getPlaceBookmarkMap(placeIds, userId);
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
                 .map(coursePlace -> courseMapper.toCoursePlaceDetailsDto(coursePlace, placeBookmarkMap))
@@ -142,7 +144,7 @@ public class CourseService {
         // 장소 태그 정보를 미리 로드 (영속성 컨텍스트에 적재)
         courseRepository.findPlacesWithTagsByCourseIds(courseIds);
 
-        Map<Long, Boolean> courseBookmarkMap = getCourseBookmarkMap(courseIds, userId);
+        Map<Long, Boolean> courseBookmarkMap = courseBookmarkService.getCourseBookmarkMap(courseIds, userId);
 
         List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
                 .map(course -> {
@@ -161,7 +163,7 @@ public class CourseService {
      */
     public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
         // Redis에서 활성화된 코스 북마크 데이터 조회
-        List<CourseBookmarkRedisDto> activeBookmarks = getActiveCourseBookmarks(userId);
+        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkService.getActiveCourseBookmarks(userId);
 
         if (activeBookmarks.isEmpty()) {
             log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
@@ -213,13 +215,13 @@ public class CourseService {
         }
 
         // 순서 검증 (1부터 연속)
-        List<Integer> sequences = places.stream()
-                .map(CourseCreateRequest.CoursePlaceRequest::sequence)
+        List<Integer> placeOrders = places.stream()
+                .map(CourseCreateRequest.CoursePlaceRequest::placeOrder)
                 .sorted()
                 .toList();
 
-        for (int i = 0; i < sequences.size(); i++) {
-            if (sequences.get(i) != i + 1) {
+        for (int i = 0; i < placeOrders.size(); i++) {
+            if (placeOrders.get(i) != i + 1) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
                         "순서는 1부터 시작하여 연속되어야 합니다.");
             }
@@ -240,23 +242,7 @@ public class CourseService {
                 .map(CourseCreateRequest.CoursePlaceRequest::placeId)
                 .toList();
 
-        List<Place> places = placeRepository.findAllById(placeIds);
-
-        // 존재하지 않는 장소 검증
-        if (places.size() != placeIds.size()) {
-            Set<Long> foundIds = places.stream()
-                    .map(Place::getId)
-                    .collect(Collectors.toSet());
-
-            List<Long> missingIds = placeIds.stream()
-                    .filter(id -> !foundIds.contains(id))
-                    .toList();
-
-            log.warn("존재하지 않는 장소 ID들: {}", missingIds);
-            throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
-        }
-
-        return places;
+        return placeService.validateAndGetPlacesWithTown(placeIds);
     }
 
     private void validateSameTown(List<Place> places, Town referenceTown) {
@@ -298,10 +284,10 @@ public class CourseService {
 
         // CoursePlace 생성 및 추가
         List<CoursePlace> coursePlaces = request.places().stream()
-                .sorted(Comparator.comparing(CourseCreateRequest.CoursePlaceRequest::sequence))
+                .sorted(Comparator.comparing(CourseCreateRequest.CoursePlaceRequest::placeOrder))
                 .map(placeRequest -> {
                     Place place = placeMap.get(placeRequest.placeId());
-                    return CoursePlace.create(course, place, placeRequest.sequence());
+                    return CoursePlace.create(course, place, placeRequest.placeOrder());
                 })
                 .toList();
 
@@ -315,91 +301,6 @@ public class CourseService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
 
         return originalCourse.getIntroduction();
-    }
-
-    //===Redis 활용 북마크 조회 메서드===//
-
-    private Map<Long, Boolean> getPlaceBookmarkMap(final List<Long> placeIds, final Long userId) {
-        if (placeIds.isEmpty()) {
-            return Map.of();
-        }
-
-        Map<Long, Boolean> bookmarkMap = new HashMap<>();
-
-        for (Long placeId : placeIds) {
-            String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
-
-            try {
-                // Redis에서 북마크 상태 조회
-                Boolean cachedBookmark = cacheService.get(bookmarkKey, Boolean.class);
-
-                if (cachedBookmark != null) {
-                    bookmarkMap.put(placeId, cachedBookmark);
-                } else {
-                    // Redis에 없으면 DB 조회 후 캐싱
-                    boolean isBookmarked = placeBookmarkRepository.existsByUserIdAndPlaceId(userId, placeId);
-                    bookmarkMap.put(placeId, isBookmarked);
-
-                    // Redis에 캐싱 (실패해도 무시)
-                    cacheService.set(bookmarkKey, isBookmarked);
-                }
-            } catch (Exception e) {
-                log.warn("장소 북마크 상태 조회 실패 - userId: {}, placeId: {}", userId, placeId, e);
-                // Redis 실패 시 DB에서 조회
-                boolean isBookmarked = placeBookmarkRepository.existsByUserIdAndPlaceId(userId, placeId);
-                bookmarkMap.put(placeId, isBookmarked);
-            }
-        }
-
-        return bookmarkMap;
-    }
-
-    private Map<Long, Boolean> getCourseBookmarkMap(final List<Long> courseIds, final Long userId) {
-        if (courseIds.isEmpty()) {
-            return Map.of();
-        }
-
-        Map<Long, Boolean> bookmarkMap = new HashMap<>();
-
-        for (Long courseId : courseIds) {
-            String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
-
-            try {
-                CourseBookmarkRedisDto cachedBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
-
-                if (cachedBookmark != null) {
-                    bookmarkMap.put(courseId, cachedBookmark.isActive());
-                } else {
-                    // Redis에 없으면 DB 조회만 (캐싱 X)
-                    boolean isBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
-                    bookmarkMap.put(courseId, isBookmarked);
-                }
-            } catch (Exception e) {
-                log.warn("코스 북마크 상태 조회 실패 - userId: {}, courseId: {}", userId, courseId, e);
-                boolean isBookmarked = courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
-                bookmarkMap.put(courseId, isBookmarked);
-            }
-        }
-
-        return bookmarkMap;
-    }
-
-    private boolean isCourseBookmarked(final Long userId, final Long courseId) {
-        String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
-
-        try {
-            CourseBookmarkRedisDto cachedBookmark = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
-
-            if (cachedBookmark != null) {
-                return cachedBookmark.isActive();
-            }
-
-            return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
-
-        } catch (Exception e) {
-            log.warn("코스 북마크 상태 조회 실패 - userId: {}, courseId: {}", userId, courseId, e);
-            return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
-        }
     }
 
     //===편의 메서드===//
@@ -439,32 +340,6 @@ public class CourseService {
     private String getImageUrl(final Place place) {
         String fileKey = place.getThumbnailFileKey(); // Place 엔티티 메서드 활용
         return fileKey != null ? imageUrlProvider.getImageUrl(fileKey) : null;
-    }
-
-    /**
-     * Redis에서 활성화된 코스 북마크 데이터 조회
-     */
-    private List<CourseBookmarkRedisDto> getActiveCourseBookmarks(final Long userId) {
-        try {
-            String userCourseBookmarkPattern = String.format("%s:%d:*",
-                    CachePrefix.COURSE_BOOKMARK.getPrefix(), userId);
-            Set<String> userBookmarkKeys = cacheService.findKeys(userCourseBookmarkPattern);
-
-            List<CourseBookmarkRedisDto> activeBookmarks = new ArrayList<>();
-            for (String bookmarkKey : userBookmarkKeys) {
-                CourseBookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
-                if (bookmarkDto != null && bookmarkDto.isActive()) {
-                    activeBookmarks.add(bookmarkDto);
-                }
-            }
-
-            log.info("사용자 {}의 활성 코스 북마크 {}개 조회", userId, activeBookmarks.size());
-            return activeBookmarks;
-
-        } catch (Exception e) {
-            log.error("Redis에서 코스 북마크 조회 실패 - userId: {}", userId, e);
-            return new ArrayList<>();
-        }
     }
 
     /**

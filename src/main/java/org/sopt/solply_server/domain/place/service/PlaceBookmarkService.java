@@ -17,7 +17,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -83,6 +85,39 @@ public class PlaceBookmarkService {
         for (Long placeId : placeIds) {
             deletePlaceBookmark(userId, placeId);
         }
+    }
+
+    /**
+     * 여러 장소의 북마크 상태를 조회
+     */
+    public Map<Long, Boolean> getPlaceBookmarkMap(List<Long> placeIds, Long userId) {
+        if (placeIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, Boolean> bookmarkMap = new HashMap<>();
+
+        for (Long placeId : placeIds) {
+            String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
+
+            try {
+                Boolean cachedBookmark = cacheService.get(bookmarkKey, Boolean.class);
+
+                if (cachedBookmark != null) {
+                    bookmarkMap.put(placeId, cachedBookmark);
+                } else {
+                    boolean isBookmarked = placeBookmarkRepository.existsByUserIdAndPlaceId(userId, placeId);
+                    bookmarkMap.put(placeId, isBookmarked);
+                    cacheService.set(bookmarkKey, isBookmarked);
+                }
+            } catch (Exception e) {
+                log.warn("장소 북마크 상태 조회 실패 - userId: {}, placeId: {}", userId, placeId, e);
+                boolean isBookmarked = placeBookmarkRepository.existsByUserIdAndPlaceId(userId, placeId);
+                bookmarkMap.put(placeId, isBookmarked);
+            }
+        }
+
+        return bookmarkMap;
     }
 
 

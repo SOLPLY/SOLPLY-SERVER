@@ -26,7 +26,7 @@ public record CourseCreateRequest(
             Long placeId,
 
             @NotNull(message = "순서는 필수입니다.")
-            Integer sequence
+            Integer placeOrder
     ) {
     }
 }

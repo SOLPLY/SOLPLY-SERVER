@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
+import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -180,6 +182,31 @@ public class PlaceService {
         if (!townRepository.existsById(townId)) {
             throw new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN);
         }
+    }
+
+    // 장소 ID 목록으로 장소들을 조회하고 검증
+    public List<Place> validateAndGetPlacesWithTown(List<Long> placeIds) {
+        if (placeIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "장소 목록이 비어있습니다.");
+        }
+
+        // Town 정보까지 함께 조회 (N+1 문제 방지)
+        List<Place> places = placeRepository.findAllByIdsWithTown(placeIds);
+
+        if (places.size() != placeIds.size()) {
+            Set<Long> foundIds = places.stream()
+                    .map(Place::getId)
+                    .collect(Collectors.toSet());
+
+            List<Long> missingIds = placeIds.stream()
+                    .filter(id -> !foundIds.contains(id))
+                    .toList();
+
+            log.warn("존재하지 않는 장소 ID들: {}", missingIds);
+            throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
+        }
+
+        return places;
     }
 
     /**
