@@ -16,6 +16,7 @@ import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.mapper.CourseMapper;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
+import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
@@ -39,8 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -59,6 +58,7 @@ public class CourseService {
     private final CacheService cacheService;
     private final CourseMapper courseMapper;
     private final CourseBookmarkService courseBookmarkService;
+    private final CourseNameGenerator courseNameGenerator;
 
     /**
      * 새로운 코스 생성
@@ -125,6 +125,7 @@ public class CourseService {
      * 추천 코스 목록 조회
      */
     public CourseRecommendGetResponse findRecommendCourses(final Long userId, final Long townId) {
+        // TODO: 검증 메서드 만들기?
         townService.findTownById(townId);
 
         List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
@@ -272,58 +273,13 @@ public class CourseService {
 
         String baseName = originalCourse.getName();
 
-        // 기존 코스명들 조회 (패턴 매칭)
         String namePattern = baseName + "%";
         List<String> existingNames = courseRepository
                 .findCourseNamesByTownAndNamePattern(town.getId(), namePattern);
 
-        log.debug("기존 코스명들: baseName='{}', existingNames={}", baseName, existingNames);
+        log.debug("기존 코스명들 조회 완료 - baseName: '{}', 조회된 코스명 개수: {}", baseName, existingNames.size());
 
-        if (existingNames.isEmpty()) {
-            return baseName;
-        }
-
-        // 중복 번호 찾기, 다음 번호 생성
-        int nextSequence = findNextSequenceNumber(baseName, existingNames);
-
-        return Course.generateUniqueName(baseName, nextSequence);
-    }
-
-    /**
-     * 다음 순서 번호 찾기
-     */
-    private int findNextSequenceNumber(String baseName, List<String> existingNames) {
-        // 정규식: "기본이름 (숫자)" 패턴
-        Pattern pattern = Pattern.compile(Pattern.quote(baseName) + "\\s*\\((\\d+)\\)");
-        Set<Integer> usedNumbers = new HashSet<>();
-
-        boolean baseNameExists = existingNames.contains(baseName);
-        if (baseNameExists) {
-            usedNumbers.add(0); // 기본 이름을 0번으로 간주
-        }
-
-        // 기존 이름들에서 숫자 추출
-        for (String name : existingNames) {
-            Matcher matcher = pattern.matcher(name);
-            if (matcher.matches()) {
-                try {
-                    int number = Integer.parseInt(matcher.group(1));
-                    usedNumbers.add(number);
-                } catch (NumberFormatException e) {
-                    log.warn("코스명에서 숫자 파싱 실패: {}", name);
-                }
-            }
-        }
-
-        int sequence = baseNameExists ? 1 : 0;
-        while (usedNumbers.contains(sequence)) {
-            sequence++;
-        }
-
-        log.debug("코스명 생성 - baseName: '{}', usedNumbers: {}, nextSequence: {}",
-                baseName, usedNumbers, sequence);
-
-        return sequence;
+        return courseNameGenerator.generateUniqueName(baseName, existingNames);
     }
 
     /**
