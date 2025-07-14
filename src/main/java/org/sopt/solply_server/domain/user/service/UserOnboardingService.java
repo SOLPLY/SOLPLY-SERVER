@@ -23,5 +23,3 @@ public class UserOnboardingService {
         return UserPersonaListGetResponse.from(personaDtos);
     }
 }
-
-

@@ -3,17 +3,15 @@ package org.sopt.solply_server.domain.town.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.town.dto.TownDto;
-import org.sopt.solply_server.domain.town.dto.TownResponse;
+import org.sopt.solply_server.domain.town.dto.response.TownAllGetResponse;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
-import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -35,21 +33,20 @@ public class TownService {
         return townRepository.existsById(townId);
     }
 
-    public TownResponse getAllTowns() {
+    public TownAllGetResponse getAllTowns() {
         List<Town> parentTowns = townRepository.findByParentIsNull();
-        List<Town> childTowns = parentTowns.stream()
-                .map(this::getChildTowns).toList();
-        List<TownDto> childTownDtoList = childTowns.stream()
-                .map(town -> TownDto.of(town, null)).toList();
 
-        return new TownResponse(
-                parentTowns.stream()
-                        .map(town -> TownDto.of(town, childTownDtoList))
-                        .toList()
-        );
-    }
+        List<TownDto> allTowns = parentTowns.stream()
+                .map(parent -> {
+                    List<Town> childTowns = townRepository.findByParent(parent);
+                    List<TownDto> childTownDtos = childTowns.stream()
+                            .map(child -> TownDto.of(child, null))
+                            .toList();
 
-    private Town getChildTowns(Town parentTown) {
-        return townRepository.findByParent(parentTown);
+                    return TownDto.of(parent, childTownDtos);
+                })
+                .toList();
+
+        return new TownAllGetResponse(allTowns);
     }
 }
