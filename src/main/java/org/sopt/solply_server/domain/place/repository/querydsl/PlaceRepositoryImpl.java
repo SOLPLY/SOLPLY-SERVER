@@ -5,6 +5,7 @@ import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
@@ -39,11 +40,15 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
     // 전체 조회
     private List<Place> findPlacesWithoutTags(QPlace place, BooleanBuilder whereCondition) {
-        return queryFactory
+        List<Place> places = queryFactory
                 .selectFrom(place)
                 .where(whereCondition)
                 .orderBy(place.createdAt.desc())
                 .fetch();
+
+        loadPlaceTagsAndTags(places);
+
+        return places;
     }
 
     // 메인 태그만 있는 경우
@@ -58,8 +63,8 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         return queryFactory
                 .selectDistinct(place)
                 .from(place)
-                .join(place.placeTags, placeTag)
-                .join(placeTag.tag, tag)
+                .leftJoin(place.placeTags, placeTag).fetchJoin()  // PlaceTag fetch join
+                .leftJoin(placeTag.tag, tag).fetchJoin()          // Tag fetch join
                 .where(whereCondition)
                 .orderBy(place.createdAt.desc())
                 .fetch();
@@ -86,6 +91,24 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                 .from(place)
                 .where(whereCondition)
                 .orderBy(place.createdAt.desc())
+                .fetch();
+    }
+
+    // 영속성 컨텍스트에 미리 로딩
+    private void loadPlaceTagsAndTags(List<Place> places) {
+        if (places.isEmpty()) {
+            return;
+        }
+
+        List<Long> placeIds = places.stream()
+                .map(Place::getId)
+                .collect(Collectors.toList());
+
+        // List<PlaceTag> 로딩
+        queryFactory
+                .selectFrom(QPlaceTag.placeTag)
+                .leftJoin(QPlaceTag.placeTag.tag).fetchJoin()
+                .where(QPlaceTag.placeTag.place.id.in(placeIds))
                 .fetch();
     }
 
