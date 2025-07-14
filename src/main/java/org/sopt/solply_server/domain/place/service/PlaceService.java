@@ -70,13 +70,13 @@ public class PlaceService {
      * 동네와 태그 조건에 따른 장소 조회
      */
     public PlaceFilterGetResponse getPlacesByTownAndTag(
-            final Long userId, final Long townId, final Boolean bookmarked, final Long mainTagId,
+            final Long userId, final Long townId, final Boolean isBookmarkSearch, final Long mainTagId,
             final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         // 동네 검증
         validateAndGetTown(townId);
 
         // 북마크, 태그 조건에 따른 장소 조회
-        List<Place> places = getPlacesByCondition(userId, townId, bookmarked, mainTagId, subTagAIdList, subTagBIdList);
+        List<Place> places = getPlacesByCondition(userId, townId, isBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList);
 
         // DTO 변환
         List<PlaceThumbnailDto> placeThumbnailDtoList = places.stream()
@@ -124,14 +124,14 @@ public class PlaceService {
     /**
      * 장소 조회 조건에 따라 장소를 조회하는 메서드
      */
-    private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean bookmarked,
+    private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean isBookmarkSearch,
             final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         if (mainTagId != null) {
             validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
         }
 
         List<Long> bookmarkedPlaceIds = null;
-        if (bookmarked) {
+        if (isBookmarkSearch) {
             bookmarkedPlaceIds = bookmarkRedisDataManager.getActiveBookmarkDtos(userId).stream()
                     .map(BookmarkRedisDto::placeId)
                     .collect(Collectors.toList());;
@@ -142,15 +142,15 @@ public class PlaceService {
         List<Place> places = placeRepository.findPlacesByConditions(
                 PlaceSearchConditionDto.of(
                     selectedTownId,
-                    bookmarked,
+                    isBookmarkSearch,
                     bookmarkedPlaceIds,
                     mainTagId,
                     subTagAIdList,
                     subTagBIdList)
         );
 
-        log.info("장소 조회 완료 - townId: {}, bookmarked: {}, mainTagId: {}, 결과: {} 개",
-                selectedTownId, bookmarked, mainTagId, places.size());
+        log.info("장소 조회 완료 - townId: {}, isBookmarkSearch: {}, mainTagId: {}, 결과: {} 개",
+                selectedTownId, isBookmarkSearch, mainTagId, places.size());
 
         return places;
     }

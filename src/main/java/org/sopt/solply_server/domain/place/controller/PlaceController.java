@@ -55,7 +55,7 @@ public class PlaceController {
                 placeService.getPlacesByTownAndTag(
                         userId,
                         placeFilterGetRequest.townId(),
-                        placeFilterGetRequest.bookmarked(),
+                        placeFilterGetRequest.isBookmarkSearch(),
                         placeFilterGetRequest.mainTagId(),
                         placeFilterGetRequest.subTagAIdList(),
                         placeFilterGetRequest.subTagBIdList()

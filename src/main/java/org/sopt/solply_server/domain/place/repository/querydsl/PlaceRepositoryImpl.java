@@ -23,23 +23,22 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     public List<Place> findPlacesByConditions(PlaceSearchConditionDto condition) {
+        QPlace place = QPlace.place;
+        BooleanBuilder whereCondition = createBasicConditions(place, condition);
+
         if (!condition.hasMainTag()) {
-            return findPlacesWithoutTags(condition);
+            return findPlacesWithoutTags(place, whereCondition);
         }
 
         if (!condition.hasSubTagA() && !condition.hasSubTagB()) {
-            return findPlacesWithMainTag(condition);
+            return findPlacesWithMainTag(place, whereCondition, condition);
         }
 
-        return findPlacesWithTags(condition);
+        return findPlacesWithTags(place, whereCondition, condition);
     }
 
     // 전체 조회
-    private List<Place> findPlacesWithoutTags(PlaceSearchConditionDto condition) {
-        QPlace place = QPlace.place;
-
-        BooleanBuilder whereCondition = createBasicConditions(place, condition);
-
+    private List<Place> findPlacesWithoutTags(QPlace place, BooleanBuilder whereCondition) {
         return queryFactory
                 .selectFrom(place)
                 .where(whereCondition)
@@ -48,12 +47,10 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
     }
 
     // 메인 태그만 있는 경우
-    private List<Place> findPlacesWithMainTag(PlaceSearchConditionDto condition) {
-        QPlace place = QPlace.place;
+    private List<Place> findPlacesWithMainTag(QPlace place, BooleanBuilder whereCondition,
+            PlaceSearchConditionDto condition) {
         QPlaceTag placeTag = QPlaceTag.placeTag;
         QTag tag = QTag.tag;
-
-        BooleanBuilder whereCondition = createBasicConditions(place, condition);
 
         whereCondition.and(tag.id.eq(condition.mainTagId()))
                 .and(tag.type.eq(TagType.MAIN));
@@ -69,11 +66,8 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
     }
 
     // 메인 태그와 서브 태그가 모두 있는 경우
-    private List<Place> findPlacesWithTags(PlaceSearchConditionDto condition) {
-        QPlace place = QPlace.place;
-
-        BooleanBuilder whereCondition = createBasicConditions(place, condition);
-
+    private List<Place> findPlacesWithTags(QPlace place, BooleanBuilder whereCondition,
+            PlaceSearchConditionDto condition) {
         // 메인 태그 EXISTS 조건
         whereCondition.and(createMainTagExistsCondition(place, condition.mainTagId()));
 
@@ -98,20 +92,22 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
     // 기본 조건(동네, 북마크) 추가 메서드
     private BooleanBuilder createBasicConditions(QPlace place, PlaceSearchConditionDto condition) {
         BooleanBuilder basicCondition = new BooleanBuilder();
-
         // Town 조건
         if (condition.townId() != null) {
             basicCondition.and(place.town.id.eq(condition.townId()));
         }
 
-        // 북마크 조건
+        // 북마크 조건 - 올바른 로직
         if (condition.isBookmarkSearch()) {
             if (condition.hasBookmarkedPlaces()) {
+                // 북마크된 장소가 있으면 해당 장소들만 조회
                 basicCondition.and(place.id.in(condition.bookmarkedPlaceIds()));
             } else {
+                // 북마크된 장소가 없으면 빈 결과 반환
                 basicCondition.and(place.id.isNull());
             }
         }
+        // 홈 화면 전체 장소 조회 -> 북마크 여부 상관 없이 모든 장소 대상으로 필터링
 
         return basicCondition;
     }
