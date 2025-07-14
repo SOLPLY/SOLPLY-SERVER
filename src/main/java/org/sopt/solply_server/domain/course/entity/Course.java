@@ -56,12 +56,4 @@ public class Course extends BaseTimeEntity {
     public void addCoursePlace(CoursePlace coursePlace) {
         this.coursePlaces.add(coursePlace);
     }
-
-    public static String generateUniqueName(String baseName, int sequence) {
-        if (sequence == 0) {
-            return baseName;
-        }
-        return String.format("%s (%d)", baseName, sequence);
-    }
-
 }
