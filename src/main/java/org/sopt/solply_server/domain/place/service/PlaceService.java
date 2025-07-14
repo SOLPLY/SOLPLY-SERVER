@@ -27,6 +27,8 @@ import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlaceBookmarkKey;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
