@@ -54,4 +54,10 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
             "JOIN FETCH p.town " +
             "WHERE p.id IN :placeIds")
     List<Place> findAllByIdsWithTown(@Param("placeIds") List<Long> placeIds);
+
+    @Query("SELECT DISTINCT p FROM Place p " +
+            "LEFT JOIN FETCH p.placeTags pt " +
+            "LEFT JOIN FETCH pt.tag " +
+            "WHERE p.town.id = :townId")
+    List<Place> findPlacesByTownIdWithTags(@Param("townId") Long townId);
 }
