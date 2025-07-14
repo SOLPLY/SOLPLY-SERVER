@@ -3,10 +3,8 @@ package org.sopt.solply_server.domain.place.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -34,6 +32,7 @@ public class PlaceController {
 
     private final PlaceService placeService;
     private final PlaceBookmarkService placeBookmarkService;
+
 
     @Operation(summary = "장소 상세 조회", description = "장소 ID를 통해 장소의 상세 정보를 조회합니다.")
     @GetMapping("/{placeId}")
@@ -65,7 +64,7 @@ public class PlaceController {
     }
 
 
-    // == 장소 북마크 관련 API === //
+    //== 장소 북마크 관련 API==//
 
     @Operation(summary = "나만의 장소 썸네일 리스트 조회", description = "나만의 장소 썸네일 리스트를 조회합니다.")
     @GetMapping("/bookmarks/folders/preview")

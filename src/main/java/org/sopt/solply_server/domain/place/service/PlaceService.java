@@ -1,9 +1,7 @@
 package org.sopt.solply_server.domain.place.service;
 
-import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generateKey;
+import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlaceBookmarkKey;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,8 +22,6 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
-import org.sopt.solply_server.global.cache.CachePrefix;
-import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.InputValidator;
@@ -134,9 +130,7 @@ public class PlaceService {
             log.info("북마크된 장소만 조회");
             List<Place> bookmarkedPlaces = getPlacesByTown(false, selectedTownId, bookmarkRedisDtos);
             log.info("북마크 조회 성공");
-            return bookmarkedPlaces.stream()
-                    .filter(place -> place.getTown().getId().equals(selectedTownId))
-                    .collect(Collectors.toList());
+            return bookmarkedPlaces;
         }
 
         // 메인 태그로만 조회
@@ -178,7 +172,7 @@ public class PlaceService {
     private boolean isBookmarked(final Long userId, final Long placeId) {
         try {
             // Redis 먼저 확인
-            String bookmarkKey = generateKey(CachePrefix.BOOKMARK, userId, placeId);
+            String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
             BookmarkRedisDto bookmarkData = bookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
 
             if (bookmarkData != null && bookmarkData.isActive()) {
@@ -251,6 +245,4 @@ public class PlaceService {
         log.info("조회된 최종 북마크 장소들 개수: {}", result.size());
         return result;
     }
-
-
 }

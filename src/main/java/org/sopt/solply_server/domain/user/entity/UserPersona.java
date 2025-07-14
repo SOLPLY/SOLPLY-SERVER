@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum UserPersona {
+    ANYTHING("특별히 선호하는 공간은 없어요"),
     REST("조용한 공간에 오래 머물고 싶어요"),
     EXPLORER("이곳저곳 가볍게 둘러보고 싶어요"),
     MOODING("내 취향에 맞는 공간을 찾고싶어요"),
