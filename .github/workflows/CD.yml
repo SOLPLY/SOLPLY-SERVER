@@ -27,6 +27,16 @@ jobs:
           echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application-dev.yml
         working-directory: ${{ env.working-directory }}
 
+      - name: Create gradle.properties
+        run: |
+          # create gradle.properties in project root
+          touch ./gradle.properties
+          
+          # GitHub Actions 시크릿 변수 -> gradle.properties 파일에 작성
+          echo "${{ secrets.GRADLE_DEV_PROPERTIES }}" > ./gradle.properties
+        working-directory: ${{ env.working-directory }}
+
+
       - name: Build with Gradle
         run: |
           chmod +x gradlew
