@@ -1,5 +1,8 @@
 package org.sopt.solply_server.domain.course.service.cache;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +13,7 @@ import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataManager;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
@@ -117,5 +121,4 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
         log.debug("삭제 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
                 bookmarkData.userId(), bookmarkData.courseId());
     }
-
 }

@@ -1,7 +1,5 @@
 package org.sopt.solply_server.domain.place.service;
 
-import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlaceBookmarkKey;
-
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -28,6 +26,8 @@ import org.sopt.solply_server.global.util.InputValidator;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlaceBookmarkKey;
 
 @Slf4j
 @Service
