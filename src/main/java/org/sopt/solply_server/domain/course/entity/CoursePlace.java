@@ -10,12 +10,15 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import lombok.Getter;
+import lombok.*;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
 @Getter
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "course_place",
         indexes = {
                 @Index(name = "idx_course_place_course_id_place_id", columnList = "course_id, place_id", unique = true),
@@ -37,5 +40,13 @@ public class CoursePlace extends BaseTimeEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "place_id", nullable = false)
     private Place place;
+
+    public static CoursePlace create(Course course, Place place, int placeOrder) {
+        return CoursePlace.builder()
+                .course(course)
+                .place(place)
+                .placeOrder(placeOrder)
+                .build();
+    }
 
 }

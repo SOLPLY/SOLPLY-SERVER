@@ -63,4 +63,15 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         ORDER BY c.id
         """)
     List<Course> findBookmarkedCoursesWithDetailsById(@Param("courseIds") List<Long> courseIds);
+
+    /**
+     * 동네의 코스명 패턴 조회 (중복 이름 체크용)
+     */
+    @Query("SELECT c.name FROM Course c " +
+            "WHERE c.town.id = :townId " +
+            "AND c.name LIKE :namePattern " +
+            "ORDER BY c.name")
+    List<String> findCourseNamesByTownAndNamePattern(@Param("townId") Long townId,
+                                                     @Param("namePattern") String namePattern);
+
 }

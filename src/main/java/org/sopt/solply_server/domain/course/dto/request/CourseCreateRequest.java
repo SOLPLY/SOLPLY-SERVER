@@ -7,6 +7,9 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record CourseCreateRequest(
+        @NotNull(message = "원본 코스 ID는 필수입니다.")
+        Long originalCourseId,
+
         @NotEmpty(message = "코스에는 2개 이상의 장소가 포함되어야 합니다.")
         @Size(min = 2, max = 6, message = "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.")
         @Valid

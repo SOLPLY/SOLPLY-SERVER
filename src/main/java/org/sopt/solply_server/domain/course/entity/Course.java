@@ -1,31 +1,21 @@
 package org.sopt.solply_server.domain.course.entity;
 
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.OrderBy;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
+
 import java.util.ArrayList;
 import java.util.List;
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+
+import lombok.*;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Getter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
+@EntityListeners(AuditingEntityListener.class)
 @Table(name = "courses",
         indexes = {
                 @Index(name = "idx_course_town_id", columnList = "town_id"),
@@ -53,5 +43,26 @@ public class Course extends BaseTimeEntity {
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("placeOrder ASC")
     private List<CoursePlace> coursePlaces = new ArrayList<>();
+
+    public static Course createUserCourse(String name, String introduction, Town town) {
+        return Course.builder()
+                .name(name)
+                .introduction(introduction)
+                .isShared(false) // 사용자 생성 코스는 기본 비공개
+                .town(town)
+                .coursePlaces(new ArrayList<>())
+                .build();
+    }
+
+    public void addCoursePlace(CoursePlace coursePlace) {
+        this.coursePlaces.add(coursePlace);
+    }
+
+    public static String generateUniqueName(String baseName, int sequence) {
+        if (sequence == 0) {
+            return baseName;
+        }
+        return String.format("%s (%d)", baseName, sequence);
+    }
 
 }
