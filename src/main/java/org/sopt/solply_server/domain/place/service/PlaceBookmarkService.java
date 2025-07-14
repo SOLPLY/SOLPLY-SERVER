@@ -1,5 +1,7 @@
 package org.sopt.solply_server.domain.place.service;
 
+import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlaceBookmarkKey;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
@@ -7,6 +9,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.service.cache.PlaceBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
@@ -29,6 +32,7 @@ public class PlaceBookmarkService {
     private final PlaceBookmarkRepository placeBookmarkRepository;
     private final PlaceRepository placeRepository;
     private final CacheService cacheService;
+    private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
 
     /**
      * 북마크 생성
@@ -85,6 +89,19 @@ public class PlaceBookmarkService {
         }
     }
 
+    /**
+     * 사용자가 해당 장소를 북마크했는지 체크
+     */
+    public boolean isBookmarked(final Long userId, final Long placeId) {
+        String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
+        BookmarkRedisDto bookmarkData = placeBookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
+
+        if (bookmarkData != null && bookmarkData.isActive()) {
+            return true;
+        }
+
+        return placeBookmarkRepository.existsByPlaceIdAndUserId(placeId, userId);
+    }
 
     //=== Private Methods ===//
 

@@ -85,6 +85,42 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
     }
 
     /**
+     * Redis에서 코스 북마크 데이터 조회
+     */
+    public CourseBookmarkRedisDto getCourseBookmarkDto(final Long userId, final Long courseId) {
+        String bookmarkKey = String.format("%s:%d:%d",
+                CachePrefix.COURSE_BOOKMARK.getPrefix(), userId, courseId);
+        return cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
+    }
+
+    /**
+     * Redis에서 활성화된 코스 북마크 데이터 조회
+     */
+    public List<CourseBookmarkRedisDto> getActiveCourseBookmarks(final Long userId) {
+        try {
+            String userCourseBookmarkPattern = String.format("%s:%d:*",
+                    CachePrefix.COURSE_BOOKMARK.getPrefix(), userId);
+            Set<String> userBookmarkKeys = cacheService.findKeys(userCourseBookmarkPattern);
+
+            List<CourseBookmarkRedisDto> activeBookmarks = new ArrayList<>();
+            for (String bookmarkKey : userBookmarkKeys) {
+                CourseBookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
+                if (bookmarkDto != null && bookmarkDto.isActive()) {
+                    activeBookmarks.add(bookmarkDto);
+                }
+            }
+
+            log.info("사용자 {}의 활성 코스 북마크 {}개 조회", userId, activeBookmarks.size());
+            return activeBookmarks;
+
+        } catch (Exception e) {
+            log.error("Redis에서 코스 북마크 조회 실패 - userId: {}", userId, e);
+            return new ArrayList<>();
+        }
+    }
+
+
+    /**
      * 활성 코스 북마크 동기화 - Redis ACTIVE 상태와 DB 상태 비교
      */
     private void syncActiveCourseBookmark(CourseBookmarkRedisDto bookmarkData) {

@@ -7,11 +7,11 @@ import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CourseBookmark;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
+import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
-import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -30,6 +30,7 @@ public class CourseBookmarkService {
     private final CourseRepository courseRepository;
     private final CourseBookmarkRepository courseBookmarkRepository;
     private final CacheService cacheService;
+    private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
 
     /**
      * 코스 북마크 생성
@@ -87,6 +88,16 @@ public class CourseBookmarkService {
         log.info("코스 북마크 리스트 삭제 완료 - userId: {}, 삭제 대상: {}개", userId, courseIds.size());
     }
 
+    public boolean isBookmarked(final Long userId, final Long courseId) {
+        CourseBookmarkRedisDto bookmarkData = courseBookmarkRedisDataManager.getCourseBookmarkDto(userId, courseId);
+
+        if (bookmarkData != null && bookmarkData.isActive()) {
+            return true;
+        }
+
+        return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
+    }
+
     // === Private Methods ===
 
     private void saveToDatabase(final CourseBookmark bookmark) {
@@ -96,4 +107,6 @@ public class CourseBookmarkService {
             log.info("코스 북마크 중복 저장 시도 (무시) - bookmarkId: {}", bookmark.getId());
         }
     }
+
+
 }

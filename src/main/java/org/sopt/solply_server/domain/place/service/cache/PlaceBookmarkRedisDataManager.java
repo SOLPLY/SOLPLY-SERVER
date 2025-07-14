@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class BookmarkRedisDataManager implements RedisDataManager {
+public class PlaceBookmarkRedisDataManager implements RedisDataManager {
 
     private final CacheService cacheService;
     private final UserRepository userRepository;
@@ -101,15 +101,14 @@ public class BookmarkRedisDataManager implements RedisDataManager {
     /**
      * 활성 북마크의 전체 정보(DTO)를 반환하는 메서드
      */
-    public List<BookmarkRedisDto> getActiveBookmarkDtos(Long userId) {
-        List<BookmarkRedisDto> activeBookmarkDtos = new ArrayList<>();
-
+    public List<BookmarkRedisDto> getActivePlaceBookmarkDtos(Long userId) {
         try {
             // 사용자의 모든 북마크 키 스캔
             String userBookmarkPattern = String.format("%s:%d:*",
                     CachePrefix.PLACE_BOOKMARK.getPrefix(), userId);
             Set<String> userBookmarkKeys = cacheService.findKeys(userBookmarkPattern);
 
+            List<BookmarkRedisDto> activeBookmarkDtos = new ArrayList<>();
             for (String bookmarkKey : userBookmarkKeys) {
                 BookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
                 if (bookmarkDto != null && bookmarkDto.isActive()) {
@@ -120,12 +119,11 @@ public class BookmarkRedisDataManager implements RedisDataManager {
             log.info("패턴 스캔으로 활성 북마크 조회 - userId: {}, 활성 북마크 {}개",
                     userId, activeBookmarkDtos.size());
 
+            return activeBookmarkDtos;
         } catch (Exception e) {
             log.error("Redis에서 북마크 조회 실패 - userId: {}", userId, e);
             return new ArrayList<>();
         }
-
-        return activeBookmarkDtos;
     }
 
 

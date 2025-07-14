@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.place.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -99,7 +100,7 @@ public class PlaceController {
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlaces(
             @CurrentUserId Long userId,
             @RequestParam("placeIds")
-            @NotBlank(message = "placeIds는 null 혹은 비어있을 수 없습니다")
+            @NotEmpty(message = "placeIds는 null 혹은 비어있을 수 없습니다")
             List<Long> placeIds) {
         placeBookmarkService.deletePlaceBookmarks(userId, placeIds);
         return CustomApiResponse.success("내 장소에서 장소들을 삭제했습니다.");
