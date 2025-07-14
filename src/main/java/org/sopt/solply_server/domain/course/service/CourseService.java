@@ -7,13 +7,13 @@ import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.CourseRecommendDto;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewGetResponse;
+import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
+import org.sopt.solply_server.domain.course.mapper.CourseMapper;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
-import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
@@ -45,6 +45,7 @@ public class CourseService {
     private final TownService townService;
     private final ImageUrlProvider imageUrlProvider;
     private final CacheService cacheService;
+    private final CourseMapper courseMapper;
 
     /**
      * 코스 상세 정보 조회
@@ -69,7 +70,7 @@ public class CourseService {
         Map<Long, Boolean> placeBookmarkMap = getPlaceBookmarkMap(placeIds, userId);
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
-                .map(coursePlace -> convertToCoursePlaceDetailsDto(coursePlace, placeBookmarkMap))
+                .map(coursePlace -> courseMapper.toCoursePlaceDetailsDto(coursePlace, placeBookmarkMap))
                 .toList();
 
         return CourseDetailGetResponse.of(course, isCourseBookmarked, coursePlaces);
@@ -98,7 +99,11 @@ public class CourseService {
         Map<Long, Boolean> courseBookmarkMap = getCourseBookmarkMap(courseIds, userId);
 
         List<CourseRecommendDto> courseRecommendDtos = sharedCourses.stream()
-                .map(course -> convertToCourseRecommendDto(course, courseBookmarkMap))
+                .map(course -> {
+                    List<TagName> mainTags = extractTopTwoPlaceMainTags(course);
+                    String thumbnailUrl = getCourseThumbnailUrl(course);
+                    return courseMapper.toCourseRecommendDto(course, mainTags, thumbnailUrl, courseBookmarkMap);
+                })
                 .toList();
 
         return CourseRecommendGetResponse.from(courseRecommendDtos);
@@ -108,13 +113,13 @@ public class CourseService {
      * 코스 북마크 폴더 프리뷰 조회
      * 동네별로 가장 최근에 북마크한 코스를 반환
      */
-    public CourseFolderPreviewGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
+    public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
         // Redis에서 활성화된 코스 북마크 데이터 조회
         List<CourseBookmarkRedisDto> activeBookmarks = getActiveCourseBookmarks(userId);
 
         if (activeBookmarks.isEmpty()) {
             log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
-            return CourseFolderPreviewGetResponse.from(List.of());
+            return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
         // 동네별 최신 북마크 코스 필터링
@@ -127,15 +132,16 @@ public class CourseService {
 
         List<Course> courses = courseRepository.findBookmarkedCoursesWithDetailsById(courseIds);
 
-        // 장소 태그 정보 미리 로드
-        courseRepository.findPlacesWithTagsByCourseIds(courseIds);
-
         // DTO 변환
         List<CourseFolderDto> folderDtos = courses.stream()
-                .map(this::convertToCourseFolderDto)
+                .map(course -> {
+                    List<TagName> primaryTags = extractTopTwoPlaceMainTags(course);
+                    String thumbnailUrl = getCourseThumbnailUrl(course);
+                    return courseMapper.toCourseFolderDto(course, primaryTags, thumbnailUrl);
+                })
                 .toList();
 
-        return CourseFolderPreviewGetResponse.from(folderDtos);
+        return CourseFolderPreviewListGetResponse.from(folderDtos);
     }
 
     //===Redis 활용 북마크 조회 메서드===//
@@ -226,39 +232,6 @@ public class CourseService {
     //===편의 메서드===//
 
     /**
-     * CoursePlace를 CoursePlaceDetailsDto로 변환
-     */
-    private CoursePlaceDetailsDto convertToCoursePlaceDetailsDto(final CoursePlace coursePlace,
-                                                                 final Map<Long, Boolean> placeBookmarkMap) {
-        Place place = coursePlace.getPlace();
-
-        return CoursePlaceDetailsDto.of(
-                place,
-                getImageUrl(place),
-                place.getPrimaryTag(), // Place 엔티티 메서드 활용
-                placeBookmarkMap.getOrDefault(place.getId(), false),
-                coursePlace.getPlaceOrder()
-        );
-    }
-
-    /**
-     * Course를 CourseRecommendDto로 변환
-     */
-    private CourseRecommendDto convertToCourseRecommendDto(final Course course,
-                                                           final Map<Long, Boolean> courseBookmarkMap) {
-        List<TagName> mainTags = extractTopTwoPlaceMainTags(course);
-
-        String thumbnailUrl = getCourseThumbnailUrl(course);
-
-        return CourseRecommendDto.of(
-                course,
-                thumbnailUrl,
-                mainTags,
-                courseBookmarkMap.getOrDefault(course.getId(), false)
-        );
-    }
-
-    /**
      * 코스에서 상위 2개 장소의 메인 태그를 순서대로 추출 (중복 허용)
      */
     private List<TagName> extractTopTwoPlaceMainTags(final Course course) {
@@ -345,15 +318,5 @@ public class CourseService {
                         (existing, replacement) ->
                                 replacement.createdAt().isAfter(existing.createdAt()) ? replacement : existing
                 ));
-    }
-
-    /**
-     * Course를 CourseFolderDto로 변환
-     */
-    private CourseFolderDto convertToCourseFolderDto(final Course course) {
-        List<TagName> primaryTags = extractTopTwoPlaceMainTags(course);
-        String thumbnailUrl = getCourseThumbnailUrl(course);
-
-        return CourseFolderDto.of(course, primaryTags, thumbnailUrl);
     }
 }

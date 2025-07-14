@@ -6,7 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewGetResponse;
+import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.course.service.CourseService;
@@ -87,7 +87,7 @@ public class CourseController {
 
     @Operation(summary = "코스 북마크 폴더 프리뷰 조회", description = "동네별로 가장 최근에 북마크한 코스의 프리뷰를 조회합니다.")
     @GetMapping("/bookmarks/folders")
-    public ResponseEntity<CustomApiResponse<CourseFolderPreviewGetResponse>> getBookmarkedCourseFolderPreview(
+    public ResponseEntity<CustomApiResponse<CourseFolderPreviewListGetResponse>> getBookmarkedCourseFolderPreview(
             @CurrentUserId Long userId) {
         return CustomApiResponse.success(
                 "나만의 코스 프리뷰 조회에 성공했습니다.",

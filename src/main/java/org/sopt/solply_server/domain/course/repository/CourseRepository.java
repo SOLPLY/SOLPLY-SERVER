@@ -57,6 +57,8 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         JOIN FETCH c.town t
         JOIN FETCH c.coursePlaces cp
         JOIN FETCH cp.place p
+        LEFT JOIN FETCH p.placeTags pt
+        LEFT JOIN FETCH pt.tag
         WHERE c.id IN :courseIds
         ORDER BY c.id
         """)
