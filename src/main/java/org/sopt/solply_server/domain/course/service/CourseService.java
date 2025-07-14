@@ -6,6 +6,8 @@ import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
 import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
+import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
+import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
@@ -16,15 +18,17 @@ import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
-import org.sopt.solply_server.domain.place.service.cache.PlaceBookmarkRedisDataManager;
+import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
+import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.service.TownService;
-import org.sopt.solply_server.global.cache.CacheService;
-import org.sopt.solply_server.global.cache.RedisKeyGenerator;
+import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -32,6 +36,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -41,14 +46,47 @@ import java.util.stream.Collectors;
 public class CourseService {
 
     private final CourseRepository courseRepository;
+    private final PlaceBookmarkService placeBookmarkService;;
+    private final PlaceService placeService;
+    private final UserRepository userRepository;
     private final TownService townService;
     private final ImageUrlProvider imageUrlProvider;
-    private final CacheService cacheService;
     private final CourseMapper courseMapper;
     private final CourseBookmarkService courseBookmarkService;
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
-    private final PlaceBookmarkService placeBookmarkService;
-    private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
+    private final CourseNameGenerator courseNameGenerator;
+
+    /**
+     * 새로운 코스 생성
+     */
+    @Transactional
+    public CourseCreateResponse createCourse(Long userId, CourseCreateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+
+        validateCourseRequest(request);
+        List<Place> places = getPlacesByPlaceIds(request);
+
+        // 모든 장소가 같은 동네에 속하는지 검증
+        Town town = places.get(0).getTown();
+        validateSameTown(places, town);
+
+        String courseName = generateUniqueCourseName(request.courseName(), town);
+        Course course = createNewCourse(courseName, town, places, request, user);
+
+        Course savedCourse = courseRepository.save(course);
+
+        // 새로 생성된 코스는 자동으로 북마크에 등록
+        try {
+            courseBookmarkService.createCourseBookmark(userId, savedCourse.getId());
+            log.info("새 코스 생성 및 북마크 등록 완료 - userId: {}, originalCourseId: {}, newCourseId: {}, courseName: '{}'",
+                    userId, request.originalCourseId(), savedCourse.getId(), courseName);
+        } catch (Exception e) {
+            log.error("코스 북마크 등록 실패 - userId: {}, courseId: {}", userId, savedCourse.getId(), e);
+        }
+
+        return CourseCreateResponse.from(savedCourse.getId());
+    }
 
     /**
      * 코스 상세 정보 조회
@@ -141,7 +179,13 @@ public class CourseService {
                 .map(CourseBookmarkRedisDto::courseId)
                 .toList();
 
-        List<Course> courses = courseRepository.findBookmarkedCoursesWithDetailsById(courseIds);
+        List<Course> courses = courseRepository.findBookmarkedCoursesWithPlacesByIds(courseIds);
+
+        if (courses.isEmpty()) {
+            return CourseFolderPreviewListGetResponse.from(List.of());
+        }
+
+        courseRepository.findPlacesWithTagsByCourseIds(courseIds);
 
         // DTO 변환
         List<CourseFolderDto> folderDtos = courses.stream()
@@ -155,7 +199,113 @@ public class CourseService {
         return CourseFolderPreviewListGetResponse.from(folderDtos);
     }
 
-    //=== 편의 메서드 ===//
+
+    //=== 코스 생성 관련 Private Methods ===//
+
+    private void validateCourseRequest(CourseCreateRequest request) {
+        List<CourseCreateRequest.CoursePlaceRequest> places = request.places();
+
+        // originalCourseId 검증
+        if (request.originalCourseId() == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                    "원본 코스 ID는 필수입니다.");
+        }
+
+        if (request.courseName() == null || request.courseName().trim().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                    "코스 이름은 필수입니다.");
+        }
+
+        // 순서 검증 (1부터 연속)
+        List<Integer> placeOrders = places.stream()
+                .map(CourseCreateRequest.CoursePlaceRequest::placeOrder)
+                .sorted()
+                .toList();
+
+        for (int i = 0; i < placeOrders.size(); i++) {
+            if (placeOrders.get(i) != i + 1) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                        "순서는 1부터 시작하여 연속되어야 합니다.");
+            }
+        }
+
+        // 중복 장소 검증
+        Set<Long> uniquePlaceIds = new HashSet<>();
+        for (CourseCreateRequest.CoursePlaceRequest placeRequest : places) {
+            if (!uniquePlaceIds.add(placeRequest.placeId())) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                        "중복된 장소가 포함되어 있습니다.");
+            }
+        }
+    }
+
+    private List<Place> getPlacesByPlaceIds(CourseCreateRequest request) {
+        List<Long> placeIds = request.places().stream()
+                .map(CourseCreateRequest.CoursePlaceRequest::placeId)
+                .toList();
+
+        if (placeIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "장소 목록이 비어있습니다.");
+        }
+
+        return placeService.getPlacesWithTownByPlaceIds(placeIds);
+    }
+
+    private void validateSameTown(List<Place> places, Town referenceTown) {
+        boolean allInSameTown = places.stream()
+                .allMatch(place -> place.getTown().getId().equals(referenceTown.getId()));
+
+        if (!allInSameTown) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "모든 장소는 같은 동네에 속해야 합니다.");
+        }
+    }
+
+    /**
+     * 중복되지 않는 코스명 생성
+     */
+    private String generateUniqueCourseName(String originalName, Town town) {
+        String namePattern = originalName + "%";
+        List<String> existingNames = courseRepository
+                .findCourseNamesByTownAndNamePattern(town.getId(), namePattern);
+
+        log.debug("기존 코스명들 조회 완료 - baseName: '{}', 조회된 코스명 개수: {}", originalName, existingNames.size());
+
+        return courseNameGenerator.generateUniqueName(originalName, existingNames);
+    }
+
+    /**
+     * 새 코스 생성
+     */
+    private Course createNewCourse(String courseName, Town town, List<Place> places, CourseCreateRequest request, User user) {
+        // 원본 코스의 소개글 가져오기
+        String introduction = getOriginalCourseIntroduction(request.originalCourseId());
+        Course course = Course.createUserCourse(courseName, introduction, town, user);
+
+        // 장소들 순서대로 매핑
+        Map<Long, Place> placeMap = places.stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
+
+        // CoursePlace 생성 및 추가
+        List<CoursePlace> coursePlaces = request.places().stream()
+                .sorted(Comparator.comparing(CourseCreateRequest.CoursePlaceRequest::placeOrder))
+                .map(placeRequest -> {
+                    Place place = placeMap.get(placeRequest.placeId());
+                    return CoursePlace.create(course, place, placeRequest.placeOrder());
+                })
+                .toList();
+
+        coursePlaces.forEach(course::addCoursePlace);
+
+        return course;
+    }
+
+    private String getOriginalCourseIntroduction(Long originalCourseId) {
+        Course originalCourse = courseRepository.findById(originalCourseId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+
+        return originalCourse.getIntroduction();
+    }
+
 
     /**
      * 코스에서 상위 2개 장소의 메인 태그를 순서대로 추출 (중복 허용)

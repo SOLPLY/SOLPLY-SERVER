@@ -115,6 +115,7 @@ CREATE TABLE courses (
                          introduction TEXT NOT NULL,
                          is_shared BOOLEAN NOT NULL DEFAULT false,
                          town_id BIGINT NOT NULL,
+                         created_by BIGINT,
                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -181,6 +182,7 @@ CREATE INDEX idx_place_images_place_order ON place_images(place_id, display_orde
 -- Courses 테이블 인덱스
 CREATE INDEX idx_course_town_id ON courses(town_id);
 CREATE INDEX idx_course_is_shared ON courses(is_shared);
+CREATE INDEX idx_course_created_by ON courses(created_by);
 
 -- Course Place 테이블 인덱스
 CREATE UNIQUE INDEX idx_course_place_course_id_place_id ON course_place(course_id, place_id);

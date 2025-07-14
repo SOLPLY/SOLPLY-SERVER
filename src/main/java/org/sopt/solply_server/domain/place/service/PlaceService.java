@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -115,6 +116,26 @@ public class PlaceService {
         );
     }
 
+    public List<Place> getPlacesWithTownByPlaceIds(List<Long> placeIds) {
+        // Town 정보까지 함께 조회 (N+1 문제 방지)
+        List<Place> places = placeRepository.findAllByIdsWithTown(placeIds);
+
+        if (places.size() != placeIds.size()) {
+            Set<Long> foundIds = places.stream()
+                    .map(Place::getId)
+                    .collect(Collectors.toSet());
+
+            List<Long> missingIds = placeIds.stream()
+                    .filter(id -> !foundIds.contains(id))
+                    .toList();
+
+            log.warn("존재하지 않는 장소 ID들: {}", missingIds);
+            throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
+        }
+
+        return places;
+    }
+
 
     //=== Private Methods ===//
 
@@ -171,7 +192,6 @@ public class PlaceService {
         }
         tagValidator.validateTagListRelation(mainTagId, subTagIdList);
     }
-
 
     /**
      * Redis 북마크 데이터를 기반으로 동네별 최신 북마크 장소를 필터링

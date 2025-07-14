@@ -103,6 +103,8 @@ public class PlaceBookmarkService {
         return placeBookmarkRepository.existsByPlaceIdAndUserId(placeId, userId);
     }
 
+
+
     //=== Private Methods ===//
 
     private void saveToDatabase(final PlaceBookmark bookmark) {
