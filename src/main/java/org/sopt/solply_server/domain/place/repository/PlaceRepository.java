@@ -9,40 +9,38 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface PlaceRepository extends JpaRepository<Place, Long> {
 
-    @Query("SELECT DISTINCT p FROM Place p " +
-            "JOIN p.placeTags pt " +
-            "JOIN pt.tag t " +
-            "WHERE t.id = :mainTagId AND t.type = 'MAIN' " +
-            "AND p.town.id = :townId")
-    List<Place> findPlacesByTownIdAndMainTag(
-            @Param("townId") Long townId,
-            @Param("mainTagId") Long mainTagId
-    );
-
-
+    /**
+     * 통합된 태그 기반 장소 조회
+     * - mainTagId가 null이면 모든 장소 조회
+     * - subTag 리스트가 null/empty면 해당 조건 무시
+     */
     @Query("""
         SELECT DISTINCT p FROM Place p
-        JOIN p.placeTags pt1
-        JOIN pt1.tag t1
-        WHERE t1.id = :mainTagId AND t1.type = 'MAIN'
-          AND p.town.id = :townId
+        LEFT JOIN p.placeTags pt1 ON (pt1.tag.id = :mainTagId AND pt1.tag.type = 'MAIN')
+        WHERE p.town.id = :townId
+          AND (:mainTagId IS NULL OR pt1.tag.id IS NOT NULL)
           AND (
-            (:subTagOptionAIds IS NULL OR EXISTS (
-                SELECT pt2 FROM PlaceTag pt2
+            :subTagOptionAIds IS NULL OR 
+            SIZE(:subTagOptionAIds) = 0 OR 
+            EXISTS (
+                SELECT 1 FROM PlaceTag pt2
                 WHERE pt2.place = p
                   AND pt2.tag.id IN :subTagOptionAIds
                   AND pt2.tag.type = 'OPTION1'
-            ))
-            AND
-            (:subTagOptionBIds IS NULL OR EXISTS (
-                SELECT pt3 FROM PlaceTag pt3
+            )
+          )
+          AND (
+            :subTagOptionBIds IS NULL OR 
+            SIZE(:subTagOptionBIds) = 0 OR 
+            EXISTS (
+                SELECT 1 FROM PlaceTag pt3
                 WHERE pt3.place = p
                   AND pt3.tag.id IN :subTagOptionBIds
                   AND pt3.tag.type = 'OPTION2'
-            ))
+            )
           )
-    """)
-    List<Place> findPlacesByTownAndMainTagAndSubTags(
+        """)
+    List<Place> findPlacesByTagConditions(
             @Param("townId") Long townId,
             @Param("mainTagId") Long mainTagId,
             @Param("subTagOptionAIds") List<Long> subTagOptionAIds,

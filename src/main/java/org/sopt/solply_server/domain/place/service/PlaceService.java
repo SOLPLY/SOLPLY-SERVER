@@ -136,7 +136,7 @@ public class PlaceService {
         // 메인 태그로만 조회
         if (InputValidator.isBlank(subTagAIdList) && InputValidator.isBlank(subTagBIdList)) {
             log.info("메인 태그로만 장소 조회: {}", mainTagId);
-            return placeRepository.findPlacesByTownIdAndMainTag(selectedTownId, mainTagId);
+
         }
 
         tagValidator.validateTagType(mainTagId, TagType.MAIN);
@@ -144,8 +144,9 @@ public class PlaceService {
         validateSubTags(mainTagId, subTagAIdList, TagType.OPTION1);
         validateSubTags(mainTagId, subTagBIdList, TagType.OPTION2);
 
-        return placeRepository.findPlacesByTownAndMainTagAndSubTags(
-                selectedTownId, mainTagId, subTagAIdList, subTagBIdList);
+        return placeRepository.findPlacesByTagConditions(
+                selectedTownId, mainTagId, subTagAIdList, subTagBIdList
+        );
     }
 
     // 서브 태그 검증 메서드

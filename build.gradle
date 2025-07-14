@@ -23,9 +23,23 @@ repositories {
 	mavenCentral()
 }
 
-// ⭐ Spring Cloud 버전 관리 추가
+def querydslDir = layout.buildDirectory.dir("generated/querydsl").get().asFile
+
+sourceSets {
+	main.java.srcDirs += querydslDir
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.getGeneratedSourceOutputDirectory().set(file(querydslDir))
+}
+
+clean {
+	delete file(querydslDir)
+}
+
 ext {
 	set('springCloudVersion', "2023.0.3")  // Spring Boot 3.3.x와 호환
+	set('querydslVersion', "6.10.1")
 }
 
 dependencies {
@@ -39,8 +53,13 @@ dependencies {
 
 	// ✅ JPA + DB
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-//	runtimeOnly 'com.mysql:mysql-connector-j'
 	runtimeOnly 'org.postgresql:postgresql'
+
+	// ✅ Querydsl
+	implementation "io.github.openfeign.querydsl:querydsl-jpa:${querydslVersion}"
+	annotationProcessor "io.github.openfeign.querydsl:querydsl-apt:${querydslVersion}"
+	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
+	annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
 
 	// ✅ Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
