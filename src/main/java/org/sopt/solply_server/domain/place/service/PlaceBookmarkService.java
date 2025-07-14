@@ -11,7 +11,6 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
-import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -45,12 +43,6 @@ public class PlaceBookmarkService {
 
         String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
 
-        // 중복 체크 (Redis에서 먼저 확인)
-        if (cacheService.exists(bookmarkKey)) {
-            log.warn("이미 북마크된 장소 - userId: {}, placeId: {}", userId, placeId);
-            throw new BusinessException(ErrorCode.ALREADY_BOOKMARKED);
-        }
-
         try {
             // 북마크 DTO 생성 (Record의 정적 팩토리 메서드 사용)
             BookmarkRedisDto bookmarkData = BookmarkRedisDto.createActive(userId, placeId);
@@ -62,10 +54,7 @@ public class PlaceBookmarkService {
 
         } catch (Exception e) {
             log.error("북마크 Redis 저장 실패 - userId: {}, placeId: {}", userId, placeId, e);
-            PlaceBookmark bookmark = PlaceBookmark.builder()
-                    .user(user)
-                    .place(place)
-                    .build();
+            PlaceBookmark bookmark = PlaceBookmark.create(place, user);
             saveToDatabase(bookmark);
             log.debug("북마크 DB 저장 완료 - userId: {}, placeId: {}", user.getId(), place.getId());
         }
@@ -78,18 +67,10 @@ public class PlaceBookmarkService {
     public void deletePlaceBookmark(final Long userId, final Long placeId) {
         String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
 
-        // Redis에서 현재 상태 확인
-        BookmarkRedisDto currentBookmark = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
+        BookmarkRedisDto deleteMarker = BookmarkRedisDto.createDeleted(userId, placeId);
+        cacheService.set(bookmarkKey, deleteMarker);
 
-        if (currentBookmark != null && currentBookmark.isActive()) {
-            // 삭제 마커로 업데이트 (DB 쿼리 X)
-            BookmarkRedisDto deleteMarker = BookmarkRedisDto.createDeleted(userId, placeId);
-            cacheService.set(bookmarkKey, deleteMarker);
-
-            log.info("북마크 삭제 마커 설정 완료 - userId: {}, placeId: {}", userId, placeId);
-        } else {
-            log.warn("삭제할 활성 북마크가 없음 - userId: {}, placeId: {}", userId, placeId);
-        }
+        log.info("장소 북마크 삭제 마커 설정 완료 - userId: {}, placeId: {}", userId, placeId);
     }
 
     /**
@@ -114,6 +95,4 @@ public class PlaceBookmarkService {
             log.info("북마크 중복 저장 시도 (무시) - bookmarkId: {}", bookmark.getId());
         }
     }
-
-
 }

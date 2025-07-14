@@ -4,21 +4,21 @@ import lombok.Builder;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 
 @Builder
-public record PlaceThumbnailDto(
+public record PlacePreviewDto(
         long placeId,
         String placeName,
         String thumbnailImageUrl,
         TagName primaryTag,
         boolean isBookmarked
 ) {
-    public static PlaceThumbnailDto of(
+    public static PlacePreviewDto of(
             long placeId,
             String placeName,
             String thumbnailImageUrl,
             TagName primaryTag,
             boolean isBookmarked
     ) {
-        return PlaceThumbnailDto.builder()
+        return PlacePreviewDto.builder()
                 .placeId(placeId)
                 .placeName(placeName)
                 .thumbnailImageUrl(thumbnailImageUrl)

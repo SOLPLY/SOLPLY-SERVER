@@ -1,13 +1,13 @@
 package org.sopt.solply_server.domain.place.dto.response;
 
 import java.util.List;
-import org.sopt.solply_server.domain.place.dto.PlaceThumbnailDto;
+import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 
 public record PlaceFilterGetResponse(
-        List<PlaceThumbnailDto> places
+        List<PlacePreviewDto> places
 ) {
 
-    public static PlaceFilterGetResponse from(List<PlaceThumbnailDto> places) {
+    public static PlaceFilterGetResponse from(List<PlacePreviewDto> places) {
         return new PlaceFilterGetResponse(places);
     }
 
