@@ -1,7 +1,15 @@
+buildscript {
+	dependencies {
+		classpath 'org.flywaydb:flyway-database-postgresql:10.19.0'
+		classpath 'org.postgresql:postgresql:42.7.4'
+	}
+}
+
 plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.3.5'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.flywaydb.flyway' version '10.19.0'
 }
 
 group = 'org.sopt'
@@ -38,8 +46,18 @@ clean {
 }
 
 ext {
-	set('springCloudVersion', "2023.0.3")  // Spring Boot 3.3.x와 호환
+	set('springCloudVersion', "2023.0.3")
 	set('querydslVersion', "6.10.1")
+}
+
+flyway {
+	url = project.findProperty('flyway.url')
+	user = project.findProperty('flyway.user')
+	password = project.findProperty('flyway.password')
+	schemas = ['public']
+	baselineOnMigrate = true
+	baselineVersion = '1'
+	locations = ['classpath:db/migration']
 }
 
 dependencies {
@@ -53,7 +71,7 @@ dependencies {
 
 	// ✅ JPA + DB
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-	runtimeOnly 'org.postgresql:postgresql'
+	implementation 'org.postgresql:postgresql'  // 🔥 중복 제거, implementation만 유지
 
 	// ✅ Querydsl
 	implementation "io.github.openfeign.querydsl:querydsl-jpa:${querydslVersion}"
@@ -86,6 +104,7 @@ dependencies {
 
 	// ✅ Flyway
 	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
 
 	// ✅ Feign Client
 	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
@@ -106,8 +125,6 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-
 }
 
 // Spring Cloud BOM 추가

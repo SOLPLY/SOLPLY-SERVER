@@ -15,6 +15,9 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+gradle.dev.properties
+gradle.prod.properties
+
 *.log
 *.tmp
 *.swp
