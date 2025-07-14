@@ -35,6 +35,7 @@ public class User {
         return User.builder()
                 .email(email)
                 .isNewUser(true)
+                .persona(UserPersona.ANYTHING)
                 .build();
     }
 

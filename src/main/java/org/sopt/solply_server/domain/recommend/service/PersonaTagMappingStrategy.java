@@ -21,6 +21,21 @@ public class PersonaTagMappingStrategy {
     private Map<UserPersona, List<TagName>> initializePersonaTagMapping() {
         Map<UserPersona, List<TagName>> mapping = new EnumMap<>(UserPersona.class);
 
+        // ANYTHING: 특별히 선호하는 공간은 없어요
+        mapping.put(UserPersona.ANYTHING, Arrays.asList(
+                TagName.CAFE, TagName.BOOKSTORE, TagName.SHOPPING,
+                TagName.WALKING, TagName.UNIQUE_SPACE, TagName.HEALING,
+                TagName.SUNLIGHT, TagName.MANY_PLUG, TagName.NO_TIME_LIMIT,
+                TagName.SHOPPING, TagName.WALKING, TagName.UNIQUE_SPACE,
+                TagName.LIFESTYLE_SHOP, TagName.VINTAGE_SHOP, TagName.POPUP_MARKET,
+                TagName.ART, TagName.WORKSHOP,
+                TagName.CAFE, TagName.UNIQUE_SPACE, TagName.BAR,
+                TagName.SIGNATURE_MENU, TagName.MOOD_INTERIOR,
+                TagName.ART, TagName.WORKSHOP, TagName.VINTAGE_SHOP,
+                TagName.WALKING, TagName.CAFE, TagName.UNIQUE_SPACE,
+                TagName.HEALING, TagName.SUNLIGHT, TagName.BAR_TABLE
+        ));
+
         // REST: 조용한 공간에 오래 머물고 싶어요
         mapping.put(UserPersona.REST, Arrays.asList(
                 TagName.CAFE, TagName.BOOKSTORE,

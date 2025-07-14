@@ -17,6 +17,8 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,11 +37,10 @@ public class RecommendService {
     public PlaceRecommendationGetResponse getRecommendPlaces(Long userId, Long townId) {
         // 사용자 페르소나 조회
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
         UserPersona persona = user.getPersona();
-        if (persona == null) {
-            throw new IllegalArgumentException("사용자의 페르소나가 설정되지 않았습니다.");
+        if (persona != null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_PERSONA);
         }
 
         // 페르소나에 맞는 추천 태그 조회

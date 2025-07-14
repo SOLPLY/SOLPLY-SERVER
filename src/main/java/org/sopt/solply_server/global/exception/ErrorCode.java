@@ -48,6 +48,7 @@ public enum ErrorCode {
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
     DUPLICATE_NICKNAME(HttpStatus.BAD_REQUEST, "USER-002", "이미 사용 중인 닉네임입니다."),
     ONBOARDING_ALREADY_COMPLETED(HttpStatus.BAD_REQUEST, "USER-003", "이미 온보딩이 완료된 사용자입니다."),
+    NOT_FOUND_PERSONA(HttpStatus.NOT_FOUND, "USER-004" , "페르소나가 설정돼있지 않은 사용자입니다." ),
 
 
     // 장소 관련 (PLACE-xxx)
