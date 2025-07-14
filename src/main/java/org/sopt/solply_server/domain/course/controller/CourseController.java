@@ -12,7 +12,6 @@ import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
-import org.sopt.solply_server.domain.course.service.CourseCreationService;
 import org.sopt.solply_server.domain.course.service.CourseService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -31,7 +30,6 @@ public class CourseController {
 
     private final CourseService courseService;
     private final CourseBookmarkService courseBookmarkService;
-    private final CourseCreationService courseCreationService;
 
     @Operation(summary = "코스 생성", description = "새로운 코스를 생성합니다.")
     @PostMapping
@@ -40,7 +38,7 @@ public class CourseController {
             @Valid @RequestBody CourseCreateRequest request) {
         return CustomApiResponse.success(
                 "코스 생성을 완료했습니다.",
-                courseCreationService.createCourse(userId, request)
+                courseService.createCourse(userId, request)
         );
     }
 
