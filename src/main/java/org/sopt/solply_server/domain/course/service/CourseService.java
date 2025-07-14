@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
 import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
-import org.sopt.solply_server.domain.course.dto.CourseRecommendDto;
+import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
@@ -98,7 +98,7 @@ public class CourseService {
 
         Map<Long, Boolean> courseBookmarkMap = getCourseBookmarkMap(courseIds, userId);
 
-        List<CourseRecommendDto> courseRecommendDtos = sharedCourses.stream()
+        List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
                 .map(course -> {
                     List<TagName> mainTags = extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = getCourseThumbnailUrl(course);
@@ -106,7 +106,7 @@ public class CourseService {
                 })
                 .toList();
 
-        return CourseRecommendGetResponse.from(courseRecommendDtos);
+        return CourseRecommendGetResponse.from(coursePreviewDtos);
     }
 
     /**

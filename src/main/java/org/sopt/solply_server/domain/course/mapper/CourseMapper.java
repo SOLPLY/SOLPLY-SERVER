@@ -5,7 +5,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
-import org.sopt.solply_server.domain.course.dto.CourseRecommendDto;
+import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -29,8 +29,8 @@ public class CourseMapper {
                 .build();
     }
 
-    public CourseRecommendDto toCourseRecommendDto(Course course, List<TagName> mainTags, String thumbnailUrl, Map<Long, Boolean> courseBookmarkMap) {
-        return CourseRecommendDto.of(
+    public CoursePreviewDto toCourseRecommendDto(Course course, List<TagName> mainTags, String thumbnailUrl, Map<Long, Boolean> courseBookmarkMap) {
+        return CoursePreviewDto.of(
                 course,
                 thumbnailUrl,
                 mainTags,

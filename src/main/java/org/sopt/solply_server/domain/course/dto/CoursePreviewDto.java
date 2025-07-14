@@ -7,16 +7,16 @@ import org.sopt.solply_server.domain.tag.entity.TagName;
 import java.util.List;
 
 @Builder
-public record CourseRecommendDto(
+public record CoursePreviewDto(
         Long courseId,
         String title,
         String thumbnailImage,
         List<TagName> mainTags,
         boolean isBookmarked
 ) {
-    public static CourseRecommendDto of(Course course, String thumbnailImage,
-                                        List<TagName> mainTags, boolean isBookmarked) {
-        return CourseRecommendDto.builder()
+    public static CoursePreviewDto of(Course course, String thumbnailImage,
+                                      List<TagName> mainTags, boolean isBookmarked) {
+        return CoursePreviewDto.builder()
                 .courseId(course.getId())
                 .title(course.getName())
                 .thumbnailImage(thumbnailImage)
