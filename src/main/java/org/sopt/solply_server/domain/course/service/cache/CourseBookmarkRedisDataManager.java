@@ -1,5 +1,8 @@
 package org.sopt.solply_server.domain.course.service.cache;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +13,7 @@ import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataManager;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
@@ -117,5 +121,98 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
         log.debug("삭제 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
                 bookmarkData.userId(), bookmarkData.courseId());
     }
+
+    public void cleanupInvalidCourseBookmarks(Long userId, List<Long> invalidCourseIds) {
+        if (invalidCourseIds.isEmpty()) {
+            return;
+        }
+
+        log.info("존재하지 않는 코스들의 북마크 데이터 정리 시작 - userId: {}, 대상 코스: {}",
+                userId, invalidCourseIds);
+
+        for (Long courseId : invalidCourseIds) {
+            try {
+                String bookmarkKey = String.format("%s:%d:%d",
+                        CachePrefix.COURSE_BOOKMARK.getPrefix(), userId, courseId);
+                cacheService.delete(bookmarkKey);
+                log.debug("존재하지 않는 코스의 북마크 키 삭제 - key: {}", bookmarkKey);
+            } catch (Exception e) {
+                log.warn("북마크 키 삭제 실패 - userId: {}, courseId: {}", userId, courseId, e);
+            }
+        }
+
+        log.info("북마크 데이터 정리 완료 - 삭제된 키 {}개", invalidCourseIds.size());
+    }
+
+    /**
+     * 활성 북마크의 전체 정보(DTO) 반환
+     */
+    public List<CourseBookmarkRedisDto> getActiveBookmarkDtos(Long userId) {
+        List<CourseBookmarkRedisDto> activeBookmarkDtos = new ArrayList<>();
+
+        try {
+            String userBookmarkPattern = String.format("%s:%d:*",
+                    CachePrefix.COURSE_BOOKMARK.getPrefix(), userId);
+            Set<String> userBookmarkKeys = cacheService.findKeys(userBookmarkPattern);
+
+            log.info("사용자 {}의 코스 북마크 키 {}개 발견", userId, userBookmarkKeys.size());
+
+            for (String bookmarkKey : userBookmarkKeys) {
+                try {
+                    // 먼저 Object로 조회해서 타입 확인
+                    Object rawData = cacheService.get(bookmarkKey, Object.class);
+
+                    if (rawData == null) {
+                        log.debug("null 데이터 스킵 - key: {}", bookmarkKey);
+                        continue;
+                    }
+
+                    // boolean 타입 (잘못된 데이터)인 경우 삭제
+                    if (rawData instanceof Boolean) {
+                        log.warn("Boolean 타입의 잘못된 데이터 삭제 - key: {}, value: {}", bookmarkKey, rawData);
+                        cacheService.delete(bookmarkKey);
+                        continue;
+                    }
+
+                    // @class 정보가 있는 경우 직접 조회
+                    if (rawData instanceof Map && ((Map<?, ?>) rawData).containsKey("@class")) {
+                        try {
+                            CourseBookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, CourseBookmarkRedisDto.class);
+                            if (bookmarkDto != null && bookmarkDto.isActive()) {
+                                activeBookmarkDtos.add(bookmarkDto);
+                                log.debug("활성 북마크 추가 - key: {}, courseId: {}", bookmarkKey, bookmarkDto.courseId());
+                            } else if (bookmarkDto != null) {
+                                log.debug("비활성 북마크 스킵 - key: {}, status: {}", bookmarkKey, bookmarkDto.status());
+                            }
+                        } catch (Exception e) {
+                            log.warn("@class 정보가 있지만 변환 실패, 키 삭제 - key: {}", bookmarkKey, e);
+                            cacheService.delete(bookmarkKey);
+                        }
+                    } else {
+                        log.warn("@class 정보가 없는 데이터 삭제 - key: {}, type: {}",
+                                bookmarkKey, rawData.getClass().getSimpleName());
+                        cacheService.delete(bookmarkKey);
+                    }
+
+                } catch (Exception e) {
+                    log.warn("개별 키 처리 실패, 키 삭제 - key: {}", bookmarkKey, e);
+                    try {
+                        cacheService.delete(bookmarkKey);
+                    } catch (Exception deleteError) {
+                        log.error("키 삭제 실패 - key: {}", bookmarkKey, deleteError);
+                    }
+                }
+            }
+
+            log.info("최종 활성 코스 북마크 조회 완료 - userId: {}, 활성 북마크 {}개", userId, activeBookmarkDtos.size());
+
+        } catch (Exception e) {
+            log.error("Redis에서 코스 북마크 조회 실패 - userId: {}", userId, e);
+            return new ArrayList<>();
+        }
+
+        return activeBookmarkDtos;
+    }
+
 
 }
