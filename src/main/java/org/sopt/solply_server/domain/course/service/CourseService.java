@@ -134,8 +134,9 @@ public class CourseService {
                 userId, request.placeId(), successCount, failedCourses.size());
 
         return PlaceAddToCoursesResponse.of(successCount, failedCourses);
+    }
 
-  /**
+    /**
      * 코스 수정
      * - 사용자의 코스로 등록되어있는 경우: 기존 코스 수정
      * - 그렇지 않은 경우: 새 코스 생성 후 북마크 등록
