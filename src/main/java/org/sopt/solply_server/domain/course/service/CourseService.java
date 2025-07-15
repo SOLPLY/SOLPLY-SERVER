@@ -8,21 +8,17 @@ import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
-import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
+import org.sopt.solply_server.domain.course.util.CourseUtils;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
-import org.sopt.solply_server.domain.course.mapper.CourseMapper;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
 import org.sopt.solply_server.domain.place.service.PlaceService;
-import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
-import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -45,17 +41,16 @@ import java.util.stream.Collectors;
 public class CourseService {
 
     private final CourseRepository courseRepository;
-    private final PlaceBookmarkService placeBookmarkService;;
+    private final PlaceBookmarkService placeBookmarkService;
     private final PlaceService placeService;
     private final UserRepository userRepository;
     private final ImageUrlProvider imageUrlProvider;
-    private final CourseMapper courseMapper;
     private final CourseBookmarkService courseBookmarkService;
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
     private final CourseNameGenerator courseNameGenerator;
 
-    private static final int MAX_COURSE_PLACES = 6;
     private final TownValidator townValidator;
+    private final CourseUtils courseUtils;
 
     /**
      * 새로운 코스 생성
@@ -167,7 +162,7 @@ public class CourseService {
         }
 
         List<Long> placeIds = course.getCoursePlaces().stream()
-                .map(cp -> cp.getPlace().getId())
+                .map(coursePlace -> coursePlace.getPlace().getId())
                 .toList();
 
         // 장소 태그 정보를 영속성 컨텍스트에 로드
@@ -180,7 +175,20 @@ public class CourseService {
                 ));
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
-                .map(coursePlace -> courseMapper.toCoursePlaceDetailsDto(coursePlace, placeBookmarkMap))
+                .map(coursePlace -> {
+                    Place place = coursePlace.getPlace();
+                    String thumbnailUrl = place.getThumbnailFileKey() != null
+                            ? imageUrlProvider.getImageUrl(place.getThumbnailFileKey())
+                            : null;
+
+                    return CoursePlaceDetailsDto.of(
+                            place,
+                            thumbnailUrl,
+                            place.getPrimaryTag(),
+                            placeBookmarkMap.getOrDefault(place.getId(), false),
+                            coursePlace.getPlaceOrder()
+                    );
+                })
                 .toList();
 
         return CourseDetailGetResponse.of(course, isCourseBookmarked, coursePlaces);
@@ -223,11 +231,11 @@ public class CourseService {
 
         List<CourseBookmarkDto> courseBookmarkDtos = filteredCourses.stream()
                 .map(course -> {
-                    List<TagName> mainTags = extractTopTwoPlaceMainTags(course);
+                    List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = getCourseThumbnailUrl(course);
                     boolean isActive = calculateCourseActiveStatus(course, placeId);
 
-                    return courseMapper.toCourseBookmarkDto(course, thumbnailUrl, mainTags, isActive);
+                    return CourseBookmarkDto.of(course, thumbnailUrl, mainTags, isActive);
                 })
                 .toList();
 
@@ -266,9 +274,9 @@ public class CourseService {
         // DTO 변환
         List<CourseFolderDto> folderDtos = courses.stream()
                 .map(course -> {
-                    List<TagName> primaryTags = extractTopTwoPlaceMainTags(course);
+                    List<TagName> primaryTags = courseUtils.extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = getCourseThumbnailUrl(course);
-                    return courseMapper.toCourseFolderDto(course, primaryTags, thumbnailUrl);
+                    return CourseFolderDto.of(course, primaryTags, thumbnailUrl);
                 })
                 .toList();
 
@@ -335,15 +343,6 @@ public class CourseService {
         return !containsPlace;
     }
 
-
-
-
-    private int calculateNextPlaceOrder(Course course) {
-        return course.getCoursePlaces().stream()
-                .mapToInt(CoursePlace::getPlaceOrder)
-                .max()
-                .orElse(0) + 1;
-    }
 
     private List<Place> getPlacesByPlaceIds(CourseCreateRequest request) {
         List<Long> placeIds = request.places().stream()

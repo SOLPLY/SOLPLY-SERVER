@@ -96,6 +96,7 @@ public class CourseController {
         return CustomApiResponse.success("코스를 수집함에 저장했습니다.");
     }
 
+
     @Operation(summary = "코스 북마크 삭제", description = "코스 북마크를 삭제합니다.")
     @DeleteMapping("/{courseId}/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkCourse(
@@ -105,6 +106,7 @@ public class CourseController {
         courseBookmarkService.deleteCourseBookmark(userId, courseId);
         return CustomApiResponse.success("코스를 수집함에서 삭제했습니다.");
     }
+
 
     @Operation(summary = "선택한 코스 북마크 리스트 삭제", description = "여러 코스 북마크를 한번에 삭제합니다.")
     @DeleteMapping("/bookmarks")
@@ -117,6 +119,7 @@ public class CourseController {
         courseBookmarkService.deleteCourseBookmarks(userId, courseIds);
         return CustomApiResponse.success("선택한 코스를 수집함에서 삭제했습니다.");
     }
+
 
     @Operation(summary = "코스 북마크 폴더 프리뷰 조회", description = "동네별로 가장 최근에 북마크한 코스의 프리뷰를 조회합니다.")
     @GetMapping("/bookmarks/folders")
