@@ -27,12 +27,12 @@ public class AuthService {
 
     private final JwtTokenResolver jwtTokenResolver;
 
-    public SocialLoginResponse socialLogin(Long userId, SocialPlatform socialPlatform, SocialLoginRequest request) {
+    public SocialLoginResponse socialLogin(SocialPlatform socialPlatform, SocialLoginRequest request) {
         OAuthService oAuthService = oAuthServiceProvider.getService(socialPlatform);
         User user = oAuthService.socialLogin(request.oauthAccessToken());
 
         return SocialLoginResponse.of(
-                saveTokenCollection(userId),
+                saveTokenCollection(user.getId()),
                 user.isNewUser()
         );
     }

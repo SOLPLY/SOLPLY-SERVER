@@ -23,12 +23,11 @@ public class AuthController {
     // 카카오 로그인 성공 후 -> 우리 서버의 토큰 발급
     @PostMapping("/social/{soicialPlatform}/login")
     public ResponseEntity<CustomApiResponse<SocialLoginResponse>> kakaoLogin(
-            @CurrentUserId Long userId,
             @PathVariable("soicialPlatform") SocialPlatform socialPlatform,
             @RequestBody SocialLoginRequest socialLoginRequest) {
         return CustomApiResponse.success(
                 "소셜 로그인에 성공했습니다.",
-                authService.socialLogin(userId, socialPlatform, socialLoginRequest)
+                authService.socialLogin(socialPlatform, socialLoginRequest)
         );
     }
 
