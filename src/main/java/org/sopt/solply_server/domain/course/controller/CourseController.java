@@ -10,11 +10,11 @@ import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
-import org.sopt.solply_server.domain.place.dto.request.PlaceAddToCoursesRequest;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
 import org.sopt.solply_server.domain.course.service.CourseService;
+import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -85,19 +85,6 @@ public class CourseController {
         );
     }
 
-    @Operation(summary = "추천 코스 목록 조회", description = "특정 동네의 공유된 코스 목록을 조회합니다.")
-    @GetMapping("/recommend")
-    public ResponseEntity<CustomApiResponse<CourseRecommendGetResponse>> findRecommendCourses(
-            @CurrentUserId Long userId,
-            @Parameter(description = "동네 ID", required = true)
-            @RequestParam("townId")
-            @NotNull(message = "동네 ID는 필수입니다")
-            Long townId) {
-        return CustomApiResponse.success(
-                "추천 코스 목록 조회에 성공했습니다.",
-                courseService.findRecommendCourses(userId, townId)
-        );
-    }
 
     @Operation(summary = "코스 북마크 저장", description = "코스를 북마크에 등록합니다.")
     @PostMapping("/{courseId}/bookmarks")

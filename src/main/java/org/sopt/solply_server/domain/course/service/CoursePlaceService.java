@@ -26,7 +26,7 @@ public class CoursePlaceService {
     /**
      * 장소를 코스에 추가
      */
-    public void addPlaceToCourse(Long userId, Long placeId, Long courseId) {
+    public void addPlaceToCourse(final Long userId, final Long placeId, final Long courseId) {
         Place place = getPlace(placeId);
         Course course = getCourse(courseId);
 
@@ -39,12 +39,12 @@ public class CoursePlaceService {
     }
 
 
-    private Place getPlace(Long placeId) {
+    private Place getPlace(final Long placeId) {
         return placeRepository.findById(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
     }
 
-    private Course getCourse(Long courseId) {
+    private Course getCourse(final Long courseId) {
         return courseRepository.findByIdWithPlaces(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
     }

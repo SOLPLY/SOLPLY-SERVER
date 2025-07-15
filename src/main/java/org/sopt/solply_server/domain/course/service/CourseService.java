@@ -8,8 +8,7 @@ import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
-import org.sopt.solply_server.domain.place.dto.request.PlaceAddToCoursesRequest;
+import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
@@ -25,7 +24,6 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.domain.town.service.TownService;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
@@ -234,43 +232,6 @@ public class CourseService {
                 .toList();
 
         return CourseBookmarkListGetResponse.from(courseBookmarkDtos);
-    }
-
-    /**
-     * 추천 코스 목록 조회
-     */
-    public CourseRecommendGetResponse findRecommendCourses(final Long userId, final Long townId) {
-        townValidator.validateTownId(townId);
-
-        List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
-
-        if (sharedCourses.isEmpty()) {
-            log.info("동네 ID {}에 공유된 코스가 없습니다.", townId);
-            return CourseRecommendGetResponse.from(List.of());
-        }
-
-        List<Long> courseIds = sharedCourses.stream()
-                .map(Course::getId)
-                .toList();
-
-        // 장소 태그 정보를 미리 로드 (영속성 컨텍스트에 적재)
-        courseRepository.findPlacesWithTagsByCourseIds(courseIds);
-
-        Map<Long, Boolean> courseBookmarkMap = courseIds.isEmpty() ? Map.of() :
-                courseIds.stream().collect(Collectors.toMap(
-                        courseId -> courseId,
-                        courseId -> courseBookmarkService.isBookmarked(userId, courseId)
-                ));
-
-        List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
-                .map(course -> {
-                    List<TagName> mainTags = extractTopTwoPlaceMainTags(course);
-                    String thumbnailUrl = getCourseThumbnailUrl(course);
-                    return courseMapper.toCourseRecommendDto(course, mainTags, thumbnailUrl, courseBookmarkMap);
-                })
-                .toList();
-
-        return CourseRecommendGetResponse.from(coursePreviewDtos);
     }
 
     /**
@@ -483,23 +444,6 @@ public class CourseService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
     }
 
-    /**
-     * 코스에서 상위 2개 장소의 메인 태그를 순서대로 추출 (중복 허용)
-     */
-    private List<TagName> extractTopTwoPlaceMainTags(final Course course) {
-        return course.getCoursePlaces().stream()
-                .sorted(Comparator.comparing(CoursePlace::getPlaceOrder))
-                .limit(2)
-                .map(CoursePlace::getPlace)
-                .map(place -> place.getPlaceTags().stream()
-                        .map(PlaceTag::getTag)
-                        .filter(tag -> tag.getType() == TagType.MAIN)
-                        .map(Tag::getName)
-                        .findFirst()
-                        .orElse(null))
-                .filter(Objects::nonNull)
-                .toList();
-    }
 
     /**
      * 코스의 썸네일 URL 생성 (첫 번째 장소의 썸네일 사용)

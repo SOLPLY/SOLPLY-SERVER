@@ -2,8 +2,11 @@ package org.sopt.solply_server.domain.recommend.controller;
 
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.recommend.dto.response.PlaceRecommendationGetResponse;
 import org.sopt.solply_server.domain.recommend.service.RecommendService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -31,6 +34,21 @@ public class RecommendController {
         return CustomApiResponse.success(
                 "장소 추천 조회 성공",
                 recommendService.getRecommendPlaces(userId, townId)
+        );
+    }
+
+    //==코스 추천 API==//
+    @Operation(summary = "추천 코스 목록 조회", description = "특정 동네의 공유된 코스 목록을 조회합니다.")
+    @GetMapping("/recommend")
+    public ResponseEntity<CustomApiResponse<CourseRecommendGetResponse>> findRecommendCourses(
+            @CurrentUserId Long userId,
+            @Parameter(description = "동네 ID", required = true)
+            @RequestParam("townId")
+            @NotNull(message = "동네 ID는 필수입니다")
+            Long townId) {
+        return CustomApiResponse.success(
+                "추천 코스 목록 조회에 성공했습니다.",
+                recommendService.getRecommendCourses(userId, townId)
         );
     }
 

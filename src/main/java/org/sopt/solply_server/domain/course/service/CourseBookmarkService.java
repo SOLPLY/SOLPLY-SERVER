@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.course.service;
 
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
@@ -96,6 +97,24 @@ public class CourseBookmarkService {
         }
 
         return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
+    }
+
+    /**
+     * N+1 문제를 피하기 위한 배치 조회
+     */
+    public Map<Long, Boolean> getBookmarkStatusMap(Long userId, List<Long> courseIds) {
+        if (courseIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<Long> bookmarkedCourseIds = courseBookmarkRepository
+                .findBookmarkedCourseIds(userId, courseIds);
+
+        return courseIds.stream()
+                .collect(Collectors.toMap(
+                        courseId -> courseId,
+                        bookmarkedCourseIds::contains
+                ));
     }
 
     // === Private Methods ===
