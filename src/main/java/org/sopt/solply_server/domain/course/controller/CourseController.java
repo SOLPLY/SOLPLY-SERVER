@@ -7,12 +7,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
-import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCourseRequest;
-import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
+import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
+import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
-import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.course.service.CourseService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -43,15 +40,19 @@ public class CourseController {
         );
     }
 
-    @Operation(summary = "코스에 장소 추가", description = "기존 코스에 새로운 장소를 마지막 순서로 추가합니다.")
-    @PostMapping("/{courseId}/places")
-    public ResponseEntity<CustomApiResponse<Void>> addPlaceToCourse(
+    @Operation(summary = "코스에 장소 추가 (복수개 가능)", description = "기존 코스에 새로운 장소를 마지막 순서로 추가합니다.")
+    @PostMapping("/places")
+    public ResponseEntity<CustomApiResponse<PlaceAddToCoursesResponse>> addPlaceToMultipleCourses(
             @CurrentUserId Long userId,
-            @Parameter(description = "코스 ID", required = true)
-            @PathVariable("courseId") Long courseId,
-            @Valid @RequestBody PlaceAddToCourseRequest request) {
-        courseService.addPlaceToCourse(userId, courseId, request);
-        return CustomApiResponse.success("해당 코스에 장소가 성공적으로 추가되었습니다.");
+            @Valid @RequestBody PlaceAddToCoursesRequest request) {
+
+        PlaceAddToCoursesResponse response = courseService.addPlaceToMultipleCourses(userId, request);
+
+        String message = response.failedCourses().isEmpty()
+                ? "선택한 코스들에 장소가 성공적으로 추가되었습니다."
+                : "일부 코스에 장소 추가가 완료되었습니다.";
+
+        return CustomApiResponse.success(message, response);
     }
 
     @Operation(summary = "코스 상세 조회", description = "코스 ID를 통해 코스의 상세 정보를 조회합니다.")

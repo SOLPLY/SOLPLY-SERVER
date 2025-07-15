@@ -7,11 +7,8 @@ import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
-import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCourseRequest;
-import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
-import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
+import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
+import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.mapper.CourseMapper;
@@ -95,22 +92,47 @@ public class CourseService {
      * 코스에 장소 추가
      */
     @Transactional
-    public void addPlaceToCourse(Long userId, Long courseId, PlaceAddToCourseRequest request) {
-        Course course = courseRepository.findByIdWithPlaces(courseId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
-        validateCourseOwner(course, userId);
+    public PlaceAddToCoursesResponse addPlaceToMultipleCourses(Long userId, PlaceAddToCoursesRequest request) {
         Place place = placeService.getPlaceById(request.placeId());
-        validateAddPlace(course, place);
 
-        int nextOrder = calculateNextPlaceOrder(course);
+        // 한 번에 조회 N+1 방지
+        List<Course> courses = courseRepository.findByIdInWithPlaces(request.courseIds());
+        Map<Long, Course> courseMap = courses.stream()
+                .collect(Collectors.toMap(Course::getId, Function.identity()));
 
-        CoursePlace newCoursePlace = CoursePlace.create(course, place, nextOrder);
-        course.addCoursePlace(newCoursePlace);
+        List<PlaceAddToCoursesResponse.FailedCourse> failedCourses = new ArrayList<>();
+        int successCount = 0;
 
-        courseRepository.save(course);
+        for (Long courseId : request.courseIds()) {
+            try {
+                Course course = courseMap.get(courseId);
+                if (course == null) {
+                    failedCourses.add(PlaceAddToCoursesResponse.FailedCourse.builder()
+                            .courseId(courseId)
+                            .reason("존재하지 않는 코스입니다.")
+                            .build());
+                    continue;
+                }
 
-        log.info("코스에 장소 추가 완료 - userId: {}, courseId: {}, placeId: {}, order: {}",
-                userId, courseId, request.placeId(), nextOrder);
+                validateAndAddPlaceToCourse(course, place, userId);
+                successCount++;
+
+            } catch (BusinessException e) {
+                failedCourses.add(PlaceAddToCoursesResponse.FailedCourse.builder()
+                        .courseId(courseId)
+                        .reason(e.getMessage())
+                        .build());
+            }
+        }
+
+        if (successCount > 0) {
+            courseRepository.saveAll(courses);
+        }
+
+        log.info("여러 코스에 장소 추가 완료 - userId: {}, placeId: {}, 성공: {}개, 실패: {}개",
+                userId, request.placeId(), successCount, failedCourses.size());
+
+        return PlaceAddToCoursesResponse.of(successCount, failedCourses);
     }
 
     /**
@@ -262,6 +284,16 @@ public class CourseService {
                         "중복된 장소가 포함되어 있습니다.");
             }
         }
+    }
+
+    private void validateAndAddPlaceToCourse(Course course, Place place, Long userId) {
+        validateCourseOwner(course, userId);
+
+        validateAddPlace(course, place);
+
+        int nextOrder = calculateNextPlaceOrder(course);
+        CoursePlace newCoursePlace = CoursePlace.create(course, place, nextOrder);
+        course.addCoursePlace(newCoursePlace);
     }
 
     private void validateCourseOwner(Course course, Long userId) {
