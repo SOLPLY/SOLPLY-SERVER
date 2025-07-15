@@ -73,6 +73,22 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<String> findCourseNamesByTownAndNamePattern(@Param("townId") Long townId,
                                                      @Param("namePattern") String namePattern);
 
+    /**
+     * 특정 동네의 북마크된 코스 목록 조회
+     * 코스와 코스 내 장소들을 함께 조회
+     */
+    @Query("""
+    SELECT DISTINCT c FROM Course c
+    JOIN FETCH c.town t
+    JOIN FETCH c.coursePlaces cp
+    JOIN FETCH cp.place p
+    WHERE c.id IN :courseIds 
+    AND c.town.id = :townId
+    ORDER BY c.createdAt DESC
+    """)
+    List<Course> findBookmarkedCoursesByTownId(@Param("courseIds") List<Long> courseIds,
+                                               @Param("townId") Long townId);
+
     @Query("SELECT c FROM Course c " +
             "JOIN FETCH c.coursePlaces cp " +
             "JOIN FETCH cp.place p " +

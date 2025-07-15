@@ -7,6 +7,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
+import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
+import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
+import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
@@ -76,6 +79,24 @@ public class CourseController {
         return CustomApiResponse.success(
                 "코스 상세 조회에 성공했습니다.",
                 courseService.findCourseDetailsById(userId, courseId)
+        );
+    }
+
+    @Operation(summary = "사용자 북마크 코스 목록 조회",
+            description = "사용자가 추가 또는 조회할 수 있는 북마크한 코스 목록을 조회합니다.")
+    @GetMapping("/bookmarks")
+    public ResponseEntity<CustomApiResponse<CourseBookmarkListGetResponse>> getBookmarkedCourses(
+            @CurrentUserId Long userId,
+            @Parameter(description = "동네 ID", required = true)
+            @RequestParam("townId")
+            @NotNull(message = "동네 ID는 필수입니다")
+            Long townId,
+            @Parameter(description = "장소 ID (선택사항, 해당 장소를 추가할 수 있는 코스만 필터링)")
+            @RequestParam(value = "placeId", required = false)
+            Long placeId) {
+        return CustomApiResponse.success(
+                "사용자 코스 목록 조회에 성공했습니다.",
+                courseService.getBookmarkedCourses(userId, townId, placeId)
         );
     }
 
