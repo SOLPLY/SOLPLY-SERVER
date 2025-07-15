@@ -71,7 +71,7 @@ public class PlaceService {
             final Long userId, final Long townId, final Boolean isBookmarkSearch, final Long mainTagId,
             final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         // 동네 검증
-        townService.existsById(townId);
+        townService.validateTownId(townId);
 
         // 북마크, 태그 조건에 따른 장소 조회
         List<Place> places = getPlacesByCondition(userId, townId, isBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList);

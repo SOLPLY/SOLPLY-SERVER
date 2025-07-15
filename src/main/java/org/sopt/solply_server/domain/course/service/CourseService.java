@@ -11,7 +11,6 @@ import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewList
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
-import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.mapper.CourseMapper;
@@ -239,7 +238,7 @@ public class CourseService {
      * 사용자가 북마크한 코스 목록 조회 (동네 기준 필터링 + 장소 추가 가능 여부)
      */
     public CourseBookmarkListGetResponse getBookmarkedCourses(final Long userId, final Long townId, final Long placeId) {
-        townService.existsById(townId);
+        townService.validateTownId(townId);
 
         if (placeId != null) {
             placeService.validatePlaceExists(placeId);
@@ -287,7 +286,7 @@ public class CourseService {
      * 추천 코스 목록 조회
      */
     public CourseRecommendGetResponse findRecommendCourses(final Long userId, final Long townId) {
-        townService.existsById(townId);
+        townService.validateTownId(townId);
 
         List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
 
