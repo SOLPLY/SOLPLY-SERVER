@@ -39,7 +39,7 @@ public class RecommendService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
         UserPersona persona = user.getPersona();
-        if (persona != null) {
+        if (persona == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_PERSONA);
         }
 
