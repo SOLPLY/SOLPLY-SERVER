@@ -50,11 +50,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<CustomApiResponse<Void>> handleValidationException(
             final MethodArgumentNotValidException e) {
         log.error("Validation failed: {}", e.getBindingResult().getAllErrors());
-        Map<String, String> details = new HashMap<>();
-        e.getBindingResult().getFieldErrors().forEach(error ->
-                details.put(error.getField(), error.getDefaultMessage())
-        );
-        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY, details);
+//        Map<String, String> details = new HashMap<>();
+//        e.getBindingResult().getFieldErrors().forEach(error ->
+//                details.put(error.getField(), error.getDefaultMessage())
+//        );
+        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY);
     }
 
     // 400: RequestParam/PathVariable 검증 실패 (@Validated 어노테이션)
@@ -62,16 +62,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<CustomApiResponse<Void>> handleConstraintViolationException(
             final ConstraintViolationException e) {
         log.error("RequestParam/PathVariable validation failed: {}", e.getMessage());
-        Map<String, String> details = new HashMap<>();
+//        Map<String, String> details = new HashMap<>();
+//
+//        for (ConstraintViolation<?> violation : e.getConstraintViolations()) {
+//            String propertyPath = violation.getPropertyPath().toString();
+//            // "methodName.parameterName" 형태에서 parameterName만 추출
+//            String fieldName = propertyPath.substring(propertyPath.lastIndexOf('.') + 1);
+//            details.put(fieldName, violation.getMessage());
+//        }
 
-        for (ConstraintViolation<?> violation : e.getConstraintViolations()) {
-            String propertyPath = violation.getPropertyPath().toString();
-            // "methodName.parameterName" 형태에서 parameterName만 추출
-            String fieldName = propertyPath.substring(propertyPath.lastIndexOf('.') + 1);
-            details.put(fieldName, violation.getMessage());
-        }
-
-        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY, details);
+        return CustomApiResponse.error(ErrorCode.INVALID_REQUEST_BODY);
     }
 
     // 400: 특정 파라미터의 타입이 잘못된 경우
@@ -79,13 +79,7 @@ public class GlobalExceptionHandler {
      * {
      *   "success": false,
      *   "code": "COMMON-002",
-     *   "message": "인자 타입이 올바르지 않습니다",
-     *   "errorDetails": {
-     *     "parameter": "userId",
-     *     "invalidValue": "abc",
-     *     "expectedType": "Long"
-     *   },
-     *   "data": null
+     *   "message": "인자 타입이 올바르지 않습니다"
      * }
      */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -93,34 +87,34 @@ public class GlobalExceptionHandler {
             final MethodArgumentTypeMismatchException e) {
         log.error("Type mismatch - parameter: {}, value: {}, required: {}",
                 e.getName(), e.getValue(), e.getRequiredType());
-        Map<String, String> details = new HashMap<>();
-        details.put("parameter", e.getName());
-        details.put("invalidValue", String.valueOf(e.getValue()));
-        details.put("expectedType", e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "Unknown");
-        return CustomApiResponse.error(ErrorCode.INVALID_ARGUMENT_TYPE, details);
+//        Map<String, String> details = new HashMap<>();
+//        details.put("parameter", e.getName());
+//        details.put("invalidValue", String.valueOf(e.getValue()));
+//        details.put("expectedType", e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "Unknown");
+        return CustomApiResponse.error(ErrorCode.INVALID_ARGUMENT_TYPE);
     }
 
     // 400: 필수 RequestParam이 누락된 경우
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<CustomApiResponse<Void>> handleMissingRequestParameterException(
-            final MissingServletRequestParameterException e,
-            final HttpServletRequest request) {
+            final MissingServletRequestParameterException e) {
+//            final HttpServletRequest request) {
         log.error("Missing request parameter: {} (type: {})", e.getParameterName(), e.getParameterType());
 
-        // 요청에 포함된 파라미터들 확인
-        String receivedParams = getReceivedParameterNames(request);
+//        // 요청에 포함된 파라미터들 확인
+//        String receivedParams = getReceivedParameterNames(request);
+//
+//        Map<String, String> details = new HashMap<>();
+//        details.put("missingParameter", e.getParameterName());
+//        details.put("parameterType", e.getParameterType());
+//        details.put("receivedParameters", receivedParams);
+//
+//        // 파라미터 오타 가능성 체크
+//        if (!receivedParams.isEmpty()) {
+//            details.put("suggestion", "파라미터 이름을 확인해주세요. 필요한 파라미터: " + e.getParameterName());
+//        }
 
-        Map<String, String> details = new HashMap<>();
-        details.put("missingParameter", e.getParameterName());
-        details.put("parameterType", e.getParameterType());
-        details.put("receivedParameters", receivedParams);
-
-        // 파라미터 오타 가능성 체크
-        if (!receivedParams.isEmpty()) {
-            details.put("suggestion", "파라미터 이름을 확인해주세요. 필요한 파라미터: " + e.getParameterName());
-        }
-
-        return CustomApiResponse.error(ErrorCode.MISSING_REQUIRED_PARAMETER, details);
+        return CustomApiResponse.error(ErrorCode.MISSING_REQUIRED_PARAMETER);
     }
 
     // 요청에 포함된 파라미터 이름들을 추출하는 헬퍼 메서드
@@ -192,16 +186,16 @@ public class GlobalExceptionHandler {
         log.error("Method not allowed: {} {} (supported: {})",
                 request.getMethod(), request.getRequestURI(), e.getSupportedHttpMethods());
 
-        Map<String, String> details = new HashMap<>();
-        details.put("requestedMethod", request.getMethod());
-        details.put("endpoint", request.getRequestURI());
-        details.put("supportedMethods",
-                e.getSupportedHttpMethods() != null ?
-                        // [GET, POST, PUT, DELETE] -> "GET, POST, PUT, DELETE"
-                        e.getSupportedHttpMethods().toString().replaceAll("[\\[\\]]", "") :
-                        "None");
+//        Map<String, String> details = new HashMap<>();
+//        details.put("requestedMethod", request.getMethod());
+//        details.put("endpoint", request.getRequestURI());
+//        details.put("supportedMethods",
+//                e.getSupportedHttpMethods() != null ?
+//                        // [GET, POST, PUT, DELETE] -> "GET, POST, PUT, DELETE"
+//                        e.getSupportedHttpMethods().toString().replaceAll("[\\[\\]]", "") :
+//                        "None");
 
-        return CustomApiResponse.error(ErrorCode.METHOD_NOT_ALLOWED, details);
+        return CustomApiResponse.error(ErrorCode.METHOD_NOT_ALLOWED);
     }
 
     // 400 ~ 500: 비즈니스 로직에서 발생한 예외

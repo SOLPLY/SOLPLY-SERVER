@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.auth.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
@@ -11,6 +12,7 @@ import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+@Tag(name = "인증 API", description = "소셜 로그인 및 토큰 재발급 관련 API")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
@@ -21,12 +23,11 @@ public class AuthController {
     // 카카오 로그인 성공 후 -> 우리 서버의 토큰 발급
     @PostMapping("/social/{soicialPlatform}/login")
     public ResponseEntity<CustomApiResponse<SocialLoginResponse>> kakaoLogin(
-            @CurrentUserId Long userId,
             @PathVariable("soicialPlatform") SocialPlatform socialPlatform,
             @RequestBody SocialLoginRequest socialLoginRequest) {
         return CustomApiResponse.success(
                 "소셜 로그인에 성공했습니다.",
-                authService.socialLogin(userId, socialPlatform, socialLoginRequest)
+                authService.socialLogin(socialPlatform, socialLoginRequest)
         );
     }
 

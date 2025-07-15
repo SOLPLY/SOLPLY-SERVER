@@ -1,5 +1,7 @@
 package org.sopt.solply_server.domain.user.repository;
 
+import aj.org.objectweb.asm.commons.Remapper;
+import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserInterestTown;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,4 +18,6 @@ public interface UserInterestTownRepository extends JpaRepository<UserInterestTo
     boolean existsByUserIdAndTownId(Long userId, Long townId);
 
     void deleteByUserIdAndTownId(Long userId, Long townId);
+
+    Optional<UserInterestTown> findByUser(User user);
 }

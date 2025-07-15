@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
 import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
+import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
 import org.sopt.solply_server.domain.course.service.CourseService;
@@ -53,6 +54,18 @@ public class CourseController {
                 : "일부 코스에 장소 추가가 완료되었습니다.";
 
         return CustomApiResponse.success(message, response);
+    }
+
+    @Operation(summary = "코스 수정", description = "기존 코스를 수정합니다.")
+    @PutMapping("/{courseId}")
+    public ResponseEntity<CustomApiResponse<CourseUpdateResponse>> updateCourse(
+            @CurrentUserId Long userId,
+            @PathVariable Long courseId,
+            @Valid @RequestBody CourseUpdateRequest request) {
+        return CustomApiResponse.success(
+                "코스 정보가 성공적으로 수정되었습니다.",
+                courseService.updateCourse(userId, courseId, request)
+        );
     }
 
     @Operation(summary = "코스 상세 조회", description = "코스 ID를 통해 코스의 상세 정보를 조회합니다.")

@@ -1,14 +1,19 @@
 package org.sopt.solply_server.global.config;
 
+import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.global.jwt.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -27,9 +32,12 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
-                .csrf(csrf -> csrf.disable()) // CSRF 보호 비활성화
-                .formLogin(formLogin -> formLogin.disable()) // 폼 로그인 비활성화
-                .httpBasic(httpBasic -> httpBasic.disable()) // HTTP Basic 인증 비활성화
+                .csrf(AbstractHttpConfigurer::disable) // CSRF 보호 비활성화
+                .formLogin(AbstractHttpConfigurer::disable) // 폼 로그인 비활성화
+                .httpBasic(AbstractHttpConfigurer::disable) // HTTP Basic 인증 비활성화
+
+                // CORS 설정
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 // 세션 관리 STATELESS로 설정
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -43,5 +51,24 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        // 허용할 Origin 설정 (개발환경)
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
+        // 운영환경에서는 구체적인 도메인 설정
+        // configuration.setAllowedOrigins(Arrays.asList("https://your-frontend-domain.com"));
+
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 }
