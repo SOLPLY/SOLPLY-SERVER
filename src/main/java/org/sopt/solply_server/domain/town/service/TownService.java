@@ -29,12 +29,6 @@ public class TownService {
                 });
     }
 
-    public void validateTownId(Long townId) {
-        if (!townRepository.existsById(townId)) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_TOWN);
-        }
-    }
-
     public TownAllGetResponse getAllTowns() {
         List<Town> parentTowns = townRepository.findByParentIsNull();
 

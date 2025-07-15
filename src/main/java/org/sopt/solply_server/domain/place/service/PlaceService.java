@@ -21,6 +21,7 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.service.TownService;
+import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -39,6 +40,7 @@ public class PlaceService {
     private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
     private final PlaceBookmarkService placeBookmarkService;
     private final TownService townService;
+    private final TownValidator townValidator;
 
     /**
      * 장소 상세 정보 조회
@@ -71,7 +73,7 @@ public class PlaceService {
             final Long userId, final Long townId, final Boolean isBookmarkSearch, final Long mainTagId,
             final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         // 동네 검증
-        townService.validateTownId(townId);
+        townValidator.validateTownId(townId);
 
         // 북마크, 태그 조건에 따른 장소 조회
         List<Place> places = getPlacesByCondition(userId, townId, isBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList);

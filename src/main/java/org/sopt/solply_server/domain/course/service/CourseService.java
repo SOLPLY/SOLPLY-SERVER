@@ -26,6 +26,7 @@ import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.service.TownService;
+import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -57,6 +58,7 @@ public class CourseService {
     private final CourseNameGenerator courseNameGenerator;
 
     private static final int MAX_COURSE_PLACES = 6;
+    private final TownValidator townValidator;
 
     /**
      * 새로운 코스 생성
@@ -238,7 +240,7 @@ public class CourseService {
      * 사용자가 북마크한 코스 목록 조회 (동네 기준 필터링 + 장소 추가 가능 여부)
      */
     public CourseBookmarkListGetResponse getBookmarkedCourses(final Long userId, final Long townId, final Long placeId) {
-        townService.validateTownId(townId);
+        townValidator.validateTownId(townId);
 
         if (placeId != null) {
             placeService.validatePlaceExists(placeId);
@@ -286,7 +288,7 @@ public class CourseService {
      * 추천 코스 목록 조회
      */
     public CourseRecommendGetResponse findRecommendCourses(final Long userId, final Long townId) {
-        townService.validateTownId(townId);
+        townValidator.validateTownId(townId);
 
         List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
 
