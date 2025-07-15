@@ -73,6 +73,12 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<String> findCourseNamesByTownAndNamePattern(@Param("townId") Long townId,
                                                      @Param("namePattern") String namePattern);
 
+    @Query("SELECT c FROM Course c " +
+            "JOIN FETCH c.coursePlaces cp " +
+            "JOIN FETCH cp.place p " +
+            "WHERE c.id IN :courseIds")
+    List<Course> findByIdInWithPlaces(@Param("courseIds") List<Long> courseIds);
+
     @Modifying
     @Query("DELETE FROM CoursePlace cp WHERE cp.course.id = :courseId")
     void deleteCoursePlacesByCourseId(@Param("courseId") Long courseId);

@@ -11,7 +11,7 @@ public enum TagName {
     CAFE("카페"),
     FOOD("음식"),
     SHOPPING("쇼핑"),
-    BOOKSTORE("책방/서점"),
+    BOOKSTORE("서점/책방"),
     UNIQUE_SPACE("이색공간"),
     WALKING("산책"),
 

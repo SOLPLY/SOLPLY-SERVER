@@ -7,6 +7,7 @@ import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
+import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.entity.Course;
@@ -54,6 +55,8 @@ public class CourseService {
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
     private final CourseNameGenerator courseNameGenerator;
 
+    private static final int MAX_COURSE_PLACES = 6;
+
     /**
      * 새로운 코스 생성
      */
@@ -84,6 +87,53 @@ public class CourseService {
         }
 
         return CourseCreateResponse.from(savedCourse.getId());
+    }
+
+    /**
+     * 코스에 장소 추가
+     */
+    @Transactional
+    public PlaceAddToCoursesResponse addPlaceToMultipleCourses(Long userId, PlaceAddToCoursesRequest request) {
+        Place place = placeService.getPlaceById(request.placeId());
+
+        // 한 번에 조회 N+1 방지
+        List<Course> courses = courseRepository.findByIdInWithPlaces(request.courseIds());
+        Map<Long, Course> courseMap = courses.stream()
+                .collect(Collectors.toMap(Course::getId, Function.identity()));
+
+        List<PlaceAddToCoursesResponse.FailedCourse> failedCourses = new ArrayList<>();
+        int successCount = 0;
+
+        for (Long courseId : request.courseIds()) {
+            try {
+                Course course = courseMap.get(courseId);
+                if (course == null) {
+                    failedCourses.add(PlaceAddToCoursesResponse.FailedCourse.builder()
+                            .courseId(courseId)
+                            .reason("존재하지 않는 코스입니다.")
+                            .build());
+                    continue;
+                }
+
+                validateAndAddPlaceToCourse(course, place, userId);
+                successCount++;
+
+            } catch (BusinessException e) {
+                failedCourses.add(PlaceAddToCoursesResponse.FailedCourse.builder()
+                        .courseId(courseId)
+                        .reason(e.getMessage())
+                        .build());
+            }
+        }
+
+        if (successCount > 0) {
+            courseRepository.saveAll(courses);
+        }
+
+        log.info("여러 코스에 장소 추가 완료 - userId: {}, placeId: {}, 성공: {}개, 실패: {}개",
+                userId, request.placeId(), successCount, failedCourses.size());
+
+        return PlaceAddToCoursesResponse.of(successCount, failedCourses);
     }
 
     /**
@@ -299,6 +349,46 @@ public class CourseService {
                         "중복된 장소가 포함되어 있습니다.");
             }
         }
+    }
+
+    private void validateAndAddPlaceToCourse(Course course, Place place, Long userId) {
+        validateCourseOwner(course, userId);
+
+        validateAddPlace(course, place);
+
+        int nextOrder = calculateNextPlaceOrder(course);
+        CoursePlace newCoursePlace = CoursePlace.create(course, place, nextOrder);
+        course.addCoursePlace(newCoursePlace);
+    }
+
+    private void validateCourseOwner(Course course, Long userId) {
+        if (!course.isCreatedBy(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_RESOURCE);
+        }
+    }
+
+    private void validateAddPlace(Course course, Place place) {
+        if (course.getCoursePlaces().size() >= MAX_COURSE_PLACES) {
+            throw new BusinessException(ErrorCode.COURSE_MAX_PLACES_EXCEEDED);
+        }
+
+        boolean isDuplicate = course.getCoursePlaces().stream()
+                .anyMatch(cp -> cp.getPlace().getId().equals(place.getId()));
+
+        if (isDuplicate) {
+            throw new BusinessException(ErrorCode.DUPLICATE_PLACE_IN_COURSE);
+        }
+
+        if (!course.getTown().getId().equals(place.getTown().getId())) {
+            throw new BusinessException(ErrorCode.DIFFERENT_TOWN_PLACE);
+        }
+    }
+
+    private int calculateNextPlaceOrder(Course course) {
+        return course.getCoursePlaces().stream()
+                .mapToInt(CoursePlace::getPlaceOrder)
+                .max()
+                .orElse(0) + 1;
     }
 
     private List<Place> getPlacesByPlaceIds(CourseCreateRequest request) {
