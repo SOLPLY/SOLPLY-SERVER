@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.*;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
-import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCourseRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
@@ -55,8 +54,6 @@ public class CourseService {
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
     private final CourseNameGenerator courseNameGenerator;
 
-    private static final int MAX_COURSE_PLACES = 6;
-
     /**
      * 새로운 코스 생성
      */
@@ -87,28 +84,6 @@ public class CourseService {
         }
 
         return CourseCreateResponse.from(savedCourse.getId());
-    }
-
-    /**
-     * 코스에 장소 추가
-     */
-    @Transactional
-    public void addPlaceToCourse(Long userId, Long courseId, PlaceAddToCourseRequest request) {
-        Course course = courseRepository.findByIdWithPlaces(courseId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
-        validateCourseOwner(course, userId);
-        Place place = placeService.getPlaceById(request.placeId());
-        validateAddPlace(course, place);
-
-        int nextOrder = calculateNextPlaceOrder(course);
-
-        CoursePlace newCoursePlace = CoursePlace.create(course, place, nextOrder);
-        course.addCoursePlace(newCoursePlace);
-
-        courseRepository.save(course);
-
-        log.info("코스에 장소 추가 완료 - userId: {}, courseId: {}, placeId: {}, order: {}",
-                userId, courseId, request.placeId(), nextOrder);
     }
 
     /**
@@ -308,36 +283,6 @@ public class CourseService {
                         "중복된 장소가 포함되어 있습니다.");
             }
         }
-    }
-
-    private void validateCourseOwner(Course course, Long userId) {
-        if (!course.isCreatedBy(userId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN_RESOURCE);
-        }
-    }
-
-    private void validateAddPlace(Course course, Place place) {
-        if (course.getCoursePlaces().size() >= MAX_COURSE_PLACES) {
-            throw new BusinessException(ErrorCode.COURSE_MAX_PLACES_EXCEEDED);
-        }
-
-        boolean isDuplicate = course.getCoursePlaces().stream()
-                .anyMatch(cp -> cp.getPlace().getId().equals(place.getId()));
-
-        if (isDuplicate) {
-            throw new BusinessException(ErrorCode.DUPLICATE_PLACE_IN_COURSE);
-        }
-
-        if (!course.getTown().getId().equals(place.getTown().getId())) {
-            throw new BusinessException(ErrorCode.DIFFERENT_TOWN_PLACE);
-        }
-    }
-
-    private int calculateNextPlaceOrder(Course course) {
-        return course.getCoursePlaces().stream()
-                .mapToInt(CoursePlace::getPlaceOrder)
-                .max()
-                .orElse(0) + 1;
     }
 
     /**
