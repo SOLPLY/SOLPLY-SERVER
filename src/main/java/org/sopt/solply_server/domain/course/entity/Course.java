@@ -65,6 +65,16 @@ public class Course extends BaseTimeEntity {
     }
 
     public boolean isCreatedBy(Long userId) {
+        if (this.createdBy == null || userId == null) {
+            return false;
+        }
         return this.createdBy.getId().equals(userId);
+    }
+
+    public void updateCourse(String newName, List<CoursePlace> newCoursePlaces) {
+        this.name = newName;
+        this.coursePlaces.clear();
+        this.coursePlaces.addAll(newCoursePlaces);
+        newCoursePlaces.forEach(cp -> cp.setCourse(this));
     }
 }

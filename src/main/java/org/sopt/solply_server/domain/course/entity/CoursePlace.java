@@ -49,4 +49,8 @@ public class CoursePlace extends BaseTimeEntity {
                 .build();
     }
 
+    public void setCourse(Course course) {
+        this.course = course;
+    }
+
 }

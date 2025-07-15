@@ -1,9 +1,10 @@
 package org.sopt.solply_server.domain.course.dto.response;
 
 public record CourseUpdateResponse(
-        Long courseId
+        Long courseId,
+        boolean isNewCourse
 ) {
-    public static CourseUpdateResponse from(Long courseId) {
-        return new CourseUpdateResponse(courseId);
+    public static CourseUpdateResponse of(Long courseId, boolean isNewCourse) {
+        return new CourseUpdateResponse(courseId, isNewCourse);
     }
 }
