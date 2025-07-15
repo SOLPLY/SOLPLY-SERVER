@@ -72,16 +72,18 @@ public class CourseController {
     @GetMapping("/bookmarks")
     public ResponseEntity<CustomApiResponse<CourseBookmarkListGetResponse>> getBookmarkedCourses(
             @CurrentUserId Long userId,
+
             @Parameter(description = "동네 ID", required = true)
             @RequestParam("townId")
             @NotNull(message = "동네 ID는 필수입니다")
             Long townId,
+
             @Parameter(description = "장소 ID (선택사항, 해당 장소를 추가할 수 있는 코스만 필터링)")
             @RequestParam(value = "placeId", required = false)
-            Long placeId) {
+            Long candidatePlaceId) {
         return CustomApiResponse.success(
                 "사용자 코스 목록 조회에 성공했습니다.",
-                courseService.getBookmarkedCourses(userId, townId, placeId)
+                courseService.getBookmarkedCourses(userId, townId, candidatePlaceId)
         );
     }
 
