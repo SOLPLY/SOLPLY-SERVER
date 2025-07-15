@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.course.repository;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -71,5 +72,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             "ORDER BY c.name")
     List<String> findCourseNamesByTownAndNamePattern(@Param("townId") Long townId,
                                                      @Param("namePattern") String namePattern);
+
+    @Modifying
+    @Query("DELETE FROM CoursePlace cp WHERE cp.course.id = :courseId")
+    void deleteCoursePlacesByCourseId(@Param("courseId") Long courseId);
 
 }

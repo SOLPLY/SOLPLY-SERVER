@@ -62,6 +62,7 @@ public class Course extends BaseTimeEntity {
 
     public void addCoursePlace(CoursePlace coursePlace) {
         this.coursePlaces.add(coursePlace);
+        coursePlace.setCourse(this);
     }
 
     public boolean isCreatedBy(Long userId) {
@@ -71,10 +72,7 @@ public class Course extends BaseTimeEntity {
         return this.createdBy.getId().equals(userId);
     }
 
-    public void updateCourse(String newName, List<CoursePlace> newCoursePlaces) {
+    public void updateName(String newName) {
         this.name = newName;
-        this.coursePlaces.clear();
-        this.coursePlaces.addAll(newCoursePlaces);
-        newCoursePlaces.forEach(cp -> cp.setCourse(this));
     }
 }

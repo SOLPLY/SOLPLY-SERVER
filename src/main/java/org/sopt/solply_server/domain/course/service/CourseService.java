@@ -120,8 +120,10 @@ public class CourseService {
      * 기존 코스 업데이트
      */
     private void updateCourseInPlace(Course course, CourseUpdateRequest request, List<Place> places) {
+        course.updateName(request.courseName());
+        courseRepository.deleteCoursePlacesByCourseId(course.getId());
         List<CoursePlace> newCoursePlaces = createCoursePlaces(course, request.places(), places);
-        course.updateCourse(request.courseName(), newCoursePlaces);
+        newCoursePlaces.forEach(course::addCoursePlace);
     }
 
     /**
@@ -316,7 +318,7 @@ public class CourseService {
         List<Long> placeIds = placeRequests.stream().map(CourseUpdateRequest.CoursePlaceUpdateRequest::placeId).toList();
         List<Place> places = placeService.getPlacesWithTownByPlaceIds(placeIds);
 
-        if (places.stream().map(place -> place.getTown().getId()).distinct().count() > 1) {
+        if (places.stream().map(Place::getTown).map(Town::getId).distinct().count() > 1) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "모든 장소는 같은 동네에 속해야 합니다.");
         }
         return places;
