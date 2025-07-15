@@ -9,6 +9,9 @@ import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
+import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
+import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
+import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.mapper.CourseMapper;
@@ -54,6 +57,8 @@ public class CourseService {
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
     private final CourseNameGenerator courseNameGenerator;
 
+    private static final int MAX_COURSE_PLACES = 6;
+
     /**
      * 새로운 코스 생성
      */
@@ -84,6 +89,117 @@ public class CourseService {
         }
 
         return CourseCreateResponse.from(savedCourse.getId());
+    }
+
+    /**
+     * 코스에 장소 추가
+     */
+    @Transactional
+    public PlaceAddToCoursesResponse addPlaceToMultipleCourses(Long userId, PlaceAddToCoursesRequest request) {
+        Place place = placeService.getPlaceById(request.placeId());
+
+        // 한 번에 조회 N+1 방지
+        List<Course> courses = courseRepository.findByIdInWithPlaces(request.courseIds());
+        Map<Long, Course> courseMap = courses.stream()
+                .collect(Collectors.toMap(Course::getId, Function.identity()));
+
+        List<PlaceAddToCoursesResponse.FailedCourse> failedCourses = new ArrayList<>();
+        int successCount = 0;
+
+        for (Long courseId : request.courseIds()) {
+            try {
+                Course course = courseMap.get(courseId);
+                if (course == null) {
+                    failedCourses.add(PlaceAddToCoursesResponse.FailedCourse.builder()
+                            .courseId(courseId)
+                            .reason("존재하지 않는 코스입니다.")
+                            .build());
+                    continue;
+                }
+
+                validateAndAddPlaceToCourse(course, place, userId);
+                successCount++;
+
+            } catch (BusinessException e) {
+                failedCourses.add(PlaceAddToCoursesResponse.FailedCourse.builder()
+                        .courseId(courseId)
+                        .reason(e.getMessage())
+                        .build());
+            }
+        }
+
+        if (successCount > 0) {
+            courseRepository.saveAll(courses);
+        }
+
+        log.info("여러 코스에 장소 추가 완료 - userId: {}, placeId: {}, 성공: {}개, 실패: {}개",
+                userId, request.placeId(), successCount, failedCourses.size());
+
+        return PlaceAddToCoursesResponse.of(successCount, failedCourses);
+    }
+
+    /**
+     * 코스 수정
+     * - 사용자의 코스로 등록되어있는 경우: 기존 코스 수정
+     * - 그렇지 않은 경우: 새 코스 생성 후 북마크 등록
+     */
+    @Transactional
+    public CourseUpdateResponse updateCourse(Long userId, Long courseId, CourseUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+
+        Course courseToUpdate = courseRepository.findByIdWithPlaces(courseId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+
+        List<Place> places = getAndValidatePlacesFromRequest(request.places());
+
+        if (courseToUpdate.isCreatedBy(userId)) {
+            updateCourseInPlace(courseToUpdate, request, places);
+            log.info("기존 코스 수정 완료 - userId: {}, courseId: {}", userId, courseId);
+            return CourseUpdateResponse.of(courseId, false);
+        }
+        else {
+            Course newCourse = createNewCourseFromShared(user, courseToUpdate, request, places);
+            courseRepository.save(newCourse);
+            courseBookmarkService.createCourseBookmark(userId, newCourse.getId());
+            log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, newCourse.getId());
+            return CourseUpdateResponse.of(newCourse.getId(), true);
+        }
+
+    }
+
+    /**
+     * 기존 코스 업데이트
+     */
+    private void updateCourseInPlace(Course course, CourseUpdateRequest request, List<Place> places) {
+        course.updateName(request.courseName());
+        courseRepository.deleteCoursePlacesByCourseId(course.getId());
+        List<CoursePlace> newCoursePlaces = createCoursePlaces(course, request.places(), places);
+        newCoursePlaces.forEach(course::addCoursePlace);
+    }
+
+    /**
+     * 공유 코스를 기반으로 사용자 소유의 새로운 코스 생성
+     */
+    private Course createNewCourseFromShared(User user, Course originalCourse, CourseUpdateRequest request, List<Place> places) {
+        String introduction = originalCourse.getIntroduction();
+        Town town = places.get(0).getTown();
+
+        Course newCourse = Course.createUserCourse(request.courseName(), introduction, town, user);
+
+        List<CoursePlace> coursePlaces = createCoursePlaces(newCourse, request.places(), places);
+        coursePlaces.forEach(newCourse::addCoursePlace);
+
+        return newCourse;
+    }
+
+    private List<CoursePlace> createCoursePlaces(Course course, List<CourseUpdateRequest.CoursePlaceUpdateRequest> placeRequests, List<Place> places) {
+        Map<Long, Place> placeMap = places.stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
+
+        return placeRequests.stream()
+                .map(req -> CoursePlace.create(course, placeMap.get(req.placeId()), req.placeOrder()))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -305,16 +421,89 @@ public class CourseService {
         return !containsPlace;
     }
 
+    private void validateAndAddPlaceToCourse(Course course, Place place, Long userId) {
+        validateCourseOwner(course, userId);
+
+        validateAddPlace(course, place);
+
+        int nextOrder = calculateNextPlaceOrder(course);
+        CoursePlace newCoursePlace = CoursePlace.create(course, place, nextOrder);
+        course.addCoursePlace(newCoursePlace);
+    }
+
+    private void validateCourseOwner(Course course, Long userId) {
+        if (!course.isCreatedBy(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_RESOURCE);
+        }
+    }
+
+    private void validateAddPlace(Course course, Place place) {
+        if (course.getCoursePlaces().size() >= MAX_COURSE_PLACES) {
+            throw new BusinessException(ErrorCode.COURSE_MAX_PLACES_EXCEEDED);
+        }
+
+        boolean isDuplicate = course.getCoursePlaces().stream()
+                .anyMatch(cp -> cp.getPlace().getId().equals(place.getId()));
+
+        if (isDuplicate) {
+            throw new BusinessException(ErrorCode.DUPLICATE_PLACE_IN_COURSE);
+        }
+
+        if (!course.getTown().getId().equals(place.getTown().getId())) {
+            throw new BusinessException(ErrorCode.DIFFERENT_TOWN_PLACE);
+        }
+    }
+
+    private int calculateNextPlaceOrder(Course course) {
+        return course.getCoursePlaces().stream()
+                .mapToInt(CoursePlace::getPlaceOrder)
+                .max()
+                .orElse(0) + 1;
+    }
+
     private List<Place> getPlacesByPlaceIds(CourseCreateRequest request) {
         List<Long> placeIds = request.places().stream()
                 .map(CourseCreateRequest.CoursePlaceRequest::placeId)
                 .toList();
-
         if (placeIds.isEmpty()) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "장소 목록이 비어있습니다.");
         }
 
         return placeService.getPlacesWithTownByPlaceIds(placeIds);
+    }
+
+    private List<Place> getAndValidatePlacesFromRequest(List<CourseUpdateRequest.CoursePlaceUpdateRequest> placeRequests) {
+        validateCoursePlaceRequests(placeRequests);
+
+        List<Long> placeIds = placeRequests.stream().map(CourseUpdateRequest.CoursePlaceUpdateRequest::placeId).toList();
+        List<Place> places = placeService.getPlacesWithTownByPlaceIds(placeIds);
+
+        if (places.stream().map(Place::getTown).map(Town::getId).distinct().count() > 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "모든 장소는 같은 동네에 속해야 합니다.");
+        }
+        return places;
+    }
+
+    private void validateCoursePlaceRequests(List<CourseUpdateRequest.CoursePlaceUpdateRequest> places) {
+        if (places.size() < 2 || places.size() > 6) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.");
+        }
+
+        List<Integer> orders = places.stream()
+                .map(CourseUpdateRequest.CoursePlaceUpdateRequest::placeOrder)
+                .sorted()
+                .toList();
+
+        for (int i = 0; i < orders.size(); i++) {
+            if (orders.get(i) != i + 1) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "장소 순서는 1부터 순차적이어야 합니다.");
+            }
+        }
+
+        Set<Long> uniquePlaceIds = new HashSet<>();
+        if (places.stream().anyMatch(p -> !uniquePlaceIds.add(p.placeId()))) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "중복된 장소가 포함되어 있습니다.");
+        }
     }
 
     private void validateSameTown(List<Place> places, Town referenceTown) {
@@ -366,12 +555,10 @@ public class CourseService {
     }
 
     private String getOriginalCourseIntroduction(Long originalCourseId) {
-        Course originalCourse = courseRepository.findById(originalCourseId)
+        return courseRepository.findById(originalCourseId)
+                .map(Course::getIntroduction)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
-
-        return originalCourse.getIntroduction();
     }
-
 
     /**
      * 코스에서 상위 2개 장소의 메인 태그를 순서대로 추출 (중복 허용)

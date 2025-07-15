@@ -136,6 +136,10 @@ public class PlaceService {
         return places;
     }
 
+    public Place getPlaceById(Long placeId) {
+        return placeRepository.findById(placeId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+    }
 
     public void validatePlaceExists(Long placeId) {
         if (!placeRepository.existsById(placeId)) {

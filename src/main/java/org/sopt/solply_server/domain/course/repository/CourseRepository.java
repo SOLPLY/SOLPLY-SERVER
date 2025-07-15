@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.course.repository;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -87,5 +88,15 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     """)
     List<Course> findBookmarkedCoursesByTownId(@Param("courseIds") List<Long> courseIds,
                                                @Param("townId") Long townId);
+
+    @Query("SELECT c FROM Course c " +
+            "JOIN FETCH c.coursePlaces cp " +
+            "JOIN FETCH cp.place p " +
+            "WHERE c.id IN :courseIds")
+    List<Course> findByIdInWithPlaces(@Param("courseIds") List<Long> courseIds);
+
+    @Modifying
+    @Query("DELETE FROM CoursePlace cp WHERE cp.course.id = :courseId")
+    void deleteCoursePlacesByCourseId(@Param("courseId") Long courseId);
 
 }
