@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.course.mapper;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.course.dto.CourseBookmarkDto;
 import org.sopt.solply_server.domain.course.dto.CourseFolderDto;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceDetailsDto;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
@@ -49,5 +50,10 @@ public class CourseMapper {
                 placeBookmarkMap.getOrDefault(place.getId(), false),
                 coursePlace.getPlaceOrder()
         );
+    }
+
+    public CourseBookmarkDto toCourseBookmarkDto(Course course, String thumbnailUrl,
+                                                 List<TagName> mainTags, boolean isActive) {
+        return CourseBookmarkDto.of(course, thumbnailUrl, mainTags, isActive);
     }
 }

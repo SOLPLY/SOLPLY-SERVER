@@ -10,8 +10,9 @@ import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
+import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCourseRequest;
+import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
-import org.sopt.solply_server.domain.course.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.course.service.CourseService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -42,6 +43,17 @@ public class CourseController {
         );
     }
 
+    @Operation(summary = "코스에 장소 추가", description = "기존 코스에 새로운 장소를 마지막 순서로 추가합니다.")
+    @PostMapping("/{courseId}/places")
+    public ResponseEntity<CustomApiResponse<Void>> addPlaceToCourse(
+            @CurrentUserId Long userId,
+            @Parameter(description = "코스 ID", required = true)
+            @PathVariable("courseId") Long courseId,
+            @Valid @RequestBody PlaceAddToCourseRequest request) {
+        courseService.addPlaceToCourse(userId, courseId, request);
+        return CustomApiResponse.success("해당 코스에 장소가 성공적으로 추가되었습니다.");
+    }
+
     @Operation(summary = "코스 상세 조회", description = "코스 ID를 통해 코스의 상세 정보를 조회합니다.")
     @GetMapping("/{courseId}")
     public ResponseEntity<CustomApiResponse<CourseDetailGetResponse>> findCourseDetailsById(
@@ -50,6 +62,24 @@ public class CourseController {
         return CustomApiResponse.success(
                 "코스 상세 조회에 성공했습니다.",
                 courseService.findCourseDetailsById(userId, courseId)
+        );
+    }
+
+    @Operation(summary = "사용자 북마크 코스 목록 조회",
+            description = "사용자가 추가 또는 조회할 수 있는 북마크한 코스 목록을 조회합니다.")
+    @GetMapping("/bookmarks")
+    public ResponseEntity<CustomApiResponse<CourseBookmarkListGetResponse>> getBookmarkedCourses(
+            @CurrentUserId Long userId,
+            @Parameter(description = "동네 ID", required = true)
+            @RequestParam("townId")
+            @NotNull(message = "동네 ID는 필수입니다")
+            Long townId,
+            @Parameter(description = "장소 ID (선택사항, 해당 장소를 추가할 수 있는 코스만 필터링)")
+            @RequestParam(value = "placeId", required = false)
+            Long placeId) {
+        return CustomApiResponse.success(
+                "사용자 코스 목록 조회에 성공했습니다.",
+                courseService.getBookmarkedCourses(userId, townId, placeId)
         );
     }
 
