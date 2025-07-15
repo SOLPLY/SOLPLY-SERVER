@@ -15,6 +15,7 @@ import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
@@ -28,12 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class UserOnboardingService {
 
-    private final UserRepository userRepository;
     private final UserValidator userValidator;
+    private final EntityLoader entityLoader;
 
     public UserPersonaListGetResponse getUserPersonaList(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
+        User user = entityLoader.getUser(userId);
         userValidator.validateOnboardingAvailable(user);
         List<UserPersonaDto> personaDtos = Arrays.stream(UserPersona.values())
                 .map(UserPersonaDto::from)

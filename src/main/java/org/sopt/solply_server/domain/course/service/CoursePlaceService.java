@@ -10,6 +10,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,17 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class CoursePlaceService {
 
-    private final CourseRepository courseRepository;
-    private final PlaceRepository placeRepository;
-    private final CoursePlaceRepository coursePlaceRepository;
     private final CoursePlaceValidator coursePlaceValidator;
+    private final EntityLoader entityLoader;
 
     /**
      * 장소를 코스에 추가
      */
     public void addPlaceToCourse(final Long userId, final Long placeId, final Long courseId) {
-        Place place = getPlace(placeId);
-        Course course = getCourse(courseId);
+        Place place = entityLoader.getPlace(placeId);
+        Course course = entityLoader.getCourse(courseId);
 
         coursePlaceValidator.validateCourseOwnership(course, userId);
         coursePlaceValidator.validateCanAddPlace(course, place);
@@ -37,17 +36,5 @@ public class CoursePlaceService {
         CoursePlace coursePlace = CoursePlace.create(course, place, nextOrder);
         course.addCoursePlace(coursePlace);
     }
-
-
-    private Place getPlace(final Long placeId) {
-        return placeRepository.findById(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
-    }
-
-    private Course getCourse(final Long courseId) {
-        return courseRepository.findByIdWithPlaces(courseId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
-    }
-
 
 }

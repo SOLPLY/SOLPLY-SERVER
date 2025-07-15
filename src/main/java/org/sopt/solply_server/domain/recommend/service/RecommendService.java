@@ -23,6 +23,7 @@ import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,7 @@ public class RecommendService {
     private final TownValidator townValidator;
     private final CourseBookmarkService courseBookmarkService;
     private final CourseUtils courseUtils;
+    private final EntityLoader entityLoader;
 
 
     /**
@@ -52,8 +54,7 @@ public class RecommendService {
      */
     public PlaceRecommendationGetResponse getRecommendPlaces(Long userId, Long townId) {
         // 사용자 페르소나 조회
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
+        User user = entityLoader.getUser(userId);
         UserPersona persona = user.getPersona();
         if (persona == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_PERSONA);

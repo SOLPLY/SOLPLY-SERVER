@@ -10,6 +10,7 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.jwt.JwtTokenProvider;
 import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ public class TestService {
     private final UserRepository userRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final EntityLoader entityLoader;
 
     // 테스트 로그인 (유저 생성)
     @Transactional
@@ -42,8 +44,7 @@ public class TestService {
 
     // 테스트 로그인 (기존 유저)
     public TestLoginResponse loginById(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
+        User user = entityLoader.getUser(userId);
 
         return TestLoginResponse.of(
                 saveTokenCollection(user.getId()),

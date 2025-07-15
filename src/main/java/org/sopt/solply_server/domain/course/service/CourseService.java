@@ -26,6 +26,7 @@ import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,14 +52,14 @@ public class CourseService {
 
     private final TownValidator townValidator;
     private final CourseUtils courseUtils;
+    private final EntityLoader entityLoader;
 
     /**
      * 새로운 코스 생성
      */
     @Transactional
     public CourseCreateResponse createCourse(Long userId, CourseCreateRequest request) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+        User user = entityLoader.getUser(userId);
 
         validateCourseRequest(request);
         List<Place> places = getPlacesByPlaceIds(request);
@@ -91,8 +92,7 @@ public class CourseService {
      */
     @Transactional
     public CourseUpdateResponse updateCourse(Long userId, Long courseId, CourseUpdateRequest request) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+        User user = entityLoader.getUser(userId);
 
         Course courseToUpdate = courseRepository.findByIdWithPlaces(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));

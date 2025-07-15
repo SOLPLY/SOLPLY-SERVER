@@ -16,6 +16,7 @@ import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
@@ -33,6 +34,7 @@ public class UserService {
     private final UserValidator userValidator;
     private final TownService townService;
     private final UserInterestTownService userInterestTownService;
+    private final EntityLoader entityLoader;
 
     public NicknameCheckResponse checkNickname(String nickname) {
         boolean isDuplicated = userValidator.isNicknameDuplicated(nickname);
@@ -52,11 +54,8 @@ public class UserService {
      */
     @Transactional
     public UserUpdateResponse updateUser(Long userId, UserUpdateRequest request) {
-        // 사용자 조회
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
-
-        Town town = townService.findTownById(request.favoriteTown());
+        User user = entityLoader.getUser(userId);
+        Town town = entityLoader.getTown(userId);
         userValidator.validateNicknameNotDuplicated(request.nickname());
 
         return updateUserWithRetry(user, town, request);

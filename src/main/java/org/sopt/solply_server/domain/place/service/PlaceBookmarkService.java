@@ -16,6 +16,7 @@ import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,7 @@ public class PlaceBookmarkService {
     private final PlaceRepository placeRepository;
     private final CacheService cacheService;
     private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
+    private final EntityLoader entityLoader;
 
     /**
      * 북마크 생성
@@ -40,10 +42,8 @@ public class PlaceBookmarkService {
     @Transactional
     public void createPlaceBookmark(final Long userId, final Long placeId) {
         // 사용자 및 장소 검증
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-        Place place = placeRepository.findById(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+        User user = entityLoader.getUser(userId);
+        Place place = entityLoader.getPlace(placeId);
 
         String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
 

@@ -15,6 +15,7 @@ import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,16 +33,15 @@ public class CourseBookmarkService {
     private final CourseBookmarkRepository courseBookmarkRepository;
     private final CacheService cacheService;
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
+    private final EntityLoader entityLoader;
 
     /**
      * 코스 북마크 생성
      */
     @Transactional
     public void createCourseBookmark(final Long userId, final Long courseId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-        Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+        User user = entityLoader.getUser(userId);
+        Course course = entityLoader.getCourse(courseId);
 
         String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 

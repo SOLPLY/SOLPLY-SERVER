@@ -25,6 +25,7 @@ import org.sopt.solply_server.domain.town.service.TownService;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,13 +42,13 @@ public class PlaceService {
     private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
     private final PlaceBookmarkService placeBookmarkService;
     private final TownValidator townValidator;
+    private final EntityLoader entityLoader;
 
     /**
      * 장소 상세 정보 조회
      */
     public PlaceAllGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
-        Place place = placeRepository.findById(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
+        Place place = entityLoader.getPlace(placeId);
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(
