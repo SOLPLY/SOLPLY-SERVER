@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.course.dto.response.PlaceAddToCourseResponse;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -39,7 +40,6 @@ public class PlaceService {
     private final TagValidator tagValidator;
     private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
     private final PlaceBookmarkService placeBookmarkService;
-    private final TownService townService;
     private final TownValidator townValidator;
 
     /**
@@ -118,6 +118,7 @@ public class PlaceService {
         );
     }
 
+
     public List<Place> getPlacesWithTownByPlaceIds(List<Long> placeIds) {
         // Town 정보까지 함께 조회 (N+1 문제 방지)
         List<Place> places = placeRepository.findAllByIdsWithTown(placeIds);
@@ -138,16 +139,13 @@ public class PlaceService {
         return places;
     }
 
-    public Place getPlaceById(Long placeId) {
-        return placeRepository.findById(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
-    }
-
     public void validatePlaceExists(Long placeId) {
         if (!placeRepository.existsById(placeId)) {
             throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
         }
     }
+
+
 
     //=== Private Methods ===//
 

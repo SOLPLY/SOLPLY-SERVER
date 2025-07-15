@@ -10,7 +10,7 @@ import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
-import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
+import org.sopt.solply_server.domain.place.dto.request.PlaceAddToCoursesRequest;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
@@ -42,21 +42,6 @@ public class CourseController {
                 "코스 생성을 완료했습니다.",
                 courseService.createCourse(userId, request)
         );
-    }
-
-    @Operation(summary = "코스에 장소 추가 (복수개 가능)", description = "기존 코스에 새로운 장소를 마지막 순서로 추가합니다.")
-    @PostMapping("/places")
-    public ResponseEntity<CustomApiResponse<PlaceAddToCoursesResponse>> addPlaceToMultipleCourses(
-            @CurrentUserId Long userId,
-            @Valid @RequestBody PlaceAddToCoursesRequest request) {
-
-        PlaceAddToCoursesResponse response = courseService.addPlaceToMultipleCourses(userId, request);
-
-        String message = response.failedCourses().isEmpty()
-                ? "선택한 코스들에 장소가 성공적으로 추가되었습니다."
-                : "일부 코스에 장소 추가가 완료되었습니다.";
-
-        return CustomApiResponse.success(message, response);
     }
 
     @Operation(summary = "코스 수정", description = "기존 코스를 수정합니다.")
