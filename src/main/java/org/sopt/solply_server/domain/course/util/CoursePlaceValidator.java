@@ -1,5 +1,9 @@
 package org.sopt.solply_server.domain.course.util;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.sopt.solply_server.domain.course.dto.CoursePlaceInfo;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -62,18 +66,76 @@ public class CoursePlaceValidator {
         }
     }
 
+
+    public void validatePlacesForCourse(List<CoursePlaceInfo> placeInfos, List<Place> places) {
+        validateCoursePlaceInfos(placeInfos);
+        validateAllPlacesSameTown(places);
+    }
+
+
     /**
-     * 코스 장소 제거 검증
+     * 장소들의 동네 일치 검증 (여러 장소 대상)
      */
-    public void validateCanRemovePlace(Course course) {
-        if (course.getCoursePlaces().size() <= 2) {
+    public void validateAllPlacesSameTown(List<Place> places) {
+        if (places.isEmpty()) {
+            return;
+        }
+
+        if (places.stream()
+                .map(Place::getTown)
+                .map(Town::getId)
+                .distinct()
+                .count() > 1) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                    "코스에는 최소 2개의 장소가 필요합니다.");
+                    "모든 장소는 같은 동네에 속해야 합니다.");
         }
     }
 
     /**
-     * 장소 순서 변경 검증
+     * CoursePlaceInfo 리스트 검증
      */
+    public void validateCoursePlaceInfos(List<CoursePlaceInfo> placeInfos) {
+        validatePlaceCount(placeInfos);
+        validatePlaceOrder(placeInfos);
+        validateDuplicatePlaceIds(placeInfos);
+    }
+
+    /**
+     * 장소 개수 검증 (CoursePlaceInfo 대상)
+     */
+    private void validatePlaceCount(List<CoursePlaceInfo> placeInfos) {
+        if (placeInfos.size() < 2 || placeInfos.size() > 6) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                    "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.");
+        }
+    }
+
+    /**
+     * 장소 순서 검증
+     */
+    private void validatePlaceOrder(List<CoursePlaceInfo> placeInfos) {
+        List<Integer> orders = placeInfos.stream()
+                .map(CoursePlaceInfo::placeOrder)
+                .sorted()
+                .toList();
+
+        for (int i = 0; i < orders.size(); i++) {
+            if (orders.get(i) != i + 1) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                        "장소 순서는 1부터 순차적이어야 합니다.");
+            }
+        }
+    }
+
+    /**
+     * 중복 장소 ID 검증
+     */
+    private void validateDuplicatePlaceIds(List<CoursePlaceInfo> placeInfos) {
+        Set<Long> uniquePlaceIds = new HashSet<>();
+        if (placeInfos.stream().anyMatch(info -> !uniquePlaceIds.add(info.placeId()))) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
+                    "중복된 장소가 포함되어 있습니다.");
+        }
+    }
 
 }

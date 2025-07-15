@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.place.service;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -137,7 +138,12 @@ public class PlaceService {
             throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
         }
 
-        return places;
+        Map<Long, Place> placeMap = places.stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
+
+        return placeIds.stream()
+                .map(placeMap::get)
+                .toList();
     }
 
     public void validatePlaceExists(Long placeId) {

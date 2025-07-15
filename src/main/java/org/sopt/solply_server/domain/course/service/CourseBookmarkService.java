@@ -7,14 +7,10 @@ import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CourseBookmark;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
-import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.user.entity.User;
-import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -28,8 +24,6 @@ import java.util.*;
 @Transactional(readOnly = true)
 public class CourseBookmarkService {
 
-    private final UserRepository userRepository;
-    private final CourseRepository courseRepository;
     private final CourseBookmarkRepository courseBookmarkRepository;
     private final CacheService cacheService;
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
