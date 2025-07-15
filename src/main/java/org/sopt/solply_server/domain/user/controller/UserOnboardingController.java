@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.user.dto.response.UserPersonaListGetResponse;
 import org.sopt.solply_server.domain.user.service.UserOnboardingService;
+import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,8 +22,10 @@ public class UserOnboardingController {
 
     @Operation(summary = "페르소나 질문 리스트 조회", description = "페르소나 질문 리스트를 조회합니다")
     @GetMapping("/questions/persona")
-    public ResponseEntity<CustomApiResponse<UserPersonaListGetResponse>> getAllPersona(){
-        UserPersonaListGetResponse response = userOnboardingService.getUserPersonaList();
+    public ResponseEntity<CustomApiResponse<UserPersonaListGetResponse>> getAllPersona(
+            @CurrentUserId Long userId
+    ){
+        UserPersonaListGetResponse response = userOnboardingService.getUserPersonaList(userId);
         return CustomApiResponse.<UserPersonaListGetResponse>success("페르소나 질문 리스트 조회에 성공하셨습니다", response);
     }
 }

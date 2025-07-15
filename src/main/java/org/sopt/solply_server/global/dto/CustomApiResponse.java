@@ -11,9 +11,7 @@ public record CustomApiResponse<T>(
         boolean success,
         String code,
         String message,
-        T data,
-        Map<String, String> errorDetails,
-        LocalDateTime timestamp
+        T data
 ) {
 
     // 성공 응답
@@ -23,9 +21,7 @@ public record CustomApiResponse<T>(
                         true,
                         String.valueOf(HttpStatus.OK.value()),
                         successMessage,
-                        data,
-                        null,
-                        LocalDateTime.now()
+                        data
                 ));
     }
 
@@ -41,22 +37,7 @@ public record CustomApiResponse<T>(
                         false,
                         errorCode.getCode(),
                         errorCode.getMessage(),
-                        null,
-                        null,
-                        LocalDateTime.now()
-                ));
-    }
-
-    // 실패 응답 (에러 코드 + 상세 정보)
-    public static <T> ResponseEntity<CustomApiResponse<T>> error(ErrorCode errorCode, Map<String, String> errorDetails) {
-        return ResponseEntity.status(errorCode.getHttpStatus())
-                .body(new CustomApiResponse<>(
-                        false,
-                        errorCode.getCode(),
-                        errorCode.getMessage(),
-                        null,
-                        errorDetails,
-                        LocalDateTime.now()
+                        null
                 ));
     }
 }

@@ -21,14 +21,14 @@ public class SocialUserService {
     @Transactional
     public User createSocialUser(final SocialPlatform socialPlatform, final String socialId, final String email, final String nickname) {
         String socialCode = createSocialCode(socialPlatform, socialId);
-        // 1. 동일한 소셜 계정 확인
+        // 동일한 소셜 계정 확인
         Optional<SocialUserInfo> existingSocial = socialUserInfoRepository.findBySocialCode(socialCode);
 
         if (existingSocial.isPresent()) {
             return existingSocial.get().getUser();
         }
 
-        // 2. 이메일로 기존 유저 확인
+        // 이메일로 기존 유저 확인
         User user = userRepository.findByEmail(email);
 
         if (user == null) {

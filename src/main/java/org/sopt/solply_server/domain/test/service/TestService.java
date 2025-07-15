@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
 import org.sopt.solply_server.domain.test.dto.response.TestLoginResponse;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -27,14 +28,9 @@ public class TestService {
     @Transactional
     public TestLoginResponse createAndLogin() {
         String email = UUID.randomUUID() + "@test.com";
-        String nickname = "user_" + UUID.randomUUID().toString().substring(0, 5);
+//        String nickname = "user_" + UUID.randomUUID().toString().substring(0, 5);
 
-        User user = userRepository.save(
-                User.builder()
-                    .email(email)
-                    .nickname(nickname)
-                    .isNewUser(true)
-                    .build()
+        User user = userRepository.save(User.create(email)
         );
 
         return TestLoginResponse.of(

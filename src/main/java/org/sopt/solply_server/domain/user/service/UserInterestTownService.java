@@ -6,6 +6,8 @@ import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserInterestTown;
 import org.sopt.solply_server.domain.user.repository.UserInterestTownRepository;
+import org.sopt.solply_server.global.exception.EntityNotFoundException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +28,11 @@ public class UserInterestTownService {
         } else {
             log.debug("이미 등록된 관심 동네: userId={}, townId={}", user.getId(), town.getId());
         }
+    }
+
+    public UserInterestTown getUserInterestTown(User user) {
+        return userInterestTownRepository.findByUser(user)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
     }
 
 }
