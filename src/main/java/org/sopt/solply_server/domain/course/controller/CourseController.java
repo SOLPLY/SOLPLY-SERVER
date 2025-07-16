@@ -77,7 +77,7 @@ public class CourseController {
             @NotNull(message = "동네 ID는 필수입니다")
             Long townId,
 
-            @Parameter(description = "장소 ID (선택사항, 해당 장소를 추가할 수 있는 코스만 필터링)")
+            @Parameter(description = "장소 ID (선택사항, 해당 장소를 추가할 수 있는지 여부를 확인하기 위해 사용)")
             @RequestParam(value = "candidatePlaceId", required = false)
             Long candidatePlaceId) {
         return CustomApiResponse.success(

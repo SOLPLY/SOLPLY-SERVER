@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.course.util;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CoursePlaceInfo;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -11,6 +12,7 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 public class CoursePlaceValidator {
 
@@ -23,6 +25,34 @@ public class CoursePlaceValidator {
         if (!course.isCreatedBy(userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "코스 수정 권한이 없습니다.");
         }
+    }
+
+    /**
+     * 상세 검증 결과를 반환하는 메서드
+     */
+    public CourseValidationResult validatePlaceAddition(Course course, Place place) {
+        // 중복 검증
+        if (isDuplicated(course, place)) {
+            return CourseValidationResult.duplicated();
+        }
+
+        // 개수 제한 검증
+        if (isPlaceCountLimited(course)) {
+            return CourseValidationResult.placeCountLimited();
+        }
+
+        log.info("Place {} can be added to Course {}", place.getId(), course.getId());
+
+        return CourseValidationResult.success();
+    }
+
+    private boolean isDuplicated(Course course, Place place) {
+        return course.getCoursePlaces().stream()
+                .anyMatch(cp -> cp.getPlace().getId().equals(place.getId()));
+    }
+
+    private boolean isPlaceCountLimited(Course course) {
+        return course.getCoursePlaces().size() >= MAX_PLACE_COUNT;
     }
 
     /**
@@ -65,17 +95,6 @@ public class CoursePlaceValidator {
                 .anyMatch(cp -> cp.getPlace().getId().equals(place.getId()));
         if (alreadyExists) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "이미 코스에 포함된 장소입니다.");
-        }
-    }
-
-    public boolean canAddPlaceToCourse(Course course, Place place) {
-        try {
-            validateSameTown(course, place);
-            validatePlaceCountLimit(course);
-            validateDuplicatePlace(course, place);
-            return true;
-        } catch (BusinessException e) {
-            return false;
         }
     }
 

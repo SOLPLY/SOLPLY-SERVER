@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.course.repository;
 
+import java.util.Map;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -48,6 +49,17 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             "WHERE p.id IN " +
             "(SELECT cp.place.id FROM CoursePlace cp WHERE cp.course.id IN :courseIds)")
     List<Place> findPlacesWithTagsByCourseIds(@Param("courseIds") List<Long> courseIds);
+
+    /**
+     * 특정 코스들의 장소 개수 조회
+     * 코스 ID와 해당 코스의 장소 개수를 Map 형태로 반환
+     */
+    @Query("SELECT cp.course.id, COUNT(cp) " +
+            "FROM CoursePlace cp " +
+            "WHERE cp.course.id IN :courseIds " +
+            "GROUP BY cp.course.id")
+    List<Object[]> countPlacesByCourseIds(@Param("courseIds") List<Long> courseIds);
+
 
     /**
      * 사용자의 북마크된 코스 목록 조회
