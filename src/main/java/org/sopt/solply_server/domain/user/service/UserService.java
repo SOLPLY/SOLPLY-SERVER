@@ -37,8 +37,8 @@ public class UserService {
     }
 
     public UserProfileGetResponse getUserProfile(Long userId) {
-        User user = userRepository.getReferenceById(userId);
-        Town town = userInterestTownService.getUserInterestTown(user).getTown();
+        User user = entityLoader.getUser(userId);
+        Town town = entityLoader.getTown(userId);
         return UserProfileGetResponse.of(user, SelectedTownDto.of(town.getId(), town.getName()));
     }
 
