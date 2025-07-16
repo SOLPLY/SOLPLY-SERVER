@@ -43,9 +43,10 @@ public class UserService {
     @Transactional
     public void updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        for (Long townId : request.favoriteTownIdList()) {
-            userInterestTownService.updateUserInterestTown(user, entityLoader.getTown(townId));
-        }
+        List<Town> towns = request.favoriteTownIdList().stream()
+                .map(entityLoader::getTown)
+                .toList();
+        userInterestTownService.updateUserInterestTowns(user, towns);
         townValidator.validateTownId(request.selectedTownId());
         user.updateSelectedTown(request.selectedTownId());
     }

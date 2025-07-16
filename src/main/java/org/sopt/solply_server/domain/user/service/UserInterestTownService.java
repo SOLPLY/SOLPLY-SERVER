@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.user.service;
 
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -20,15 +21,15 @@ public class UserInterestTownService {
     private final UserInterestTownRepository userInterestTownRepository;
 
     @Transactional
-    public void updateUserInterestTown(User user, Town town) {
-        // 기존 관심 동네 모두 삭제
+    public void updateUserInterestTowns(User user, List<Town> towns) {
         userInterestTownRepository.deleteByUserId(user.getId());
-        log.debug("기존 관심 동네 삭제 완료: userId={}", user.getId());
+        userInterestTownRepository.flush(); // 즉시 반영(동일 트랜잭션에서 삭제 후 재생성 필요)
 
-        // 새로운 관심 동네 저장
-        UserInterestTown userInterestTown = UserInterestTown.create(user, town);
-        userInterestTownRepository.save(userInterestTown);
-        log.debug("새 관심 동네 저장 완료: userId={}, townId={}", user.getId(), town.getId());
+        List<UserInterestTown> newInterestTowns = towns.stream()
+                .map(town -> UserInterestTown.create(user, town))
+                .toList();
+
+        userInterestTownRepository.saveAll(newInterestTowns);
     }
 
 
