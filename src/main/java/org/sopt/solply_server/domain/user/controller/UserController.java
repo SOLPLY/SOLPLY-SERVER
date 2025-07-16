@@ -11,6 +11,7 @@ import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -42,12 +43,12 @@ public class UserController {
 
     @Operation(summary = "회원의 동네 관련 정보 업데이트", description = "회원의 선택한 동네 및 관심 동네들을 업데이트합니다.")
     @PatchMapping("/towns")
-    public ResponseEntity<CustomApiResponse<Void>> updateUserTowns(
+    public ResponseEntity<CustomApiResponse<UserTownsUpdateResponse>> updateUserTowns(
             @CurrentUserId Long userId,
             @Valid @RequestBody UserTownsUpdateRequest request
     ) {
-        userService.updateUserTowns(userId, request);
-        return CustomApiResponse.success("회원의 동네 정보 업데이트에 성공했습니다");
+        return CustomApiResponse.success("회원의 동네 정보 업데이트에 성공했습니다",
+                userService.updateUserTowns(userId, request));
     }
   
     @Operation(summary = "회원 정보 조회", description = "현재 로그인한 사용자의 정보를 조회합니다.")

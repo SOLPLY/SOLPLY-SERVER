@@ -8,8 +8,10 @@ import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserOnboardingUpdateResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserInterestTown;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -41,14 +43,21 @@ public class UserService {
 
 
     @Transactional
-    public void updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
+    public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
         User user = entityLoader.getUser(userId);
         List<Town> towns = request.favoriteTownIdList().stream()
                 .map(entityLoader::getTown)
                 .toList();
         userInterestTownService.updateUserInterestTowns(user, towns);
-        townValidator.validateTownId(request.selectedTownId());
+        Town selectedTown = entityLoader.getTown(request.selectedTownId());
         user.updateSelectedTown(request.selectedTownId());
+
+        return UserTownsUpdateResponse.of(
+                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName()),
+                towns.stream()
+                        .map(town -> UserTownInfoDto.of(town.getId(), town.getName()))
+                        .toList()
+        );
     }
 
     public UserTownGetResponse getTownsRelatedUser(Long userId) {
