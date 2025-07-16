@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.user.service;
 
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -20,19 +21,16 @@ public class UserInterestTownService {
     private final UserInterestTownRepository userInterestTownRepository;
 
     @Transactional
-    public void saveUserInterestTown(User user, Town town) {
-        if (!userInterestTownRepository.existsByUserIdAndTownId(user.getId(), town.getId())) {
-            UserInterestTown userInterestTown = UserInterestTown.create(user, town);
-            userInterestTownRepository.save(userInterestTown);
-            log.debug("사용자 관심 동네 저장 완료: userId={}, townId={}", user.getId(), town.getId());
-        } else {
-            log.debug("이미 등록된 관심 동네: userId={}, townId={}", user.getId(), town.getId());
-        }
+    public void updateUserInterestTowns(User user, List<Town> towns) {
+        userInterestTownRepository.deleteByUserId(user.getId());
+        userInterestTownRepository.flush(); // 즉시 반영(동일 트랜잭션에서 삭제 후 재생성 필요)
+
+        List<UserInterestTown> newInterestTowns = towns.stream()
+                .map(town -> UserInterestTown.create(user, town))
+                .toList();
+
+        userInterestTownRepository.saveAll(newInterestTowns);
     }
 
-    public UserInterestTown getUserInterestTown(User user) {
-        return userInterestTownRepository.findByUser(user)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
-    }
 
 }

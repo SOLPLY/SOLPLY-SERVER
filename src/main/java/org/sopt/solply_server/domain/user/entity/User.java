@@ -6,6 +6,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.sopt.solply_server.domain.town.entity.Town;
+import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 
 @Entity
 @Getter
@@ -31,6 +33,8 @@ public class User {
     @Enumerated(EnumType.STRING)
     private UserPersona persona;
 
+    private Long selectedTownId; // 사용자가 선택한 동네 ID
+
     public static User create(String email) {
         return User.builder()
                 .email(email)
@@ -39,10 +43,15 @@ public class User {
                 .build();
     }
 
-    public void updateOnboardingInfo(UserPersona persona, String nickname) {
+    public void updateOnboardingInfo(UserPersona persona, String nickname, Long selectedTownId) {
         this.persona = persona;
         this.nickname = nickname;
+        this.selectedTownId = selectedTownId;
         this.isNewUser = false; // 온보딩 완료
+    }
+
+    public void updateSelectedTown(Long selectedTownId) {
+        this.selectedTownId = selectedTownId;
     }
 
 }

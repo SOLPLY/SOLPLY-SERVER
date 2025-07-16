@@ -3,11 +3,15 @@ package org.sopt.solply_server.domain.user.dto.request;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
-public record UserUpdateRequest(
+public record UserOnboardingUpdateRequest(
+        @NotNull(message = "동네 선택은 필수입니다")
+        Long selectedTownId,
+
         @NotNull(message = "관심 동네는 필수입니다")
-        Long favoriteTown,
+        List<Long> favoriteTownIdList,
 
         @NotNull(message = "유저 성향은 필수입니다")
         UserPersona persona,

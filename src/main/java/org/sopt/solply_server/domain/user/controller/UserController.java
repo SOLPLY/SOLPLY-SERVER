@@ -7,10 +7,11 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
+import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
-import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -40,14 +41,14 @@ public class UserController {
         return CustomApiResponse.success("닉네임 중복검사에 성공했습니다", response);
     }
 
-    @Operation(summary = "회원 정보 업데이트", description = "온보딩 완료 후 회원 정보를 업데이트합니다.")
-    @PatchMapping("")
-    public ResponseEntity<CustomApiResponse<UserUpdateResponse>> updateUser(
+    @Operation(summary = "회원의 동네 관련 정보 업데이트", description = "회원의 선택한 동네 및 관심 동네들을 업데이트합니다.")
+    @PatchMapping("/towns")
+    public ResponseEntity<CustomApiResponse<UserTownsUpdateResponse>> updateUserTowns(
             @CurrentUserId Long userId,
-            @Valid @RequestBody UserUpdateRequest request
+            @Valid @RequestBody UserTownsUpdateRequest request
     ) {
-        UserUpdateResponse response = userService.updateUser(userId, request);
-        return CustomApiResponse.success("회원정보 업데이트에 성공했습니다", response);
+        return CustomApiResponse.success("회원의 동네 정보 업데이트에 성공했습니다",
+                userService.updateUserTowns(userId, request));
     }
   
     @Operation(summary = "회원 정보 조회", description = "현재 로그인한 사용자의 정보를 조회합니다.")
@@ -58,4 +59,14 @@ public class UserController {
         UserProfileGetResponse response = userService.getUserProfile(userId);
         return CustomApiResponse.success("유저 정보 조회에 성공하였습니다.", response);
     }
+
+    @Operation(summary = "유저의 동네 정보 조회", description = "유저의 관심 동네 및 선택 동네를 조회합니다.")
+    @GetMapping("/towns")
+    public ResponseEntity<CustomApiResponse<UserTownGetResponse>> getUserTowns(
+            @CurrentUserId Long userId
+    ) {
+        return CustomApiResponse.success("유저의 동네 정보 조회에 성공하였습니다.",
+                userService.getTownsRelatedUser(userId));
+    }
+
 }
