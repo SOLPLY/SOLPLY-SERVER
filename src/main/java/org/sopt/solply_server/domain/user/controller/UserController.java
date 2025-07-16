@@ -8,10 +8,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
-import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
-import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -49,17 +47,6 @@ public class UserController {
     ) {
         userService.updateUserTowns(userId, request);
         return CustomApiResponse.success("회원의 동네 정보 업데이트에 성공했습니다");
-    }
-
-
-    @Operation(summary = "회원 정보 업데이트", description = "온보딩 완료 후 회원 정보를 업데이트합니다.")
-    @PatchMapping("")
-    public ResponseEntity<CustomApiResponse<UserUpdateResponse>> updateUser(
-            @CurrentUserId Long userId,
-            @Valid @RequestBody UserUpdateRequest request
-    ) {
-        UserUpdateResponse response = userService.updateUser(userId, request);
-        return CustomApiResponse.success("회원정보 업데이트에 성공했습니다", response);
     }
   
     @Operation(summary = "회원 정보 조회", description = "현재 로그인한 사용자의 정보를 조회합니다.")

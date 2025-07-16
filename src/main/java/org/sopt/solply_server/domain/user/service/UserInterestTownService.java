@@ -20,14 +20,15 @@ public class UserInterestTownService {
     private final UserInterestTownRepository userInterestTownRepository;
 
     @Transactional
-    public void saveUserInterestTown(User user, Town town) {
-        if (!userInterestTownRepository.existsByUserIdAndTownId(user.getId(), town.getId())) {
-            UserInterestTown userInterestTown = UserInterestTown.create(user, town);
-            userInterestTownRepository.save(userInterestTown);
-            log.debug("사용자 관심 동네 저장 완료: userId={}, townId={}", user.getId(), town.getId());
-        } else {
-            log.debug("이미 등록된 관심 동네: userId={}, townId={}", user.getId(), town.getId());
-        }
+    public void updateUserInterestTown(User user, Town town) {
+        // 기존 관심 동네 모두 삭제
+        userInterestTownRepository.deleteByUserId(user.getId());
+        log.debug("기존 관심 동네 삭제 완료: userId={}", user.getId());
+
+        // 새로운 관심 동네 저장
+        UserInterestTown userInterestTown = UserInterestTown.create(user, town);
+        userInterestTownRepository.save(userInterestTown);
+        log.debug("새 관심 동네 저장 완료: userId={}, townId={}", user.getId(), town.getId());
     }
 
     public UserInterestTown getUserInterestTown(User user) {

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
-public record UserUpdateRequest(
+public record UserOnboardingUpdateRequest(
         @NotNull(message = "관심 동네는 필수입니다")
         Long favoriteTown,
 

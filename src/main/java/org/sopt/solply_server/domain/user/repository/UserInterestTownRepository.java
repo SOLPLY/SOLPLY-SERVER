@@ -20,4 +20,6 @@ public interface UserInterestTownRepository extends JpaRepository<UserInterestTo
     void deleteByUserIdAndTownId(Long userId, Long townId);
 
     Optional<UserInterestTown> findByUser(User user);
+
+    void deleteByUserId(Long id);
 }
