@@ -18,13 +18,11 @@ public class UserValidator {
 
     private final UserRepository userRepository;
 
-    public boolean isNicknameDuplicated(String nickname) {
-        return userRepository.existsByNickname(nickname);
-    }
-
-    public void validateNicknameNotDuplicated(String nickname) {
-        if (isNicknameDuplicated(nickname)) {
-            log.debug("중복된 닉네임 사용 시도: nickname={}", nickname);
+    public void validateNickname(String currentNickname, String nicknameToUpdate) {
+        if (currentNickname.equals(nicknameToUpdate)) { // 현재 닉네임과 변경하려는 닉네임이 동일한 경우
+            return;
+        }
+        if (userRepository.existsByNickname(nicknameToUpdate)) {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
     }

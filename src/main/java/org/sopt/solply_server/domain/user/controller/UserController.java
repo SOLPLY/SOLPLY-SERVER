@@ -31,13 +31,14 @@ public class UserController {
     @Operation(summary = "닉네임 중복 검사", description = "닉네임 사용 가능 여부를 확인합니다.")
     @GetMapping("/check-nickname")
     public ResponseEntity<CustomApiResponse<NicknameCheckResponse>> checkNickname(
+            @CurrentUserId Long currentUserId,
             @Parameter(description = "확인할 닉네임", required = true)
             @RequestParam("nickname")
             @NotBlank(message = "닉네임은 필수입니다")
             @Size(min = 2, max = 8, message = "닉네임은 2자 이상 8자 이하여야 합니다")
             String nickname
     ) {
-        NicknameCheckResponse response = userService.checkNickname(nickname);
+        NicknameCheckResponse response = userService.checkNickname(currentUserId, nickname);
         return CustomApiResponse.success("닉네임 중복검사에 성공했습니다", response);
     }
 
