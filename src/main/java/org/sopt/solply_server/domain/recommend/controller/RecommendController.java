@@ -39,7 +39,7 @@ public class RecommendController {
 
     //==코스 추천 API==//
     @Operation(summary = "추천 코스 목록 조회", description = "특정 동네의 공유된 코스 목록을 조회합니다.")
-    @GetMapping("/recommend")
+    @GetMapping("/courses")
     public ResponseEntity<CustomApiResponse<CourseRecommendGetResponse>> findRecommendCourses(
             @CurrentUserId Long userId,
             @Parameter(description = "동네 ID", required = true)
