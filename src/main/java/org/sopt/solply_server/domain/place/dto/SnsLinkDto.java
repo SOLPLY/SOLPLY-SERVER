@@ -5,7 +5,7 @@ import java.util.Map;
 import org.sopt.solply_server.domain.place.entity.SnsPlatform;
 
 public record SnsLinkDto(
-        SnsPlatform snsPlatform,
+        String snsPlatform,
         String url
 ) {
 
@@ -15,7 +15,7 @@ public record SnsLinkDto(
         }
 
         return snsLinks.entrySet().stream()
-                .map(entry -> new SnsLinkDto(entry.getKey(), entry.getValue()))
+                .map(entry -> new SnsLinkDto(entry.getKey().getDisplayName(), entry.getValue()))
                 .toList();
     }
 }
