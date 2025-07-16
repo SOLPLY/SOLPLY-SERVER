@@ -14,6 +14,7 @@ import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserInterestTown;
+import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,10 +30,16 @@ public class UserService {
     private final EntityLoader entityLoader;
     private final TownValidator townValidator;
 
-    public NicknameCheckResponse checkNickname(String nickname) {
-        boolean isDuplicated = userValidator.isNicknameDuplicated(nickname);
+    public NicknameCheckResponse checkNickname(Long userId, String nickname) {
+        User user = entityLoader.getUser(userId);
+        boolean isDuplicated;
+        try {
+            userValidator.validateNickname(user.getNickname(), nickname);
+        } catch (BusinessException e) {
+            isDuplicated = true;
+        }
 
-        return NicknameCheckResponse.of(isDuplicated);
+        return NicknameCheckResponse.of(false);
     }
 
     public UserProfileGetResponse getUserProfile(Long userId) {

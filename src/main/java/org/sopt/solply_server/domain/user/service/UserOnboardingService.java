@@ -45,7 +45,7 @@ public class UserOnboardingService {
     @Transactional
     public UserOnboardingUpdateResponse updateUserFromOnboarding(Long userId, UserOnboardingUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        userValidator.validateNicknameNotDuplicated(request.nickname());
+        userValidator.validateNickname(user.getNickname(), request.nickname());
 
         return updateUserWithRetry(user, request);
     }
