@@ -32,9 +32,6 @@ public class UserService {
         User user = entityLoader.getUser(userId);
         boolean isDuplicated = false;
         try {
-            if (user.getNickname() == null) {
-                return NicknameCheckResponse.of(isDuplicated);
-            }
             userValidator.validateNickname(user.getNickname(), nickname);
         } catch (BusinessException e) {
             isDuplicated = true;
