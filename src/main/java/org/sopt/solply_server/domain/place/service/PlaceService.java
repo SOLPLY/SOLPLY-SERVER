@@ -146,13 +146,6 @@ public class PlaceService {
                 .toList();
     }
 
-    public void validatePlaceExists(Long placeId) {
-        if (!placeRepository.existsById(placeId)) {
-            throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
-        }
-    }
-
-
 
     //=== Private Methods ===//
 

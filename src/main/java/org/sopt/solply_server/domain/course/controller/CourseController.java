@@ -14,7 +14,6 @@ import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
 import org.sopt.solply_server.domain.course.service.CourseService;
-import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -63,7 +62,7 @@ public class CourseController {
             @PathVariable Long courseId) {
         return CustomApiResponse.success(
                 "코스 상세 조회에 성공했습니다.",
-                courseService.findCourseDetailsById(userId, courseId)
+                courseService.getCourseDetailsById(userId, courseId)
         );
     }
 
@@ -79,7 +78,7 @@ public class CourseController {
             Long townId,
 
             @Parameter(description = "장소 ID (선택사항, 해당 장소를 추가할 수 있는 코스만 필터링)")
-            @RequestParam(value = "placeId", required = false)
+            @RequestParam(value = "candidatePlaceId", required = false)
             Long candidatePlaceId) {
         return CustomApiResponse.success(
                 "사용자 코스 목록 조회에 성공했습니다.",

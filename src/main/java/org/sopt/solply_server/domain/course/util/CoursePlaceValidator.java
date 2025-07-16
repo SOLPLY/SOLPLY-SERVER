@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class CoursePlaceValidator {
 
+    private static final int MAX_PLACE_COUNT = 6;
+
     /**
      * 코스 소유권 검증
      */
@@ -49,7 +51,7 @@ public class CoursePlaceValidator {
      * 장소 개수 제한 검증
      */
     public void validatePlaceCountLimit(Course course) {
-        if (course.getCoursePlaces().size() >= 6) {
+        if (course.getCoursePlaces().size() >= MAX_PLACE_COUNT) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
                     "코스에는 최대 6개의 장소만 추가할 수 있습니다.");
         }
@@ -66,6 +68,16 @@ public class CoursePlaceValidator {
         }
     }
 
+    public boolean canAddPlaceToCourse(Course course, Place place) {
+        try {
+            validateSameTown(course, place);
+            validatePlaceCountLimit(course);
+            validateDuplicatePlace(course, place);
+            return true;
+        } catch (BusinessException e) {
+            return false;
+        }
+    }
 
     public void validatePlacesForCourse(List<CoursePlaceInfo> placeInfos, List<Place> places) {
         validateCoursePlaceInfos(placeInfos);
@@ -104,7 +116,7 @@ public class CoursePlaceValidator {
      * 장소 개수 검증 (CoursePlaceInfo 대상)
      */
     private void validatePlaceCount(List<CoursePlaceInfo> placeInfos) {
-        if (placeInfos.size() < 2 || placeInfos.size() > 6) {
+        if (placeInfos.size() < 2 || placeInfos.size() > MAX_PLACE_COUNT) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
                     "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.");
         }

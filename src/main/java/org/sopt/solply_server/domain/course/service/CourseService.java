@@ -19,6 +19,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
 import org.sopt.solply_server.domain.place.service.PlaceService;
+import org.sopt.solply_server.domain.place.util.PlaceValidator;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
@@ -29,7 +30,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -102,7 +102,7 @@ public class CourseService {
     /**
      * 코스 상세 정보 조회
      */
-    public CourseDetailGetResponse findCourseDetailsById(final Long userId, final Long courseId) {
+    public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
         Course course = entityLoader.getCourseWithPlaces(courseId);
 
         boolean isCourseBookmarked = courseBookmarkService.isBookmarked(userId, courseId);
@@ -151,9 +151,7 @@ public class CourseService {
     public CourseBookmarkListGetResponse getBookmarkedCourses(final Long userId, final Long townId, final Long placeId) {
         townValidator.validateTownId(townId);
 
-        if (placeId != null) {
-            placeService.validatePlaceExists(placeId);
-        }
+        Place place = entityLoader.getPlace(placeId);
 
         // Redis에서 활성화된 코스 북마크 데이터 조회
         List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
@@ -184,7 +182,7 @@ public class CourseService {
                 .map(course -> {
                     List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-                    boolean isActive = calculateCourseActiveStatus(course, placeId);
+                    boolean isActive = coursePlaceValidator.canAddPlaceToCourse(course, place);
 
                     return CourseBookmarkDto.of(course, thumbnailUrl, mainTags, isActive);
                 })
@@ -274,32 +272,11 @@ public class CourseService {
         }
     }
 
-    /**
-     * 코스의 활성화 상태 계산
-     * - placeId가 null이면 항상 활성화
-     * - placeId가 있으면 해당 장소를 추가할 수 있는지 확인
-     */
-    private boolean calculateCourseActiveStatus(Course course, Long placeId) {
-        if (placeId == null) {
-            return true; // 장소 필터링이 없으면 모든 코스 활성화
-        }
-
-        if (course.getCoursePlaces().size() >= 6) {
-            return false;
-        }
-
-        boolean containsPlace = course.getCoursePlaces().stream()
-                .anyMatch(cp -> cp.getPlace().getId().equals(placeId));
-
-        return !containsPlace;
-    }
-
-
     private List<Place> getPlacesInOrder(List<CoursePlaceInfo> placeInfos) {
         List<Long> placeIds = placeInfos.stream()
                 .map(CoursePlaceInfo::placeId)
                 .toList();
-        List<Place> places = placeService.getPlacesWithTownByPlaceIds(placeIds);
+        List<Place> places = placeService.getPlacesWithTownByPlaceIds(placeIds); // 코스에서 다루려는 장소 정보 조회
         coursePlaceValidator.validatePlacesForCourse(placeInfos, places);
 
         return places;
