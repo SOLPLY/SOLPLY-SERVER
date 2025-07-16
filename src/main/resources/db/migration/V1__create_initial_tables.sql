@@ -13,7 +13,8 @@ CREATE TABLE users (
                        nickname VARCHAR(30) UNIQUE,
                        email VARCHAR(255) NOT NULL UNIQUE,
                        is_new_user BOOLEAN NOT NULL DEFAULT true,
-                       persona VARCHAR(50) -- UserPersona enum
+                       persona VARCHAR(50), -- UserPersona enum
+                       selected_town_id BIGINT
 );
 
 -- 3. Social User Info 테이블 생성 (BaseTimeEntity 상속)

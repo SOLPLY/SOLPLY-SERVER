@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
@@ -39,6 +40,17 @@ public class UserController {
         NicknameCheckResponse response = userService.checkNickname(nickname);
         return CustomApiResponse.success("닉네임 중복검사에 성공했습니다", response);
     }
+
+    @Operation(summary = "회원의 동네 관련 정보 업데이트", description = "회원의 선택한 동네 및 관심 동네들을 업데이트합니다.")
+    @PatchMapping("/towns")
+    public ResponseEntity<CustomApiResponse<Void>> updateUserTowns(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody UserTownsUpdateRequest request
+    ) {
+        userService.updateUserTowns(userId, request);
+        return CustomApiResponse.success("회원의 동네 정보 업데이트에 성공했습니다");
+    }
+
 
     @Operation(summary = "회원 정보 업데이트", description = "온보딩 완료 후 회원 정보를 업데이트합니다.")
     @PatchMapping("")

@@ -20,7 +20,7 @@ public class TagController {
 
     private final TagService tagService;
 
-    @Operation(summary = "태그조회", description = "장소유형 태그를 조회합니다.")
+    @Operation(summary = "태그 조회", description = "장소 태그를 조회합니다.")
     @GetMapping
     public ResponseEntity<CustomApiResponse<TagListGetResponse>> findTags(
             @RequestParam(name = "parentId", required = false) Long parentId

@@ -9,6 +9,9 @@ public record UserUpdateRequest(
         @NotNull(message = "관심 동네는 필수입니다")
         Long favoriteTown,
 
+        @NotNull(message = "동네 선택은 필수입니다")
+        Long selectedTown,
+
         @NotNull(message = "유저 성향은 필수입니다")
         UserPersona persona,
 

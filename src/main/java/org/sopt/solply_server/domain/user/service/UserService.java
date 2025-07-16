@@ -1,10 +1,13 @@
 package org.sopt.solply_server.domain.user.service;
 
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.service.TownService;
+import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.dto.SelectedTownDto;
+import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
@@ -35,6 +38,7 @@ public class UserService {
     private final TownService townService;
     private final UserInterestTownService userInterestTownService;
     private final EntityLoader entityLoader;
+    private final TownValidator townValidator;
 
     public NicknameCheckResponse checkNickname(String nickname) {
         boolean isDuplicated = userValidator.isNicknameDuplicated(nickname);
@@ -77,7 +81,7 @@ public class UserService {
     public UserUpdateResponse updateUserWithRetry(User user, Town town, UserUpdateRequest request) {
         try {
             // 온보딩 정보 업데이트
-            user.updateOnboardingInfo(request.persona(), request.nickname());
+            user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTown());
             User savedUser = userRepository.save(user);
 
             // 관심 동네 저장
@@ -95,4 +99,13 @@ public class UserService {
         }
     }
 
+    @Transactional
+    public void updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
+        User user = entityLoader.getUser(userId);
+        for (Long townId : request.favoriteTownIds()) {
+            userInterestTownService.saveUserInterestTown(user, entityLoader.getTown(townId));
+        }
+        townValidator.validateTownId(request.selectedTownId());
+        user.updateSelectedTown(request.selectedTownId());
+    }
 }
