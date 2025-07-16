@@ -5,7 +5,7 @@ import lombok.Builder;
 import java.util.List;
 
 @Builder
-public record PlaceAddToCoursesResponse(
+public record PlaceAddToCourseResponse(
         int successCount,
         List<FailedCourse> failedCourses
 ) {
@@ -16,8 +16,8 @@ public record PlaceAddToCoursesResponse(
     ) {
     }
 
-    public static PlaceAddToCoursesResponse of(int successCount, List<FailedCourse> failedCourses) {
-        return PlaceAddToCoursesResponse.builder()
+    public static PlaceAddToCourseResponse of(int successCount, List<FailedCourse> failedCourses) {
+        return PlaceAddToCourseResponse.builder()
                 .successCount(successCount)
                 .failedCourses(failedCourses)
                 .build();

@@ -3,9 +3,11 @@ package org.sopt.solply_server.domain.place.service;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.course.dto.response.PlaceAddToCourseResponse;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -21,8 +23,10 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.service.TownService;
+import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,14 +42,14 @@ public class PlaceService {
     private final TagValidator tagValidator;
     private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
     private final PlaceBookmarkService placeBookmarkService;
-    private final TownService townService;
+    private final TownValidator townValidator;
+    private final EntityLoader entityLoader;
 
     /**
      * 장소 상세 정보 조회
      */
     public PlaceAllGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
-        Place place = placeRepository.findById(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
+        Place place = entityLoader.getPlace(placeId);
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(
@@ -71,7 +75,7 @@ public class PlaceService {
             final Long userId, final Long townId, final Boolean isBookmarkSearch, final Long mainTagId,
             final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         // 동네 검증
-        townService.existsById(townId);
+        townValidator.validateTownId(townId);
 
         // 북마크, 태그 조건에 따른 장소 조회
         List<Place> places = getPlacesByCondition(userId, townId, isBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList);
@@ -116,6 +120,7 @@ public class PlaceService {
         );
     }
 
+
     public List<Place> getPlacesWithTownByPlaceIds(List<Long> placeIds) {
         // Town 정보까지 함께 조회 (N+1 문제 방지)
         List<Place> places = placeRepository.findAllByIdsWithTown(placeIds);
@@ -133,19 +138,14 @@ public class PlaceService {
             throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
         }
 
-        return places;
+        Map<Long, Place> placeMap = places.stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
+
+        return placeIds.stream()
+                .map(placeMap::get)
+                .toList();
     }
 
-    public Place getPlaceById(Long placeId) {
-        return placeRepository.findById(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
-    }
-
-    public void validatePlaceExists(Long placeId) {
-        if (!placeRepository.existsById(placeId)) {
-            throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
-        }
-    }
 
     //=== Private Methods ===//
 

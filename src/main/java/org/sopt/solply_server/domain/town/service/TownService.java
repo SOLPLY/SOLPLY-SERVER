@@ -29,10 +29,6 @@ public class TownService {
                 });
     }
 
-    public boolean existsById(Long townId) {
-        return townRepository.existsById(townId);
-    }
-
     public TownAllGetResponse getAllTowns() {
         List<Town> parentTowns = townRepository.findByParentIsNull();
 

@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.course.dto;
 
+import java.util.Map;
 import lombok.Builder;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.tag.entity.TagName;
@@ -23,5 +24,14 @@ public record CoursePreviewDto(
                 .mainTags(mainTags)
                 .isBookmarked(isBookmarked)
                 .build();
+    }
+
+    public static CoursePreviewDto of(Course course, List<TagName> mainTags, String thumbnailUrl, Map<Long, Boolean> courseBookmarkMap) {
+        return CoursePreviewDto.of(
+                course,
+                thumbnailUrl,
+                mainTags,
+                courseBookmarkMap.getOrDefault(course.getId(), false)
+        );
     }
 }

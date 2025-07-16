@@ -1,6 +1,8 @@
 package org.sopt.solply_server.domain.course.dto;
 
+import java.util.Map;
 import lombok.Builder;
+import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 
@@ -17,9 +19,10 @@ public record CoursePlaceDetailsDto(
         String longitude,
         String placeType,
         Long placeDefaultId
-){
+) {
+
     public static CoursePlaceDetailsDto of(Place place, String thumbnailUrl, TagName primaryTag,
-                                           boolean isBookmarked, int placeOrder) {
+            boolean isBookmarked, int placeOrder) {
         return CoursePlaceDetailsDto.builder()
                 .placeId(place.getId())
                 .placeName(place.getName())
@@ -35,3 +38,4 @@ public record CoursePlaceDetailsDto(
                 .build();
     }
 }
+

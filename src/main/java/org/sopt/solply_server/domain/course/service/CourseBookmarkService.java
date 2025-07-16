@@ -1,19 +1,17 @@
 package org.sopt.solply_server.domain.course.service;
 
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CourseBookmark;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
-import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.user.entity.User;
-import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
-import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,21 +24,18 @@ import java.util.*;
 @Transactional(readOnly = true)
 public class CourseBookmarkService {
 
-    private final UserRepository userRepository;
-    private final CourseRepository courseRepository;
     private final CourseBookmarkRepository courseBookmarkRepository;
     private final CacheService cacheService;
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
+    private final EntityLoader entityLoader;
 
     /**
      * 코스 북마크 생성
      */
     @Transactional
     public void createCourseBookmark(final Long userId, final Long courseId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-        Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+        User user = entityLoader.getUser(userId);
+        Course course = entityLoader.getCourse(courseId);
 
         String bookmarkKey = RedisKeyGenerator.generateCourseBookmarkKey(userId, courseId);
 
@@ -96,6 +91,24 @@ public class CourseBookmarkService {
         }
 
         return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
+    }
+
+    /**
+     * N+1 문제를 피하기 위한 배치 조회
+     */
+    public Map<Long, Boolean> getBookmarkStatusMap(Long userId, List<Long> courseIds) {
+        if (courseIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<Long> bookmarkedCourseIds = courseBookmarkRepository
+                .findBookmarkedCourseIds(userId, courseIds);
+
+        return courseIds.stream()
+                .collect(Collectors.toMap(
+                        courseId -> courseId,
+                        bookmarkedCourseIds::contains
+                ));
     }
 
     // === Private Methods ===

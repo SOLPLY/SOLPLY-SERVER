@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.course.dto.response;
+package org.sopt.solply_server.domain.recommend.dto.response;
 
 import lombok.Builder;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;

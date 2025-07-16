@@ -10,7 +10,6 @@ import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
-import org.sopt.solply_server.domain.course.dto.request.PlaceAddToCoursesRequest;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
@@ -44,21 +43,6 @@ public class CourseController {
         );
     }
 
-    @Operation(summary = "코스에 장소 추가 (복수개 가능)", description = "기존 코스에 새로운 장소를 마지막 순서로 추가합니다.")
-    @PostMapping("/places")
-    public ResponseEntity<CustomApiResponse<PlaceAddToCoursesResponse>> addPlaceToMultipleCourses(
-            @CurrentUserId Long userId,
-            @Valid @RequestBody PlaceAddToCoursesRequest request) {
-
-        PlaceAddToCoursesResponse response = courseService.addPlaceToMultipleCourses(userId, request);
-
-        String message = response.failedCourses().isEmpty()
-                ? "선택한 코스들에 장소가 성공적으로 추가되었습니다."
-                : "일부 코스에 장소 추가가 완료되었습니다.";
-
-        return CustomApiResponse.success(message, response);
-    }
-
     @Operation(summary = "코스 수정", description = "기존 코스를 수정합니다.")
     @PutMapping("/{courseId}")
     public ResponseEntity<CustomApiResponse<CourseUpdateResponse>> updateCourse(
@@ -78,7 +62,7 @@ public class CourseController {
             @PathVariable Long courseId) {
         return CustomApiResponse.success(
                 "코스 상세 조회에 성공했습니다.",
-                courseService.findCourseDetailsById(userId, courseId)
+                courseService.getCourseDetailsById(userId, courseId)
         );
     }
 
@@ -87,32 +71,21 @@ public class CourseController {
     @GetMapping("/bookmarks")
     public ResponseEntity<CustomApiResponse<CourseBookmarkListGetResponse>> getBookmarkedCourses(
             @CurrentUserId Long userId,
+
             @Parameter(description = "동네 ID", required = true)
             @RequestParam("townId")
             @NotNull(message = "동네 ID는 필수입니다")
             Long townId,
+
             @Parameter(description = "장소 ID (선택사항, 해당 장소를 추가할 수 있는 코스만 필터링)")
-            @RequestParam(value = "placeId", required = false)
-            Long placeId) {
+            @RequestParam(value = "candidatePlaceId", required = false)
+            Long candidatePlaceId) {
         return CustomApiResponse.success(
                 "사용자 코스 목록 조회에 성공했습니다.",
-                courseService.getBookmarkedCourses(userId, townId, placeId)
+                courseService.getBookmarkedCourses(userId, townId, candidatePlaceId)
         );
     }
 
-    @Operation(summary = "추천 코스 목록 조회", description = "특정 동네의 공유된 코스 목록을 조회합니다.")
-    @GetMapping("/recommend")
-    public ResponseEntity<CustomApiResponse<CourseRecommendGetResponse>> findRecommendCourses(
-            @CurrentUserId Long userId,
-            @Parameter(description = "동네 ID", required = true)
-            @RequestParam("townId")
-            @NotNull(message = "동네 ID는 필수입니다")
-            Long townId) {
-        return CustomApiResponse.success(
-                "추천 코스 목록 조회에 성공했습니다.",
-                courseService.findRecommendCourses(userId, townId)
-        );
-    }
 
     @Operation(summary = "코스 북마크 저장", description = "코스를 북마크에 등록합니다.")
     @PostMapping("/{courseId}/bookmarks")
@@ -124,6 +97,7 @@ public class CourseController {
         return CustomApiResponse.success("코스를 수집함에 저장했습니다.");
     }
 
+
     @Operation(summary = "코스 북마크 삭제", description = "코스 북마크를 삭제합니다.")
     @DeleteMapping("/{courseId}/bookmarks")
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkCourse(
@@ -133,6 +107,7 @@ public class CourseController {
         courseBookmarkService.deleteCourseBookmark(userId, courseId);
         return CustomApiResponse.success("코스를 수집함에서 삭제했습니다.");
     }
+
 
     @Operation(summary = "선택한 코스 북마크 리스트 삭제", description = "여러 코스 북마크를 한번에 삭제합니다.")
     @DeleteMapping("/bookmarks")
@@ -145,6 +120,7 @@ public class CourseController {
         courseBookmarkService.deleteCourseBookmarks(userId, courseIds);
         return CustomApiResponse.success("선택한 코스를 수집함에서 삭제했습니다.");
     }
+
 
     @Operation(summary = "코스 북마크 폴더 프리뷰 조회", description = "동네별로 가장 최근에 북마크한 코스의 프리뷰를 조회합니다.")
     @GetMapping("/bookmarks/folders")
