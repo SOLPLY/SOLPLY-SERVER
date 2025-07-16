@@ -187,6 +187,68 @@ INSERT INTO place_social_links (place_id, platform, url) VALUES
                                                              (56, 'INSTAGRAM', 'https://www.instagram.com/laikacinema');
 
 -- =================================================================
+-- place_images (장소 1-56번까지 각 3개씩)
+-- =================================================================
+INSERT INTO place_images (place_id, image_file_key, display_order) VALUES
+                                                                       (1, 'dev/uploads/place/Group+47.png', 1), (1, 'dev/uploads/place/Group+47.png', 2), (1, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (2, 'dev/uploads/place/Group+47.png', 1), (2, 'dev/uploads/place/Group+47.png', 2), (2, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (3, 'dev/uploads/place/Group+47.png', 1), (3, 'dev/uploads/place/Group+47.png', 2), (3, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (4, 'dev/uploads/place/Group+47.png', 1), (4, 'dev/uploads/place/Group+47.png', 2), (4, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (5, 'dev/uploads/place/Group+47.png', 1), (5, 'dev/uploads/place/Group+47.png', 2), (5, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (6, 'dev/uploads/place/Group+47.png', 1), (6, 'dev/uploads/place/Group+47.png', 2), (6, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (7, 'dev/uploads/place/Group+47.png', 1), (7, 'dev/uploads/place/Group+47.png', 2), (7, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (8, 'dev/uploads/place/Group+47.png', 1), (8, 'dev/uploads/place/Group+47.png', 2), (8, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (9, 'dev/uploads/place/Group+47.png', 1), (9, 'dev/uploads/place/Group+47.png', 2), (9, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (10, 'dev/uploads/place/Group+47.png', 1), (10, 'dev/uploads/place/Group+47.png', 2), (10, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (11, 'dev/uploads/place/Group+47.png', 1), (11, 'dev/uploads/place/Group+47.png', 2), (11, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (12, 'dev/uploads/place/Group+47.png', 1), (12, 'dev/uploads/place/Group+47.png', 2), (12, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (13, 'dev/uploads/place/Group+47.png', 1), (13, 'dev/uploads/place/Group+47.png', 2), (13, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (14, 'dev/uploads/place/Group+47.png', 1), (14, 'dev/uploads/place/Group+47.png', 2), (14, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (15, 'dev/uploads/place/Group+47.png', 1), (15, 'dev/uploads/place/Group+47.png', 2), (15, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (16, 'dev/uploads/place/Group+47.png', 1), (16, 'dev/uploads/place/Group+47.png', 2), (16, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (17, 'dev/uploads/place/Group+47.png', 1), (17, 'dev/uploads/place/Group+47.png', 2), (17, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (18, 'dev/uploads/place/Group+47.png', 1), (18, 'dev/uploads/place/Group+47.png', 2), (18, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (19, 'dev/uploads/place/Group+47.png', 1), (19, 'dev/uploads/place/Group+47.png', 2), (19, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (20, 'dev/uploads/place/Group+47.png', 1), (20, 'dev/uploads/place/Group+47.png', 2), (20, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (21, 'dev/uploads/place/Group+47.png', 1), (21, 'dev/uploads/place/Group+47.png', 2), (21, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (22, 'dev/uploads/place/Group+47.png', 1), (22, 'dev/uploads/place/Group+47.png', 2), (22, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (23, 'dev/uploads/place/Group+47.png', 1), (23, 'dev/uploads/place/Group+47.png', 2), (23, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (24, 'dev/uploads/place/Group+47.png', 1), (24, 'dev/uploads/place/Group+47.png', 2), (24, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (25, 'dev/uploads/place/Group+47.png', 1), (25, 'dev/uploads/place/Group+47.png', 2), (25, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (26, 'dev/uploads/place/Group+47.png', 1), (26, 'dev/uploads/place/Group+47.png', 2), (26, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (27, 'dev/uploads/place/Group+47.png', 1), (27, 'dev/uploads/place/Group+47.png', 2), (27, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (28, 'dev/uploads/place/Group+47.png', 1), (28, 'dev/uploads/place/Group+47.png', 2), (28, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (29, 'dev/uploads/place/Group+47.png', 1), (29, 'dev/uploads/place/Group+47.png', 2), (29, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (30, 'dev/uploads/place/Group+47.png', 1), (30, 'dev/uploads/place/Group+47.png', 2), (30, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (31, 'dev/uploads/place/Group+47.png', 1), (31, 'dev/uploads/place/Group+47.png', 2), (31, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (32, 'dev/uploads/place/Group+47.png', 1), (32, 'dev/uploads/place/Group+47.png', 2), (32, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (33, 'dev/uploads/place/Group+47.png', 1), (33, 'dev/uploads/place/Group+47.png', 2), (33, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (34, 'dev/uploads/place/Group+47.png', 1), (34, 'dev/uploads/place/Group+47.png', 2), (34, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (35, 'dev/uploads/place/Group+47.png', 1), (35, 'dev/uploads/place/Group+47.png', 2), (35, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (36, 'dev/uploads/place/Group+47.png', 1), (36, 'dev/uploads/place/Group+47.png', 2), (36, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (37, 'dev/uploads/place/Group+47.png', 1), (37, 'dev/uploads/place/Group+47.png', 2), (37, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (38, 'dev/uploads/place/Group+47.png', 1), (38, 'dev/uploads/place/Group+47.png', 2), (38, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (39, 'dev/uploads/place/Group+47.png', 1), (39, 'dev/uploads/place/Group+47.png', 2), (39, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (40, 'dev/uploads/place/Group+47.png', 1), (40, 'dev/uploads/place/Group+47.png', 2), (40, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (41, 'dev/uploads/place/Group+47.png', 1), (41, 'dev/uploads/place/Group+47.png', 2), (41, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (42, 'dev/uploads/place/Group+47.png', 1), (42, 'dev/uploads/place/Group+47.png', 2), (42, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (43, 'dev/uploads/place/Group+47.png', 1), (43, 'dev/uploads/place/Group+47.png', 2), (43, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (44, 'dev/uploads/place/Group+47.png', 1), (44, 'dev/uploads/place/Group+47.png', 2), (44, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (45, 'dev/uploads/place/Group+47.png', 1), (45, 'dev/uploads/place/Group+47.png', 2), (45, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (46, 'dev/uploads/place/Group+47.png', 1), (46, 'dev/uploads/place/Group+47.png', 2), (46, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (47, 'dev/uploads/place/Group+47.png', 1), (47, 'dev/uploads/place/Group+47.png', 2), (47, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (48, 'dev/uploads/place/Group+47.png', 1), (48, 'dev/uploads/place/Group+47.png', 2), (48, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (49, 'dev/uploads/place/Group+47.png', 1), (49, 'dev/uploads/place/Group+47.png', 2), (49, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (50, 'dev/uploads/place/Group+47.png', 1), (50, 'dev/uploads/place/Group+47.png', 2), (50, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (51, 'dev/uploads/place/Group+47.png', 1), (51, 'dev/uploads/place/Group+47.png', 2), (51, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (52, 'dev/uploads/place/Group+47.png', 1), (52, 'dev/uploads/place/Group+47.png', 2), (52, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (53, 'dev/uploads/place/Group+47.png', 1), (53, 'dev/uploads/place/Group+47.png', 2), (53, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (54, 'dev/uploads/place/Group+47.png', 1), (54, 'dev/uploads/place/Group+47.png', 2), (54, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (55, 'dev/uploads/place/Group+47.png', 1), (55, 'dev/uploads/place/Group+47.png', 2), (55, 'dev/uploads/place/Group+47.png', 3),
+                                                                       (56, 'dev/uploads/place/Group+47.png', 1), (56, 'dev/uploads/place/Group+47.png', 2), (56, 'dev/uploads/place/Group+47.png', 3);
+
+
+-- =================================================================
 -- place_tag
 -- =================================================================
 INSERT INTO place_tag (place_id, tag_id) VALUES
