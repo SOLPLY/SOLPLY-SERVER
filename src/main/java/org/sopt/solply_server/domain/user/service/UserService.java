@@ -4,17 +4,16 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
-import org.sopt.solply_server.domain.user.dto.response.UserOnboardingUpdateResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserInterestTown;
 import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +27,6 @@ public class UserService {
     private final UserValidator userValidator;
     private final UserInterestTownService userInterestTownService;
     private final EntityLoader entityLoader;
-    private final TownValidator townValidator;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -44,6 +42,9 @@ public class UserService {
 
     public UserProfileGetResponse getUserProfile(Long userId) {
         User user = entityLoader.getUser(userId);
+        if (user.getSelectedTownId() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_USER_SELECTED_TOWN);
+        }
         Town selectedTown = entityLoader.getTown(user.getSelectedTownId());
         return UserProfileGetResponse.of(user, UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()));
     }
