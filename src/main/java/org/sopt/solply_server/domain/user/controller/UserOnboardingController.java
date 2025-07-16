@@ -35,7 +35,7 @@ public class UserOnboardingController {
     }
 
     @Operation(summary = "온보딩 기반 회원 정보 업데이트", description = "온보딩 완료 후 회원 정보를 업데이트합니다.")
-    @PatchMapping()
+    @PatchMapping("/users")
     public ResponseEntity<CustomApiResponse<UserOnboardingUpdateResponse>> updateUser(
             @CurrentUserId Long userId,
             @Valid @RequestBody UserOnboardingUpdateRequest request

@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
-import org.sopt.solply_server.domain.user.dto.UserInterestTownListDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
@@ -44,7 +43,7 @@ public class UserService {
     @Transactional
     public void updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        for (Long townId : request.favoriteTownIds()) {
+        for (Long townId : request.favoriteTownIdList()) {
             userInterestTownService.updateUserInterestTown(user, entityLoader.getTown(townId));
         }
         townValidator.validateTownId(request.selectedTownId());
@@ -55,14 +54,13 @@ public class UserService {
         User user = entityLoader.getUser(userId);
         Town selectedTown = entityLoader.getTown(user.getSelectedTownId());
         List<UserInterestTown> interestTowns = entityLoader.getInterestTownsWithTownsByIds(userId);
-        List<UserTownInfoDto> userTownInfoDtos = interestTowns.stream()
-                .map(interestTown
-                        -> UserTownInfoDto.of(interestTown.getTown().getId(), interestTown.getTown().getName()))
-                .toList();
 
         return UserTownGetResponse.of(
                 UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()),
-                UserInterestTownListDto.from(userTownInfoDtos)
+                interestTowns.stream()
+                        .map(interestTown
+                                -> UserTownInfoDto.of(interestTown.getTown().getId(), interestTown.getTown().getName()))
+                        .toList()
         );
     }
 }

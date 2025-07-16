@@ -45,10 +45,9 @@ public class UserOnboardingService {
     @Transactional
     public UserOnboardingUpdateResponse updateUserFromOnboarding(Long userId, UserOnboardingUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Town town = entityLoader.getTown(userId);
         userValidator.validateNicknameNotDuplicated(request.nickname());
 
-        return updateUserWithRetry(user, town, request);
+        return updateUserWithRetry(user, request);
     }
 
     /**
@@ -64,19 +63,17 @@ public class UserOnboardingService {
             maxAttempts = 3,
             backoff = @Backoff(delay = 100, multiplier = 2)
     )
-    public UserOnboardingUpdateResponse updateUserWithRetry(User user, Town town, UserOnboardingUpdateRequest request) {
+    public UserOnboardingUpdateResponse updateUserWithRetry(User user, UserOnboardingUpdateRequest request) {
         try {
-            // 온보딩 정보 업데이트
-            user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTown());
+            // 온보딩 정보 업데이트(페르소나, 닉네임, 선택 동네)
+            user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTownId());
 
             // 관심 동네 저장
-            userInterestTownService.updateUserInterestTown(user, town);
-
-            log.info("온보딩 완료: userId={}, nickname={}, townId={}",
-                    user.getId(), request.nickname(), town.getId());
-
-            return UserOnboardingUpdateResponse.of(user, town);
-
+            for (Long townId : request.favoriteTownIdList()) {
+                Town town = entityLoader.getTown(townId);
+                userInterestTownService.updateUserInterestTown(user, town);
+            }
+            return UserOnboardingUpdateResponse.of(user, entityLoader.getTown(request.selectedTownId()));
         } catch (DataIntegrityViolationException e) {
             log.warn("DB 제약조건 위반으로 인한 온보딩 실패: userId={}, nickname={}",
                     user.getId(), request.nickname());

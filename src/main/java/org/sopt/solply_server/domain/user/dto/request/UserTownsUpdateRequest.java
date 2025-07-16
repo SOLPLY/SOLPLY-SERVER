@@ -9,7 +9,7 @@ public record UserTownsUpdateRequest(
         Long selectedTownId,
 
         @NotEmpty(message = "관심 동네는 필수입니다")
-        List<Long> favoriteTownIds
+        List<Long> favoriteTownIdList
 ) {
 
 }

@@ -5,8 +5,8 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
 public record UserOnboardingUpdateResponse(
-        Long favoriteTownId,
-        String favoriteTownName,
+        Long selectedTownId,
+        String selectedTownName,
         UserPersona persona,
         String nickname
 ) {
