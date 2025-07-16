@@ -31,9 +31,5 @@ public class UserInterestTownService {
         log.debug("새 관심 동네 저장 완료: userId={}, townId={}", user.getId(), town.getId());
     }
 
-    public UserInterestTown getUserInterestTown(User user) {
-        return userInterestTownRepository.findByUser(user)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_ENTITY));
-    }
 
 }

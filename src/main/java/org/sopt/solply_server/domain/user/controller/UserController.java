@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -57,4 +58,14 @@ public class UserController {
         UserProfileGetResponse response = userService.getUserProfile(userId);
         return CustomApiResponse.success("유저 정보 조회에 성공하였습니다.", response);
     }
+
+    @Operation(summary = "유저의 동네 정보 조회", description = "유저의 관심 동네 및 선택 동네를 조회합니다.")
+    @GetMapping("/towns")
+    public ResponseEntity<CustomApiResponse<UserTownGetResponse>> getUserTowns(
+            @CurrentUserId Long userId
+    ) {
+        return CustomApiResponse.success("유저의 동네 정보 조회에 성공하였습니다.",
+                userService.getTownsRelatedUser(userId));
+    }
+
 }
