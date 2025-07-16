@@ -15,11 +15,11 @@ import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
+import org.sopt.solply_server.domain.course.util.CourseValidationResult;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
 import org.sopt.solply_server.domain.place.service.PlaceService;
-import org.sopt.solply_server.domain.place.util.PlaceValidator;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
@@ -45,7 +45,6 @@ public class CourseService {
     private final CourseBookmarkService courseBookmarkService;
     private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
     private final CourseNameGenerator courseNameGenerator;
-
     private final TownValidator townValidator;
     private final CourseUtils courseUtils;
     private final EntityLoader entityLoader;
@@ -151,7 +150,13 @@ public class CourseService {
     public CourseBookmarkListGetResponse getBookmarkedCourses(final Long userId, final Long townId, final Long placeId) {
         townValidator.validateTownId(townId);
 
-        Place place = entityLoader.getPlace(placeId);
+        // placeId가 있는 경우에만 장소 조회 및 검증
+        Place candidatePlace = null;
+        boolean checkCanAddPlaceToCourse = (placeId != null);
+
+        if (checkCanAddPlaceToCourse) {
+            candidatePlace = entityLoader.getPlace(placeId);
+        }
 
         // Redis에서 활성화된 코스 북마크 데이터 조회
         List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
@@ -165,6 +170,7 @@ public class CourseService {
                 .map(CourseBookmarkRedisDto::courseId)
                 .toList();
 
+        // 동네 ID와 북마크된 코스 ID로 필터링
         List<Course> filteredCourses = courseRepository.findBookmarkedCoursesByTownId(courseIds, townId);
 
         if (filteredCourses.isEmpty()) {
@@ -172,23 +178,24 @@ public class CourseService {
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
-        // 코스 태그 정보 배치 로딩
         List<Long> filteredCourseIds = filteredCourses.stream()
                 .map(Course::getId)
                 .toList();
+
+        // 코스 태그 정보 배치 로딩
         courseRepository.findPlacesWithTagsByCourseIds(filteredCourseIds);
 
-        List<CourseBookmarkDto> courseBookmarkDtos = filteredCourses.stream()
-                .map(course -> {
-                    List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
-                    String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-                    boolean isActive = coursePlaceValidator.canAddPlaceToCourse(course, place);
+        // 상세 검증 결과 준비
+        Map<Long, CourseValidationResult> validationResults = prepareValidationResults(
+                filteredCourses, candidatePlace, checkCanAddPlaceToCourse);
 
-                    return CourseBookmarkDto.of(course, thumbnailUrl, mainTags, isActive);
-                })
+        // DTO 변환
+        List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
+                .map(course -> createCourseInfoDto(course, validationResults, checkCanAddPlaceToCourse))
                 .toList();
 
-        return CourseBookmarkListGetResponse.from(courseBookmarkDtos);
+        log.info("북마크 코스 {}개 조회 완료", courseInfoDtos.size());
+        return CourseBookmarkListGetResponse.from(courseInfoDtos);
     }
 
 
@@ -291,8 +298,6 @@ public class CourseService {
         List<String> existingNames = courseRepository
                 .findCourseNamesByTownAndNamePattern(town.getId(), namePattern);
 
-        log.debug("기존 코스명들 조회 완료 - baseName: '{}', 조회된 코스명 개수: {}", originalName, existingNames.size());
-
         return courseNameGenerator.generateUniqueName(originalName, existingNames);
     }
 
@@ -321,4 +326,42 @@ public class CourseService {
                                 replacement.createdAt().isAfter(existing.createdAt()) ? replacement : existing
                 ));
     }
+
+
+    /**
+     * 필터링 여부에 따른 CourseInfoDto 생성
+     */
+    private Map<Long, CourseValidationResult> prepareValidationResults(
+            List<Course> courses, Place candidatePlace, boolean checkCanAddPlaceToCourse) {
+
+        if (!checkCanAddPlaceToCourse) {
+            return Map.of();
+        }
+
+        return courses.stream()
+                .collect(Collectors.toMap(
+                        Course::getId,
+                        course -> coursePlaceValidator.validatePlaceAddition(course, candidatePlace)
+                ));
+    }
+
+    /**
+     * DTO 생성
+     */
+    private CourseInfoDto createCourseInfoDto(
+            Course course,
+            Map<Long, CourseValidationResult> validationResults,
+            boolean checkCanAddPlaceToCourse) {
+
+        List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
+        String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
+
+        if (checkCanAddPlaceToCourse) {
+            CourseValidationResult validation = validationResults.get(course.getId());
+            return CourseInfoDto.withPlaceCheck(course, thumbnailUrl, mainTags, validation);
+        } else {
+            return CourseInfoDto.of(course, thumbnailUrl, mainTags);
+        }
+    }
+
 }
