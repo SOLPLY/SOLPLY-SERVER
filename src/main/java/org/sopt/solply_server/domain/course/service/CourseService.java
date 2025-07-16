@@ -152,13 +152,10 @@ public class CourseService {
 
         // placeId가 있는 경우에만 장소 조회 및 검증
         Place candidatePlace = null;
-        boolean isPlaceFilterMode = (placeId != null);
+        boolean checkCanAddPlaceToCourse = (placeId != null);
 
-        if (isPlaceFilterMode) {
+        if (checkCanAddPlaceToCourse) {
             candidatePlace = entityLoader.getPlace(placeId);
-            log.info("장소 추가 가능 코스 필터링 모드 - userId: {}, townId: {}, placeId: {}", userId, townId, placeId);
-        } else {
-            log.info("기본 북마크 코스 목록 조회 모드 - userId: {}, townId: {}", userId, townId);
         }
 
         // Redis에서 활성화된 코스 북마크 데이터 조회
@@ -190,11 +187,11 @@ public class CourseService {
 
         // 상세 검증 결과 준비
         Map<Long, CourseValidationResult> validationResults = prepareValidationResults(
-                filteredCourses, candidatePlace, isPlaceFilterMode);
+                filteredCourses, candidatePlace, checkCanAddPlaceToCourse);
 
         // DTO 변환
         List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
-                .map(course -> createCourseInfoDto(course, validationResults, isPlaceFilterMode))
+                .map(course -> createCourseInfoDto(course, validationResults, checkCanAddPlaceToCourse))
                 .toList();
 
         log.info("북마크 코스 {}개 조회 완료", courseInfoDtos.size());
@@ -301,8 +298,6 @@ public class CourseService {
         List<String> existingNames = courseRepository
                 .findCourseNamesByTownAndNamePattern(town.getId(), namePattern);
 
-        log.debug("기존 코스명들 조회 완료 - baseName: '{}', 조회된 코스명 개수: {}", originalName, existingNames.size());
-
         return courseNameGenerator.generateUniqueName(originalName, existingNames);
     }
 
@@ -337,10 +332,10 @@ public class CourseService {
      * 필터링 여부에 따른 CourseInfoDto 생성
      */
     private Map<Long, CourseValidationResult> prepareValidationResults(
-            List<Course> courses, Place candidatePlace, boolean isPlaceFilterMode) {
+            List<Course> courses, Place candidatePlace, boolean checkCanAddPlaceToCourse) {
 
-        if (!isPlaceFilterMode) {
-            return Map.of(); // 기본 모드에서는 불필요
+        if (!checkCanAddPlaceToCourse) {
+            return Map.of();
         }
 
         return courses.stream()
@@ -356,12 +351,12 @@ public class CourseService {
     private CourseInfoDto createCourseInfoDto(
             Course course,
             Map<Long, CourseValidationResult> validationResults,
-            boolean isPlaceFilterMode) {
+            boolean checkCanAddPlaceToCourse) {
 
         List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
-        if (isPlaceFilterMode) {
+        if (checkCanAddPlaceToCourse) {
             CourseValidationResult validation = validationResults.get(course.getId());
             return CourseInfoDto.withPlaceCheck(course, thumbnailUrl, mainTags, validation);
         } else {
