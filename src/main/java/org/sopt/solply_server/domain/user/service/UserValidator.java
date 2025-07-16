@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.user.service;
 
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -19,7 +20,8 @@ public class UserValidator {
     private final UserRepository userRepository;
 
     public void validateNickname(String currentNickname, String nicknameToUpdate) {
-        if (currentNickname.isBlank() && currentNickname.equals(nicknameToUpdate)) { // 현재 닉네임과 변경하려는 닉네임이 동일한 경우
+        if (Objects.equals(currentNickname, nicknameToUpdate)) {
+            // 현재 닉네임과 변경하려는 닉네임이 동일한 경우
             return;
         }
         if (userRepository.existsByNickname(nicknameToUpdate)) {
