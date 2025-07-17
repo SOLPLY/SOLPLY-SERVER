@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.*;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
+import org.sopt.solply_server.domain.course.dto.request.CoursePlaceRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
@@ -69,12 +70,13 @@ public class CourseService {
         List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
 
         // 코스에 등록할 장소들
-        List<Place> places = getPlacesInOrderWithTowns(placeInfos);
+        List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfos);
 
-        coursePlaceValidator.validatePlacesForCourse(placeInfos, places);
+        // 장소를 코스에 추가할 수 있는지 검증
+        coursePlaceValidator.validatePlacesForCourse(placeInfos, placesToAdd);
 
-        String courseName = generateUniqueCourseName(request.courseName(), places.getFirst().getTown());
-        Course savedCourse = createCopiedCourse(user, courseName, request.courseDescription(), placeInfos, places);
+        String uniqueCourseName = courseNameGenerator.generateUniqueNameForUser(request.courseName(), user.getId());
+        Course savedCourse = createCopiedCourse(user, uniqueCourseName, request.courseDescription(), placeInfos, placesToAdd);
 
         return CourseCreateResponse.from(savedCourse.getId());
     }
@@ -87,23 +89,28 @@ public class CourseService {
     @Transactional
     public CourseUpdateResponse updateCourse(Long userId, Long courseId, CourseUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Course courseToUpdate = entityLoader.getCourseWithPlaces(courseId);
+        Course originCourse = entityLoader.getCourseWithPlaces(courseId);
 
         // 코스 북마크 검증
         courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
 
         List<PlaceInCourseInfo> placeInfosInCourse = PlaceInCourseInfo.from(request.places());
-        // 코스에 등록할 장소들
-        List<Place> places = getPlacesInOrderWithTowns(placeInfosInCourse);
 
-        if (courseToUpdate.isCreatedBy(userId)) { // 사용자가 소유한 코스인 경우
-            updateCourseInPlace(courseToUpdate, request, places);
+        List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfosInCourse); // 코스에 등록할 장소들
+
+        // 장소를 코스에 추가할 수 있는지 검증
+        coursePlaceValidator.validatePlacesForCourse(placeInfosInCourse, placesToAdd);
+
+        if (originCourse.isCreatedBy(userId)) { // 사용자가 소유한 코스인 경우
+            updateCourseInPlace(originCourse, request, placesToAdd);
             log.info("기존 코스 수정 완료 - userId: {}, courseId: {}", userId, courseId);
             return CourseUpdateResponse.of(courseId, request.courseName(), false);
         }
         else { // 남의 공유된 코스인 경우
+            // 기존 기본 코스 북마크 삭제
+            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
             Course newCourse = createCopiedCourse(
-                    user, request.courseName(), request.courseDescription(), placeInfosInCourse, places);
+                    user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, newCourse.getId());
             return CourseUpdateResponse.of(newCourse.getId(), newCourse.getName(), true);
         }
@@ -116,26 +123,27 @@ public class CourseService {
     public CourseAddPlaceResponse addPlaceToCourse(final Long userId, final Long placeId, final Long courseId) {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
-        Course originalCourse = entityLoader.getCourseWithPlaces(courseId);
+        Course originCourse = entityLoader.getCourseWithPlaces(courseId);
 
         // 코스 북마크 검증
         courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
 
-        coursePlaceValidator.validateCanAddPlace(originalCourse, place);
+        // 장소를 코스에 추가할 수 있는지 검증
+        coursePlaceValidator.validateCanAddPlace(originCourse, place);
 
         log.info("장소 코스 추가 시작 - userId: {}, placeId: {}, courseId: {}", userId, placeId, courseId);
 
         // 코스 소유권 확인
-        if (originalCourse.isCreatedBy(userId)) {
+        if (originCourse.isCreatedBy(userId)) {
             // 본인 코스에 장소 추가
-            coursePlaceService.addPlaceToMyCourse(originalCourse, place);
+            coursePlaceService.addPlaceToMyCourse(originCourse, place);
         } else {
             // 코스 복제 후 장소 추가
-            List<PlaceInCourseInfo> placesInCourse = originalCourse.getPlacesInCourseInfo();
-            List<Place> places = originalCourse.getPlaces();
+            List<PlaceInCourseInfo> placesInCourse = originCourse.getPlacesInCourseInfo();
+            List<Place> places = originCourse.getPlaces();
 
             Course copiedCourse = createCopiedCourse(
-                    user, originalCourse.getName(), originalCourse.getIntroduction(), placesInCourse, places);
+                    user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
 
             courseBookmarkService.deleteCourseBookmark(userId, copiedCourse.getId());
@@ -149,9 +157,9 @@ public class CourseService {
         }
 
         return CourseAddPlaceResponse.of(
-                originalCourse,
+                originCourse,
                 place,
-                originalCourse.getPlaceCount() + 1,
+                originCourse.getPlaceCount() + 1,
                 false
         );
     }
@@ -324,8 +332,9 @@ public class CourseService {
         }
 
         // 코스 생성
+        String uniqueCourseName = courseNameGenerator.generateUniqueNameForUser(courseName, user.getId());
         Town town = placesToAdd.getFirst().getTown();
-        Course newCourse = Course.create(courseName, intro, town, user);
+        Course newCourse = Course.create(uniqueCourseName, intro, town, user);
         courseRepository.save(newCourse);
 
         // 장소들 추가
@@ -345,18 +354,6 @@ public class CourseService {
         coursePlaceValidator.validatePlacesForCourse(placeInfos, places);
 
         return places;
-    }
-
-
-    /**
-     * 중복되지 않는 코스명 생성
-     */
-    private String generateUniqueCourseName(String originalName, Town town) {
-        String namePattern = originalName + "%";
-        List<String> existingNames = courseRepository
-                .findCourseNamesByTownAndNamePattern(town.getId(), namePattern);
-
-        return courseNameGenerator.generateUniqueName(originalName, existingNames);
     }
 
     /**
