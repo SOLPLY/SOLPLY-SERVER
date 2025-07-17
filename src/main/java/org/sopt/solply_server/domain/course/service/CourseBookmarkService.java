@@ -88,10 +88,11 @@ public class CourseBookmarkService {
     public boolean isBookmarked(final Long userId, final Long courseId) {
         CourseBookmarkRedisDto bookmarkData = courseBookmarkRedisDataManager.getCourseBookmarkDto(userId, courseId);
 
-        if (bookmarkData != null && bookmarkData.isActive()) {
-            return true;
+        if (bookmarkData != null) {
+            return bookmarkData.isActive();
         }
 
+        // Redis에 데이터가 없을 때만 DB 조회
         return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
     }
 
