@@ -111,4 +111,12 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Query("DELETE FROM CoursePlace cp WHERE cp.course.id = :courseId")
     void deleteCoursePlacesByCourseId(@Param("courseId") Long courseId);
 
+    /**
+     * 특정 사용자가 북마크한 코스명들 조회 (패턴 매칭)
+     */
+    @Query("SELECT c.name FROM Course c " +
+            "WHERE c.id in :courseIds " +
+            "AND c.name LIKE :namePattern")
+    List<String> findCourseNamesByBookmarkedCourses(
+            @Param("courseIds") List<Long> courseIds, @Param("namePattern") String namePattern);
 }

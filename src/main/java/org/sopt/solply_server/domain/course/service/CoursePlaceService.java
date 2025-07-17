@@ -10,6 +10,7 @@ import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.repository.CoursePlaceRepository;
+import org.sopt.solply_server.domain.course.util.CoursePlaceValidator;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -49,7 +50,6 @@ public class CoursePlaceService {
             coursePlaceRepository.save(coursePlace);
         }
     }
-
 
 
     /**

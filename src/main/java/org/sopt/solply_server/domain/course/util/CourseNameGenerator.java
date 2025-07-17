@@ -1,76 +1,103 @@
 package org.sopt.solply_server.domain.course.util;
 
+import java.util.HashSet;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
+import org.sopt.solply_server.domain.course.dto.response.CourseBookmarkListGetResponse;
+import org.sopt.solply_server.domain.course.repository.CourseRepository;
+import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class CourseNameGenerator {
 
+    private final CourseRepository courseRepository;
+    private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
+
     /**
-     * 중복되지 않는 고유한 코스명 생성
+     * 사용자별 고유한 코스명 생성
      */
-    public String generateUniqueName(String baseName, List<String> existingNames) {
-        log.debug("코스명 생성 시작 - baseName: '{}', 기존 코스명 개수: {}", baseName, existingNames.size());
+    public String generateUniqueNameForUser(String baseName, Long userId) {
+        log.debug("사용자별 코스명 생성 시작 - baseName: '{}', userId: {}", baseName, userId);
+
+        // 해당 사용자가 북마크한 것들의 코스명 리스트 조회
+        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
+        List<Long> courseIds = activeBookmarks.stream()
+                .map(CourseBookmarkRedisDto::courseId)
+                .toList();
+
+        List<String> existingNames =
+                courseRepository.findCourseNamesByBookmarkedCourses(courseIds, baseName + "%");
 
         if (existingNames.isEmpty()) {
             log.debug("기존 코스명이 없어 원본 이름 사용: '{}'", baseName);
             return baseName;
         }
 
-        // 중복 번호 찾기, 다음 번호 생성
-        int nextSequence = findNextSequenceNumber(baseName, existingNames);
-        String uniqueName = generateNameWithSequence(baseName, nextSequence);
+        // 중복되지 않는 이름 생성
+        String uniqueName = generateUniqueSequenceName(baseName, existingNames);
 
         log.debug("고유 코스명 생성 완료: '{}' -> '{}'", baseName, uniqueName);
         return uniqueName;
     }
 
     /**
-     * 기본 이름과 순서 번호로 코스명 생성
+     * 순번을 붙여서 고유한 이름 생성
      */
-    public String generateNameWithSequence(String baseName, int sequence) {
-        if (sequence == 0) {
+    private String generateUniqueSequenceName(String baseName, List<String> existingNames) {
+        // 기본 이름이 중복되지 않으면 그대로 반환
+        if (!existingNames.contains(baseName)) {
             return baseName;
         }
-        return String.format("%s (%d)", baseName, sequence);
+
+        // 다음 시퀀스 번호 찾기
+        int nextSequence = findNextSequenceNumber(baseName, existingNames);
+        return formatNameWithSequence(baseName, nextSequence);
     }
 
     /**
-     * 다음 사용 가능한 순서 번호 찾기
+     * 다음 시퀀스 번호 찾기
      */
     private int findNextSequenceNumber(String baseName, List<String> existingNames) {
-        // 정규식: "기본이름 (숫자)" 패턴
-        // Pattern.quote()로 특수문자 이스케이프 처리
-        Pattern pattern = Pattern.compile(Pattern.quote(baseName) + "\\s*\\((\\d+)\\)");
-        int maxNumber = -1;
+        Set<Integer> usedNumbers = new HashSet<>();
+        String basePattern = baseName + " (";
 
-        boolean baseNameExists = existingNames.contains(baseName);
-        if (baseNameExists) {
-            maxNumber = 0;
-        }
+        for (String existingName : existingNames) {
+            if (existingName.startsWith(basePattern) && existingName.endsWith(")")) {
+                // "홍대 맛집 투어 (2)" -> "2" 추출
+                String numberPart = existingName.substring(
+                        basePattern.length(),
+                        existingName.length() - 1
+                );
 
-        for (String name : existingNames) {
-            Matcher matcher = pattern.matcher(name);
-            if (matcher.matches()) {
                 try {
-                    int number = Integer.parseInt(matcher.group(1));
-                    maxNumber = Math.max(maxNumber, number);
+                    int number = Integer.parseInt(numberPart);
+                    usedNumbers.add(number);
                 } catch (NumberFormatException e) {
-                    log.warn("코스명에서 숫자 파싱 실패: '{}'", name);
+                    log.debug("숫자가 아닌 패턴 무시: '{}'", existingName);
                 }
             }
         }
 
-        int nextSequence = maxNumber + 1;
+        // 다음 사용 가능한 번호 찾기
+        int nextNumber = 2; // (1)은 사용하지 않고 (2)부터 시작
+        while (usedNumbers.contains(nextNumber)) {
+            nextNumber++;
+        }
 
-        log.debug("코스명 생성 분석 - baseName: '{}', 최대 번호: {}, 다음 번호: {}",
-                baseName, maxNumber, nextSequence);
+        return nextNumber;
+    }
 
-        return nextSequence;
+    /**
+     * 시퀀스 번호를 붙인 이름 포맷
+     */
+    private String formatNameWithSequence(String baseName, int sequence) {
+        return String.format("%s (%d)", baseName, sequence);
     }
 }
