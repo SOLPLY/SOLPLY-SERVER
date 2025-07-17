@@ -96,10 +96,11 @@ public class PlaceBookmarkService {
         String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
         BookmarkRedisDto bookmarkData = placeBookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
 
-        if (bookmarkData != null && bookmarkData.isActive()) {
-            return true;
+        if (bookmarkData != null) {
+            return bookmarkData.isActive();
         }
 
+        // Redis에 데이터가 없을 때만 DB 조회
         return placeBookmarkRepository.existsByPlaceIdAndUserId(placeId, userId);
     }
 
