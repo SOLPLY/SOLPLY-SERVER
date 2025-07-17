@@ -19,15 +19,6 @@ public class CoursePlaceValidator {
     private static final int MAX_PLACE_COUNT = 6;
 
     /**
-     * 코스 소유권 검증
-     */
-    public void validateCourseOwnership(Course course, Long userId) {
-        if (!course.isCreatedBy(userId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "코스 수정 권한이 없습니다.");
-        }
-    }
-
-    /**
      * 상세 검증 결과를 반환하는 메서드
      */
     public CourseValidationResult validatePlaceAddition(Course course, Place place) {
@@ -71,8 +62,7 @@ public class CoursePlaceValidator {
         if (!course.getCoursePlaces().isEmpty()) {
             Town courseTown = course.getCoursePlaces().getFirst().getPlace().getTown();
             if (!courseTown.getId().equals(place.getTown().getId())) {
-                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                        "같은 동네의 장소만 추가할 수 있습니다.");
+                throw new BusinessException(ErrorCode.DIFFERENT_TOWN_PLACE);
             }
         }
     }
@@ -82,8 +72,7 @@ public class CoursePlaceValidator {
      */
     public void validatePlaceCountLimit(Course course) {
         if (course.getCoursePlaces().size() >= MAX_PLACE_COUNT) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                    "코스에는 최대 6개의 장소만 추가할 수 있습니다.");
+            throw new BusinessException(ErrorCode.COURSE_MAX_PLACES_EXCEEDED);
         }
     }
 
@@ -94,7 +83,7 @@ public class CoursePlaceValidator {
         boolean alreadyExists = course.getCoursePlaces().stream()
                 .anyMatch(cp -> cp.getPlace().getId().equals(place.getId()));
         if (alreadyExists) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY, "이미 코스에 포함된 장소입니다.");
+            throw new BusinessException(ErrorCode.DUPLICATE_PLACE_IN_COURSE);
         }
     }
 
@@ -117,8 +106,7 @@ public class CoursePlaceValidator {
                 .map(Town::getId)
                 .distinct()
                 .count() > 1) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                    "모든 장소는 같은 동네에 속해야 합니다.");
+            throw new BusinessException(ErrorCode.DIFFERENT_TOWN_PLACE);
         }
     }
 
@@ -136,8 +124,7 @@ public class CoursePlaceValidator {
      */
     private void validatePlaceCount(List<PlaceInCourseInfo> placeInfos) {
         if (placeInfos.size() < 2 || placeInfos.size() > MAX_PLACE_COUNT) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                    "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.");
+            throw new BusinessException(ErrorCode.COURSE_MAX_PLACES_EXCEEDED);
         }
     }
 
@@ -152,8 +139,7 @@ public class CoursePlaceValidator {
 
         for (int i = 0; i < orders.size(); i++) {
             if (orders.get(i) != i + 1) {
-                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                        "장소 순서는 1부터 순차적이어야 합니다.");
+                throw new BusinessException(ErrorCode.INVALID_PLACES_ORDER);
             }
         }
     }
@@ -164,8 +150,7 @@ public class CoursePlaceValidator {
     private void validateDuplicatePlaceIds(List<PlaceInCourseInfo> placeInfos) {
         Set<Long> uniquePlaceIds = new HashSet<>();
         if (placeInfos.stream().anyMatch(info -> !uniquePlaceIds.add(info.placeId()))) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
-                    "중복된 장소가 포함되어 있습니다.");
+            throw new BusinessException(ErrorCode.DUPLICATE_PLACE_IN_COURSE);
         }
     }
 

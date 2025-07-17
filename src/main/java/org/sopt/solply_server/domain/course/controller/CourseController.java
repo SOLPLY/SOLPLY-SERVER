@@ -14,6 +14,7 @@ import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
 import org.sopt.solply_server.domain.course.service.CourseService;
+import org.sopt.solply_server.domain.course.dto.response.CourseAddPlaceResponse;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -54,6 +55,19 @@ public class CourseController {
                 courseService.updateCourse(userId, courseId, request)
         );
     }
+
+    @Operation(summary = "장소를 하나의 코스에 추가", description = "기존 코스에 새로운 장소를 마지막 순서로 추가합니다.")
+    @PostMapping("/{courseId}/places/{placeId}")
+    public ResponseEntity<CustomApiResponse<CourseAddPlaceResponse>> addPlaceToCourse(
+            @CurrentUserId Long userId,
+            @PathVariable("courseId") Long courseId,
+            @PathVariable("placeId") Long placeId) {
+        return CustomApiResponse.success(
+                "성공적으로 해당 코스에 추가되었습니다.",
+                courseService.addPlaceToCourse(userId, placeId, courseId)
+        );
+    }
+
 
     @Operation(summary = "코스 상세 조회", description = "코스 ID를 통해 코스의 상세 정보를 조회합니다.")
     @GetMapping("/{courseId}")

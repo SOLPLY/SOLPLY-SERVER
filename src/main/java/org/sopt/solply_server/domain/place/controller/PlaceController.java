@@ -6,8 +6,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.dto.response.PlaceAddToCourseResponse;
-import org.sopt.solply_server.domain.course.service.CoursePlaceService;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -35,7 +33,6 @@ public class PlaceController {
 
     private final PlaceService placeService;
     private final PlaceBookmarkService placeBookmarkService;
-    private final CoursePlaceService coursePlaceService;
 
 
     @Operation(summary = "장소 상세 조회", description = "장소 ID를 통해 장소의 상세 정보를 조회합니다.")
@@ -74,18 +71,6 @@ public class PlaceController {
                         placeFilterGetRequest.subTagAIdList(),
                         placeFilterGetRequest.subTagBIdList()
                 )
-        );
-    }
-
-    @Operation(summary = "장소를 하나의 코스에 추가", description = "기존 코스에 새로운 장소를 마지막 순서로 추가합니다.")
-    @PostMapping("/{placeId}/courses/{courseId}")
-    public ResponseEntity<CustomApiResponse<PlaceAddToCourseResponse>> addPlaceToCourse(
-            @CurrentUserId Long userId,
-            @PathVariable("placeId") Long placeId,
-            @PathVariable("courseId") Long courseId) {
-        return CustomApiResponse.success(
-                "성공적으로 해당 코스에 추가되었습니다.",
-                coursePlaceService.addPlaceToCourse(userId, placeId, courseId)
         );
     }
 
