@@ -215,6 +215,8 @@ public class PlaceService {
                 .map(BookmarkRedisDto::placeId)
                 .collect(Collectors.toList());
 
+        //
+
         Map<Long, Place> placeMap = placeRepository.findAllByIdsWithTown(placeIds)
                 .stream()
                 .collect(Collectors.toMap(Place::getId, place -> place));

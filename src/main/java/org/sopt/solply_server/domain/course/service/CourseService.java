@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.course.service;
 
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.*;
@@ -233,6 +234,12 @@ public class CourseService {
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
+        Map<Long, LocalDateTime> courseIdCreatedAtMap = activeBookmarks.stream()
+                .collect(Collectors.toMap(
+                        CourseBookmarkRedisDto::courseId,
+                        CourseBookmarkRedisDto::createdAt
+                ));
+
         List<Long> courseIds = activeBookmarks.stream()
                 .map(CourseBookmarkRedisDto::courseId)
                 .toList();
@@ -259,6 +266,13 @@ public class CourseService {
         // DTO 변환
         List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
                 .map(course -> createCourseInfoDto(course, validationResults, checkCanAddPlaceToCourse))
+                .sorted( // 최신 순으로 정렬
+                        (dto1, dto2) -> {
+                            LocalDateTime createdAt1 = courseIdCreatedAtMap.get(dto1.courseId());
+                            LocalDateTime createdAt2 = courseIdCreatedAtMap.get(dto2.courseId());
+                            return createdAt2.compareTo(createdAt1);
+                        }
+                )
                 .toList();
 
         log.info("북마크 코스 {}개 조회 완료", courseInfoDtos.size());
