@@ -102,7 +102,7 @@ public class PlaceService {
         List<PlaceBookmarkRedisDto> placeBookmarkList = placeBookmarkRedisDataManager.getActivePlaceBookmarkDtos(userId);
 
         // 동네별로 가장 최근에 북마크 한 장소 가져오기
-        List<Place> recentPlacesByTown = getBookmarkedPlaceListByTownByLatest(placeBookmarkList);
+        List<Place> recentPlacesByTown = getBookmarkedPlacePreviewListByTownByLatest(placeBookmarkList);
 
         return PlaceFolderPreviewListGetResponse.from(
                 recentPlacesByTown.stream()
@@ -196,7 +196,8 @@ public class PlaceService {
     /**
      * Redis 북마크 데이터를 기반으로 동네별 최신 북마크 장소를 필터링
      */
-    private List<Place> getBookmarkedPlaceListByTownByLatest(final List<PlaceBookmarkRedisDto> activePlaceBookmarkRedisDtos) {
+    private List<Place> getBookmarkedPlacePreviewListByTownByLatest(
+            final List<PlaceBookmarkRedisDto> activePlaceBookmarkRedisDtos) {
         if (activePlaceBookmarkRedisDtos.isEmpty()) {
             return List.of();
         }
