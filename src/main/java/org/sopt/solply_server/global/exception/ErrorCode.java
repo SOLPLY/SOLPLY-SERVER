@@ -77,7 +77,7 @@ public enum ErrorCode {
     NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-006" , "유저가 선택한 동네가 없어서 온보딩을 진행해야 합니다."),
 
     // 북마크 관련 (BOOKMARK-xxx)
-    NOT_BOOKMARKED_COURSE(HttpStatus.BAD_REQUEST, "BOOKMARK-001", "북마크된 코스가 아닙니다.");
+    NOT_BOOKMARKED_COURSE(HttpStatus.FORBIDDEN, "BOOKMARK-001", "북마크된 코스가 아닙니다.");
 
 
     private final HttpStatus httpStatus;
