@@ -77,7 +77,8 @@ public class CourseService {
         coursePlaceValidator.validatePlacesForCourse(placeInfos, placesToAdd);
 
         String uniqueCourseName = courseNameGenerator.generateUniqueNameForUser(request.courseName(), user.getId());
-        Course savedCourse = createCopiedCourse(user, uniqueCourseName, request.courseDescription(), placeInfos, placesToAdd);
+        Course savedCourse = createCopiedCourse(
+                user, uniqueCourseName, request.courseDescription(), placeInfos, placesToAdd);
 
         return CourseCreateResponse.from(savedCourse.getId());
     }
@@ -108,12 +109,12 @@ public class CourseService {
             return CourseUpdateResponse.of(courseId, request.courseName(), false);
         }
         else { // 남의 공유된 코스인 경우
-            // 기존 기본 코스 북마크 삭제
-            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
-            Course newCourse = createCopiedCourse(
+            // 복제 + 수정 후 기존 기본 코스 북마크 삭제
+            Course copiedCourses = createCopiedCourse(
                     user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
-            log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, newCourse.getId());
-            return CourseUpdateResponse.of(newCourse.getId(), newCourse.getName(), true);
+            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
+            log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
+            return CourseUpdateResponse.of(copiedCourses.getId(), copiedCourses.getName(), true);
         }
     }
 
@@ -143,13 +144,12 @@ public class CourseService {
             List<PlaceInCourseInfo> placesInCourse = originCourse.getPlacesInCourseInfo();
             List<Place> places = originCourse.getPlaces();
 
+            // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             Course copiedCourse = createCopiedCourse(
                     user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
-            coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
+            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
 
-            // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
-            courseBookmarkService.deleteCourseBookmark(userId, copiedCourse.getId());
-            courseBookmarkService.createCourseBookmark(userId, copiedCourse.getId());
+            coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
 
             return CourseAddPlaceResponse.of(
                     copiedCourse,

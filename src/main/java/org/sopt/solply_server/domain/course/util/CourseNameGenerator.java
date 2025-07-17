@@ -70,7 +70,7 @@ public class CourseNameGenerator {
 
         for (String existingName : existingNames) {
             if (existingName.startsWith(basePattern) && existingName.endsWith(")")) {
-                // "홍대 맛집 투어 (2)" -> "2" 추출
+                // "홍대 맛집 투어 (1)" -> "1" 추출
                 String numberPart = existingName.substring(
                         basePattern.length(),
                         existingName.length() - 1
@@ -86,7 +86,7 @@ public class CourseNameGenerator {
         }
 
         // 다음 사용 가능한 번호 찾기
-        int nextNumber = 2; // (1)은 사용하지 않고 (2)부터 시작
+        int nextNumber = 1;
         while (usedNumbers.contains(nextNumber)) {
             nextNumber++;
         }
