@@ -9,6 +9,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.*;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
@@ -19,6 +20,9 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "course_bookmark",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_place_bookmark_user_place", columnNames = {"user_id", "course_id"})
+        },
         indexes = {
                 @Index(name = "idx_course_bookmark_user_course",
                         columnList = "user_id, course_id",

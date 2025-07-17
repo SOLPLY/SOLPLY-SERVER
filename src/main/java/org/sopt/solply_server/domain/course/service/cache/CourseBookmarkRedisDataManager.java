@@ -2,22 +2,16 @@ package org.sopt.solply_server.domain.course.service.cache;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
-import org.sopt.solply_server.domain.course.entity.Course;
-import org.sopt.solply_server.domain.course.entity.CourseBookmark;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
-import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataManager;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
@@ -125,13 +119,20 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
      */
     private void syncActiveCourseBookmark(CourseBookmarkRedisDto bookmarkData) {
         try {
-            User user = userRepository.findById(bookmarkData.userId())
-                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-            Course course = courseRepository.findById(bookmarkData.courseId())
-                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+            // 존재하지 않는 사용자나 장소에 대한 북마크는 처리하지 않음
+            if (!userRepository.existsById(bookmarkData.userId())) {
+                log.warn("존재하지 않는 사용자 - userId: {}", bookmarkData.userId());
+                removeInvalidRedisData(bookmarkData);
+                return;
+            }
 
-            CourseBookmark bookmark = CourseBookmark.create(course, user);
-            courseBookmarkRepository.save(bookmark);
+            if (!courseRepository.existsById(bookmarkData.courseId())) {
+                log.warn("존재하지 않는 코스 - courseId: {}", bookmarkData.courseId());
+                removeInvalidRedisData(bookmarkData);
+                return;
+            }
+
+            courseBookmarkRepository.upsertBookmark(bookmarkData.userId(), bookmarkData.courseId());
 
             log.debug("활성 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
                     bookmarkData.userId(), bookmarkData.courseId());
@@ -145,6 +146,18 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
                     bookmarkData.userId(), bookmarkData.courseId(), e);
             throw e;
         }
+    }
+
+    /**
+     * 유효하지 않은 Redis 데이터 제거
+     */
+    private void removeInvalidRedisData(CourseBookmarkRedisDto bookmarkData) {
+        String bookmarkKey = String.format("%s:%d:%d",
+                CachePrefix.COURSE_BOOKMARK.getPrefix(),
+                bookmarkData.userId(),
+                bookmarkData.placeId());
+        cacheService.delete(bookmarkKey);
+        log.debug("유효하지 않은 Redis 데이터 제거 - key: {}", bookmarkKey);
     }
 
     /**

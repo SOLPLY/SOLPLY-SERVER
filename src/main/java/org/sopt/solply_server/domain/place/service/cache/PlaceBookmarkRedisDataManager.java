@@ -6,18 +6,12 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.PlaceBookmarkRedisDto;
-import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CachePrefix;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisDataManager;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
-import org.sopt.solply_server.global.exception.ErrorCode;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -60,9 +54,9 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
 
         // 북마크 상태에 따라 처리
         if (bookmarkData.isActive()) {
-            saveActiveBookmark(bookmarkData);
+            syncActivePlaceBookmark(bookmarkData);
         } else if (bookmarkData.isDeleted()) {
-            deleteBookmark(bookmarkKey, bookmarkData);
+            syncDeletedPlaceBookmark(bookmarkKey, bookmarkData);
         }
     }
 
@@ -130,29 +124,50 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
     /**
      * 활성 북마크 처리
      */
-    private void saveActiveBookmark(PlaceBookmarkRedisDto bookmarkData) {
+    private void syncActivePlaceBookmark(PlaceBookmarkRedisDto bookmarkData) {
         try {
-            User user = userRepository.findById(bookmarkData.userId())
-                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
-            Place place = placeRepository.findById(bookmarkData.placeId())
-                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+            // 존재하지 않는 사용자나 장소에 대한 북마크는 처리하지 않음
+            if (!userRepository.existsById(bookmarkData.userId())) {
+                log.warn("존재하지 않는 사용자 - userId: {}", bookmarkData.userId());
+                removeInvalidRedisData(bookmarkData);
+                return;
+            }
 
-            PlaceBookmark bookmark = PlaceBookmark.create(place, user);
-            placeBookmarkRepository.save(bookmark);
+            if (!placeRepository.existsById(bookmarkData.placeId())) {
+                log.warn("존재하지 않는 장소 - placeId: {}", bookmarkData.placeId());
+                removeInvalidRedisData(bookmarkData);
+                return;
+            }
 
-            log.debug("활성 장소 북마크 DB 저장 완료 - userId: {}, placeId: {}",
+            // UPSERT로 중복 에러 방지
+            placeBookmarkRepository.upsertBookmark(bookmarkData.userId(), bookmarkData.placeId());
+
+            log.debug("활성 코스 북마크 DB 동기화 완료 - userId: {}, placeeId: {}",
                     bookmarkData.userId(), bookmarkData.placeId());
 
-        } catch (DataIntegrityViolationException e) {
-            log.debug("이미 DB에 존재하는 북마크 - userId: {}, placeId: {}",
-                    bookmarkData.userId(), bookmarkData.placeId());
+        } catch (Exception e) {
+            log.error("활성 코스 북마크 동기화 실패 - userId: {}, placeId: {}",
+                    bookmarkData.userId(), bookmarkData.placeId(), e);
+            throw e;
         }
+    }
+
+    /**
+     * 유효하지 않은 Redis 데이터 제거
+     */
+    private void removeInvalidRedisData(PlaceBookmarkRedisDto bookmarkData) {
+        String bookmarkKey = String.format("%s:%d:%d",
+                CachePrefix.PLACE_BOOKMARK.getPrefix(),
+                bookmarkData.userId(),
+                bookmarkData.placeId());
+        cacheService.delete(bookmarkKey);
+        log.debug("유효하지 않은 Redis 데이터 제거 - key: {}", bookmarkKey);
     }
 
     /**
      * 삭제 마커 처리
      */
-    private void deleteBookmark(String bookmarkKey, PlaceBookmarkRedisDto bookmarkData) {
+    private void syncDeletedPlaceBookmark(String bookmarkKey, PlaceBookmarkRedisDto bookmarkData) {
         // DB에서 삭제 (존재하지 않아도 에러 발생하지 않음)
         placeBookmarkRepository.deleteByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId());
 
