@@ -188,6 +188,7 @@ CREATE INDEX idx_course_created_by ON courses(created_by);
 -- Course Place 테이블 인덱스
 CREATE UNIQUE INDEX idx_course_place_course_id_place_id ON course_place(course_id, place_id);
 CREATE INDEX idx_course_place_place_id ON course_place(place_id);
+CREATE INDEX idx_course_place_order ON course_place(course_id, place_order);
 
 -- Course Bookmark 테이블 인덱스
 CREATE UNIQUE INDEX idx_course_bookmark_user_course ON course_bookmark(user_id, course_id);

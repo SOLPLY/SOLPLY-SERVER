@@ -25,11 +25,13 @@ public class CoursePlaceService {
     /**
      * 장소를 코스에 추가
      */
+    @Transactional
     public void addPlaceToCourse(final Long userId, final Long placeId, final Long courseId) {
         Place place = entityLoader.getPlace(placeId);
         Course course = entityLoader.getCourse(courseId);
 
-        coursePlaceValidator.validateCourseOwnership(course, userId);
+//        coursePlaceValidator.validateCourseOwnership(course, userId);
+        // TODO: 코스 소유권이 없으면 해당 코스를 복제하고, 복제한 코스에 추가하는 로직 작성
         coursePlaceValidator.validateCanAddPlace(course, place);
 
         int nextOrder = course.getCoursePlaces().size() + 1;
