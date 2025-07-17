@@ -71,16 +71,16 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
         Set<String> keys = cacheService.findKeys(getKeyPattern());
 
         if (keys.isEmpty()) {
-            log.debug("플러시할 북마크 데이터 없음");
+            log.debug("플러시할 장소 북마크 데이터 없음");
         }
 
-        log.info("북마크 플러시 대상: {}개", keys.size());
+        log.info("장소 북마크 플러시 대상: {}개", keys.size());
 
         for (String key : keys) {
             try {
                 flushToDatabase(key);
             } catch (Exception e) {
-                log.error("북마크 개별 키 처리 실패 - key: {}", key, e);
+                log.error("장소 북마크 개별 키 처리 실패 - key: {}", key, e);
             }
         }
     }
@@ -92,7 +92,7 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
         try {
             return cacheService.get(bookmarkKey, PlaceBookmarkRedisDto.class);
         } catch (Exception e) {
-            log.warn("북마크 DTO 조회 실패 - key: {}", bookmarkKey, e);
+            log.warn("장소 북마크 DTO 조회 실패 - key: {}", bookmarkKey, e);
             return null;
         }
     }
@@ -116,12 +116,12 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
                 }
             }
 
-            log.info("패턴 스캔으로 활성 북마크 조회 - userId: {}, 활성 북마크 {}개",
+            log.info("패턴 스캔으로 활성 장소 북마크 조회 - userId: {}, 활성 북마크 {}개",
                     userId, activeBookmarkDtos.size());
 
             return activeBookmarkDtos;
         } catch (Exception e) {
-            log.error("Redis에서 북마크 조회 실패 - userId: {}", userId, e);
+            log.error("Redis에서 장소 북마크 조회 실패 - userId: {}", userId, e);
             return new ArrayList<>();
         }
     }
@@ -140,7 +140,7 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
             PlaceBookmark bookmark = PlaceBookmark.create(place, user);
             placeBookmarkRepository.save(bookmark);
 
-            log.debug("활성 북마크 DB 저장 완료 - userId: {}, placeId: {}",
+            log.debug("활성 장소 북마크 DB 저장 완료 - userId: {}, placeId: {}",
                     bookmarkData.userId(), bookmarkData.placeId());
 
         } catch (DataIntegrityViolationException e) {
