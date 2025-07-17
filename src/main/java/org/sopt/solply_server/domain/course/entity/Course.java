@@ -6,10 +6,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import lombok.*;
+import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
+import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Getter
@@ -49,7 +50,7 @@ public class Course extends BaseTimeEntity {
     @OrderBy("placeOrder ASC")
     private List<CoursePlace> coursePlaces = new ArrayList<>();
 
-    public static Course createUserCourse(String name, String introduction, Town town, User createdBy) {
+    public static Course create(String name, String introduction, Town town, User createdBy) {
         return Course.builder()
                 .name(name)
                 .introduction(introduction)
@@ -74,5 +75,28 @@ public class Course extends BaseTimeEntity {
 
     public void updateName(String newName) {
         this.name = newName;
+    }
+
+
+    public List<PlaceInCourseInfo> getPlacesInCourseInfo() {
+        return this.coursePlaces.stream()
+                .map(coursePlace -> PlaceInCourseInfo.of(
+                        coursePlace.getPlace().getId(),
+                        coursePlace.getPlaceOrder()
+                ))
+                .toList();
+    }
+
+    /**
+     * 코스에 포함된 Place 엔티티들만 반환
+     */
+    public List<Place> getPlaces() {
+        return this.coursePlaces.stream()
+                .map(CoursePlace::getPlace)
+                .toList();
+    }
+
+    public int getPlaceCount() {
+        return this.coursePlaces.size();
     }
 }

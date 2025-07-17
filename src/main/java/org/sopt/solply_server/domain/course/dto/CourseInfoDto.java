@@ -11,7 +11,7 @@ import java.util.List;
 @Builder
 public record CourseInfoDto(
         Long courseId,
-        String title,
+        String courseName,
         String thumbnailImage,
         List<TagName> mainTags,
         boolean isBookmarked,
@@ -29,7 +29,7 @@ public record CourseInfoDto(
             List<TagName> mainTags, CourseValidationResult validation) {
         return CourseInfoDto.builder()
                 .courseId(course.getId())
-                .title(course.getName())
+                .courseName(course.getName())
                 .thumbnailImage(thumbnailImage)
                 .mainTags(mainTags)
                 .isBookmarked(true)
@@ -45,7 +45,7 @@ public record CourseInfoDto(
     public static CourseInfoDto of(Course course, String thumbnailImage, List<TagName> mainTags) {
         return CourseInfoDto.builder()
                 .courseId(course.getId())
-                .title(course.getName())
+                .courseName(course.getName())
                 .thumbnailImage(thumbnailImage)
                 .mainTags(mainTags)
                 .isBookmarked(true)

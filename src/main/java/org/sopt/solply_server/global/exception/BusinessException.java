@@ -12,9 +12,4 @@ public class BusinessException extends RuntimeException {
         this.errorCode = errorCode;
     }
 
-    // 동적 메시지용
-    public BusinessException(final ErrorCode errorCode, final String message) {
-        super(message);
-        this.errorCode = errorCode;
-    }
 }

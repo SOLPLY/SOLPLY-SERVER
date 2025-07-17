@@ -21,6 +21,7 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "course_place",
         indexes = {
+                @Index(name = "idx_course_place_order", columnList = "course_id, place_order"),
                 @Index(name = "idx_course_place_course_id_place_id", columnList = "course_id, place_id", unique = true),
                 @Index(name = "idx_course_place_place_id", columnList = "place_id")
         }

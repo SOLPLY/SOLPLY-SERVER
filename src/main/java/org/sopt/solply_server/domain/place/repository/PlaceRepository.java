@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.repository;
 
+import com.querydsl.core.Fetchable;
 import io.lettuce.core.dynamic.annotation.Param;
 import java.util.List;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -20,4 +21,6 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
             "WHERE p.town.id = :townId")
     List<Place> findPlacesByTownIdWithTags(@Param("townId") Long townId);
 
+    @Query("SELECT p FROM Place p WHERE p.id IN :placeIds")
+    List<Place> findByIdIn(@Param("placeIds") List<Long> placeIds);
 }
