@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
         include = JsonTypeInfo.As.PROPERTY,
         property = "@class"
 )
-public record BookmarkRedisDto(
+public record PlaceBookmarkRedisDto(
         Long userId,
         Long placeId,
         LocalDateTime createdAt,
@@ -34,18 +34,18 @@ public record BookmarkRedisDto(
     /**
      * 활성 북마크 생성
      */
-    public static BookmarkRedisDto createActive(Long userId, Long placeId) {
-        return new BookmarkRedisDto(userId, placeId, LocalDateTime.now(), BookmarkStatus.ACTIVE);
+    public static PlaceBookmarkRedisDto createActive(Long userId, Long placeId) {
+        return new PlaceBookmarkRedisDto(userId, placeId, LocalDateTime.now(), BookmarkStatus.ACTIVE);
     }
 
     /**
      * 삭제 마커 생성
      */
-    public static BookmarkRedisDto createDeleted(Long userId, Long placeId) {
-        return new BookmarkRedisDto(userId, placeId, LocalDateTime.now(), BookmarkStatus.DELETED);
+    public static PlaceBookmarkRedisDto createDeleted(Long userId, Long placeId) {
+        return new PlaceBookmarkRedisDto(userId, placeId, LocalDateTime.now(), BookmarkStatus.DELETED);
     }
 
-    public static BookmarkRedisDto of(Long userId, Long placeId) {
+    public static PlaceBookmarkRedisDto of(Long userId, Long placeId) {
         return createActive(userId, placeId);
     }
 }

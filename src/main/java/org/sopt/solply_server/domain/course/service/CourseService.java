@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.*;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
-import org.sopt.solply_server.domain.course.dto.request.CoursePlaceRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
@@ -147,7 +146,9 @@ public class CourseService {
                     user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
 
+            // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkService.deleteCourseBookmark(userId, copiedCourse.getId());
+            courseBookmarkService.createCourseBookmark(userId, copiedCourse.getId());
 
             return CourseAddPlaceResponse.of(
                     copiedCourse,
@@ -215,7 +216,7 @@ public class CourseService {
     /**
      * 사용자가 북마크한 코스 목록 조회 (동네 기준 필터링 + 장소 추가 가능 여부)
      */
-    public CourseBookmarkListGetResponse getBookmarkedCourses(final Long userId, final Long townId, final Long placeId) {
+    public CourseBookmarkListGetResponse getBookmarkedCoursesByTownByLatest(final Long userId, final Long townId, final Long placeId) {
         townValidator.validateTownId(townId);
 
         // placeId가 있는 경우에만 장소 조회 및 검증
@@ -234,6 +235,7 @@ public class CourseService {
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
+        // 코스 ID와 북마크 저장 시간을 매핑하여 저장
         Map<Long, LocalDateTime> courseIdCreatedAtMap = activeBookmarks.stream()
                 .collect(Collectors.toMap(
                         CourseBookmarkRedisDto::courseId,

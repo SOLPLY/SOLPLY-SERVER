@@ -96,7 +96,7 @@ public class CourseController {
             Long candidatePlaceId) {
         return CustomApiResponse.success(
                 "사용자 코스 목록 조회에 성공했습니다.",
-                courseService.getBookmarkedCourses(userId, townId, candidatePlaceId)
+                courseService.getBookmarkedCoursesByTownByLatest(userId, townId, candidatePlaceId)
         );
     }
 

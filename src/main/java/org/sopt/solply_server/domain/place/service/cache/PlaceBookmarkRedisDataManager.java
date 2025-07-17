@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
+import org.sopt.solply_server.domain.place.dto.PlaceBookmarkRedisDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
@@ -51,7 +51,7 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
         }
 
         // Redis에서 북마크 데이터 조회
-        BookmarkRedisDto bookmarkData = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
+        PlaceBookmarkRedisDto bookmarkData = cacheService.get(bookmarkKey, PlaceBookmarkRedisDto.class);
 
         if (bookmarkData == null) {
             log.warn("북마크 데이터가 Redis에 없음 - key: {}", bookmarkKey);
@@ -88,9 +88,9 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
     /**
      * 북마크 키로부터 BookmarkRedisDto를 조회하는 메서드
      */
-    public BookmarkRedisDto getBookmarkDto(String bookmarkKey) {
+    public PlaceBookmarkRedisDto getBookmarkDto(String bookmarkKey) {
         try {
-            return cacheService.get(bookmarkKey, BookmarkRedisDto.class);
+            return cacheService.get(bookmarkKey, PlaceBookmarkRedisDto.class);
         } catch (Exception e) {
             log.warn("북마크 DTO 조회 실패 - key: {}", bookmarkKey, e);
             return null;
@@ -101,16 +101,16 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
     /**
      * 활성 북마크의 전체 정보(DTO)를 반환하는 메서드
      */
-    public List<BookmarkRedisDto> getActivePlaceBookmarkDtos(Long userId) {
+    public List<PlaceBookmarkRedisDto> getActivePlaceBookmarkDtos(Long userId) {
         try {
             // 사용자의 모든 북마크 키 스캔
             String userBookmarkPattern = String.format("%s:%d:*",
                     CachePrefix.PLACE_BOOKMARK.getPrefix(), userId);
             Set<String> userBookmarkKeys = cacheService.findKeys(userBookmarkPattern);
 
-            List<BookmarkRedisDto> activeBookmarkDtos = new ArrayList<>();
+            List<PlaceBookmarkRedisDto> activeBookmarkDtos = new ArrayList<>();
             for (String bookmarkKey : userBookmarkKeys) {
-                BookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, BookmarkRedisDto.class);
+                PlaceBookmarkRedisDto bookmarkDto = cacheService.get(bookmarkKey, PlaceBookmarkRedisDto.class);
                 if (bookmarkDto != null && bookmarkDto.isActive()) {
                     activeBookmarkDtos.add(bookmarkDto);
                 }
@@ -130,7 +130,7 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
     /**
      * 활성 북마크 처리
      */
-    private void saveActiveBookmark(BookmarkRedisDto bookmarkData) {
+    private void saveActiveBookmark(PlaceBookmarkRedisDto bookmarkData) {
         try {
             User user = userRepository.findById(bookmarkData.userId())
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
@@ -152,7 +152,7 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
     /**
      * 삭제 마커 처리
      */
-    private void deleteBookmark(String bookmarkKey, BookmarkRedisDto bookmarkData) {
+    private void deleteBookmark(String bookmarkKey, PlaceBookmarkRedisDto bookmarkData) {
         // DB에서 삭제 (존재하지 않아도 에러 발생하지 않음)
         placeBookmarkRepository.deleteByUserIdAndPlaceId(bookmarkData.userId(), bookmarkData.placeId());
 
