@@ -1,8 +1,9 @@
-package org.sopt.solply_server.domain.place.dto.response;
+package org.sopt.solply_server.domain.course.dto.response;
 
 import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
+import org.sopt.solply_server.domain.place.entity.Place;
 
 public record PlaceAddToCourseResponse(
         Long courseId,
@@ -10,12 +11,12 @@ public record PlaceAddToCourseResponse(
         boolean isNewCourse,
         PlaceInCourseInfo addedPlaceInfo
 ) {
-    public static PlaceAddToCourseResponse of(Course course, CoursePlace addedPlace, boolean isNewCourse) {
+    public static PlaceAddToCourseResponse of(Course course, Place place, Integer addedPlaceOrder, boolean isNewCourse) {
         return new PlaceAddToCourseResponse(
                 course.getId(),
                 course.getName(),
                 isNewCourse,
-                PlaceInCourseInfo.of(addedPlace.getPlace().getId(), addedPlace.getPlaceOrder())
+                PlaceInCourseInfo.of(place.getId(), addedPlaceOrder)
         );
     }
 }
