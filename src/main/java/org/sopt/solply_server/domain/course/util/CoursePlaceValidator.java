@@ -4,7 +4,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.course.dto.CoursePlaceInfo;
+import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -98,7 +98,7 @@ public class CoursePlaceValidator {
         }
     }
 
-    public void validatePlacesForCourse(List<CoursePlaceInfo> placeInfos, List<Place> places) {
+    public void validatePlacesForCourse(List<PlaceInCourseInfo> placeInfos, List<Place> places) {
         validateCoursePlaceInfos(placeInfos);
         validateAllPlacesSameTown(places);
     }
@@ -125,7 +125,7 @@ public class CoursePlaceValidator {
     /**
      * CoursePlaceInfo 리스트 검증
      */
-    public void validateCoursePlaceInfos(List<CoursePlaceInfo> placeInfos) {
+    public void validateCoursePlaceInfos(List<PlaceInCourseInfo> placeInfos) {
         validatePlaceCount(placeInfos);
         validatePlaceOrder(placeInfos);
         validateDuplicatePlaceIds(placeInfos);
@@ -134,7 +134,7 @@ public class CoursePlaceValidator {
     /**
      * 장소 개수 검증 (CoursePlaceInfo 대상)
      */
-    private void validatePlaceCount(List<CoursePlaceInfo> placeInfos) {
+    private void validatePlaceCount(List<PlaceInCourseInfo> placeInfos) {
         if (placeInfos.size() < 2 || placeInfos.size() > MAX_PLACE_COUNT) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,
                     "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.");
@@ -144,9 +144,9 @@ public class CoursePlaceValidator {
     /**
      * 장소 순서 검증
      */
-    private void validatePlaceOrder(List<CoursePlaceInfo> placeInfos) {
+    private void validatePlaceOrder(List<PlaceInCourseInfo> placeInfos) {
         List<Integer> orders = placeInfos.stream()
-                .map(CoursePlaceInfo::placeOrder)
+                .map(PlaceInCourseInfo::placeOrder)
                 .sorted()
                 .toList();
 
@@ -161,7 +161,7 @@ public class CoursePlaceValidator {
     /**
      * 중복 장소 ID 검증
      */
-    private void validateDuplicatePlaceIds(List<CoursePlaceInfo> placeInfos) {
+    private void validateDuplicatePlaceIds(List<PlaceInCourseInfo> placeInfos) {
         Set<Long> uniquePlaceIds = new HashSet<>();
         if (placeInfos.stream().anyMatch(info -> !uniquePlaceIds.add(info.placeId()))) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY,

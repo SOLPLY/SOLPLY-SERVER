@@ -11,6 +11,8 @@ import java.util.regex.Pattern;
 @Component
 public class CourseNameGenerator {
 
+
+
     /**
      * 중복되지 않는 고유한 코스명 생성
      */

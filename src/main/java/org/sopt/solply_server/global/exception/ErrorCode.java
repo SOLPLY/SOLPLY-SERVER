@@ -62,6 +62,7 @@ public enum ErrorCode {
     COURSE_MAX_PLACES_EXCEEDED(HttpStatus.BAD_REQUEST, "COURSE-003", "코스에는 최대 6개의 장소만 추가할 수 있습니다."),
     DUPLICATE_PLACE_IN_COURSE(HttpStatus.BAD_REQUEST, "COURSE-004", "이미 코스에 포함된 장소입니다."),
     DIFFERENT_TOWN_PLACE(HttpStatus.BAD_REQUEST, "COURSE-005", "코스와 같은 동네의 장소만 추가할 수 있습니다."),
+    NOT_SUFFICIENT_PLACE_COUNT(HttpStatus.BAD_REQUEST, "COURSE-006", "코스에 최소 1개 이상의 장소가 필요합니다."),
 
     // 동네 관련 (TOWN-xxx)
     NOT_FOUND_TOWN(HttpStatus.NOT_FOUND, "TOWN-001" , "존재하지 않는 동네입니다."),
@@ -72,7 +73,7 @@ public enum ErrorCode {
     INVALID_TAG_TYPE(HttpStatus.BAD_REQUEST, "TAG-002", "잘못된 타입의 태그입니다."),
     INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "TAG-004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다."),
     NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다."),
-    NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-006" , "유저가 선택한 동네가 없어서 온보딩을 진행해야 합니다.");
+    NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-006" , "유저가 선택한 동네가 없어서 온보딩을 진행해야 합니다."),;
 
 
     private final HttpStatus httpStatus;

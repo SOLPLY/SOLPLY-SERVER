@@ -1,13 +1,12 @@
 package org.sopt.solply_server.domain.place.controller;
 
-import com.drew.lang.annotations.NotNull;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.course.dto.response.PlaceAddToCourseResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceAddToCourseResponse;
 import org.sopt.solply_server.domain.course.service.CoursePlaceService;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
@@ -84,8 +83,10 @@ public class PlaceController {
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId,
             @PathVariable("courseId") Long courseId) {
-        coursePlaceService.addPlaceToCourse(userId, placeId, courseId);
-        return CustomApiResponse.success("성공적으로 해당 코스에 추가되었습니다.");
+        return CustomApiResponse.success(
+                "성공적으로 해당 코스에 추가되었습니다.",
+                coursePlaceService.addPlaceToCourse(userId, placeId, courseId)
+        );
     }
 
 

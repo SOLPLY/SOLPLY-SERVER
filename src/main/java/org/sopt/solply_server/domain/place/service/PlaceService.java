@@ -7,7 +7,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.course.dto.response.PlaceAddToCourseResponse;
+import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
 import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -22,7 +22,6 @@ import org.sopt.solply_server.domain.place.service.cache.PlaceBookmarkRedisDataM
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.domain.town.service.TownService;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -233,4 +232,5 @@ public class PlaceService {
                 .map(dto -> placeMap.get(dto.placeId()))
                 .collect(Collectors.toList());
     }
+
 }
