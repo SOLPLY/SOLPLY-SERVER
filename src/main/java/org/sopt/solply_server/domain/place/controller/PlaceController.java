@@ -1,6 +1,8 @@
 package org.sopt.solply_server.domain.place.controller;
 
+import com.drew.lang.annotations.NotNull;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
@@ -48,11 +50,21 @@ public class PlaceController {
         );
     }
 
-    @Operation(summary = "장소 리스트 조회", description = "동네, 장소 태그, 북마크 여부를 기반으로 장소를 필터링합니다.")
+    @Operation(
+            summary = "장소 리스트 조회",
+            description = "동네, 장소 태그, 북마크 여부를 기반으로 장소를 필터링합니다.",
+            parameters = {
+                    @Parameter(name = "townId", description = "동네 ID", required = true, example = "1"),
+                    @Parameter(name = "isBookmarkSearch", description = "북마크 검색 여부", required = true, example = "true"),
+                    @Parameter(name = "mainTagId", description = "메인 태그 ID", example = "5"),
+                    @Parameter(name = "subTagAIdList", description = "서브 태그(옵션1) ID 목록 (쉼표 구분)", example = "8,9,10"),
+                    @Parameter(name = "subTagBIdList", description = "서브 태그(옵션2) ID 목록 (쉼표 구분)", example = "11,12")
+            }
+    )
     @GetMapping
     public ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>> getPlacesByTag(
             @CurrentUserId Long userId,
-            @Validated @ModelAttribute PlaceFilterGetRequest placeFilterGetRequest) {
+            @Parameter(hidden = true) @ModelAttribute @Validated PlaceFilterGetRequest placeFilterGetRequest) {
         return CustomApiResponse.success(
                 "장소 리스트 조회 성공",
                 placeService.getPlacesByTownAndTag(
