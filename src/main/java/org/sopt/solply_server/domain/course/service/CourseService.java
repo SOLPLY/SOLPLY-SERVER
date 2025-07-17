@@ -1,10 +1,11 @@
 package org.sopt.solply_server.domain.course.service;
 
+import java.time.LocalDateTime;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.*;
 import org.sopt.solply_server.domain.course.dto.request.CourseCreateRequest;
-import org.sopt.solply_server.domain.course.dto.request.CoursePlaceRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
@@ -146,7 +147,9 @@ public class CourseService {
                     user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
 
+            // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkService.deleteCourseBookmark(userId, copiedCourse.getId());
+            courseBookmarkService.createCourseBookmark(userId, copiedCourse.getId());
 
             return CourseAddPlaceResponse.of(
                     copiedCourse,
@@ -214,7 +217,7 @@ public class CourseService {
     /**
      * 사용자가 북마크한 코스 목록 조회 (동네 기준 필터링 + 장소 추가 가능 여부)
      */
-    public CourseBookmarkListGetResponse getBookmarkedCourses(final Long userId, final Long townId, final Long placeId) {
+    public CourseBookmarkListGetResponse getBookmarkedCoursesByTownByLatest(final Long userId, final Long townId, final Long placeId) {
         townValidator.validateTownId(townId);
 
         // placeId가 있는 경우에만 장소 조회 및 검증
@@ -232,6 +235,13 @@ public class CourseService {
             log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
             return CourseBookmarkListGetResponse.from(List.of());
         }
+
+        // 코스 ID와 북마크 저장 시간을 매핑하여 저장
+        Map<Long, LocalDateTime> courseIdCreatedAtMap = activeBookmarks.stream()
+                .collect(Collectors.toMap(
+                        CourseBookmarkRedisDto::courseId,
+                        CourseBookmarkRedisDto::createdAt
+                ));
 
         List<Long> courseIds = activeBookmarks.stream()
                 .map(CourseBookmarkRedisDto::courseId)
@@ -259,6 +269,13 @@ public class CourseService {
         // DTO 변환
         List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
                 .map(course -> createCourseInfoDto(course, validationResults, checkCanAddPlaceToCourse))
+                .sorted( // 최신 순으로 정렬
+                        (dto1, dto2) -> {
+                            LocalDateTime createdAt1 = courseIdCreatedAtMap.get(dto1.courseId());
+                            LocalDateTime createdAt2 = courseIdCreatedAtMap.get(dto2.courseId());
+                            return createdAt2.compareTo(createdAt1);
+                        }
+                )
                 .toList();
 
         log.info("북마크 코스 {}개 조회 완료", courseInfoDtos.size());
@@ -282,21 +299,33 @@ public class CourseService {
         // 동네별 최신 북마크 코스 필터링
         Map<Long, CourseBookmarkRedisDto> latestBookmarkByTown = getLatestBookmarkByTown(activeBookmarks);
 
-        // 코스 정보와 장소 정보 배치 조회
-        List<Long> courseIds = latestBookmarkByTown.values().stream()
+        // 북마크 시간 기준으로 정렬된 코스 ID 리스트 생성
+        List<Long> sortedCourseIds = latestBookmarkByTown.values().stream()
+                .sorted((dto1, dto2)
+                        -> dto2.createdAt().compareTo(dto1.createdAt()))
                 .map(CourseBookmarkRedisDto::courseId)
                 .toList();
 
-        List<Course> courses = courseRepository.findBookmarkedCoursesWithPlacesByIds(courseIds);
+        // 코스 정보와 장소 정보 배치 조회
+        List<Course> notSortedCourseList = courseRepository.findBookmarkedCoursesWithPlacesByIds(sortedCourseIds);
 
-        if (courses.isEmpty()) {
+        if (notSortedCourseList.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        courseRepository.findPlacesWithTagsByCourseIds(courseIds);
+        courseRepository.findPlacesWithTagsByCourseIds(sortedCourseIds);
 
-        // DTO 변환
-        List<CourseFolderDto> folderDtos = courses.stream()
+        // 코스들을 정렬된 순서대로 재배열
+        Map<Long, Course> courseMap = notSortedCourseList.stream()
+                .collect(Collectors.toMap(Course::getId, Function.identity()));
+
+        List<Course> sortedCourses = sortedCourseIds.stream()
+                .map(courseMap::get)
+                .filter(Objects::nonNull)
+                .toList();
+
+        // DTO 변환 (이미 정렬된 순서)
+        List<CourseFolderDto> folderDtos = sortedCourses.stream()
                 .map(course -> {
                     List<TagName> primaryTags = courseUtils.extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
@@ -306,7 +335,6 @@ public class CourseService {
 
         return CourseFolderPreviewListGetResponse.from(folderDtos);
     }
-
 
 
     //=== private method ===//

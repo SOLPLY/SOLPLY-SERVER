@@ -4,7 +4,7 @@ import static org.sopt.solply_server.global.cache.RedisKeyGenerator.generatePlac
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.place.dto.BookmarkRedisDto;
+import org.sopt.solply_server.domain.place.dto.PlaceBookmarkRedisDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
@@ -14,8 +14,6 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -49,7 +47,7 @@ public class PlaceBookmarkService {
 
         try {
             // 북마크 DTO 생성 (Record의 정적 팩토리 메서드 사용)
-            BookmarkRedisDto bookmarkData = BookmarkRedisDto.createActive(userId, placeId);
+            PlaceBookmarkRedisDto bookmarkData = PlaceBookmarkRedisDto.createActive(userId, placeId);
 
             // 개별 북마크 정보 저장 (TTL 1시간)
             cacheService.set(bookmarkKey, bookmarkData);
@@ -71,7 +69,7 @@ public class PlaceBookmarkService {
     public void deletePlaceBookmark(final Long userId, final Long placeId) {
         String bookmarkKey = RedisKeyGenerator.generatePlaceBookmarkKey(userId, placeId);
 
-        BookmarkRedisDto deleteMarker = BookmarkRedisDto.createDeleted(userId, placeId);
+        PlaceBookmarkRedisDto deleteMarker = PlaceBookmarkRedisDto.createDeleted(userId, placeId);
         cacheService.set(bookmarkKey, deleteMarker);
 
         log.info("장소 북마크 삭제 마커 설정 완료 - userId: {}, placeId: {}", userId, placeId);
@@ -94,7 +92,7 @@ public class PlaceBookmarkService {
      */
     public boolean isBookmarked(final Long userId, final Long placeId) {
         String bookmarkKey = generatePlaceBookmarkKey(userId, placeId);
-        BookmarkRedisDto bookmarkData = placeBookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
+        PlaceBookmarkRedisDto bookmarkData = placeBookmarkRedisDataManager.getBookmarkDto(bookmarkKey);
 
         if (bookmarkData != null) {
             return bookmarkData.isActive();

@@ -32,7 +32,7 @@ public class CoursePlaceValidator {
             return CourseValidationResult.placeCountLimited();
         }
 
-        log.info("Place {} can be added to Course {}", place.getId(), course.getId());
+        log.info("장소(id:{})는 코스(id:{})에 추가될 수 있습니다.", place.getId(), course.getId());
 
         return CourseValidationResult.success();
     }
