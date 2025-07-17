@@ -6,6 +6,7 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.PlaceBookmarkRedisDto;
+import org.sopt.solply_server.domain.place.entity.PlaceBookmark;
 import org.sopt.solply_server.domain.place.repository.PlaceBookmarkRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
@@ -126,21 +127,32 @@ public class PlaceBookmarkRedisDataManager implements RedisDataManager {
      */
     private void syncActivePlaceBookmark(PlaceBookmarkRedisDto bookmarkData) {
         try {
+            Long userId = bookmarkData.userId();
+            Long placeId = bookmarkData.placeId();
+
             // 존재하지 않는 사용자나 장소에 대한 북마크는 처리하지 않음
-            if (!userRepository.existsById(bookmarkData.userId())) {
-                log.warn("존재하지 않는 사용자 - userId: {}", bookmarkData.userId());
+            if (!userRepository.existsById(userId)) {
+                log.warn("존재하지 않는 사용자 - userId: {}", userId);
                 removeInvalidRedisData(bookmarkData);
                 return;
             }
 
-            if (!placeRepository.existsById(bookmarkData.placeId())) {
-                log.warn("존재하지 않는 장소 - placeId: {}", bookmarkData.placeId());
+            if (!placeRepository.existsById(placeId)) {
+                log.warn("존재하지 않는 장소 - placeId: {}", placeId);
                 removeInvalidRedisData(bookmarkData);
                 return;
             }
 
-            // UPSERT로 중복 에러 방지
-            placeBookmarkRepository.upsertBookmark(bookmarkData.userId(), bookmarkData.placeId());
+            if (placeBookmarkRepository.existsByUserIdAndPlaceId(userId, placeId)) {
+                log.info("이미 존재하는 북마크 - userId: {}, placeId: {}", userId, placeId);
+                return; // 이미 DB에 존재하는 북마크는 무시
+            }
+
+            PlaceBookmark bookmark = PlaceBookmark.create(
+                    placeRepository.getReferenceById(placeId),
+                    userRepository.getReferenceById(userId)
+            );
+            placeBookmarkRepository.save(bookmark);
 
             log.debug("활성 코스 북마크 DB 동기화 완료 - userId: {}, placeeId: {}",
                     bookmarkData.userId(), bookmarkData.placeId());

@@ -12,10 +12,12 @@ public interface PlaceBookmarkRepository extends JpaRepository<PlaceBookmark, Lo
 
     void deleteByUserIdAndPlaceId(Long userId, @Param("placeId") Long placeId);
 
-    @Modifying
-    @Query(value = "INSERT INTO place_bookmark (user_id, place_id, created_at, updated_at) " +
-            "VALUES (:userId, :placeId, NOW(), NOW()) " +
-            "ON CONFLICT (user_id, place_id) DO NOTHING",
-            nativeQuery = true)
-    void upsertBookmark(@Param("userId") Long userId, @Param("placeId") Long placeId);
+    boolean existsByUserIdAndPlaceId(Long userId, Long placeId);
+
+//    @Modifying
+//    @Query(value = "INSERT INTO place_bookmark (user_id, place_id, created_at, updated_at) " +
+//            "VALUES (:userId, :placeId, NOW(), NOW()) " +
+//            "ON CONFLICT (user_id, place_id) DO NOTHING",
+//            nativeQuery = true)
+//    void upsertBookmark(@Param("userId") Long userId, @Param("placeId") Long placeId);
 }

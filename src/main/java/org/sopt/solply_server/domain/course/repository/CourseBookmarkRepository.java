@@ -19,10 +19,10 @@ public interface CourseBookmarkRepository extends JpaRepository<CourseBookmark, 
     Set<Long> findBookmarkedCourseIds(@Param("userId") Long userId,
             @Param("courseIds") List<Long> courseIds);
 
-    @Modifying
-    @Query(value = "INSERT INTO course_bookmark (user_id, course_id, created_at, updated_at) " +
-            "VALUES (:userId, :courseId, NOW(), NOW()) " +
-            "ON CONFLICT (user_id, course_id) DO NOTHING",
-            nativeQuery = true)
-    void upsertBookmark(@Param("userId") Long userId, @Param("courseId") Long courseId);
+//    @Modifying
+//    @Query(value = "INSERT INTO course_bookmark (user_id, course_id, created_at, updated_at) " +
+//            "VALUES (:userId, :courseId, NOW(), NOW()) " +
+//            "ON CONFLICT (user_id, course_id) DO NOTHING",
+//            nativeQuery = true)
+//    void upsertBookmark(@Param("userId") Long userId, @Param("courseId") Long courseId);
 }

@@ -6,6 +6,7 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
+import org.sopt.solply_server.domain.course.entity.CourseBookmark;
 import org.sopt.solply_server.domain.course.repository.CourseBookmarkRepository;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
@@ -119,20 +120,33 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
      */
     private void syncActiveCourseBookmark(CourseBookmarkRedisDto bookmarkData) {
         try {
+            Long userId = bookmarkData.userId();
+            Long courseId = bookmarkData.courseId();
+
             // 존재하지 않는 사용자나 장소에 대한 북마크는 처리하지 않음
-            if (!userRepository.existsById(bookmarkData.userId())) {
-                log.warn("존재하지 않는 사용자 - userId: {}", bookmarkData.userId());
+            if (!userRepository.existsById(userId)) {
+                log.warn("존재하지 않는 사용자 - userId: {}", userId);
                 removeInvalidRedisData(bookmarkData);
                 return;
             }
 
-            if (!courseRepository.existsById(bookmarkData.courseId())) {
-                log.warn("존재하지 않는 코스 - courseId: {}", bookmarkData.courseId());
+            if (!courseRepository.existsById(courseId)) {
+                log.warn("존재하지 않는 코스 - courseId: {}", courseId);
                 removeInvalidRedisData(bookmarkData);
                 return;
             }
 
-            courseBookmarkRepository.upsertBookmark(bookmarkData.userId(), bookmarkData.courseId());
+            if (courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId)) {
+                log.info("이미 존재하는 코스 북마크 - userId: {}, courseId: {}",
+                        bookmarkData.userId(), bookmarkData.courseId());
+                return;
+            }
+
+            CourseBookmark bookmark = CourseBookmark.create(
+                    courseRepository.getReferenceById(courseId),
+                    userRepository.getReferenceById(userId)
+            );
+            courseBookmarkRepository.save(bookmark);
 
             log.debug("활성 코스 북마크 DB 동기화 완료 - userId: {}, courseId: {}",
                     bookmarkData.userId(), bookmarkData.courseId());
