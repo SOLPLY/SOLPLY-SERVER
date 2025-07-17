@@ -19,7 +19,7 @@ public class PlaceBookmarkFlushScheduler implements RedisFlushScheduler {
         return "BOOKMARK";
     }
 
-    @Scheduled(fixedRate = 3600000) // 1시간마다
+    @Scheduled(fixedRate = 900000) // 15분마다
     @Transactional
     @Override
     public void executeFlush() {
