@@ -11,6 +11,8 @@ import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDat
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.global.cache.RedisKeyGenerator;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -91,6 +93,12 @@ public class CourseBookmarkService {
         }
 
         return courseBookmarkRepository.existsByCourseIdAndUserId(courseId, userId);
+    }
+
+    public void checkCourseIsBookmarked(final Long userId, final Long courseId) {
+        if (!isBookmarked(userId, courseId)) {
+            throw new BusinessException(ErrorCode.NOT_BOOKMARKED_COURSE);
+        }
     }
 
     /**

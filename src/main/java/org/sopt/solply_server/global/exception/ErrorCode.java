@@ -74,7 +74,10 @@ public enum ErrorCode {
     INVALID_TAG_TYPE(HttpStatus.BAD_REQUEST, "TAG-002", "잘못된 타입의 태그입니다."),
     INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "TAG-004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다."),
     NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다."),
-    NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-006" , "유저가 선택한 동네가 없어서 온보딩을 진행해야 합니다.");
+    NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-006" , "유저가 선택한 동네가 없어서 온보딩을 진행해야 합니다."),
+
+    // 북마크 관련 (BOOKMARK-xxx)
+    NOT_BOOKMARKED_COURSE(HttpStatus.BAD_REQUEST, "BOOKMARK-001", "북마크된 코스가 아닙니다.");
 
 
     private final HttpStatus httpStatus;

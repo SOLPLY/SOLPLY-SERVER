@@ -10,7 +10,7 @@ import java.util.List;
 @Builder
 public record CoursePreviewDto(
         Long courseId,
-        String title,
+        String courseName,
         String thumbnailImage,
         List<TagName> mainTags,
         boolean isBookmarked
@@ -19,7 +19,7 @@ public record CoursePreviewDto(
                                       List<TagName> mainTags, boolean isBookmarked) {
         return CoursePreviewDto.builder()
                 .courseId(course.getId())
-                .title(course.getName())
+                .courseName(course.getName())
                 .thumbnailImage(thumbnailImage)
                 .mainTags(mainTags)
                 .isBookmarked(isBookmarked)

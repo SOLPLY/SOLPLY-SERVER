@@ -59,7 +59,6 @@ public class CourseService {
     private final CoursePlaceValidator coursePlaceValidator;
 
 
-
     /**
      * 새로운 코스 생성
      */
@@ -90,6 +89,9 @@ public class CourseService {
         User user = entityLoader.getUser(userId);
         Course courseToUpdate = entityLoader.getCourseWithPlaces(courseId);
 
+        // 코스 북마크 검증
+        courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
+
         List<PlaceInCourseInfo> placeInfosInCourse = PlaceInCourseInfo.from(request.places());
         // 코스에 등록할 장소들
         List<Place> places = getPlacesInOrderWithTowns(placeInfosInCourse);
@@ -97,13 +99,13 @@ public class CourseService {
         if (courseToUpdate.isCreatedBy(userId)) { // 사용자가 소유한 코스인 경우
             updateCourseInPlace(courseToUpdate, request, places);
             log.info("기존 코스 수정 완료 - userId: {}, courseId: {}", userId, courseId);
-            return CourseUpdateResponse.of(courseId, false);
+            return CourseUpdateResponse.of(courseId, request.courseName(), false);
         }
         else { // 남의 공유된 코스인 경우
             Course newCourse = createCopiedCourse(
                     user, request.courseName(), request.courseDescription(), placeInfosInCourse, places);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, newCourse.getId());
-            return CourseUpdateResponse.of(newCourse.getId(), true);
+            return CourseUpdateResponse.of(newCourse.getId(), newCourse.getName(), true);
         }
     }
 
@@ -115,6 +117,9 @@ public class CourseService {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
         Course originalCourse = entityLoader.getCourseWithPlaces(courseId);
+
+        // 코스 북마크 검증
+        courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
 
         coursePlaceValidator.validateCanAddPlace(originalCourse, place);
 
