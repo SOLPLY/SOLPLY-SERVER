@@ -76,9 +76,8 @@ public class CourseService {
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validatePlacesForCourse(placeInfos, placesToAdd);
 
-        String uniqueCourseName = courseNameGenerator.generateUniqueNameForUser(request.courseName(), user.getId());
-        Course savedCourse = createCopiedCourse(
-                user, uniqueCourseName, request.courseDescription(), placeInfos, placesToAdd);
+        Course savedCourse = createNewCourse(
+                user, request.courseName(), request.courseDescription(), placeInfos, placesToAdd);
 
         return CourseCreateResponse.from(savedCourse.getId());
     }
@@ -109,10 +108,10 @@ public class CourseService {
             return CourseUpdateResponse.of(courseId, request.courseName(), false);
         }
         else { // 남의 공유된 코스인 경우
-            // 복제 + 수정 후 기존 기본 코스 북마크 삭제
-            Course copiedCourses = createCopiedCourse(
-                    user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
+            // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
+            Course copiedCourses = createNewCourse(
+                    user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
             return CourseUpdateResponse.of(copiedCourses.getId(), copiedCourses.getName(), true);
         }
@@ -145,10 +144,9 @@ public class CourseService {
             List<Place> places = originCourse.getPlaces();
 
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
-            Course copiedCourse = createCopiedCourse(
-                    user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
             courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
-
+            Course copiedCourse = createNewCourse(
+                    user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
 
             return CourseAddPlaceResponse.of(
@@ -353,7 +351,7 @@ public class CourseService {
     /**
      * 사용자 소유의 새로운 코스 생성
      */
-    private Course createCopiedCourse(User user, String courseName, String intro,
+    private Course createNewCourse(User user, String courseName, String intro,
             List<PlaceInCourseInfo> placeInfos, List<Place> placesToAdd) {
         if (placesToAdd.isEmpty()) {
             throw new BusinessException(ErrorCode.NOT_SUFFICIENT_PLACE_COUNT);
