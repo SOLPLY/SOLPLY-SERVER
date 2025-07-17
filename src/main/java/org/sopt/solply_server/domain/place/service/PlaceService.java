@@ -157,24 +157,15 @@ public class PlaceService {
             validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
         }
 
-        List<Long> bookmarkedPlaceIds = null;
         if (isOnlyBookmarkSearch) {
-            bookmarkedPlaceIds = placeBookmarkRedisDataManager.getActivePlaceBookmarkDtos(userId).stream()
-                    .map(PlaceBookmarkRedisDto::placeId)
-                    .collect(Collectors.toList());
-            log.info("북마크된 장소 ID 목록 조회 완료: {} 개", bookmarkedPlaceIds.size());
+            return getBookmarkedPlacesByLatest(userId, selectedTownId, mainTagId, subTagAIdList, subTagBIdList);
         }
 
         // 통합 조회
         List<Place> places = placeRepository.findPlacesByConditions(
-                PlaceSearchConditionDto.of(
-                    selectedTownId,
-                    isOnlyBookmarkSearch,
-                    bookmarkedPlaceIds,
-                    mainTagId,
-                    subTagAIdList,
-                    subTagBIdList)
+                PlaceSearchConditionDto.of(selectedTownId, false, null, mainTagId, subTagAIdList, subTagBIdList)
         );
+
 
         log.info("장소 조회 완료 - townId: {}, isOnlyBookmarkSearch: {}, mainTagId: {}, 결과: {} 개",
                 selectedTownId, isOnlyBookmarkSearch, mainTagId, places.size());
@@ -211,14 +202,7 @@ public class PlaceService {
         }
 
         // Place 정보 조회 및 매핑
-        List<Long> placeIds = activePlaceBookmarkRedisDtos.stream()
-                .map(PlaceBookmarkRedisDto::placeId)
-                .distinct() // 중복 제거 추가
-                .collect(Collectors.toList());
-
-        Map<Long, Place> placeMap = placeRepository.findAllByIdsWithTown(placeIds)
-                .stream()
-                .collect(Collectors.toMap(Place::getId, Function.identity()));
+        Map<Long, Place> placeMap = getPlaceMapFromBookmarks(activePlaceBookmarkRedisDtos);
 
         // 동네별 최신 북마크한 장소 추출 (createdAt 기준)
         // key: townId, value: PlaceBookmarkRedisDto
@@ -235,6 +219,52 @@ public class PlaceService {
         return latestBookmarkedPlaceByTown.values().stream()
                 .map(dto -> placeMap.get(dto.placeId()))
                 .collect(Collectors.toList());
+    }
+
+    private List<Place> getBookmarkedPlacesByLatest(final Long userId, final Long selectedTownId,
+            final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
+
+        List<PlaceBookmarkRedisDto> bookmarkDtos = placeBookmarkRedisDataManager.getActivePlaceBookmarkDtos(userId);
+
+        if (bookmarkDtos.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> bookmarkedPlaceIds = bookmarkDtos.stream()
+                .map(PlaceBookmarkRedisDto::placeId)
+                .collect(Collectors.toList());
+
+        Map<Long, LocalDateTime> placeIdToCreatedAtMap = bookmarkDtos.stream()
+                .collect(Collectors.toMap(
+                        PlaceBookmarkRedisDto::placeId,
+                        PlaceBookmarkRedisDto::createdAt,
+                        (existing, replacement) -> existing.isAfter(replacement) ? existing : replacement
+                ));
+
+        // 태그 조건 포함하여 조회
+        List<Place> places = placeRepository.findPlacesByConditions(
+                PlaceSearchConditionDto.of(selectedTownId, true, bookmarkedPlaceIds, mainTagId, subTagAIdList, subTagBIdList)
+        );
+
+        // 북마크 시간 기준 최신순 정렬
+        return places.stream()
+                .sorted((place1, place2) -> {
+                    LocalDateTime createdAt1 = placeIdToCreatedAtMap.get(place1.getId());
+                    LocalDateTime createdAt2 = placeIdToCreatedAtMap.get(place2.getId());
+                    return createdAt2.compareTo(createdAt1);
+                })
+                .collect(Collectors.toList());
+    }
+
+    private Map<Long, Place> getPlaceMapFromBookmarks(List<PlaceBookmarkRedisDto> bookmarkDtos) {
+        List<Long> placeIds = bookmarkDtos.stream()
+                .map(PlaceBookmarkRedisDto::placeId)
+                .distinct()
+                .collect(Collectors.toList());
+
+        return placeRepository.findAllByIdsWithTown(placeIds)
+                .stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
     }
 
 }
