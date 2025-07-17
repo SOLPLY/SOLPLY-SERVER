@@ -42,7 +42,6 @@ public class CourseNameGenerator {
 
         // 중복되지 않는 이름 생성
         String uniqueName = generateUniqueSequenceName(baseName, existingNames);
-
         log.debug("고유 코스명 생성 완료: '{}' -> '{}'", baseName, uniqueName);
         return uniqueName;
     }
