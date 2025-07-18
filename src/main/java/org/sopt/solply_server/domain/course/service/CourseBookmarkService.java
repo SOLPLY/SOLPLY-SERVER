@@ -110,14 +110,36 @@ public class CourseBookmarkService {
             return Map.of();
         }
 
-        Set<Long> bookmarkedCourseIds = courseBookmarkRepository
-                .findBookmarkedCourseIds(userId, courseIds);
+        // Redis에서 해당 사용자의 모든 활성 북마크 조회
+        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
 
-        return courseIds.stream()
-                .collect(Collectors.toMap(
-                        courseId -> courseId,
-                        bookmarkedCourseIds::contains
-                ));
+        // 활성 북마크를 courseId 기준으로 Set으로 변환
+        Set<Long> activeBookmarkCourseIds = activeBookmarks.stream()
+                .map(CourseBookmarkRedisDto::courseId)
+                .collect(Collectors.toSet());
+
+        // Redis에서 찾지 못한 것들만 DB에서 조회
+        List<Long> notFoundInRedis = courseIds.stream()
+                .filter(courseId -> !activeBookmarkCourseIds.contains(courseId))
+                .collect(Collectors.toList());
+
+        Set<Long> dbBookmarkedCourseIds = Set.of();
+        if (!notFoundInRedis.isEmpty()) {
+            dbBookmarkedCourseIds = courseBookmarkRepository
+                    .findBookmarkedCourseIds(userId, notFoundInRedis);
+        }
+
+        // redis에서의 활성 북마크와 DB에서의 북마크를 합쳐서 결과 생성
+        Map<Long, Boolean> resultMap = new HashMap<>();
+        for (Long courseId : courseIds) {
+            if (activeBookmarkCourseIds.contains(courseId)) {
+                resultMap.put(courseId, true);
+            } else {
+                resultMap.put(courseId, dbBookmarkedCourseIds.contains(courseId));
+            }
+        }
+
+        return resultMap;
     }
 
     // === Private Methods ===
