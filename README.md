@@ -7,4 +7,3 @@
 | ![Image](https://github.com/user-attachments/assets/1d02828d-3ae0-41e9-b6ea-1c7ce6b53f1c) | ![Image](https://github.com/user-attachments/assets/3a80d313-cc09-487a-ba07-1f893e1f5c6d) | ![Image](https://github.com/user-attachments/assets/bf85598e-4951-4640-ad10-fcbf601c50f0) | 
 | :-------------: | :----------: | :----------: |
 | [신민규](https://github.com/uykm) | [배영경](https://github.com/bykbyk0401) | [이지수](https://github.com/leejisoo0617) |
-| 장소 | 코스 | 태그, 동네 |
