@@ -29,14 +29,15 @@ gradle.prod.properties
 application-dev.yml
 application-prod.yml
 
+
 # 공통 설정은 포함 (Git에 올라가도록 허용)
 # application.yml 은 Git에 커밋 가능
 # application.yml.example 은 명시적 예시로 커밋 추천
-
 *.yaml
 *.yml
 !CI.yml
 !CD.yml
+!.coderabbit.yml
 
 .docker/init/init_role.sql
 
