@@ -20,7 +20,7 @@ public class PresignedUrlProvider {
 
     private final S3Presigner s3Presigner;
 
-    public String generatePresignedUrlToRead(final String fileKey) {
+    public String createPresignedUrlToRead(final String fileKey) {
         if (InputValidator.isBlank(fileKey)) return null;
 
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
