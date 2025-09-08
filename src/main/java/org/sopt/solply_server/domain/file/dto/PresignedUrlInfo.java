@@ -1,12 +1,13 @@
 package org.sopt.solply_server.domain.file.dto;
 
 public record PresignedUrlInfo(
+        String originalFileName,
+        String tempFileKey,
         String presignedUrl,
-        String fileKey,
-        int expiresIn
+        long expirationSeconds
 ) {
-    public static PresignedUrlInfo of(String presignedUrl, String fileKey, int expiresIn) {
-        return new PresignedUrlInfo(presignedUrl, fileKey, expiresIn);
+    public static PresignedUrlInfo of(String originalFileName, String fileKey, String presignedUrl, long expiresIn) {
+        return new PresignedUrlInfo(originalFileName, fileKey, presignedUrl, expiresIn);
     }
 
 }

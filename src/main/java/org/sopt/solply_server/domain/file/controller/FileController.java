@@ -29,7 +29,7 @@ public class FileController {
     ) {
         return CustomApiResponse.success(
                 "업로드용 presigned url 생성에 성공했습니다.",
-                fileService.createPresignedUrlToUpload(request);
+                fileService.createPresignedUrlToUpload(request)
         );
     }
 

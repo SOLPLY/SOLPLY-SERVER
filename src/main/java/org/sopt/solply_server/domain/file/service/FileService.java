@@ -1,8 +1,7 @@
 package org.sopt.solply_server.domain.file.service;
 
-import static java.util.stream.Collectors.toList;
-
 import jakarta.validation.Valid;
+import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.file.dto.PresignedUrlInfo;
@@ -14,15 +13,15 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class FileService {
-
-    PresignedUrlProvider presignedUrlProvider;
+    private final PresignedUrlProvider presignedUrlProvider;
+    private static final Duration PRESIGN_TTL = java.time.Duration.ofMinutes(10);
 
     public FilesUploadResponse createPresignedUrlToUpload(@Valid FilesUploadRequest request) {
+
         List<PresignedUrlInfo> presignedUrlInfos = request.files().stream()
-                        .map(file -> new PresignedUrlInfo(
-                                file.fileName(),
-                                presignedUrlProvider.generatePresignedUrl(
-                                        file.fileName(), file.contentType(), file.contentLength())
+                        .map(file ->
+                            presignedUrlProvider.createPresignedUrlInfo(
+                                    file.fileName(), PRESIGN_TTL
                             )
                         ).toList();
         return new FilesUploadResponse(
