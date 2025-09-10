@@ -23,22 +23,14 @@ public class PlaceRequest extends BaseTimeEntity {
     private String placeName;
 
     @Column(nullable = false)
-    private String mainTag;
+    private Long mainTagId;
 
-    @Column(columnDefinition = "TEXT")
-    private String SubTagAIds;
+    @Column(nullable = false)
+    private List<Long> subTagAIds;
 
-    @Column(columnDefinition = "TEXT")
-    private String SubTagBIds;
+    @Column(nullable = false)
+    private List<Long> subTagBIds;
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String reason;
-
-    @ElementCollection(fetch = FetchType.LAZY)
-    @CollectionTable(name = "place_request_images", joinColumns = @JoinColumn(name = "place_request_id"))
-    @OrderBy("displayOrder ASC")
-    private List<PlaceRequestImageInfo> images = new ArrayList<>();
-
-
-
 }

@@ -7,23 +7,19 @@ import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
+import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
+import org.sopt.solply_server.domain.place.service.PlaceRequestService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "장소 API", description = "장소 관련 API")
 @RestController
@@ -33,6 +29,7 @@ public class PlaceController {
 
     private final PlaceService placeService;
     private final PlaceBookmarkService placeBookmarkService;
+    private final PlaceRequestService placeRequestService;
 
 
     @Operation(summary = "장소 상세 조회", description = "장소 ID를 통해 장소의 상세 정보를 조회합니다.")
@@ -116,6 +113,15 @@ public class PlaceController {
         return CustomApiResponse.success("내 장소에서 장소들을 삭제했습니다.");
     }
 
+    @Operation(summary = "장소등록요청", description = "사용자가 원하는 장소를 등록 요청합니다.")
+    @PostMapping("/requests")
+    public ResponseEntity<CustomApiResponse<PlaceRequestCreateResponse>> createPlaceRequest(
+            @RequestBody @Validated PlaceRequestCreateRequest request) {
+        return CustomApiResponse.success(
+                "장소 등록 요청이 접수되었습니다.",
+                placeRequestService.createPlaceRequest(request)
+        );
 
+    }
 
 }
