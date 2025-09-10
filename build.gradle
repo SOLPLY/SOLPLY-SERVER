@@ -56,7 +56,7 @@ flyway {
 	password = project.findProperty('flyway.password')
 	schemas = ['public']
 	baselineOnMigrate = true
-	baselineVersion = '1'
+	baselineVersion = '0'
 	locations = ['classpath:db/migration']
 }
 
