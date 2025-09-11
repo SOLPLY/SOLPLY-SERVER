@@ -61,7 +61,7 @@ public class UserController {
         return CustomApiResponse.success("유저 정보 조회에 성공하였습니다.", response);
     }
 
-    @Operation(summary = "유저의 동네 정보 조회", description = "유저의 관심 동네 및 선택 동네를 조회합니다.")
+    @Operation(summary = "동네 관련 정보 조회", description = "유저가 선택한 동네를 조회합니다.")
     @GetMapping("/towns")
     public ResponseEntity<CustomApiResponse<UserTownGetResponse>> getUserTowns(
             @CurrentUserId Long userId

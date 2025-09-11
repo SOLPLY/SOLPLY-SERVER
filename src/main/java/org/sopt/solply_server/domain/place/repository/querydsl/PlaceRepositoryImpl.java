@@ -51,7 +51,11 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
             return queryFactory.selectFrom(p)
                     .where(match)
-                    .orderBy(sim.desc(), p.name.asc(), p.id.asc())
+                    .orderBy(
+                            sim.desc(),
+                            p.name.asc(),
+                            p.id.asc()
+                    )
                     .limit(3)
                     .fetch();
         } else {

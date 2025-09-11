@@ -78,13 +78,13 @@ public class UserService {
                 .orElse(null);
 
         // 관심 동네들
-        List<UserTownInfoDto> interestTowns = entityLoader.getInterestTownsWithTownsByIds(userId)
-                .stream()
-                .map(interestTown -> UserTownInfoDto.of(
-                        interestTown.getTown().getId(),
-                        interestTown.getTown().getName()))
-                .toList();
+//        List<UserTownInfoDto> interestTowns = entityLoader.getInterestTownsWithTownsByIds(userId)
+//                .stream()
+//                .map(interestTown -> UserTownInfoDto.of(
+//                        interestTown.getTown().getId(),
+//                        interestTown.getTown().getName()))
+//                .toList();
 
-        return UserTownGetResponse.of(selectedTown, interestTowns);
+        return UserTownGetResponse.of(selectedTown);
     }
 }
