@@ -15,8 +15,8 @@ public interface UserInterestTownRepository extends JpaRepository<UserInterestTo
 
     void deleteByUserId(Long id);
 
-    @Query("SELECT uit FROM UserInterestTown uit " +
-            "LEFT JOIN FETCH uit.town " +
-            "WHERE uit.user.id = :userId")
-    List<UserInterestTown> findAllByUserWithTown(Long userId);
+//    @Query("SELECT uit FROM UserInterestTown uit " +
+//            "LEFT JOIN FETCH uit.town " +
+//            "WHERE uit.user.id = :userId")
+//    List<UserInterestTown> findAllByUserWithTown(Long userId);
 }

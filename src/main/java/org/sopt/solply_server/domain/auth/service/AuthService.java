@@ -47,7 +47,7 @@ public class AuthService {
         initialTowns.add(town1);
         initialTowns.add(town2);
 
-        userInterestTownService.updateUserInterestTowns(user, initialTowns);
+//        userInterestTownService.updateUserInterestTowns(user, initialTowns);
 
         return SocialLoginResponse.of(
                 saveTokenCollection(user.getId()),
