@@ -53,18 +53,15 @@ public class UserService {
     @Transactional
     public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        List<Town> towns = request.favoriteTownIdList().stream()
-                .map(entityLoader::getTown)
-                .toList();
-        userInterestTownService.updateUserInterestTowns(user, towns);
+//        List<Town> towns = request.favoriteTownIdList().stream()
+//                .map(entityLoader::getTown)
+//                .toList();
+//        userInterestTownService.updateUserInterestTowns(user, towns);
         Town selectedTown = entityLoader.getTown(request.selectedTownId());
         user.updateSelectedTown(request.selectedTownId());
 
         return UserTownsUpdateResponse.of(
-                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName()),
-                towns.stream()
-                        .map(town -> UserTownInfoDto.of(town.getId(), town.getName()))
-                        .toList()
+                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName())
         );
     }
 
