@@ -64,7 +64,7 @@ public class PlaceService {
 
         return PlaceAllGetResponse.of(
                 place,
-                place.getPrimaryTag(),
+                place.getMainTag(),
                 imageInfos,
                 isBookmarked
         );
@@ -88,7 +88,7 @@ public class PlaceService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getPrimaryTag(),
+                        place.getMainTag(),
                         place.getAddress(),
                         placeBookmarkService.isBookmarked(userId, place.getId())
                 ))
@@ -133,7 +133,7 @@ public class PlaceService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getPrimaryTag(),
+                        place.getMainTag(),
                         place.getAddress(),
                         false // 검색 결과에서는 북마크 여부를 제공 X
                 ))

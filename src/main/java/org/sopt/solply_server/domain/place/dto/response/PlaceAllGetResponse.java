@@ -11,7 +11,7 @@ import org.sopt.solply_server.domain.tag.entity.TagName;
 public record PlaceAllGetResponse(
         long placeId,
         String placeName,
-        TagName primaryTag,
+        TagName mainTag,
         String introduction,
         List<PlaceImageInfoDto> imageInfos,
         String address,
@@ -25,11 +25,11 @@ public record PlaceAllGetResponse(
         long placeDefaultId
 ) {
 
-    public static PlaceAllGetResponse of(Place place, TagName primaryTag, List<PlaceImageInfoDto> placeImageInfos, boolean isBookmarked) {
+    public static PlaceAllGetResponse of(Place place, TagName mainTag, List<PlaceImageInfoDto> placeImageInfos, boolean isBookmarked) {
         return PlaceAllGetResponse.builder()
                 .placeId(place.getId())
                 .placeName(place.getName())
-                .primaryTag(primaryTag)
+                .mainTag(mainTag)
                 .introduction(place.getIntroduction())
                 .imageInfos(placeImageInfos)
                 .address(place.getAddress())
