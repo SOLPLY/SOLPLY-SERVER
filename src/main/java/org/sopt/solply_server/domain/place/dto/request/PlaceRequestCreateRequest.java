@@ -8,6 +8,7 @@ import java.util.List;
 public record PlaceRequestCreateRequest(
     @NotNull(message = "장소이름은 필수입니다.") String placeName,
     @NotNull(message = "장소유형은 필수입니다.") Long mainTagId,
+    @NotNull(message = "주소는 필수입니다.") String address,
     List<Long> subTagAIds,
     List<Long> subTagBIds,
     @NotNull(message = "장소요청사유는 필수입니다.") String reason,
