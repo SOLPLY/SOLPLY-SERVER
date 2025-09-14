@@ -20,11 +20,12 @@ public class PlaceRequest extends BaseTimeEntity {
     private Long id;
 
     @Column(nullable = false)
-    private String address;
-
-    @Column(nullable = false)
     private String placeName;
 
+    @Column(nullable = false)
+    private String address;
+
+    @Builder.Default
     @OneToMany(mappedBy = "placeRequest", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PlaceRequestTag> placeRequestTags = new ArrayList<>();
 

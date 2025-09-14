@@ -12,9 +12,9 @@ import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
-
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -34,25 +34,29 @@ public class PlaceRequestService {
                 .reason(request.reason())
                 .build();
 
-        List<Long> allTagIds = new ArrayList<>();
-        allTagIds.add(request.mainTagId());
-        if (request.subTagAIds() != null) allTagIds.addAll(request.subTagAIds());
-        if (request.subTagBIds() != null) allTagIds.addAll(request.subTagBIds());
+        Set<Long> distinctTagIds = new LinkedHashSet<>();
+        distinctTagIds.add(request.mainTagId());
+        if (request.subTagAIds() != null) distinctTagIds.addAll(request.subTagAIds());
+        if (request.subTagBIds() != null) distinctTagIds.addAll(request.subTagBIds());
 
-        List<Tag> tags = tagRepository.findAllById(allTagIds);
+        List<Tag> tags = tagRepository.findAllById(distinctTagIds);
+        if (tags.size() != distinctTagIds.size()) {
+            throw new IllegalArgumentException("유효하지 않은 태그 ID가 포함되어 있습니다.");
+        }
 
         for (Tag tag : tags) {
             PlaceRequestTag placeRequestTag = PlaceRequestTag.builder()
                     .placeRequest(placeRequest)
                     .tag(tag)
                     .build();
+
+            placeRequest.getPlaceRequestTags().add(placeRequestTag);
         }
 
         PlaceRequest saved = placeRequestRepository.save(placeRequest);
-
         log.info("장소 등록 요청 저장 완료 - placeRequestId: {}", saved.getId());
+
         return PlaceRequestCreateResponse.of(saved.getId());
     }
-
 }
 
