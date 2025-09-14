@@ -34,7 +34,6 @@ public class PlaceReportService {
         Place place = entityLoader.getPlace(placeId);
 
         placeReportValidator.validateReportLimits(userId, placeId);
-        placeReportValidator.validateImageKeys(request.imageKeys());
 
         PlaceReport report = PlaceReport.create(
                 place,
