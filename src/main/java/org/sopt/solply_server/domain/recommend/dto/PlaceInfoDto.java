@@ -6,17 +6,17 @@ public record PlaceInfoDto(
         long placeId,
         String placeName,
         String thumbnailImageUrl,
-        TagName primaryTag,
+        TagName mainTag,
         String introduction
 ) {
     public static PlaceInfoDto from(
             long placeId,
             String placeName,
             String thumbnailImageUrl,
-            TagName primaryTag,
+            TagName mainTag,
             String introduction
     ) {
-        return new PlaceInfoDto(placeId, placeName, thumbnailImageUrl, primaryTag, introduction);
+        return new PlaceInfoDto(placeId, placeName, thumbnailImageUrl, mainTag, introduction);
     }
 
 }

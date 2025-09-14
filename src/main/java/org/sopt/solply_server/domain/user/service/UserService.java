@@ -53,18 +53,15 @@ public class UserService {
     @Transactional
     public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        List<Town> towns = request.favoriteTownIdList().stream()
-                .map(entityLoader::getTown)
-                .toList();
-        userInterestTownService.updateUserInterestTowns(user, towns);
+//        List<Town> towns = request.favoriteTownIdList().stream()
+//                .map(entityLoader::getTown)
+//                .toList();
+//        userInterestTownService.updateUserInterestTowns(user, towns);
         Town selectedTown = entityLoader.getTown(request.selectedTownId());
         user.updateSelectedTown(request.selectedTownId());
 
         return UserTownsUpdateResponse.of(
-                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName()),
-                towns.stream()
-                        .map(town -> UserTownInfoDto.of(town.getId(), town.getName()))
-                        .toList()
+                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName())
         );
     }
 
@@ -78,13 +75,13 @@ public class UserService {
                 .orElse(null);
 
         // 관심 동네들
-        List<UserTownInfoDto> interestTowns = entityLoader.getInterestTownsWithTownsByIds(userId)
-                .stream()
-                .map(interestTown -> UserTownInfoDto.of(
-                        interestTown.getTown().getId(),
-                        interestTown.getTown().getName()))
-                .toList();
+//        List<UserTownInfoDto> interestTowns = entityLoader.getInterestTownsWithTownsByIds(userId)
+//                .stream()
+//                .map(interestTown -> UserTownInfoDto.of(
+//                        interestTown.getTown().getId(),
+//                        interestTown.getTown().getName()))
+//                .toList();
 
-        return UserTownGetResponse.of(selectedTown, interestTowns);
+        return UserTownGetResponse.of(selectedTown);
     }
 }

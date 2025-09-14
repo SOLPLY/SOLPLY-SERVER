@@ -10,9 +10,6 @@ public record UserOnboardingUpdateRequest(
         @NotNull(message = "동네 선택은 필수입니다")
         Long selectedTownId,
 
-        @NotNull(message = "관심 동네는 필수입니다")
-        List<Long> favoriteTownIdList,
-
         @NotNull(message = "유저 성향은 필수입니다")
         UserPersona persona,
 

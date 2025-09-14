@@ -67,10 +67,10 @@ public class UserOnboardingService {
         try {
             // 온보딩 정보 업데이트(페르소나, 닉네임, 선택 동네)
             user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTownId());
-            List<Town> towns = request.favoriteTownIdList().stream()
-                    .map(entityLoader::getTown)
-                    .toList();
-            userInterestTownService.updateUserInterestTowns(user, towns);
+//            List<Town> towns = request.favoriteTownIdList().stream()
+//                    .map(entityLoader::getTown)
+//                    .toList();
+//            userInterestTownService.updateUserInterestTowns(user, towns);
             return UserOnboardingUpdateResponse.of(user, entityLoader.getTown(request.selectedTownId()));
         } catch (DataIntegrityViolationException e) {
             log.warn("DB 제약조건 위반으로 인한 온보딩 실패: userId={}, nickname={}",
