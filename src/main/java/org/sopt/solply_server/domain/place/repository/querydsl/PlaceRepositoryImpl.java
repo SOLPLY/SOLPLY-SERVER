@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.repository.querydsl;
 
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import java.util.List;
@@ -36,6 +37,40 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         }
 
         return findPlacesWithTags(place, whereCondition, condition);
+    }
+
+    public List<Place> findPlacesByKeyword(String keyword) {
+        QPlace p = QPlace.place;
+        String kw = keyword.trim();
+        int length = kw.codePointCount(0, kw.length());
+
+        if (length >= 3) {
+            // 3글자 이상: pg_trgm 유사도 검색
+            var sim   = Expressions.numberTemplate(Double.class, "similarity({0}, {1})", p.name, kw);
+            var match = Expressions.booleanTemplate("{0} % {1}", p.name, kw);
+
+            return queryFactory.selectFrom(p)
+                    .where(match)
+                    .orderBy(sim.desc(), p.name.asc(), p.id.asc())
+                    .limit(3)
+                    .fetch();
+        } else {
+            // 2글자: ILIKE + strpos
+            String pattern = "%" + kw + "%";
+            var pos = Expressions.numberTemplate(Integer.class, "strpos(lower({0}), lower({1}))", p.name, kw);
+            var sim = Expressions.numberTemplate(Double.class, "similarity({0}, {1})", p.name, kw);
+
+            return queryFactory.selectFrom(p)
+                    .where(p.name.likeIgnoreCase(pattern))
+                    .orderBy(
+                            pos.asc().nullsLast(),
+                            sim.desc(),
+                            p.name.asc(),
+                            p.id.asc()
+                    )
+                    .limit(3)
+                    .fetch();
+        }
     }
 
     // 전체 조회
