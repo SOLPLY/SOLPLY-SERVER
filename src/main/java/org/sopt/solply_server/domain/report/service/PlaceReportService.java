@@ -7,6 +7,7 @@ import org.sopt.solply_server.domain.report.dto.request.PlaceReportCreateRequest
 import org.sopt.solply_server.domain.report.dto.response.PlaceReportCreateResponse;
 import org.sopt.solply_server.domain.report.entity.PlaceReport;
 import org.sopt.solply_server.domain.report.repository.PlaceReportRepository;
+import org.sopt.solply_server.domain.report.util.PlaceReportValidator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -24,6 +25,7 @@ import java.util.List;
 public class PlaceReportService {
 
     private final PlaceReportRepository placeReportRepository;
+    private final PlaceReportValidator placeReportValidator;
     private final EntityLoader entityLoader;
 
     @Transactional
@@ -31,8 +33,8 @@ public class PlaceReportService {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
 
-        validateReportLimits(userId, placeId);
-        validateImageKeys(request.imageKeys());
+        placeReportValidator.validateReportLimits(userId, placeId);
+        placeReportValidator.validateImageKeys(request.imageKeys());
 
         PlaceReport report = PlaceReport.create(
                 place,
@@ -48,38 +50,5 @@ public class PlaceReportService {
                 userId, placeId, savedReport.getId(), request.reportType());
 
         return PlaceReportCreateResponse.from(savedReport);
-    }
-
-    private void validateReportLimits(Long userId, Long placeId) {
-        LocalDateTime dayAgo = LocalDateTime.now().minusDays(1);
-
-        boolean userExceedsLimit = placeReportRepository.existsByUserIdAndPlaceIdAndCreatedAtAfter(
-                userId, placeId, dayAgo);
-
-        if (userExceedsLimit) {
-            throw new BusinessException(ErrorCode.REPORT_LIMIT_EXCEEDED_USER);
-        }
-    }
-
-    private void validateImageKeys(List<String> imageKeys) {
-        if (imageKeys == null || imageKeys.isEmpty()) {
-            return;
-        }
-
-        for (String imageKey : imageKeys) {
-            if (!isValidImageKey(imageKey)) {
-                throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
-            }
-        }
-    }
-
-    private boolean isValidImageKey(String imageKey) {
-        if (imageKey == null || imageKey.trim().isEmpty()) {
-            return false;
-        }
-
-        return (imageKey.startsWith("temp/") || imageKey.startsWith("reports/")) &&
-                (imageKey.endsWith(".jpg") || imageKey.endsWith(".jpeg") ||
-                        imageKey.endsWith(".png") || imageKey.endsWith(".webp"));
     }
 }
