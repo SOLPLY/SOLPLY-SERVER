@@ -5,7 +5,7 @@ import lombok.Getter;
 
 @Getter
 @AllArgsConstructor
-public enum ImageCategory {
+public enum TargetDir {
     PLACE_REQUESTS("place-requests"),
     PLACE_REPORTS("place-reports");
 
