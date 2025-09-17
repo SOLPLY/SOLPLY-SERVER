@@ -18,7 +18,6 @@ import jakarta.persistence.MapKeyEnumerated;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
-import java.awt.Point;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -104,7 +103,7 @@ public class Place extends BaseTimeEntity {
     /**
      * 장소의 1차 태그(MAIN) 추출
      */
-    public TagName getPrimaryTag() {
+    public TagName getMainTag() {
         return this.placeTags.stream()
                 .map(PlaceTag::getTag)
                 .filter(tag -> tag.getType() == TagType.MAIN)

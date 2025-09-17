@@ -16,6 +16,7 @@ import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.cache.PlaceBookmarkRedisDataManager;
@@ -23,9 +24,11 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
+import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.InputValidator;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,7 +64,7 @@ public class PlaceService {
 
         return PlaceAllGetResponse.of(
                 place,
-                place.getPrimaryTag(),
+                place.getMainTag(),
                 imageInfos,
                 isBookmarked
         );
@@ -85,7 +88,8 @@ public class PlaceService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getPrimaryTag(),
+                        place.getMainTag(),
+                        place.getAddress(),
                         placeBookmarkService.isBookmarked(userId, place.getId())
                 ))
                 .toList();
@@ -117,6 +121,25 @@ public class PlaceService {
                     })
                     .toList()
         );
+    }
+
+    public PlaceSearchResponse searchPlaces(String keyword) {
+        if (InputValidator.isBlank(keyword) || keyword.length() < 2) {
+            throw new BusinessException(ErrorCode.INVALID_KEYWORD);
+        }
+        var places = placeRepository.findPlacesByKeyword(keyword);
+        List<PlacePreviewDto> placePreviews = places.stream()
+                .map(place -> PlacePreviewDto.of(
+                        place.getId(),
+                        place.getName(),
+                        imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
+                        place.getMainTag(),
+                        place.getAddress(),
+                        false // 검색 결과에서는 북마크 여부를 제공 X
+                ))
+                .toList();
+
+        return new PlaceSearchResponse(placePreviews);
     }
 
 

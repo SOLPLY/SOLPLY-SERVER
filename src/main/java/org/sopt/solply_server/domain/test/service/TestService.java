@@ -38,13 +38,13 @@ public class TestService {
 //        String nickname = "user_" + UUID.randomUUID().toString().substring(0, 5);
 
         User user = userRepository.save(User.create(email));
-        Town town1 = entityLoader.getTown(Long.parseLong("2")); // 연희동
-        Town town2 = entityLoader.getTown(Long.parseLong("3")); // 망원동
-        List<Town> initialTowns = new ArrayList<>();
-        initialTowns.add(town1);
-        initialTowns.add(town2);
-
-        userInterestTownService.updateUserInterestTowns(user, initialTowns);
+//        Town town1 = entityLoader.getTown(Long.parseLong("2")); // 연희동
+//        Town town2 = entityLoader.getTown(Long.parseLong("3")); // 망원동
+//        List<Town> initialTowns = new ArrayList<>();
+//        initialTowns.add(town1);
+//        initialTowns.add(town2);
+//
+//        userInterestTownService.updateUserInterestTowns(user, initialTowns);
 
         return TestLoginResponse.of(
                 saveTokenCollection(user.getId()),
