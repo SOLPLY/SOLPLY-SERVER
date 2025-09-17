@@ -23,7 +23,6 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
                 @UniqueConstraint(name = "uk_place_request_tag_place_tag", columnNames = {"place_request_id", "tag_id"})
         },
         indexes = {
-                @Index(name = "idx_place_request_tag_place_id", columnList = "place_request_id"),
                 @Index(name = "idx_place_request_tag_tag_id", columnList = "tag_id")
         }
 )

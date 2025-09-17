@@ -14,25 +14,19 @@ CREATE TABLE place_request_tag (
     place_request_id BIGINT NOT NULL,
     tag_id BIGINT NOT NULL,
 
-    CONSTRAINT fk_place_request_tag_place_request FOREIGN KEY (place_request_id)
-        REFERENCES place_request (id) ON DELETE CASCADE,
-    CONSTRAINT fk_place_request_tag_tag FOREIGN KEY (tag_id)
-        REFERENCES tags (id) ON DELETE CASCADE,
+    CONSTRAINT fk_place_request_tag_place_request FOREIGN KEY (place_request_id) REFERENCES place_request (id) ON DELETE CASCADE,
+    CONSTRAINT fk_place_request_tag_tag FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE,
     CONSTRAINT uk_place_request_tag UNIQUE (place_request_id, tag_id)
 );
 
-CREATE INDEX idx_place_request_tag_place_id ON place_request_tag(place_request_id);
 CREATE INDEX idx_place_request_tag_tag_id ON place_request_tag(tag_id);
 
 CREATE TABLE place_request_image (
-    id BIGSERIAL PRIMARY KEY,
     place_request_id BIGINT NOT NULL,
     image_file_key TEXT NOT NULL,
     display_order INT,
 
-    CONSTRAINT fk_place_request_image_request
-        FOREIGN KEY (place_request_id)
-        REFERENCES place_request (id) ON DELETE CASCADE
+        CONSTRAINT fk_place_request_image FOREIGN KEY (place_request_id) REFERENCES place_request(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_place_request_image_request_id ON place_request_image(place_request_id);

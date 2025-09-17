@@ -26,8 +26,17 @@ public class PlaceRequest extends BaseTimeEntity {
     private String address;
 
     @Builder.Default
+    @ElementCollection
+    @CollectionTable(
+            name = "place_request_image",
+            joinColumns = @JoinColumn(name = "place_request_id")
+    )
+    private List<PlaceRequestImageInfo> images = new ArrayList<>();
+
+    @Builder.Default
     @OneToMany(mappedBy = "placeRequest", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PlaceRequestTag> placeRequestTags = new ArrayList<>();
+
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String reason;
