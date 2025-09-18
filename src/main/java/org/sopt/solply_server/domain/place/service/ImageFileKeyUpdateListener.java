@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+@Slf4j
 @Component
 public class ImageFileKeyUpdateListener {
 
@@ -50,6 +52,7 @@ public class ImageFileKeyUpdateListener {
                 String dest = s3FileMoveService.moveToDir(stagingKey, e.targetId(), e.targetDir());
                 destKeys.add(dest);
             } catch (Exception ex) {
+                log.warn("파일 경로 변경 실패 / stagingKey={}, targetId={}, dir={}", stagingKey, e.targetId(), e.targetDir(), ex);
             }
         }
         if (destKeys.isEmpty()) return;
