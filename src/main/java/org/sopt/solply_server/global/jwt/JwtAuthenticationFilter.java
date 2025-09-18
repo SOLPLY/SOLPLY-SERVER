@@ -1,10 +1,12 @@
 package org.sopt.solply_server.global.jwt;
 
+
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.security.PrincipalDetailsService;
@@ -13,6 +15,9 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -29,6 +34,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final PrincipalDetailsService principalDetailsService;
     private final HandlerExceptionResolver handlerExceptionResolver;
 
+    private static final RequestMatcher WHITELIST = new OrRequestMatcher(List.of(
+            new AntPathRequestMatcher("/api/auth/**"),
+            new AntPathRequestMatcher("/swagger-ui/**"),
+            new AntPathRequestMatcher("/v3/api-docs/**"),
+            new AntPathRequestMatcher("/api/test/**")
+    ));
+
     public JwtAuthenticationFilter(
             JwtTokenProvider jwtTokenProvider,
             JwtTokenResolver jwtTokenResolver,
@@ -40,6 +52,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.principalDetailsService = principalDetailsService;
         this.handlerExceptionResolver = handlerExceptionResolver;
     }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return WHITELIST.matches(request);
+    }
+
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
