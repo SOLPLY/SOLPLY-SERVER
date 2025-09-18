@@ -31,20 +31,20 @@ public class JwtTokenProvider {
     }
 
     // JwtTokenCollection(AccessToken, RefreshToken) 생성
-    public TokenCollectionDto createTokenCollection(Long memberId) {
+    public TokenCollectionDto createTokenCollection(Long userId) {
         return TokenCollectionDto.of(
-                generateAccessToken(memberId),
-                generateRefreshToken(memberId)
+                generateAccessToken(userId),
+                generateRefreshToken(userId)
         );
     }
 
     // Access Token 생성
-    public String generateAccessToken(Long memberId) {
+    public String generateAccessToken(Long userId) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + accessTokenExpireTime);
 
         return Jwts.builder()
-                .setSubject(String.valueOf(memberId))
+                .setSubject(String.valueOf(userId))
                 .claim("type", "access") // Access Token용 Claim 추가
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
@@ -53,12 +53,12 @@ public class JwtTokenProvider {
     }
 
     // Refresh Token 생성
-    public String generateRefreshToken(Long memberId) {
+    public String generateRefreshToken(Long userId) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + refreshTokenExpireTime);
 
         return Jwts.builder()
-                .setSubject(String.valueOf(memberId))
+                .setSubject(String.valueOf(userId))
                 .claim("type", "refresh") // Refresh Token용 Claim 추가
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
@@ -66,33 +66,34 @@ public class JwtTokenProvider {
                 .compact();
     }
 
-    // Access 토큰 유효성 검증
-    public boolean validateAccessToken(String accessToken) {
-        try {
-            Claims claims = Jwts.parserBuilder().setSigningKey(accessKey).build().parseClaimsJws(accessToken).getBody();
-            if (!"access".equals(claims.get("type"))) {
-                throw new JwtTokenException(ErrorCode.INVALID_ACCESS_TOKEN);
-            }
-            return true;
-        } catch (ExpiredJwtException e) {
-            throw new JwtTokenException(ErrorCode.EXPIRED_ACCESS_TOKEN);
-        } catch (Exception e) {
-            throw new JwtTokenException(ErrorCode.INVALID_ACCESS_TOKEN);
-        }
+    public Claims parseAccessToken(String token) {
+        return parseAndValidate(token, accessKey, TokenType.ACCESS);
     }
 
-    // Refresh 토큰 유효성 검증
-    public boolean validateRefreshToken(String refreshToken) {
+    public Claims parseRefreshToken(String token) {
+        return parseAndValidate(token, refreshKey, TokenType.REFRESH);
+    }
+
+    private Claims parseAndValidate(String token, Key key, TokenType expectedType) {
         try {
-            Claims claims = Jwts.parserBuilder().setSigningKey(refreshKey).build().parseClaimsJws(refreshToken).getBody();
-            if (!"refresh".equals(claims.get("type"))) {
-                throw new JwtTokenException(ErrorCode.INVALID_REFRESH_TOKEN);
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(key)
+                    .setAllowedClockSkewSeconds(30)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+
+            String type = String.valueOf(claims.get("type"));
+            if (!expectedType.name().equalsIgnoreCase(type)) {
+                throw new JwtTokenException(ErrorCode.INVALID_TOKEN);
             }
-            return true;
+            return claims;
         } catch (ExpiredJwtException e) {
-            throw new JwtTokenException(ErrorCode.EXPIRED_REFRESH_TOKEN);
-        } catch (Exception e) {
-            throw new JwtTokenException(ErrorCode.INVALID_REFRESH_TOKEN);
+            throw new JwtTokenException(
+                    expectedType == TokenType.ACCESS ? ErrorCode.EXPIRED_ACCESS_TOKEN
+                            : ErrorCode.EXPIRED_REFRESH_TOKEN);
+        } catch (JwtException e) {
+            throw new JwtTokenException(ErrorCode.INVALID_TOKEN);
         }
     }
 

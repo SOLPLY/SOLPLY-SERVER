@@ -56,6 +56,7 @@ public enum ErrorCode {
     PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
 
+
     // 코스 관련 (COURSE-xxx)
     NOT_FOUND_COURSE(HttpStatus.NOT_FOUND, "COURSE-001", "존재하지 않는 코스입니다."),
     ALREADY_BOOKMARKED_COURSE(HttpStatus.CONFLICT, "COURSE-002", "이미 북마크된 코스입니다."),
@@ -87,7 +88,7 @@ public enum ErrorCode {
     INVALID_IMAGE_KEY(HttpStatus.BAD_REQUEST, "REPORT-002", "유효하지 않은 이미지 파일입니다."),
     NOT_FOUND_REPORT(HttpStatus.NOT_FOUND, "REPORT-003", "존재하지 않는 제보입니다."),
     INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-004", "유효하지 않은 제보 유형입니다.");
-
+  
 
     private final HttpStatus httpStatus;
     private final String code;

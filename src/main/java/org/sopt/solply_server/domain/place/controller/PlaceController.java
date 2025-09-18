@@ -8,12 +8,15 @@ import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
+import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.place.service.PlaceReportService;
+import org.sopt.solply_server.domain.place.service.PlaceRequestService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.place.dto.request.PlaceReportCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceReportCreateResponse;
@@ -32,6 +35,7 @@ public class PlaceController {
     private final PlaceService placeService;
     private final PlaceBookmarkService placeBookmarkService;
     private final PlaceReportService placeReportService;
+    private final PlaceRequestService placeRequestService;
 
 
     @Operation(summary = "장소 상세 조회", description = "장소 ID를 통해 장소의 상세 정보를 조회합니다.")
@@ -139,6 +143,16 @@ public class PlaceController {
         return CustomApiResponse.success("정보 제보가 성공적으로 접수되었습니다.", response);
     }
 
+    @Operation(summary = "장소등록요청", description = "사용자가 원하는 장소를 등록 요청합니다.")
+    @PostMapping("/requests")
+    public ResponseEntity<CustomApiResponse<PlaceRequestCreateResponse>> createPlaceRequest(
+            @CurrentUserId Long userId,
+            @RequestBody @Validated PlaceRequestCreateRequest request) {
+        return CustomApiResponse.success(
+                "장소 등록 요청이 접수되었습니다.",
+                placeRequestService.createPlaceRequest(userId,request)
+        );
 
+    }
 
 }
