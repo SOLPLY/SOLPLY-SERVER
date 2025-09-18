@@ -1,7 +1,7 @@
 package org.sopt.solply_server.domain.report.repository;
 
-import org.sopt.solply_server.domain.report.entity.PlaceReport;
-import org.sopt.solply_server.domain.report.entity.PlaceReportStatus;
+import org.sopt.solply_server.domain.place.entity.PlaceReport;
+import org.sopt.solply_server.domain.place.entity.PlaceReportStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
