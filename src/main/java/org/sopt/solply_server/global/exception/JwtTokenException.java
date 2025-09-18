@@ -4,4 +4,5 @@ public class JwtTokenException extends BusinessException {
     public JwtTokenException(ErrorCode errorCode) {
         super(errorCode);
     }
+
 }

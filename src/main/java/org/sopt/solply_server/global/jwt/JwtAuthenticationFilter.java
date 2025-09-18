@@ -1,11 +1,14 @@
 package org.sopt.solply_server.global.jwt;
 
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.security.PrincipalDetailsService;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
@@ -16,34 +19,52 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Collections;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 @Component
-@RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtTokenResolver jwtTokenResolver;
     private final PrincipalDetailsService principalDetailsService;
+    private final HandlerExceptionResolver handlerExceptionResolver;
+
+    public JwtAuthenticationFilter(
+            JwtTokenProvider jwtTokenProvider,
+            JwtTokenResolver jwtTokenResolver,
+            PrincipalDetailsService principalDetailsService,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver handlerExceptionResolver
+    ) {
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.jwtTokenResolver = jwtTokenResolver;
+        this.principalDetailsService = principalDetailsService;
+        this.handlerExceptionResolver = handlerExceptionResolver;
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        String accessToken = resolveToken(request);
+        try {
+            String accessToken = resolveToken(request);
 
-        if (StringUtils.hasText(accessToken) && jwtTokenProvider.validateAccessToken(accessToken)) {
-            Long userId = jwtTokenResolver.getUserIdFromToken(accessToken);
+            if (StringUtils.hasText(accessToken)) {
 
-            // 인증 정보 생성
-            UserDetails userDetails = principalDetailsService.loadUserByUsername(userId.toString());
-            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                    userDetails, null, userDetails.getAuthorities());
+                Claims claims = jwtTokenProvider.parseAccessToken(accessToken);
+                Long userId = jwtTokenResolver.getUserId(claims);
 
-            // SecurityContext에 인증 정보 저장
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+                UserDetails userDetails = principalDetailsService.loadUserByUsername(userId.toString());
+                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                        userDetails, null, userDetails.getAuthorities());
+
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
+
+            filterChain.doFilter(request, response);
+        } catch (JwtTokenException e) {
+            SecurityContextHolder.clearContext(); // 인증 정보 초기화
+            handlerExceptionResolver.resolveException(request, response, null, e);
         }
-
-        filterChain.doFilter(request, response);
     }
 
     // "Authorization" 헤더에서 토큰 추출

@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.auth.service;
 
+import io.jsonwebtoken.Claims;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -61,8 +62,8 @@ public class AuthService {
 
     // 토큰 재발급
     public RefreshResponse refreshToken(String refreshToken) {
-        jwtTokenProvider.validateRefreshToken(refreshToken);
-        Long userId = jwtTokenResolver.getUserIdFromToken(refreshToken);
+        Claims claims = jwtTokenProvider.parseRefreshToken(refreshToken);
+        Long userId = claims.get("userId", Long.class);
 
         String storedRefreshToken = refreshTokenRepository.findByMemberId(userId);
         if (storedRefreshToken == null || !storedRefreshToken.equals(refreshToken)) {
