@@ -117,14 +117,6 @@ public class GlobalExceptionHandler {
         return CustomApiResponse.error(ErrorCode.MISSING_REQUIRED_PARAMETER);
     }
 
-    // 요청에 포함된 파라미터 이름들을 추출하는 헬퍼 메서드
-    private String getReceivedParameterNames(HttpServletRequest request) {
-        if (request.getParameterMap().isEmpty()) {
-            return "없음";
-        }
-        return String.join(", ", request.getParameterMap().keySet());
-    }
-
     // 400: JSON 파싱 자체가 실패한 경우
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<CustomApiResponse<Void>> handleMessageNotReadableException(
