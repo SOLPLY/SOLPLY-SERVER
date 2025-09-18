@@ -31,20 +31,20 @@ public class JwtTokenProvider {
     }
 
     // JwtTokenCollection(AccessToken, RefreshToken) 생성
-    public TokenCollectionDto createTokenCollection(Long memberId) {
+    public TokenCollectionDto createTokenCollection(Long userId) {
         return TokenCollectionDto.of(
-                generateAccessToken(memberId),
-                generateRefreshToken(memberId)
+                generateAccessToken(userId),
+                generateRefreshToken(userId)
         );
     }
 
     // Access Token 생성
-    public String generateAccessToken(Long memberId) {
+    public String generateAccessToken(Long userId) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + accessTokenExpireTime);
 
         return Jwts.builder()
-                .setSubject(String.valueOf(memberId))
+                .setSubject(String.valueOf(userId))
                 .claim("type", "access") // Access Token용 Claim 추가
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
@@ -53,12 +53,12 @@ public class JwtTokenProvider {
     }
 
     // Refresh Token 생성
-    public String generateRefreshToken(Long memberId) {
+    public String generateRefreshToken(Long userId) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + refreshTokenExpireTime);
 
         return Jwts.builder()
-                .setSubject(String.valueOf(memberId))
+                .setSubject(String.valueOf(userId))
                 .claim("type", "refresh") // Refresh Token용 Claim 추가
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
