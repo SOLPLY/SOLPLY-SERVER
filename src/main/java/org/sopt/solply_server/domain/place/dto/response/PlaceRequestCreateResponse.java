@@ -4,11 +4,13 @@ import lombok.Builder;
 
 @Builder
 public record PlaceRequestCreateResponse(
-        Long placeRequestId
+        Long placeRequestId,
+        Long userId
 ){
-    public static PlaceRequestCreateResponse of(Long placeRequestId){
+    public static PlaceRequestCreateResponse of(Long placeRequestId, Long userId){
         return PlaceRequestCreateResponse.builder()
                 .placeRequestId(placeRequestId)
+                .userId(userId)
                 .build();
     }
 }

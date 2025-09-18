@@ -1,10 +1,13 @@
 CREATE TABLE place_request (
-                       id BIGSERIAL PRIMARY KEY,
-                       place_name VARCHAR(255) NOT NULL,
-                       address VARCHAR(255) NOT NULL,
-                       reason TEXT NOT NULL,
-                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+     id BIGSERIAL PRIMARY KEY,
+     place_name VARCHAR(255) NOT NULL,
+     address VARCHAR(255) NOT NULL,
+     reason TEXT NOT NULL,
+     user_id BIGINT NOT NULL,
+     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+      CONSTRAINT fk_place_request_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TRIGGER update_place_request_updated_at BEFORE UPDATE ON place_request FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
