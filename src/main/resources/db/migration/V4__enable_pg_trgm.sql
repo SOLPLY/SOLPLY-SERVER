@@ -1,5 +1,4 @@
--- pg_trgm 확장 설치
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- flyway:transactional=false
 
-CREATE INDEX IF NOT EXISTS idx_places_name_trgm
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_places_name_trgm
     ON places USING gin (name gin_trgm_ops);
