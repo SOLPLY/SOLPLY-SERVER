@@ -201,7 +201,7 @@ public class CourseService {
                     return CoursePlaceDetailsDto.of(
                             place,
                             thumbnailUrl,
-                            place.getPrimaryTag(),
+                            place.getMainTag(),
                             placeBookmarkMap.getOrDefault(place.getId(), false),
                             coursePlace.getPlaceOrder()
                     );

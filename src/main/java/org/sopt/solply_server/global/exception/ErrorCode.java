@@ -56,6 +56,7 @@ public enum ErrorCode {
     PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
 
+
     // 코스 관련 (COURSE-xxx)
     NOT_FOUND_COURSE(HttpStatus.NOT_FOUND, "COURSE-001", "존재하지 않는 코스입니다."),
     ALREADY_BOOKMARKED_COURSE(HttpStatus.CONFLICT, "COURSE-002", "이미 북마크된 코스입니다."),
@@ -77,7 +78,10 @@ public enum ErrorCode {
     NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-006" , "유저가 선택한 동네가 없어서 온보딩을 진행해야 합니다."),
 
     // 북마크 관련 (BOOKMARK-xxx)
-    NOT_BOOKMARKED_COURSE(HttpStatus.FORBIDDEN, "BOOKMARK-001", "북마크된 코스가 아닙니다.");
+    NOT_BOOKMARKED_COURSE(HttpStatus.FORBIDDEN, "BOOKMARK-001", "북마크된 코스가 아닙니다."),
+
+    // 검색 관련 (SEARCH-xxx)
+    INVALID_KEYWORD(HttpStatus.BAD_REQUEST, "SEARCH-001", "검색어는 최소 2자 이상이어야 합니다.");
 
 
     private final HttpStatus httpStatus;

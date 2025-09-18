@@ -11,7 +11,11 @@ import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
+
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
+
+import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
+
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.place.service.PlaceRequestService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
@@ -68,6 +72,17 @@ public class PlaceController {
                         placeFilterGetRequest.subTagAIdList(),
                         placeFilterGetRequest.subTagBIdList()
                 )
+        );
+    }
+
+
+    @Operation(summary = "장소 검색", description = "검색 키워드를 기반으로 장소를 조회합니다.")
+    @GetMapping("/search")
+    public ResponseEntity<CustomApiResponse<PlaceSearchResponse>> searchPlaces(
+            @RequestParam("keyword") String keyword) {
+        return CustomApiResponse.success(
+                "장소 검색 성공",
+                placeService.searchPlaces(keyword)
         );
     }
 

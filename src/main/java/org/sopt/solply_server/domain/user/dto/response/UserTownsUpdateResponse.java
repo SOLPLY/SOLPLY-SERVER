@@ -4,11 +4,10 @@ import java.util.List;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
 
 public record UserTownsUpdateResponse(
-        UserTownInfoDto selectedTown,
-        List<UserTownInfoDto> favoriteTownList
+        UserTownInfoDto selectedTown
 ) {
-    public static UserTownsUpdateResponse of(UserTownInfoDto selectedTown, List<UserTownInfoDto> favoriteTownList) {
-        return new UserTownsUpdateResponse(selectedTown, favoriteTownList);
+    public static UserTownsUpdateResponse of(UserTownInfoDto selectedTown) {
+        return new UserTownsUpdateResponse(selectedTown);
     }
 
 }

@@ -77,7 +77,7 @@ public class RecommendService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getPrimaryTag(),
+                        place.getMainTag(),
                         place.getIntroduction()
                 ))
                 .collect(Collectors.toList());
