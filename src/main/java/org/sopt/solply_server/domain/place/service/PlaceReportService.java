@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.report.service;
+package org.sopt.solply_server.domain.place.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -6,8 +6,8 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.dto.request.PlaceReportCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceReportCreateResponse;
 import org.sopt.solply_server.domain.place.entity.PlaceReport;
-import org.sopt.solply_server.domain.report.repository.PlaceReportRepository;
-import org.sopt.solply_server.domain.report.util.PlaceReportValidator;
+import org.sopt.solply_server.domain.place.repository.PlaceReportRepository;
+import org.sopt.solply_server.domain.place.util.PlaceReportValidator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;

@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.report.repository;
+package org.sopt.solply_server.domain.place.repository;
 
 import org.sopt.solply_server.domain.place.entity.PlaceReport;
 import org.sopt.solply_server.domain.place.entity.PlaceReportStatus;

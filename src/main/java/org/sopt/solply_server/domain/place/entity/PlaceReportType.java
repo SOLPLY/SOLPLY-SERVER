@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.report.entity;
+package org.sopt.solply_server.domain.place.entity;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

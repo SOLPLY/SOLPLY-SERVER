@@ -1,8 +1,7 @@
-package org.sopt.solply_server.domain.report.entity;
+package org.sopt.solply_server.domain.place.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
@@ -11,7 +10,7 @@ import java.util.List;
 
 @Entity
 @Getter
-@Builder
+@Builder(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "place_reports",
