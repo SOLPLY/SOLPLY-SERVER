@@ -93,9 +93,10 @@ public class CourseController {
             @Parameter(description = "장소 ID (장소를 코스에 추가할 때 사용 - 해당 장소의 동네 기준으로 조회)")
             @RequestParam(value = "candidatePlaceId", required = false)
             Long candidatePlaceId) {
+
         return CustomApiResponse.success(
                 "사용자 코스 목록 조회에 성공했습니다.",
-                courseService.getBookmarkedCoursesByTownByLatest(userId, townId, candidatePlaceId)
+                courseService.getBookmarkedCourses(userId, townId, candidatePlaceId)
         );
     }
 
