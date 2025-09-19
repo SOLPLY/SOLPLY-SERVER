@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.place.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -11,14 +12,14 @@ import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
-
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
-
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
-
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
+import org.sopt.solply_server.domain.place.service.PlaceReportService;
 import org.sopt.solply_server.domain.place.service.PlaceRequestService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
+import org.sopt.solply_server.domain.place.dto.request.PlaceReportCreateRequest;
+import org.sopt.solply_server.domain.place.dto.response.PlaceReportCreateResponse;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +34,7 @@ public class PlaceController {
 
     private final PlaceService placeService;
     private final PlaceBookmarkService placeBookmarkService;
+    private final PlaceReportService placeReportService;
     private final PlaceRequestService placeRequestService;
 
 
@@ -126,6 +128,19 @@ public class PlaceController {
             List<Long> placeIds) {
         placeBookmarkService.deletePlaceBookmarks(userId, placeIds);
         return CustomApiResponse.success("내 장소에서 장소들을 삭제했습니다.");
+    }
+
+    // == 장소 제보 관련 API == //
+    @Operation(summary = "잘못된 장소 정보 제보", description = "잘못된 장소의 정보를 제보합니다.")
+    @PostMapping("/{placeId}/reports")
+    public ResponseEntity<CustomApiResponse<PlaceReportCreateResponse>> reportPlace(
+            @CurrentUserId Long userId,
+            @Parameter(description = "장소 ID", required = true)
+            @PathVariable("placeId") Long placeId,
+            @Valid @RequestBody PlaceReportCreateRequest request
+    ) {
+        PlaceReportCreateResponse response = placeReportService.createPlaceReport(userId, placeId, request);
+        return CustomApiResponse.success("정보 제보가 성공적으로 접수되었습니다.", response);
     }
 
     @Operation(summary = "장소등록요청", description = "사용자가 원하는 장소를 등록 요청합니다.")

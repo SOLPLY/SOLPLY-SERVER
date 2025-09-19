@@ -81,8 +81,14 @@ public enum ErrorCode {
     NOT_BOOKMARKED_COURSE(HttpStatus.FORBIDDEN, "BOOKMARK-001", "북마크된 코스가 아닙니다."),
 
     // 검색 관련 (SEARCH-xxx)
-    INVALID_KEYWORD(HttpStatus.BAD_REQUEST, "SEARCH-001", "검색어는 최소 2자 이상이어야 합니다.");
+    INVALID_KEYWORD(HttpStatus.BAD_REQUEST, "SEARCH-001", "검색어는 최소 2자 이상이어야 합니다."),
 
+    // 제보 관련 (REPORT-xxx)
+    REPORT_LIMIT_EXCEEDED_USER(HttpStatus.TOO_MANY_REQUESTS, "REPORT-001", "동일 장소에 대해 하루에 한 번만 제보할 수 있습니다."),
+    INVALID_IMAGE_KEY(HttpStatus.BAD_REQUEST, "REPORT-002", "유효하지 않은 이미지 파일입니다."),
+    NOT_FOUND_REPORT(HttpStatus.NOT_FOUND, "REPORT-003", "존재하지 않는 제보입니다."),
+    INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-004", "유효하지 않은 제보 유형입니다.");
+  
 
     private final HttpStatus httpStatus;
     private final String code;
