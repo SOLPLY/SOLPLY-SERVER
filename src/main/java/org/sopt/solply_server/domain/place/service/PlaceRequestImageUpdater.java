@@ -1,16 +1,12 @@
 package org.sopt.solply_server.domain.place.service;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.entity.PlaceRequestImageInfo;
 import org.sopt.solply_server.domain.place.repository.PlaceRequestRepository;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +18,7 @@ class PlaceRequestImageUpdater implements ImageFieldUpdater {
 
     @Override
     public TargetDir supportedDir() {
-        return TargetDir.PLACE_REQUESTS;
+        return TargetDir.PLACE_REQUEST;
     }
 
 

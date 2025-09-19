@@ -15,7 +15,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "place_request")
+@Table(name = "place_requests")
 public class PlaceRequest extends BaseTimeEntity {
 
     @Id
@@ -35,7 +35,7 @@ public class PlaceRequest extends BaseTimeEntity {
     @Builder.Default
     @ElementCollection
     @CollectionTable(
-            name = "place_request_image",
+            name = "place_request_images",
             joinColumns = @JoinColumn(name = "place_request_id")
     )
     private List<PlaceRequestImageInfo> images = new ArrayList<>();

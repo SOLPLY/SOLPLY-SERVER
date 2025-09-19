@@ -34,7 +34,7 @@ public class PlaceRequestTag {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "place_request_id", nullable = false)
-    private PlaceRequest  placeRequest;
+    private PlaceRequest placeRequest;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tag_id", nullable = false)

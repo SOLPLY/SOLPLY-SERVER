@@ -1,10 +1,8 @@
 package org.sopt.solply_server.domain.place.service;
 
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
-import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.dto.request.PlaceReportCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceReportCreateResponse;
@@ -53,7 +51,7 @@ public class PlaceReportService {
         ImageFileKeyUpdateEvent event = ImageFileKeyUpdateEvent.of(
                 user.getId(),
                 savedReport.getId(),
-                TargetDir.PLACE_REQUESTS,
+                TargetDir.PLACE_REQUEST,
                 savedReport.getImageKeys()
         );
 

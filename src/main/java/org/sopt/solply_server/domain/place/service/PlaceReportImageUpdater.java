@@ -17,7 +17,7 @@ class PlaceReportImageUpdater implements ImageFieldUpdater {
     private final PlaceReportRepository placeReportRepository;
     @Override
     public TargetDir supportedDir() {
-        return TargetDir.PLACE_REPORTS;
+        return TargetDir.PLACE_REPORT;
     }
 
     @Override

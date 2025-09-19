@@ -17,17 +17,16 @@ public record PlaceRequestCreateRequest(
     @Size(max = 255, message = "주소는 255자를 초과할 수 없습니다.")
     String address,
 
-    @NotNull(message = "장소유형은 필수입니다.")
+    @NotNull(message = "장소 유형은 필수입니다.")
     Long mainTagId,
 
     List<Long> subTagAIds,
     List<Long> subTagBIds,
 
-    @NotBlank(message = "장소요청사유는 필수입니다.")
+    @NotBlank(message = "장소 요청 사유는 필수입니다.")
     String reason,
 
-    @NotEmpty(message = "이미지는 최소 1개 이상이어야 합니다.")
-    @Valid List<ImageRequest> images
+    List<ImageRequest> images
 ){
     public record ImageRequest(
     @NotNull(message = "displayOrder는 필수입니다.")
