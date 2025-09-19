@@ -1,7 +1,9 @@
 package org.sopt.solply_server.domain.place.entity;
 
 import jakarta.persistence.*;
+import java.util.Collection;
 import lombok.*;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
@@ -44,4 +46,17 @@ public class PlaceRequest extends BaseTimeEntity {
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String reason;
+
+
+    public void addTags(Collection<Tag> tags) {
+        if (tags == null || tags.isEmpty()) return;
+        for (Tag tag : tags) {
+            this.placeRequestTags.add(
+                    PlaceRequestTag.builder()
+                            .placeRequest(this)
+                            .tag(tag)
+                            .build()
+            );
+        }
+    }
 }

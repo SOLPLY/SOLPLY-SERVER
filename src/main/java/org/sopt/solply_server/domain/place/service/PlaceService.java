@@ -20,7 +20,6 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.cache.PlaceBookmarkRedisDataManager;
-import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
@@ -177,7 +176,7 @@ public class PlaceService {
     private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean isOnlyBookmarkSearch,
             final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         if (mainTagId != null) {
-            validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+            tagValidator.validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
         }
 
         if (isOnlyBookmarkSearch) {
@@ -196,25 +195,6 @@ public class PlaceService {
         return places;
     }
 
-    private void validateTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
-        // 메인 태그 검증
-        tagValidator.validateTagType(mainTagId, TagType.MAIN);
-
-        // 서브 태그 검증
-        validateSubTags(mainTagId, subTagAIdList, TagType.OPTION1);
-        validateSubTags(mainTagId, subTagBIdList, TagType.OPTION2);
-    }
-
-    // 서브 태그 검증 메서드
-    private void validateSubTags(final Long mainTagId, final List<Long> subTagIdList, final TagType tagType) {
-        if (subTagIdList == null || subTagIdList.isEmpty()) {
-            return; // 서브 태그가 없는 경우는 검증하지 않음
-        }
-        for (Long subTagId : subTagIdList) {
-            tagValidator.validateTagType(subTagId, tagType);
-        }
-        tagValidator.validateTagListRelation(mainTagId, subTagIdList);
-    }
 
     /**
      * Redis 북마크 데이터를 기반으로 동네별 최신 북마크 장소를 필터링
