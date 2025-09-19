@@ -33,6 +33,7 @@ public class PlaceRequest extends BaseTimeEntity {
     private User user;
 
     @Builder.Default
+    @OrderBy("displayOrder ASC")
     @ElementCollection
     @CollectionTable(
             name = "place_request_images",
