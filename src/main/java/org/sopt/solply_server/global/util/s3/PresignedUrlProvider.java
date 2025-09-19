@@ -32,15 +32,15 @@ public class PresignedUrlProvider {
             "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"
     );
 
-    public PresignedUrlInfo createStagingUploadUrl(Long userId, String uploadToken, String originalFileName, Duration ttl) {
+    public PresignedUrlInfo createStagingUploadUrl(Long userId, String originalFileName, Duration ttl) {
         String ext = guessExt(originalFileName);
         if (ext == null) return new PresignedUrlInfo(originalFileName, null, null, 0);
 
         String mime = guessMime(ext);
         if (!ALLOWED_MIME.contains(mime)) return new PresignedUrlInfo(originalFileName, null, null, 0);
 
-        String key = String.format("%s/uploads/_staging/%d/%s/%s.%s",
-                envPrefix, userId, uploadToken, UUID.randomUUID(), ext);
+        String key = String.format("%s/uploads/_staging/%d/%s.%s",
+                envPrefix, userId, UUID.randomUUID(), ext);
 
         return createPutPresignedUrl(key, mime, ttl, originalFileName);
     }

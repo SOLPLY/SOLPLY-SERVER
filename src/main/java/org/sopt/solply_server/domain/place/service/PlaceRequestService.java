@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
 import org.sopt.solply_server.domain.place.entity.PlaceRequest;
@@ -15,6 +16,8 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.s3.TargetDir;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,16 +26,18 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.sopt.solply_server.domain.user.entity.QUser.user;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class PlaceRequestService {
+
     private final PlaceRequestRepository placeRequestRepository;
     private final TagRepository tagRepository;
     private final UserRepository userRepository;
+
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     @Transactional
     public PlaceRequestCreateResponse createPlaceRequest(final Long userId, final PlaceRequestCreateRequest request) {
@@ -90,8 +95,22 @@ public class PlaceRequestService {
         PlaceRequest saved = placeRequestRepository.save(placeRequest);
         log.info("장소 등록 요청 저장 완료 - placeRequestId: {}", saved.getId());
 
+        ImageFileKeyUpdateEvent event = ImageFileKeyUpdateEvent.of(
+                user.getId(),
+                saved.getId(),
+                TargetDir.PLACE_REQUESTS,
+                saved.getImages().stream()
+                        .map(PlaceRequestImageInfo::getImageFileKey)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList()
+        );
+
+        applicationEventPublisher.publishEvent(event);
+
         return PlaceRequestCreateResponse.of(saved.getId(), saved.getUser().getId());
     }
+
 
     private void validateSubTags(List<Long> subTagIds, Tag mainTag, Map<Long, Tag> tagMap, TagType expectedType) {
         if (subTagIds == null) return;

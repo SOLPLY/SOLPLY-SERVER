@@ -24,7 +24,7 @@ public class FileService {
         List<PresignedUrlInfo> presignedUrlInfos = request.files().stream()
                         .map(file ->
                             presignedUrlProvider.createStagingUploadUrl(
-                                    userId, UUID.randomUUID().toString(), file.fileName(), PRESIGN_TTL
+                                    userId, file.fileName(), PRESIGN_TTL
                             )
                         ).toList();
         return new FilesUploadResponse(
