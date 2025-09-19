@@ -77,6 +77,9 @@ public class Course extends BaseTimeEntity {
         this.name = newName;
     }
 
+    public void updateIntroduction(String newIntroduction) {
+        this.introduction = newIntroduction;
+    }
 
     public List<PlaceInCourseInfo> getPlacesInCourseInfo() {
         return this.coursePlaces.stream()

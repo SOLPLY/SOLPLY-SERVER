@@ -105,7 +105,7 @@ public class CourseService {
         if (originCourse.isCreatedBy(userId)) { // 사용자가 소유한 코스인 경우
             updateCourseInPlace(originCourse, request, placesToAdd);
             log.info("기존 코스 수정 완료 - userId: {}, courseId: {}", userId, courseId);
-            return CourseUpdateResponse.of(courseId, request.courseName(), false);
+            return CourseUpdateResponse.of(courseId, request.courseName(), request.courseDescription(), false);
         }
         else { // 남의 공유된 코스인 경우
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
@@ -113,7 +113,7 @@ public class CourseService {
             Course copiedCourses = createNewCourse(
                     user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
-            return CourseUpdateResponse.of(copiedCourses.getId(), copiedCourses.getName(), true);
+            return CourseUpdateResponse.of(copiedCourses.getId(), copiedCourses.getName(), copiedCourses.getIntroduction(), true);
         }
     }
 
@@ -342,8 +342,9 @@ public class CourseService {
      */
     private void updateCourseInPlace(Course course, CourseUpdateRequest request, List<Place> placesToAdd) {
         course.updateName(request.courseName());
-        courseRepository.deleteCoursePlacesByCourseId(course.getId());
+        course.updateIntroduction(request.courseDescription());
 
+        courseRepository.deleteCoursePlacesByCourseId(course.getId());
         List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
         coursePlaceService.addPlacesToTargetCourse(course, placeInfos, placesToAdd);
     }
