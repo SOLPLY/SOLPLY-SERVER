@@ -15,6 +15,26 @@ public class TagValidator {
 
     private final TagRepository tagRepository;
 
+    public void validateTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
+        // 메인 태그 검증
+        validateTagType(mainTagId, TagType.MAIN);
+
+        // 서브 태그 검증
+        validateSubTags(mainTagId, subTagAIdList, TagType.OPTION1);
+        validateSubTags(mainTagId, subTagBIdList, TagType.OPTION2);
+    }
+
+    // 서브 태그 검증 메서드
+    public void validateSubTags(final Long mainTagId, final List<Long> subTagIdList, final TagType tagType) {
+        if (subTagIdList == null || subTagIdList.isEmpty()) {
+            return; // 서브 태그가 없는 경우는 검증하지 않음
+        }
+        for (Long subTagId : subTagIdList) {
+            validateTagType(subTagId, tagType);
+        }
+        validateTagListRelation(mainTagId, subTagIdList);
+    }
+
     public void validateTagType(Long tagId, TagType tagType) {
         if (!tagRepository.existsById(tagId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
@@ -34,5 +54,7 @@ public class TagValidator {
             }
         }
     }
+
+
 
 }

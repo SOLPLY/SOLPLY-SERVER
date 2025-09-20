@@ -51,13 +51,6 @@ public class S3FileMoveService {
 
         return destKey;
     }
-
-    public List<String> listByToken(Long userId, String uploadToken) {
-        if (userId == null || uploadToken == null || uploadToken.isBlank()) return List.of();
-        String prefix = "%s/uploads/_staging/%d/%s/".formatted(envPrefix, userId, uploadToken);
-        var resp = s3.listObjectsV2(b -> b.bucket(bucketName).prefix(prefix));
-        return resp.contents().stream().map(S3Object::key).toList();
-    }
 }
 
 

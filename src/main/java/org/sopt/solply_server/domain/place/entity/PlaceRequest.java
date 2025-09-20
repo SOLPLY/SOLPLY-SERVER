@@ -1,7 +1,9 @@
 package org.sopt.solply_server.domain.place.entity;
 
 import jakarta.persistence.*;
+import java.util.Collection;
 import lombok.*;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
@@ -13,7 +15,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "place_request")
+@Table(name = "place_requests")
 public class PlaceRequest extends BaseTimeEntity {
 
     @Id
@@ -31,9 +33,10 @@ public class PlaceRequest extends BaseTimeEntity {
     private User user;
 
     @Builder.Default
+    @OrderBy("displayOrder ASC")
     @ElementCollection
     @CollectionTable(
-            name = "place_request_image",
+            name = "place_request_images",
             joinColumns = @JoinColumn(name = "place_request_id")
     )
     private List<PlaceRequestImageInfo> images = new ArrayList<>();
@@ -44,4 +47,17 @@ public class PlaceRequest extends BaseTimeEntity {
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String reason;
+
+
+    public void addTags(Collection<Tag> tags) {
+        if (tags == null || tags.isEmpty()) return;
+        for (Tag tag : tags) {
+            this.placeRequestTags.add(
+                    PlaceRequestTag.builder()
+                            .placeRequest(this)
+                            .tag(tag)
+                            .build()
+            );
+        }
+    }
 }

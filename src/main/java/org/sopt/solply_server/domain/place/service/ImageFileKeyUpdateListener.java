@@ -38,16 +38,11 @@ public class ImageFileKeyUpdateListener {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCreated(ImageFileKeyUpdateEvent e) {
-        // 옮길 stagingKey 찾기
-        List<String> stagingKeys = (e.stagingKeys() != null && !e.stagingKeys().isEmpty())
-                ? e.stagingKeys()
-                : s3FileMoveService.listByToken(e.userId(), e.uploadToken());
-
-        if (stagingKeys.isEmpty()) return;
+        if (e.stagingKeys().isEmpty()) return;
 
         // 파일 위치 이동
         List<String> destKeys = new ArrayList<>();
-        for (String stagingKey : stagingKeys) {
+        for (String stagingKey : e.stagingKeys()) {
             try {
                 String dest = s3FileMoveService.moveToDir(stagingKey, e.targetId(), e.targetDir());
                 destKeys.add(dest);
