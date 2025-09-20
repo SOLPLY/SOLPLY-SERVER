@@ -51,7 +51,7 @@ public class PlaceReportService {
         ImageFileKeyUpdateEvent event = ImageFileKeyUpdateEvent.of(
                 user.getId(),
                 savedReport.getId(),
-                TargetDir.PLACE_REQUEST,
+                TargetDir.PLACE_REPORT,
                 savedReport.getImageKeys()
         );
 
