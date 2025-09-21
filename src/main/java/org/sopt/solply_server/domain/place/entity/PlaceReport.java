@@ -41,6 +41,7 @@ public class PlaceReport extends BaseTimeEntity {
     @Column(columnDefinition = "TEXT")
     private String content;
 
+    @Builder.Default
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "place_report_images", joinColumns = @JoinColumn(name = "place_report_id"))
     @Column(name = "image_key", columnDefinition = "TEXT")

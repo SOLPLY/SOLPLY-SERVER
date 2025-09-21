@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:solply;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: false
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+app:
+  env-prefix: test
+
+aws:
+  enabled: false
+  accessKey: test
+  secretKey: test
+  s3:
+    bucket: solply-test
