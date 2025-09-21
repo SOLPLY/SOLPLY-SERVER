@@ -443,12 +443,3 @@ INSERT INTO course_place (place_order, course_id, place_id, created_at, updated_
                                                                                         (1, 15, 56, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),(2, 15, 36, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),(3, 15, 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),(4, 15, 31, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
                                                                                         (1, 16, 38, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),(2, 16, 49, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),(3, 16, 55, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
                                                                                         (1, 17, 43, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),(2, 17, 47, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),(3, 17, 37, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-
--- =================================================================
--- Sequence 값 업데이트 (PostgreSQL 기준)
--- =================================================================
--- 테이블에 직접 ID를 삽입했으므로, 다음 ID가 정상적으로 생성되도록 sequence를 마지막 ID 값으로 업데이트합니다.
-SELECT setval('towns_id_seq', (SELECT MAX(id) FROM towns));
-SELECT setval('tags_id_seq', (SELECT MAX(id) FROM tags));
-SELECT setval('places_id_seq', (SELECT MAX(id) FROM places));
-SELECT setval('courses_id_seq', (SELECT MAX(id) FROM courses));

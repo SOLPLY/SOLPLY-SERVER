@@ -1,4 +1,2 @@
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-CREATE INDEX IF NOT EXISTS idx_places_name_trgm
-    ON places USING gin (name gin_trgm_ops);
+ALTER TABLE places
+    ADD FULLTEXT INDEX idx_places_name_fulltext (name);

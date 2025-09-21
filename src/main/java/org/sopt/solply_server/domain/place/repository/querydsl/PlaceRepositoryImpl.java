@@ -44,35 +44,39 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         String kw = keyword.trim();
         int length = kw.codePointCount(0, kw.length());
 
-        if (length >= 3) {
-            // 3글자 이상: pg_trgm 유사도 검색
-            var sim   = Expressions.numberTemplate(Double.class, "similarity({0}, {1})", p.name, kw);
-            var match = Expressions.booleanTemplate("{0} % {1}", p.name, kw);
+        if (length >= 4) {
+            // 4글자 이상 → Fulltext Index 활용
+            var match = Expressions.numberTemplate(
+                    Double.class,
+                    "MATCH({0}) AGAINST ({1} IN BOOLEAN MODE)",
+                    p.name, kw + "*"
+            );
 
             return queryFactory.selectFrom(p)
-                    .where(match)
+                    .where(match.gt(0))
                     .orderBy(
-                            sim.desc(),
+                            match.desc(),  // 유사도 점수 높은 순
                             p.name.asc(),
                             p.id.asc()
                     )
-                    .limit(3)
+                    .limit(10)
                     .fetch();
         } else {
-            // 2글자: ILIKE + strpos
+            // 3글자 이하 → LIKE fallback
             String pattern = "%" + kw + "%";
-            var pos = Expressions.numberTemplate(Integer.class, "strpos(lower({0}), lower({1}))", p.name, kw);
-            var sim = Expressions.numberTemplate(Double.class, "similarity({0}, {1})", p.name, kw);
+            var pos = Expressions.numberTemplate(
+                    Integer.class,
+                    "LOCATE({0}, {1})", kw, p.name
+            );
 
             return queryFactory.selectFrom(p)
                     .where(p.name.likeIgnoreCase(pattern))
                     .orderBy(
                             pos.asc().nullsLast(),
-                            sim.desc(),
                             p.name.asc(),
                             p.id.asc()
                     )
-                    .limit(3)
+                    .limit(10)
                     .fetch();
         }
     }
