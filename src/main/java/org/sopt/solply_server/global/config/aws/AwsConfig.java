@@ -33,34 +33,20 @@ public class AwsConfig {
                 .build();
     }
 
-    @Bean(destroyMethod = "close")
+    @Bean
     public S3Client s3Client() {
-        var builder = S3Client.builder()
+        return S3Client.builder()
                 .region(Region.of(awsProperties.getRegion()))
                 .credentialsProvider(creds())
-                .overrideConfiguration(overrides());
-
-        // LocalStack/MinIO 대응
-        if (awsProperties.getS3().getEndpoint() != null) {
-            builder = builder.endpointOverride(awsProperties.getS3().getEndpoint());
-        }
-        if (awsProperties.getS3().getPathStyleAccess() != null) {
-            builder = builder.serviceConfiguration(
-                    S3Configuration.builder()
-                            .pathStyleAccessEnabled(awsProperties.getS3().getPathStyleAccess())
-                            .build());
-        }
-        return builder.build();
+                .overrideConfiguration(overrides())
+                .build();
     }
 
-    @Bean(destroyMethod = "close")
+    @Bean
     public S3Presigner s3Presigner() {
-        var builder = S3Presigner.builder()
+        return S3Presigner.builder()
                 .region(Region.of(awsProperties.getRegion()))
-                .credentialsProvider(creds());
-        if (awsProperties.getS3().getEndpoint() != null) {
-            builder = builder.endpointOverride(awsProperties.getS3().getEndpoint());
-        }
-        return builder.build();
+                .credentialsProvider(creds())
+                .build();
     }
 }
