@@ -38,6 +38,7 @@ application-prod.yml
 !CI.yml
 !CD.yml
 !.coderabbit.yml
+!.src/test/resources/application-test.yml
 
 .docker/init/init_role.sql
 
