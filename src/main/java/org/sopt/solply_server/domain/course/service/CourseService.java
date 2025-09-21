@@ -231,20 +231,17 @@ public class CourseService {
 
         final Long targetTownId;
         final Place candidatePlace;
-        final boolean checkCanAddPlaceToCourse;
 
         // 장소 추가 모드
         if (candidatePlaceId != null) {
             candidatePlace = entityLoader.getPlace(candidatePlaceId);
             targetTownId = candidatePlace.getTown().getId();
-            checkCanAddPlaceToCourse = true;
         }
         // 북마크 폴더 조회 모드
         else {
             townValidator.validateTownId(townId);
             targetTownId = townId;
             candidatePlace = null;
-            checkCanAddPlaceToCourse = false;
         }
 
         List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
@@ -281,10 +278,10 @@ public class CourseService {
 
         // 상세 검증 결과 준비 (코스 추가 모드일 때만)
         Map<Long, CourseValidationResult> validationResults = prepareValidationResults(
-                filteredCourses, candidatePlace, checkCanAddPlaceToCourse);
+                filteredCourses, candidatePlace, candidatePlaceId != null);
 
         List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
-                .map(course -> createCourseInfoDto(course, validationResults, checkCanAddPlaceToCourse))
+                .map(course -> createCourseInfoDto(course, validationResults, candidatePlaceId != null))
                 .sorted(
                         (dto1, dto2) -> {
                             LocalDateTime createdAt1 = courseIdCreatedAtMap.get(dto1.courseId());
