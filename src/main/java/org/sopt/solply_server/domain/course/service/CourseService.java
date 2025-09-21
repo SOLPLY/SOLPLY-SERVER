@@ -211,10 +211,96 @@ public class CourseService {
         return CourseDetailGetResponse.of(course, isCourseBookmarked, coursePlaces);
     }
 
+    /**
+     * 사용자 북마크 코스 목록 조회
+     * - townId가 있으면: 해당 동네의 북마크 코스 조회 (북마크 폴더 용)
+     * - candidatePlaceId가 있으면: 장소가 속한 동네의 북마크 코스 조회 + 추가 가능 여부 검증 (코스 추가 용)
+     */
+    public CourseBookmarkListGetResponse getBookmarkedCourses(
+            final Long userId,
+            final Long townId,
+            final Long candidatePlaceId) {
+
+        if (townId == null && candidatePlaceId == null) {
+            throw new BusinessException(ErrorCode.MISSING_REQUIRED_PARAMETER);
+        }
+
+        if (townId != null && candidatePlaceId != null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY);
+        }
+
+        final Long targetTownId;
+        final Place candidatePlace;
+
+        // 장소 추가 모드
+        if (candidatePlaceId != null) {
+            candidatePlace = entityLoader.getPlace(candidatePlaceId);
+            targetTownId = candidatePlace.getTown().getId();
+        }
+        // 북마크 폴더 조회 모드
+        else {
+            townValidator.validateTownId(townId);
+            targetTownId = townId;
+            candidatePlace = null;
+        }
+
+        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
+
+        if (activeBookmarks.isEmpty()) {
+            log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
+            return CourseBookmarkListGetResponse.from(List.of());
+        }
+
+        // 코스 ID와 북마크 저장 시간을 매핑하여 저장
+        Map<Long, LocalDateTime> courseIdCreatedAtMap = activeBookmarks.stream()
+                .collect(Collectors.toMap(
+                        CourseBookmarkRedisDto::courseId,
+                        CourseBookmarkRedisDto::createdAt
+                ));
+
+        List<Long> courseIds = activeBookmarks.stream()
+                .map(CourseBookmarkRedisDto::courseId)
+                .toList();
+
+        List<Course> filteredCourses = courseRepository.findBookmarkedCoursesByTownId(courseIds, targetTownId);
+
+        if (filteredCourses.isEmpty()) {
+            log.info("동네 {}에 북마크된 코스가 없습니다.", targetTownId);
+            return CourseBookmarkListGetResponse.from(List.of());
+        }
+
+        List<Long> filteredCourseIds = filteredCourses.stream()
+                .map(Course::getId)
+                .toList();
+
+        // 코스 태그 정보 배치 로딩
+        courseRepository.findPlacesWithTagsByCourseIds(filteredCourseIds);
+
+        // 상세 검증 결과 준비 (코스 추가 모드일 때만)
+        Map<Long, CourseValidationResult> validationResults = prepareValidationResults(
+                filteredCourses, candidatePlace, candidatePlaceId != null);
+
+        List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
+                .map(course -> createCourseInfoDto(course, validationResults, candidatePlaceId != null))
+                .sorted(
+                        (dto1, dto2) -> {
+                            LocalDateTime createdAt1 = courseIdCreatedAtMap.get(dto1.courseId());
+                            LocalDateTime createdAt2 = courseIdCreatedAtMap.get(dto2.courseId());
+                            return createdAt2.compareTo(createdAt1);
+                        }
+                )
+                .toList();
+
+        log.info("북마크 코스 {}개 조회 완료 (townId: {}, candidatePlaceId: {})",
+                courseInfoDtos.size(), targetTownId, candidatePlaceId);
+        return CourseBookmarkListGetResponse.from(courseInfoDtos);
+    }
+
 
     /**
      * 사용자가 북마크한 코스 목록 조회 (동네 기준 필터링 + 장소 추가 가능 여부)
      */
+    @Deprecated
     public CourseBookmarkListGetResponse getBookmarkedCoursesByTownByLatest(final Long userId, final Long townId, final Long placeId) {
         townValidator.validateTownId(townId);
 
