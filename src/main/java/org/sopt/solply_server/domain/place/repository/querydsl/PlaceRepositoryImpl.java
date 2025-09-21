@@ -37,44 +37,111 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         }
 
         return findPlacesWithTags(place, whereCondition, condition);
+
     }
+
+//    public List<Place> findPlacesByKeyword(String keyword) {
+//        QPlace p = QPlace.place;
+//
+//        String kw = keyword == null ? "" : keyword.trim();
+//        if (kw.isEmpty()) return List.of();
+//
+//        int length = kw.codePointCount(0, kw.length());
+//        // 단일 글자면 FULLTEXT 효용이 떨어지니 LIKE로 처리
+//        if (length >= 4) {
+//            // 4글자 이상 → Fulltext Index 활용
+//            var match = Expressions.numberTemplate(
+//                    Double.class,
+//                    "MATCH({0}) AGAINST ({1} IN BOOLEAN MODE)",
+//                    p.name, kw + "*"
+//            );
+//            return queryFactory.selectFrom(p)
+//                    .where(match.gt(0))
+//                    .orderBy(match.desc(),  // 유사도 점수 높은 순
+//                            p.name.asc(),
+//                            p.id.asc()
+//                    )
+//                    .limit(3)
+//                    .fetch();
+//        } else {
+//            // 3글자 이하 → LIKE fallback
+//            String pattern = "%" + kw + "%";
+//            var pos = Expressions.numberTemplate(
+//                    Integer.class,
+//                    "LOCATE({0}, {1})", kw, p.name
+//            );
+//
+//            return queryFactory.selectFrom(p)
+//                    .where(p.name.likeIgnoreCase(pattern))
+//                    .orderBy(
+//                            pos.asc().nullsLast(),
+//                            p.name.asc(),
+//                            p.id.asc()
+//                    )
+//                    .limit(10)
+//                    .fetch();
+//        }
+//    }
 
     public List<Place> findPlacesByKeyword(String keyword) {
         QPlace p = QPlace.place;
-        String kw = keyword.trim();
-        int length = kw.codePointCount(0, kw.length());
 
-        if (length >= 3) {
-            // 3글자 이상: pg_trgm 유사도 검색
-            var sim   = Expressions.numberTemplate(Double.class, "similarity({0}, {1})", p.name, kw);
-            var match = Expressions.booleanTemplate("{0} % {1}", p.name, kw);
+        String kw = keyword == null ? "" : keyword.trim();
+        if (kw.isEmpty()) return List.of();
+
+        int length = kw.codePointCount(0, kw.length());
+        // 단일 글자면 FULLTEXT 효용이 떨어지니 LIKE로 처리
+        boolean useFullText = length >= 2;
+
+        if (useFullText) {
+            // 공백 기준으로 토큰화 후 각 토큰에 접두 와일드카드(*) 부여
+            String booleanQuery = java.util.Arrays.stream(kw.split("\\s+"))
+                    .filter(s -> !s.isBlank())
+                    .map(t -> sanitizeForBooleanMode(t) + "*")
+                    .collect(java.util.stream.Collectors.joining(" "));
+
+            var score = Expressions.numberTemplate(
+                    Double.class,
+                    "MATCH({0}) AGAINST ({1} IN BOOLEAN MODE)",
+                    p.name, booleanQuery
+            );
 
             return queryFactory.selectFrom(p)
-                    .where(match)
+                    .where(score.gt(0))
                     .orderBy(
-                            sim.desc(),
+                            score.desc(),
                             p.name.asc(),
                             p.id.asc()
                     )
-                    .limit(3)
+                    .limit(10)
                     .fetch();
         } else {
-            // 2글자: ILIKE + strpos
-            String pattern = "%" + kw + "%";
-            var pos = Expressions.numberTemplate(Integer.class, "strpos(lower({0}), lower({1}))", p.name, kw);
-            var sim = Expressions.numberTemplate(Double.class, "similarity({0}, {1})", p.name, kw);
+            // 1글자 → LIKE fallback
+            String escaped = kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+            String pattern = "%" + escaped + "%";
+
+            var pos = Expressions.numberTemplate(
+                    Integer.class,
+                    "LOCATE({0}, {1})",
+                    kw, p.name
+            );
 
             return queryFactory.selectFrom(p)
-                    .where(p.name.likeIgnoreCase(pattern))
+                    .where(Expressions.booleanTemplate("{0} LIKE {1} ESCAPE '\\\\'", p.name, pattern))
                     .orderBy(
                             pos.asc().nullsLast(),
-                            sim.desc(),
                             p.name.asc(),
                             p.id.asc()
                     )
-                    .limit(3)
+                    .limit(10)
                     .fetch();
         }
+    }
+
+    private String sanitizeForBooleanMode(String token) {
+        // BOOLEAN MODE에서 의미 있는 특수문자 제거/공백 치환
+        // (+ - @ ~ < > ( ) " * 등의 혼선을 방지)
+        return token.replaceAll("[+\\-@~<>\\(\\)\"*]", " ");
     }
 
     // 전체 조회
