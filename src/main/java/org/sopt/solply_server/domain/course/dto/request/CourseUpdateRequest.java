@@ -13,7 +13,6 @@ public record CourseUpdateRequest(
         @Size(min = 1, max = 18, message = "코스 이름은 1자 이상 18자 이하로 입력해주세요.")
         String courseName,
 
-        @NotBlank(message = "코스 설명은 필수입니다.")
         @Size(max = 27, message = "코스 설명은 27자 이하로 입력해주세요.")
         String courseDescription,
 
