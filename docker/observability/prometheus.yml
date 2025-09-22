@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'spring-app'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['app:8080']
+
+  - job_name: 'jmeter'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['jmeter:9270']   # JMeter 컨테이너 or 호스트
