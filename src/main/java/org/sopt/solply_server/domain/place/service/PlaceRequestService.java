@@ -40,7 +40,7 @@ public class PlaceRequestService {
     private final ApplicationEventPublisher applicationEventPublisher;
 
     @Transactional
-    public PlaceRequestCreateResponse createPlaceRequest(final Long userId, final PlaceRequestCreateRequest request) {
+    public PlaceRequestCreateResponse createPlaceRequest(final Long userId, PlaceRequestCreateRequest request) {
         log.info("장소 등록 요청 저장 시작 - placeName: {}", request.placeName());
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));

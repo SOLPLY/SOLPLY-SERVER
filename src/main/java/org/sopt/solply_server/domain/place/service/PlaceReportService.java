@@ -29,7 +29,7 @@ public class PlaceReportService {
     private final ApplicationEventPublisher applicationEventPublisher;
 
     @Transactional
-    public PlaceReportCreateResponse createPlaceReport(Long userId, Long placeId, PlaceReportCreateRequest request) {
+    public PlaceReportCreateResponse createPlaceReport(final Long userId, final Long placeId, PlaceReportCreateRequest request) {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
 

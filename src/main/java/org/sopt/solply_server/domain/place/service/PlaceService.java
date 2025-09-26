@@ -101,7 +101,7 @@ public class PlaceService {
     /**
      * 사용자가 북마크한 장소의 썸네일 리스트 조회
      */
-    public PlaceFolderPreviewListGetResponse getBookmarkedPlaceFolderPreviewList(Long userId) {
+    public PlaceFolderPreviewListGetResponse getBookmarkedPlaceFolderPreviewList(final Long userId) {
         // Redis에서 활성화된 북마크 장소(가장 최근에 북마크한 장소들) ID 목록 가져오기
         List<PlaceBookmarkRedisDto> placeBookmarkList = placeBookmarkRedisDataManager.getActivePlaceBookmarkDtos(userId);
 
@@ -123,7 +123,7 @@ public class PlaceService {
         );
     }
 
-    public PlaceSearchResponse searchPlaces(String keyword) {
+    public PlaceSearchResponse searchPlaces(final String keyword) {
         if (InputValidator.isBlank(keyword) || keyword.length() < 2) {
             throw new BusinessException(ErrorCode.INVALID_KEYWORD);
         }
@@ -148,7 +148,7 @@ public class PlaceService {
     }
 
 
-    public List<Place> getPlacesWithTownByPlaceIds(List<Long> placeIds) {
+    public List<Place> getPlacesWithTownByPlaceIds(final List<Long> placeIds) {
         // Town 정보까지 함께 조회 (N+1 문제 방지)
         List<Place> places = placeRepository.findAllByIdsWithTown(placeIds);
 
@@ -266,7 +266,7 @@ public class PlaceService {
                 .collect(Collectors.toList());
     }
 
-    private Map<Long, Place> getPlaceMapFromBookmarks(List<PlaceBookmarkRedisDto> bookmarkDtos) {
+    private Map<Long, Place> getPlaceMapFromBookmarks(final List<PlaceBookmarkRedisDto> bookmarkDtos) {
         List<Long> placeIds = bookmarkDtos.stream()
                 .map(PlaceBookmarkRedisDto::placeId)
                 .distinct()

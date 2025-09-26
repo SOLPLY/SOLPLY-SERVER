@@ -89,7 +89,7 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 //        }
 //    }
 
-    public List<Place> findPlacesWithTownByKeyword(String keyword) {
+    public List<Place> findPlacesWithTownByKeyword(final String keyword) {
         QPlace qPlace = QPlace.place;
         QTown qTown = QTown.town;
 
@@ -146,7 +146,7 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         }
     }
 
-    private String sanitizeForBooleanMode(String token) {
+    private String sanitizeForBooleanMode(final String token) {
         // BOOLEAN MODE에서 의미 있는 특수문자 제거/공백 치환
         // (+ - @ ~ < > ( ) " * 등의 혼선을 방지)
         return token.replaceAll("[+\\-@~<>\\(\\)\"*]", " ");

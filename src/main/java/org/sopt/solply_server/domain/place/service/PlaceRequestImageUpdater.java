@@ -24,7 +24,7 @@ class PlaceRequestImageUpdater implements ImageFieldUpdater {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void replaceImages(long requestId, List<String> destKeys) {
+    public void replaceImages(final long requestId, final List<String> destKeys) {
         var pr = placeRequestRepository.findById(requestId).orElseThrow();
         pr.getImages().clear();
         int order = 0;
