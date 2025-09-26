@@ -13,6 +13,7 @@ import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
+import org.sopt.solply_server.domain.place.dto.PlaceSearchResultDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
@@ -100,7 +101,7 @@ public class PlaceService {
     /**
      * 사용자가 북마크한 장소의 썸네일 리스트 조회
      */
-    public PlaceFolderPreviewListGetResponse getBookmarkedPlaceFolderPreviewList(Long userId) {
+    public PlaceFolderPreviewListGetResponse getBookmarkedPlaceFolderPreviewList(final Long userId) {
         // Redis에서 활성화된 북마크 장소(가장 최근에 북마크한 장소들) ID 목록 가져오기
         List<PlaceBookmarkRedisDto> placeBookmarkList = placeBookmarkRedisDataManager.getActivePlaceBookmarkDtos(userId);
 
@@ -122,27 +123,32 @@ public class PlaceService {
         );
     }
 
-    public PlaceSearchResponse searchPlaces(String keyword) {
+    public PlaceSearchResponse searchPlaces(final String keyword) {
         if (InputValidator.isBlank(keyword) || keyword.length() < 2) {
             throw new BusinessException(ErrorCode.INVALID_KEYWORD);
         }
-        var places = placeRepository.findPlacesByKeyword(keyword);
-        List<PlacePreviewDto> placePreviews = places.stream()
-                .map(place -> PlacePreviewDto.of(
-                        place.getId(),
-                        place.getName(),
-                        imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag(),
-                        place.getAddress(),
-                        false // 검색 결과에서는 북마크 여부를 제공 X
-                ))
+        var places = placeRepository.findPlacesWithTownByKeyword(keyword);
+        List<PlaceSearchResultDto> placePreviews = places.stream()
+                .map(place -> {
+                        Town town = place.getTown();
+                        return PlaceSearchResultDto.of(
+                            place.getId(),
+                            place.getName(),
+                            imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
+                            place.getMainTag(),
+                            place.getAddress(),
+                            false, // 검색 결과에서는 북마크 여부를 제공 X,
+                            town.getId()
+                        );
+                    }
+                )
                 .toList();
 
         return new PlaceSearchResponse(placePreviews);
     }
 
 
-    public List<Place> getPlacesWithTownByPlaceIds(List<Long> placeIds) {
+    public List<Place> getPlacesWithTownByPlaceIds(final List<Long> placeIds) {
         // Town 정보까지 함께 조회 (N+1 문제 방지)
         List<Place> places = placeRepository.findAllByIdsWithTown(placeIds);
 
@@ -260,7 +266,7 @@ public class PlaceService {
                 .collect(Collectors.toList());
     }
 
-    private Map<Long, Place> getPlaceMapFromBookmarks(List<PlaceBookmarkRedisDto> bookmarkDtos) {
+    private Map<Long, Place> getPlaceMapFromBookmarks(final List<PlaceBookmarkRedisDto> bookmarkDtos) {
         List<Long> placeIds = bookmarkDtos.stream()
                 .map(PlaceBookmarkRedisDto::placeId)
                 .distinct()

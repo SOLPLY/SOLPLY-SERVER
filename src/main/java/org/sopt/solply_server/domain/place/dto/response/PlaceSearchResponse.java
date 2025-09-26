@@ -1,9 +1,9 @@
 package org.sopt.solply_server.domain.place.dto.response;
 
 import java.util.List;
-import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
+import org.sopt.solply_server.domain.place.dto.PlaceSearchResultDto;
 
 public record PlaceSearchResponse(
-        List<PlacePreviewDto> places
+        List<PlaceSearchResultDto> places
 ) {
 }

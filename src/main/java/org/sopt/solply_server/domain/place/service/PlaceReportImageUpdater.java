@@ -22,7 +22,7 @@ class PlaceReportImageUpdater implements ImageFieldUpdater {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void replaceImages(long reportId, List<String> destKeys) {
+    public void replaceImages(final long reportId, final List<String> destKeys) {
         var report = placeReportRepository.findById(reportId).orElseThrow();
         report.getImageKeys().clear();
         for (String key : new LinkedHashSet<>(destKeys)) {

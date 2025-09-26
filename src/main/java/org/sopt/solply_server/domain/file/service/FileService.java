@@ -31,4 +31,10 @@ public class FileService {
                 presignedUrlInfos
         );
     }
+
+//    public List<String> createPresignedUrlsToRead(List<String> fileKeys) {
+//        return fileKeys.stream()
+//                .map(presignedUrlProvider::createPresignedUrlToRead)
+//                .toList();
+//    }
 }

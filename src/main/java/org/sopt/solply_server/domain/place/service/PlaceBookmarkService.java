@@ -27,9 +27,7 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class PlaceBookmarkService {
 
-    private final UserRepository userRepository;
     private final PlaceBookmarkRepository placeBookmarkRepository;
-    private final PlaceRepository placeRepository;
     private final CacheService cacheService;
     private final PlaceBookmarkRedisDataManager placeBookmarkRedisDataManager;
     private final EntityLoader entityLoader;

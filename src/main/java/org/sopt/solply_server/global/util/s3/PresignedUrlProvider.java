@@ -46,6 +46,7 @@ public class PresignedUrlProvider {
     }
 
 
+
 //    public PresignedUrlInfo createCategorizedUploadUrl(final ImageCategory imageCategory, final String id, final String originalFileName, final Duration ttl) {
 //        // 확장자 & MIME 확인
 //        String ext = guessExt(originalFileName);
@@ -68,7 +69,6 @@ public class PresignedUrlProvider {
 //        if (InputValidator.isBlank(fileKey)) return null;
 //
 //        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-//                // BUGFIX: seconds면 ofSeconds 사용
 //                .signatureDuration(Duration.ofSeconds(expirationSeconds))
 //                .getObjectRequest(req -> req
 //                        .bucket(bucketName)

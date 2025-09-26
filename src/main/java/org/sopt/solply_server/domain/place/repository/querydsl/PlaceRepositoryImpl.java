@@ -5,7 +5,11 @@ import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.EntityManager;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +19,7 @@ import org.sopt.solply_server.domain.place.entity.QPlace;
 import org.sopt.solply_server.domain.place.entity.QPlaceTag;
 import org.sopt.solply_server.domain.tag.entity.QTag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.domain.town.entity.QTown;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -23,6 +28,7 @@ import org.springframework.stereotype.Repository;
 public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
     private final JPAQueryFactory queryFactory;
+    private final EntityManager entityManager;
 
     public List<Place> findPlacesByConditions(PlaceSearchConditionDto condition) {
         QPlace place = QPlace.place;
@@ -83,35 +89,36 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 //        }
 //    }
 
-    public List<Place> findPlacesByKeyword(String keyword) {
-        QPlace p = QPlace.place;
+    public List<Place> findPlacesWithTownByKeyword(final String keyword) {
+        QPlace qPlace = QPlace.place;
+        QTown qTown = QTown.town;
 
         String kw = keyword == null ? "" : keyword.trim();
         if (kw.isEmpty()) return List.of();
 
         int length = kw.codePointCount(0, kw.length());
-        // 단일 글자면 FULLTEXT 효용이 떨어지니 LIKE로 처리
         boolean useFullText = length >= 2;
 
         if (useFullText) {
-            // 공백 기준으로 토큰화 후 각 토큰에 접두 와일드카드(*) 부여
-            String booleanQuery = java.util.Arrays.stream(kw.split("\\s+"))
+            String booleanQuery = Arrays.stream(kw.split("\\s+"))
                     .filter(s -> !s.isBlank())
-                    .map(t -> sanitizeForBooleanMode(t) + "*")
-                    .collect(java.util.stream.Collectors.joining(" "));
+                    .map(tok -> sanitizeForBooleanMode(tok) + "*")
+                    .collect(Collectors.joining(" "));
 
             var score = Expressions.numberTemplate(
                     Double.class,
-                    "MATCH({0}) AGAINST ({1} IN BOOLEAN MODE)",
-                    p.name, booleanQuery
+                    "match_against({0}, {1})",
+                    qPlace.name, booleanQuery
             );
 
-            return queryFactory.selectFrom(p)
+            return queryFactory
+                    .selectFrom(qPlace)
+                    .join(qPlace.town, qTown).fetchJoin()
                     .where(score.gt(0))
                     .orderBy(
                             score.desc(),
-                            p.name.asc(),
-                            p.id.asc()
+                            qPlace.name.asc(),
+                            qPlace.id.asc()
                     )
                     .limit(10)
                     .fetch();
@@ -123,22 +130,23 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
             var pos = Expressions.numberTemplate(
                     Integer.class,
                     "LOCATE({0}, {1})",
-                    kw, p.name
+                    kw, qPlace.name
             );
 
-            return queryFactory.selectFrom(p)
-                    .where(Expressions.booleanTemplate("{0} LIKE {1} ESCAPE '\\\\'", p.name, pattern))
+            return queryFactory.selectFrom(qPlace)
+                    .join(qPlace.town, qTown).fetchJoin()
+                    .where(Expressions.booleanTemplate("{0} LIKE {1} ESCAPE '\\\\'", qPlace.name, pattern))
                     .orderBy(
                             pos.asc().nullsLast(),
-                            p.name.asc(),
-                            p.id.asc()
+                            qPlace.name.asc(),
+                            qPlace.id.asc()
                     )
                     .limit(10)
                     .fetch();
         }
     }
 
-    private String sanitizeForBooleanMode(String token) {
+    private String sanitizeForBooleanMode(final String token) {
         // BOOLEAN MODE에서 의미 있는 특수문자 제거/공백 치환
         // (+ - @ ~ < > ( ) " * 등의 혼선을 방지)
         return token.replaceAll("[+\\-@~<>\\(\\)\"*]", " ");
