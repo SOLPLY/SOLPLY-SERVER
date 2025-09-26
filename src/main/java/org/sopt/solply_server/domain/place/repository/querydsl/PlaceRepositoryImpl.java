@@ -100,13 +100,11 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         boolean useFullText = length >= 2;
 
         if (useFullText) {
-            // 공백 토큰을 BOOLEAN MODE용으로 가공
             String booleanQuery = Arrays.stream(kw.split("\\s+"))
                     .filter(s -> !s.isBlank())
                     .map(tok -> sanitizeForBooleanMode(tok) + "*")
                     .collect(Collectors.joining(" "));
 
-            // ✅ 여기! 커스텀 함수(match_against) 사용
             var score = Expressions.numberTemplate(
                     Double.class,
                     "match_against({0}, {1})",
@@ -116,9 +114,9 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
             return queryFactory
                     .selectFrom(qPlace)
                     .join(qPlace.town, qTown).fetchJoin()
-                    .where(score.gt(0)) // 점수 > 0 인 것만
+                    .where(score.gt(0))
                     .orderBy(
-                            score.desc(),     // 점수순
+                            score.desc(),
                             qPlace.name.asc(),
                             qPlace.id.asc()
                     )
