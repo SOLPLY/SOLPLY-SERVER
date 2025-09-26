@@ -5,7 +5,11 @@ import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.EntityManager;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +28,7 @@ import org.springframework.stereotype.Repository;
 public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
     private final JPAQueryFactory queryFactory;
+    private final EntityManager entityManager;
 
     public List<Place> findPlacesByConditions(PlaceSearchConditionDto condition) {
         QPlace place = QPlace.place;
@@ -96,28 +101,39 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         boolean useFullText = length >= 2;
 
         if (useFullText) {
-            // 공백 기준으로 토큰화 후 각 토큰에 접두 와일드카드(*) 부여
-            String booleanQuery = java.util.Arrays.stream(kw.split("\\s+"))
+            String booleanQuery = Arrays.stream(kw.split("\\s+"))
                     .filter(s -> !s.isBlank())
-                    .map(t -> sanitizeForBooleanMode(t) + "*")
-                    .collect(java.util.stream.Collectors.joining(" "));
+                    .map(tok -> sanitizeForBooleanMode(tok) + "*")
+                    .collect(Collectors.joining(" "));
 
-            var score = Expressions.numberTemplate(
-                    Double.class,
-                    "MATCH({0}) AGAINST ({1} IN BOOLEAN MODE)",
-                    qPlace.name, booleanQuery
-            );
+            String sql = """
+              select p.id
+              from places p
+              where match(p.name) against (? in boolean mode)
+              order by match(p.name) against (? in boolean mode) desc, p.name asc, p.id asc
+              limit 10
+            """;
 
-            return queryFactory.selectFrom(qPlace)
+            List<?> raw = entityManager.createNativeQuery(sql)
+                    .setParameter(1, booleanQuery)
+                    .setParameter(2, booleanQuery)
+                    .getResultList();
+
+            List<Long> ids = raw.stream()
+                    .filter(Objects::nonNull)
+                    .map(o -> ((Number) o).longValue())
+                    .toList();
+
+            if (ids.isEmpty()) return List.of();
+
+            List<Place> rows = queryFactory.selectFrom(qPlace)
                     .join(qPlace.town, qTown).fetchJoin()
-                    .where(score.gt(0))
-                    .orderBy(
-                            score.desc(),
-                            qPlace.name.asc(),
-                            qPlace.id.asc()
-                    )
-                    .limit(10)
+                    .where(qPlace.id.in(ids))
                     .fetch();
+
+            Map<Long, Place> map = rows.stream().collect(Collectors.toMap(Place::getId, x -> x));
+            List<Place> ordered = ids.stream().map(map::get).filter(Objects::nonNull).toList();
+            return ordered;
         } else {
             // 1글자 → LIKE fallback
             String escaped = kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
