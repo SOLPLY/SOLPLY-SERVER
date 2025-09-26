@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.file.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.file.dto.request.FilesUploadRequest;
@@ -34,5 +35,16 @@ public class FileController {
                 fileService.createPresignedUrlToUpload(userId, request)
         );
     }
+
+
+//    @PostMapping(value = "/presigned-urls/read")
+//    public ResponseEntity<CustomApiResponse<List<String>>> createPresignedUrlsToRead(
+//            @RequestBody List<String> fileKeys
+//    ) {
+//        return CustomApiResponse.success(
+//                "다운로드용 presigned url 생성에 성공했습니다.",
+//                fileService.createPresignedUrlsToRead(fileKeys)
+//        );
+//    }
 
 }

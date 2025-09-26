@@ -13,6 +13,7 @@ import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
+import org.sopt.solply_server.domain.place.dto.PlaceSearchResultDto;
 import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
@@ -126,16 +127,21 @@ public class PlaceService {
         if (InputValidator.isBlank(keyword) || keyword.length() < 2) {
             throw new BusinessException(ErrorCode.INVALID_KEYWORD);
         }
-        var places = placeRepository.findPlacesByKeyword(keyword);
-        List<PlacePreviewDto> placePreviews = places.stream()
-                .map(place -> PlacePreviewDto.of(
-                        place.getId(),
-                        place.getName(),
-                        imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag(),
-                        place.getAddress(),
-                        false // 검색 결과에서는 북마크 여부를 제공 X
-                ))
+        var places = placeRepository.findPlacesWithTownByKeyword(keyword);
+        List<PlaceSearchResultDto> placePreviews = places.stream()
+                .map(place -> {
+                        Town town = place.getTown();
+                        return PlaceSearchResultDto.of(
+                            place.getId(),
+                            place.getName(),
+                            imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
+                            place.getMainTag(),
+                            place.getAddress(),
+                            false, // 검색 결과에서는 북마크 여부를 제공 X,
+                            town.getId()
+                        );
+                    }
+                )
                 .toList();
 
         return new PlaceSearchResponse(placePreviews);

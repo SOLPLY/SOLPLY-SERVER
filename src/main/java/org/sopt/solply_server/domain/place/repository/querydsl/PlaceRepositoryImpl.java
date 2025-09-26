@@ -15,6 +15,7 @@ import org.sopt.solply_server.domain.place.entity.QPlace;
 import org.sopt.solply_server.domain.place.entity.QPlaceTag;
 import org.sopt.solply_server.domain.tag.entity.QTag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.domain.town.entity.QTown;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -83,8 +84,9 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 //        }
 //    }
 
-    public List<Place> findPlacesByKeyword(String keyword) {
-        QPlace p = QPlace.place;
+    public List<Place> findPlacesWithTownByKeyword(String keyword) {
+        QPlace qPlace = QPlace.place;
+        QTown qTown = QTown.town;
 
         String kw = keyword == null ? "" : keyword.trim();
         if (kw.isEmpty()) return List.of();
@@ -103,15 +105,16 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
             var score = Expressions.numberTemplate(
                     Double.class,
                     "MATCH({0}) AGAINST ({1} IN BOOLEAN MODE)",
-                    p.name, booleanQuery
+                    qPlace.name, booleanQuery
             );
 
-            return queryFactory.selectFrom(p)
+            return queryFactory.selectFrom(qPlace)
+                    .join(qPlace.town, qTown).fetchJoin()
                     .where(score.gt(0))
                     .orderBy(
                             score.desc(),
-                            p.name.asc(),
-                            p.id.asc()
+                            qPlace.name.asc(),
+                            qPlace.id.asc()
                     )
                     .limit(10)
                     .fetch();
@@ -123,15 +126,16 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
             var pos = Expressions.numberTemplate(
                     Integer.class,
                     "LOCATE({0}, {1})",
-                    kw, p.name
+                    kw, qPlace.name
             );
 
-            return queryFactory.selectFrom(p)
-                    .where(Expressions.booleanTemplate("{0} LIKE {1} ESCAPE '\\\\'", p.name, pattern))
+            return queryFactory.selectFrom(qPlace)
+                    .join(qPlace.town, qTown).fetchJoin()
+                    .where(Expressions.booleanTemplate("{0} LIKE {1} ESCAPE '\\\\'", qPlace.name, pattern))
                     .orderBy(
                             pos.asc().nullsLast(),
-                            p.name.asc(),
-                            p.id.asc()
+                            qPlace.name.asc(),
+                            qPlace.id.asc()
                     )
                     .limit(10)
                     .fetch();

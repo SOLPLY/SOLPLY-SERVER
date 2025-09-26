@@ -6,5 +6,5 @@ import org.sopt.solply_server.domain.place.entity.Place;
 
 public interface PlaceRepositoryCustom {
     List<Place> findPlacesByConditions(PlaceSearchConditionDto placeSearchConditionDto);
-    List<Place> findPlacesByKeyword(String keyword);
+    List<Place> findPlacesWithTownByKeyword(String keyword);
 }
