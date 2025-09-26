@@ -97,43 +97,33 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         if (kw.isEmpty()) return List.of();
 
         int length = kw.codePointCount(0, kw.length());
-        // 단일 글자면 FULLTEXT 효용이 떨어지니 LIKE로 처리
         boolean useFullText = length >= 2;
 
         if (useFullText) {
+            // 공백 토큰을 BOOLEAN MODE용으로 가공
             String booleanQuery = Arrays.stream(kw.split("\\s+"))
                     .filter(s -> !s.isBlank())
                     .map(tok -> sanitizeForBooleanMode(tok) + "*")
                     .collect(Collectors.joining(" "));
 
-            String sql = """
-              select p.id
-              from places p
-              where match(p.name) against (? in boolean mode)
-              order by match(p.name) against (? in boolean mode) desc, p.name asc, p.id asc
-              limit 10
-            """;
+            // ✅ 여기! 커스텀 함수(match_against) 사용
+            var score = Expressions.numberTemplate(
+                    Double.class,
+                    "match_against({0}, {1})",
+                    qPlace.name, booleanQuery
+            );
 
-            List<?> raw = entityManager.createNativeQuery(sql)
-                    .setParameter(1, booleanQuery)
-                    .setParameter(2, booleanQuery)
-                    .getResultList();
-
-            List<Long> ids = raw.stream()
-                    .filter(Objects::nonNull)
-                    .map(o -> ((Number) o).longValue())
-                    .toList();
-
-            if (ids.isEmpty()) return List.of();
-
-            List<Place> rows = queryFactory.selectFrom(qPlace)
+            return queryFactory
+                    .selectFrom(qPlace)
                     .join(qPlace.town, qTown).fetchJoin()
-                    .where(qPlace.id.in(ids))
+                    .where(score.gt(0)) // 점수 > 0 인 것만
+                    .orderBy(
+                            score.desc(),     // 점수순
+                            qPlace.name.asc(),
+                            qPlace.id.asc()
+                    )
+                    .limit(10)
                     .fetch();
-
-            Map<Long, Place> map = rows.stream().collect(Collectors.toMap(Place::getId, x -> x));
-            List<Place> ordered = ids.stream().map(map::get).filter(Objects::nonNull).toList();
-            return ordered;
         } else {
             // 1글자 → LIKE fallback
             String escaped = kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
