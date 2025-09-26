@@ -11,7 +11,6 @@ public class MySqlFunctions implements FunctionContributor {
     public void contributeFunctions(FunctionContributions fc) {
         SqmFunctionRegistry reg = fc.getFunctionRegistry();
 
-
         reg.registerPattern(
                 "match_against",
                 "match(?1) against (?2 in boolean mode)",
