@@ -21,6 +21,7 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,7 +105,8 @@ public class UserService {
         return UserTownGetResponse.of(selectedTown);
     }
 
-    public UserRequestedPlaceAllGetResponse getPlacesCreatedBy(Long userId, Pageable pageable) {
+    public UserRequestedPlaceAllGetResponse getPlacesCreatedBy(final Long userId, final int page, final int size) {
+        Pageable pageable = PageRequest.of(page, size);
         Page<PlacePreviewDto> places = myPageFacade.getPlacesCreatedBy(userId, pageable);
         return new UserRequestedPlaceAllGetResponse(
                 new PagedResponse<>(

@@ -79,9 +79,10 @@ public class UserController {
     @GetMapping("/{userId}/places")
     public ResponseEntity<CustomApiResponse<UserRequestedPlaceAllGetResponse>> getMyPlaces(
             @PathVariable Long userId,
-            @PageableDefault(size = 100, sort = "createdAt", direction = DESC) Pageable pageable) {
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size) {
         return CustomApiResponse.success("유저가 등록한 장소 조회에 성공했습니다.",
-                userService.getPlacesCreatedBy(userId, pageable));
+                userService.getPlacesCreatedBy(userId, page, size));
     }
 
 }
