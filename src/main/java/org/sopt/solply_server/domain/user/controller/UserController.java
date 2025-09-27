@@ -14,7 +14,9 @@ import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserWithdrawReasonAllGetResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
+import org.sopt.solply_server.domain.user.service.UserWithdrawService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final UserService userService;
+    private final UserWithdrawService userWithdrawService;
 
     @Operation(summary = "닉네임 중복 검사", description = "닉네임 사용 가능 여부를 확인합니다.")
     @GetMapping("/check-nickname")
@@ -72,6 +75,7 @@ public class UserController {
                 userService.getTownsRelatedUser(userId));
     }
 
+    @Operation(summary = "유저가 등록한 장소 조회", description = "특정 유저가 등록한 장소들을 조회합니다.")
     @GetMapping("/{userId}/places")
     public ResponseEntity<CustomApiResponse<UserRequestedPlaceAllGetResponse>> getMyPlaces(
             @PathVariable Long userId,
@@ -81,6 +85,14 @@ public class UserController {
                 userService.getPlacesCreatedBy(userId, page, size));
     }
 
+    @Operation(summary = "회원 탈퇴 사유 리스트 조회", description = "회원 탈퇴 사유 리스트를 조회합니다.")
+    @GetMapping("/withdraw/reasons")
+    public ResponseEntity<CustomApiResponse<UserWithdrawReasonAllGetResponse>> getUserWithdrawReasons() {
+        return CustomApiResponse.success("회원 탈퇴 사유 리스트 조회에 성공했습니다",
+                userWithdrawService.getAllUserWithdrawReasons());
+    }
+
+    @Operation(summary = "회원 탈퇴", description = "회원 탈퇴를 진행합니다.")
     @DeleteMapping("/withdraw")
     public ResponseEntity<CustomApiResponse<Void>> withdrawUser(
             @CurrentUserId Long userId,

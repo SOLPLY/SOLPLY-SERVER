@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.user.entity;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
