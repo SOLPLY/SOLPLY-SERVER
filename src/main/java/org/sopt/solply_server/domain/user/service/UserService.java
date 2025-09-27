@@ -4,20 +4,24 @@ import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.service.mypage.MyPageFacade;
+import org.sopt.solply_server.global.dto.PagedResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -98,5 +102,19 @@ public class UserService {
 //                .toList();
 
         return UserTownGetResponse.of(selectedTown);
+    }
+
+    public UserRequestedPlaceAllGetResponse getPlacesCreatedBy(Long userId, Pageable pageable) {
+        Page<PlacePreviewDto> places = myPageFacade.getPlacesCreatedBy(userId, pageable);
+        return new UserRequestedPlaceAllGetResponse(
+                new PagedResponse<>(
+                        places.getContent(),
+                        places.getNumber(),
+                        places.getSize(),
+                        places.getTotalElements(),
+                        places.getTotalPages(),
+                        places.isLast()
+                )
+        );
     }
 }

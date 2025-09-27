@@ -9,7 +9,6 @@ public record PlacePreviewDto(
         String placeName,
         String thumbnailImageUrl,
         TagName primaryTag,
-        String address,
         boolean isBookmarked
 ) {
     public static PlacePreviewDto of(
@@ -17,7 +16,6 @@ public record PlacePreviewDto(
             String placeName,
             String thumbnailImageUrl,
             TagName primaryTag,
-            String address,
             boolean isBookmarked
     ) {
         return PlacePreviewDto.builder()
@@ -25,7 +23,6 @@ public record PlacePreviewDto(
                 .placeName(placeName)
                 .thumbnailImageUrl(thumbnailImageUrl)
                 .primaryTag(primaryTag)
-                .address(address)
                 .isBookmarked(isBookmarked)
                 .build();
     }

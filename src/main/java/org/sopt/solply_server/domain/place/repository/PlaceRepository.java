@@ -1,12 +1,12 @@
 package org.sopt.solply_server.domain.place.repository;
 
-import com.querydsl.core.Fetchable;
 import io.lettuce.core.dynamic.annotation.Param;
 import java.util.List;
-import java.util.Optional;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCustom;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -27,4 +27,6 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     List<Place> findByIdIn(@Param("placeIds") List<Long> placeIds);
 
     List<Place> findTop3ByCreatedByOrderByCreatedAtDesc(User createdBy);
+
+    Page<Place> findByCreatedByIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 }

@@ -89,7 +89,6 @@ public class PlaceService {
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                         place.getMainTag(),
-                        place.getAddress(),
                         placeBookmarkService.isBookmarked(userId, place.getId())
                 ))
                 .toList();

@@ -1,5 +1,7 @@
 package org.sopt.solply_server.domain.user.controller;
 
+import static org.springframework.data.domain.Sort.Direction.DESC;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -10,11 +12,15 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
+import org.sopt.solply_server.global.dto.PagedResponse;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -68,6 +74,14 @@ public class UserController {
     ) {
         return CustomApiResponse.success("유저의 동네 정보 조회에 성공하였습니다.",
                 userService.getTownsRelatedUser(userId));
+    }
+
+    @GetMapping("/{userId}/places")
+    public ResponseEntity<CustomApiResponse<UserRequestedPlaceAllGetResponse>> getMyPlaces(
+            @PathVariable Long userId,
+            @PageableDefault(size = 100, sort = "createdAt", direction = DESC) Pageable pageable) {
+        return CustomApiResponse.success("유저가 등록한 장소 조회에 성공했습니다.",
+                userService.getPlacesCreatedBy(userId, pageable));
     }
 
 }
