@@ -1,7 +1,5 @@
 package org.sopt.solply_server.domain.user.controller;
 
-import static org.springframework.data.domain.Sort.Direction.DESC;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -9,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
@@ -18,9 +17,6 @@ import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
-import org.sopt.solply_server.global.dto.PagedResponse;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -83,6 +79,15 @@ public class UserController {
             @RequestParam(defaultValue = "100") int size) {
         return CustomApiResponse.success("유저가 등록한 장소 조회에 성공했습니다.",
                 userService.getPlacesCreatedBy(userId, page, size));
+    }
+
+    @DeleteMapping("/withdraw")
+    public ResponseEntity<CustomApiResponse<Void>> withdrawUser(
+            @CurrentUserId Long userId,
+            @RequestBody @Valid UserWithdrawRequest request
+    ) {
+        userService.withdraw(userId, request);
+        return CustomApiResponse.success("회원 탈퇴에 성공했습니다", null);
     }
 
 }

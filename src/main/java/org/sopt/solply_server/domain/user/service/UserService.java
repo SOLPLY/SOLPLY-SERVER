@@ -8,6 +8,7 @@ import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
+import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
@@ -15,6 +16,11 @@ import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetR
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.entity.UserWithdraw;
+import org.sopt.solply_server.domain.user.entity.WithdrawReason;
+import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
+import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.domain.user.repository.UserWithdrawRepository;
 import org.sopt.solply_server.domain.user.service.mypage.MyPageFacade;
 import org.sopt.solply_server.global.dto.PagedResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -36,6 +42,9 @@ public class UserService {
     private final UserInterestTownService userInterestTownService;
     private final EntityLoader entityLoader;
     private final MyPageFacade myPageFacade;
+    private final UserRepository userRepository;
+    private final UserWithdrawRepository userWithdrawRepository;
+    private final SocialUserInfoRepository socialUserInfoRepository;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -118,5 +127,26 @@ public class UserService {
                         places.isLast()
                 )
         );
+    }
+
+    @Transactional
+    public void withdraw(Long userId, UserWithdrawRequest userWithdrawRequest) {
+        User user = entityLoader.getUser(userId);
+        // 기타 사유 검증
+        if (userWithdrawRequest.withdrawReason() == WithdrawReason.OTHERS) {
+            if (userWithdrawRequest.reasonText() == null || userWithdrawRequest.reasonText().isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY);
+            }
+        }
+
+        userWithdrawRepository.save(UserWithdraw.create(user, userWithdrawRequest.withdrawReason(), userWithdrawRequest.reasonText()));
+
+        socialUserInfoRepository.softDeleteByUserId(userId);
+        String suffix = String.valueOf(userId);
+        String email = "deleted+" + suffix + "@example.com";
+        String nickname = "탈퇴회원_" + suffix;
+        userRepository.withdraw(userId, email, nickname);
+
+        userRepository.delete(user);
     }
 }
