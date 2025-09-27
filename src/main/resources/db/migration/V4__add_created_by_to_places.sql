@@ -10,3 +10,5 @@ ALTER TABLE places ADD COLUMN created_by BIGINT NOT NULL DEFAULT 1;
 UPDATE places SET created_by = 1;
 
 ALTER TABLE places ADD CONSTRAINT fk_places_created_by FOREIGN KEY (created_by) REFERENCES users(id);
+
+CREATE INDEX idx_places_created_by_created_at ON places (created_by, created_at DESC, id DESC);

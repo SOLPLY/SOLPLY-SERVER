@@ -4,7 +4,9 @@ import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
+import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
@@ -12,6 +14,7 @@ import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.service.mypage.MyPageFacade;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -27,6 +30,7 @@ public class UserService {
     private final UserValidator userValidator;
     private final UserInterestTownService userInterestTownService;
     private final EntityLoader entityLoader;
+    private final MyPageFacade myPageFacade;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -46,7 +50,18 @@ public class UserService {
             throw new BusinessException(ErrorCode.NOT_FOUND_USER_SELECTED_TOWN);
         }
         Town selectedTown = entityLoader.getTown(user.getSelectedTownId());
-        return UserProfileGetResponse.of(user, UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()));
+
+        List<UserPlacePreviewDto> myPlacePreviews = myPageFacade.getMyPlacesTop3(user)
+                .stream()
+                .map(place -> UserPlacePreviewDto.of(
+                        place.getId(),
+                        place.getName(),
+                        place.getThumbnailFileKey()
+                ))
+                .toList();
+
+        return UserProfileGetResponse.of(
+                user, UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()), myPlacePreviews);
     }
 
 
