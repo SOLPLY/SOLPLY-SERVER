@@ -2,6 +2,8 @@ package org.sopt.solply_server.domain.user.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.Where;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
@@ -34,6 +36,9 @@ public class SocialUserInfo extends BaseTimeEntity {
 
     @Column(nullable = false, unique = true, length = 100)
     private String socialCode;
+
+    @Column(name = "is_deleted", nullable = false)
+    private boolean isDeleted = false;
 
     // 정적 팩토리 메서드
     public static SocialUserInfo create(User user, SocialPlatform platform, String socialId) {

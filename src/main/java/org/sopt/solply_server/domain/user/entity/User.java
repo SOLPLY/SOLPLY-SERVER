@@ -1,11 +1,14 @@
 package org.sopt.solply_server.domain.user.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.Where;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 
@@ -14,6 +17,8 @@ import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 @Builder
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@SQLDelete(sql = "UPDATE users SET is_deleted = true, deleted_at = NOW() WHERE id = ?")
+@Where(clause = "is_deleted = false")
 @Table(name = "users")
 public class User {
 
@@ -32,6 +37,11 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     private UserPersona persona;
+
+    @Column(nullable = false)
+    private boolean isDeleted = false;
+
+    private LocalDateTime deletedAt;
 
     private Long selectedTownId; // 사용자가 선택한 동네 ID
 
