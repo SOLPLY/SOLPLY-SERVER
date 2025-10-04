@@ -1,1 +1,1 @@
-ALTER TABLE users ADD COLUMN profile_image_file_.key VARCHAR(2048);
+ALTER TABLE users ADD COLUMN profile_image_file_key VARCHAR(2048);
