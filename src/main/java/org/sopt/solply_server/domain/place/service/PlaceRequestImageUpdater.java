@@ -5,6 +5,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.entity.PlaceRequestImageInfo;
 import org.sopt.solply_server.domain.place.repository.PlaceRequestRepository;
+import org.sopt.solply_server.global.listener.ImageFieldUpdater;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;

@@ -1,10 +1,9 @@
-package org.sopt.solply_server.domain.place.service;
+package org.sopt.solply_server.global.listener;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.global.exception.BusinessException;

@@ -105,6 +105,16 @@ public class UserController {
                 userService.updateUserInfo(userId, request));
     }
 
+    @Operation(summary = "온보딩 기반 회원 정보 업데이트", description = "온보딩에서 회원 정보를 업데이트합니다.")
+    @PatchMapping("/onboarding")
+    public ResponseEntity<CustomApiResponse<UserUpdateResponse>> updateUserInOnboarding(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody UserUpdateRequest request
+    ) {
+        return CustomApiResponse.success("회원정보 업데이트에 성공했습니다",
+                userService.updateUserInfo(userId, request));
+    }
+
 
 
     @Operation(summary = "회원의 동네 관련 정보 업데이트", description = "회원의 선택한 동네 및 관심 동네들을 업데이트합니다.")

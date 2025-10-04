@@ -36,15 +36,4 @@ public class FileController {
         );
     }
 
-
-//    @PostMapping(value = "/presigned-urls/read")
-//    public ResponseEntity<CustomApiResponse<List<String>>> createPresignedUrlsToRead(
-//            @RequestBody List<String> fileKeys
-//    ) {
-//        return CustomApiResponse.success(
-//                "다운로드용 presigned url 생성에 성공했습니다.",
-//                fileService.createPresignedUrlsToRead(fileKeys)
-//        );
-//    }
-
 }

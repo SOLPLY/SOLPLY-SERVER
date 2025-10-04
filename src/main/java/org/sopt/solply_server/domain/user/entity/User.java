@@ -34,6 +34,10 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
+    @Column(length = 2048)
+    private String profileImageFileKey;
+
+
     @Column(nullable = false)
     private boolean isNewUser;
 
@@ -55,11 +59,10 @@ public class User {
                 .build();
     }
 
-    public void updateuserInfo(UserPersona persona, String nickname, Long selectedTownId) {
+    public void updateuserInfo(UserPersona persona, String nickname, String profileImageFileKey) {
         this.persona = persona;
         this.nickname = nickname;
-        this.selectedTownId = selectedTownId;
-        this.isNewUser = false;
+        this.profileImageFileKey = profileImageFileKey;
     }
 
     public void updateSelectedTown(Long selectedTownId) {

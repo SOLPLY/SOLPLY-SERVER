@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.place.service;
+package org.sopt.solply_server.global.listener;
 
 import java.util.List;
 import org.sopt.solply_server.global.util.s3.TargetDir;

@@ -34,6 +34,9 @@ import org.sopt.solply_server.global.dto.PagedResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.s3.PresignedUrlProvider;
+import org.sopt.solply_server.global.util.s3.S3FileMoveService;
+import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -56,6 +59,8 @@ public class UserService {
     private final SocialUserInfoRepository socialUserInfoRepository;
 
     private final String uniqueNicknameIndexName = "ux_users_nickname";
+    private final PresignedUrlProvider presignedUrlProvider;
+    private final S3FileMoveService s3FileMoveService;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -135,10 +140,10 @@ public class UserService {
     }
 
     @Transactional
-    public UserUpdateResponse updateUserInfo(Long userId, @Valid UserUpdateRequest request) {
+    public UserUpdateResponse updateUserInfo(final Long userId, UserUpdateRequest request) {
         User user = entityLoader.getUser(userId);
         userValidator.validateNickname(user.getNickname(), request.nickname());
-        user.updateuserInfo(request.persona(), request.nickname(), request.selectedTownId());
+        user.updateuserInfo(request.persona(), request.nickname(), request.profileImageFileKey());
 
         try {
             userRepository.flush();
@@ -147,7 +152,16 @@ public class UserService {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
 
-        return UserUpdateResponse.of(user, entityLoader.getTown(request.selectedTownId()));
+        String profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(request.profileImageFileKey());
+
+        if (profileImageUrl.isBlank()) {
+            profileImageUrl = null;
+        }
+
+        // 임시로 올린 프로필 이미지를 해당 유저 디렉토리로 이동
+        s3FileMoveService.moveToDir(request.profileImageFileKey(), userId, TargetDir.USER_PROFILE);
+
+        return UserUpdateResponse.of(user, profileImageUrl);
     }
 
     @Transactional

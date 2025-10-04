@@ -4,17 +4,18 @@ import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
-public record UserUpdateResponse(
-        String nickname,
+public record UserInOnboardingUpdateResponse(
+        Long selectedTownId,
+        String selectedTownName,
         UserPersona persona,
-        String profileImageUrl
-
+        String nickname
 ) {
-    public static UserUpdateResponse of(User user, String profileImageUrl) {
+    public static UserUpdateResponse of(User user, Town town) {
         return new UserUpdateResponse(
-                user.getNickname(),
+                town.getId(),
+                town.getName(),
                 user.getPersona(),
-                profileImageUrl
+                user.getNickname()
         );
     }
 }
