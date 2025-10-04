@@ -59,7 +59,8 @@ public class S3FileMoveService {
         return null;
     }
 
-    public boolean isUploaded(String fileKey) {
+    public boolean isUploaded(final String fileKey) {
+        if (fileKey == null || fileKey.isBlank()) return false;
         try {
             s3Client.headObject(builder -> builder.bucket(bucketName).key(fileKey));
         } catch (NoSuchKeyException e) {
