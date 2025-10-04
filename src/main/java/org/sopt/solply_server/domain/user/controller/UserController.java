@@ -7,10 +7,12 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.user.dto.request.UserInOnboardingUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserInOnboardingUpdateResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserPersonaListGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
@@ -87,11 +89,9 @@ public class UserController {
 
     @Operation(summary = "페르소나 리스트 조회", description = "선택할 페르소나 정보들을 조회합니다.")
     @GetMapping("/persona")
-    public ResponseEntity<CustomApiResponse<UserPersonaListGetResponse>> getUserPersonaList(
-            @CurrentUserId Long userId
-    ) {
+    public ResponseEntity<CustomApiResponse<UserPersonaListGetResponse>> getUserPersonaList() {
         return CustomApiResponse.success("선택할 페르소나 정보 조회에 성공했습니다.",
-                userService.getUserPersonaList(userId));
+                userService.getUserPersonaList());
     }
 
 
@@ -101,18 +101,18 @@ public class UserController {
             @CurrentUserId Long userId,
             @Valid @RequestBody UserUpdateRequest request
     ) {
-        return CustomApiResponse.success("회원정보 업데이트에 성공했습니다",
+        return CustomApiResponse.success("회원 정보 업데이트에 성공했습니다",
                 userService.updateUserInfo(userId, request));
     }
 
     @Operation(summary = "온보딩 기반 회원 정보 업데이트", description = "온보딩에서 회원 정보를 업데이트합니다.")
     @PatchMapping("/onboarding")
-    public ResponseEntity<CustomApiResponse<UserUpdateResponse>> updateUserInOnboarding(
+    public ResponseEntity<CustomApiResponse<UserInOnboardingUpdateResponse>> updateUserInOnboarding(
             @CurrentUserId Long userId,
-            @Valid @RequestBody UserUpdateRequest request
+            @Valid @RequestBody UserInOnboardingUpdateRequest request
     ) {
-        return CustomApiResponse.success("회원정보 업데이트에 성공했습니다",
-                userService.updateUserInfo(userId, request));
+        return CustomApiResponse.success("온보딩 기반 회원 정보 업데이트에 성공했습니다",
+                userService.updateUserInfoInOnboarding(userId, request));
     }
 
 

@@ -10,8 +10,8 @@ public record UserInOnboardingUpdateResponse(
         UserPersona persona,
         String nickname
 ) {
-    public static UserUpdateResponse of(User user, Town town) {
-        return new UserUpdateResponse(
+    public static UserInOnboardingUpdateResponse of(User user, Town town) {
+        return new UserInOnboardingUpdateResponse(
                 town.getId(),
                 town.getName(),
                 user.getPersona(),

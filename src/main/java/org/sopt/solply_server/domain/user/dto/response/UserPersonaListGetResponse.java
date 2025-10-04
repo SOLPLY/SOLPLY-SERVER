@@ -9,7 +9,7 @@ import java.util.List;
 public record UserPersonaListGetResponse(
     List<UserPersonaDto> personaList
 ){
-    public static UserPersonaListGetResponse from(List<UserPersonaDto> personaList){
+    public static UserPersonaListGetResponse of(List<UserPersonaDto> personaList){
         return new UserPersonaListGetResponse(personaList);
     }
 }

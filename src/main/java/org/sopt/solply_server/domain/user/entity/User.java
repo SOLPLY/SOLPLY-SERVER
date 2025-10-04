@@ -1,6 +1,9 @@
 package org.sopt.solply_server.domain.user.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -69,4 +72,11 @@ public class User {
         this.selectedTownId = selectedTownId;
     }
 
+    public void updateOnboardingInfo(UserPersona persona, String nickname, Long selectedTownId) {
+        this.persona = persona;
+        this.nickname = nickname;
+        this.selectedTownId = selectedTownId;
+        this.isNewUser = false;
+
+    }
 }
