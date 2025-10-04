@@ -10,7 +10,6 @@ import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.domain.town.repository.TownRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.service.UserInterestTownService;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -57,7 +56,7 @@ public class AuthService {
     }
 
     public void logout(Long memberId) {
-        refreshTokenRepository.deleteByMemberId(memberId);
+        refreshTokenRepository.deleteByUserId(memberId);
     }
 
     // 토큰 재발급
@@ -65,7 +64,7 @@ public class AuthService {
         Claims claims = jwtTokenProvider.parseRefreshToken(refreshToken);
         Long userId = claims.get("userId", Long.class);
 
-        String storedRefreshToken = refreshTokenRepository.findByMemberId(userId);
+        String storedRefreshToken = refreshTokenRepository.findByUserId(userId);
         if (storedRefreshToken == null || !storedRefreshToken.equals(refreshToken)) {
             throw new JwtTokenException(ErrorCode.NOT_MATCH_REFRESH_TOKEN);
         }

@@ -224,6 +224,9 @@ public class GlobalExceptionHandler {
         return CustomApiResponse.error(ErrorCode.SOCIAL_API_ERROR);
     }
 
+
+
+
     /**
      * 스케줄러에서 발생하는 Redis 관련 예외 처리
      * 스케줄러는 백그라운드 작업이므로 HTTP 응답이 아닌 로깅 처리

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.dto.UserPersonaDto;
@@ -33,6 +34,7 @@ import org.sopt.solply_server.global.dto.PagedResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -52,6 +54,8 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserWithdrawRepository userWithdrawRepository;
     private final SocialUserInfoRepository socialUserInfoRepository;
+
+    private final String uniqueNicknameIndexName = "ux_users_nickname";
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -135,6 +139,14 @@ public class UserService {
         User user = entityLoader.getUser(userId);
         userValidator.validateNickname(user.getNickname(), request.nickname());
         user.updateuserInfo(request.persona(), request.nickname(), request.selectedTownId());
+
+        try {
+            userRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            // 무결성에 걸릴 경우가 닉네임 중복밖에 없음
+            throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
+        }
+
         return UserUpdateResponse.of(user, entityLoader.getTown(request.selectedTownId()));
     }
 

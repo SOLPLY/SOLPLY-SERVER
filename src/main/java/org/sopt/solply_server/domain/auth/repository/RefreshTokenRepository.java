@@ -16,20 +16,20 @@ public class RefreshTokenRepository {
     @Value("${jwt.refresh-token-expire-time}")
     private long refreshTokenExpireTime;
 
-    public void save(Long memberId, String refreshToken) {
+    public void save(Long userId, String refreshToken) {
         redisTemplate.opsForValue().set(
-                String.valueOf(memberId),
+                String.valueOf(userId),
                 refreshToken,
                 refreshTokenExpireTime,
                 TimeUnit.MILLISECONDS
         );
     }
 
-    public String findByMemberId(Long memberId) {
-        return redisTemplate.opsForValue().get(String.valueOf(memberId));
+    public String findByUserId(Long userId) {
+        return redisTemplate.opsForValue().get(String.valueOf(userId));
     }
 
-    public void deleteByMemberId(Long memberId) {
-        redisTemplate.delete(String.valueOf(memberId));
+    public void deleteByUserId(Long userId) {
+        redisTemplate.delete(String.valueOf(userId));
     }
 }
