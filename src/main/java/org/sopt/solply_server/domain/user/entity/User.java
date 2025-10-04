@@ -1,6 +1,9 @@
 package org.sopt.solply_server.domain.user.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -9,8 +12,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.Where;
-import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 
 @Entity
 @Getter
@@ -19,7 +20,11 @@ import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @SQLDelete(sql = "UPDATE users SET is_deleted = true, deleted_at = NOW() WHERE id = ?")
 @Where(clause = "is_deleted = false")
-@Table(name = "users")
+@Table(name = "users",
+        uniqueConstraints = {
+            @UniqueConstraint(name = "ux_users_nickname", columnNames = {"nickname"})
+        }
+)
 public class User {
 
     @Id
@@ -31,6 +36,10 @@ public class User {
 
     @Column(nullable = false, unique = true)
     private String email;
+
+    @Column(length = 2048)
+    private String profileImageFileKey;
+
 
     @Column(nullable = false)
     private boolean isNewUser;
@@ -53,15 +62,21 @@ public class User {
                 .build();
     }
 
-    public void updateOnboardingInfo(UserPersona persona, String nickname, Long selectedTownId) {
+    public void updateuserInfo(UserPersona persona, String nickname, String profileImageFileKey) {
         this.persona = persona;
         this.nickname = nickname;
-        this.selectedTownId = selectedTownId;
-        this.isNewUser = false; // 온보딩 완료
+        this.profileImageFileKey = profileImageFileKey;
     }
 
     public void updateSelectedTown(Long selectedTownId) {
         this.selectedTownId = selectedTownId;
     }
 
+    public void updateOnboardingInfo(UserPersona persona, String nickname, Long selectedTownId) {
+        this.persona = persona;
+        this.nickname = nickname;
+        this.selectedTownId = selectedTownId;
+        this.isNewUser = false;
+
+    }
 }

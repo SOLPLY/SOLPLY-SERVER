@@ -7,9 +7,14 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.user.dto.request.UserInOnboardingUpdateRequest;
+import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserInOnboardingUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserPersonaListGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
@@ -46,16 +51,6 @@ public class UserController {
         NicknameCheckResponse response = userService.checkNickname(currentUserId, nickname);
         return CustomApiResponse.success("닉네임 중복검사에 성공했습니다", response);
     }
-
-    @Operation(summary = "회원의 동네 관련 정보 업데이트", description = "회원의 선택한 동네 및 관심 동네들을 업데이트합니다.")
-    @PatchMapping("/towns")
-    public ResponseEntity<CustomApiResponse<UserTownsUpdateResponse>> updateUserTowns(
-            @CurrentUserId Long userId,
-            @Valid @RequestBody UserTownsUpdateRequest request
-    ) {
-        return CustomApiResponse.success("회원의 동네 정보 업데이트에 성공했습니다",
-                userService.updateUserTowns(userId, request));
-    }
   
     @Operation(summary = "회원 정보 조회", description = "현재 로그인한 사용자의 정보를 조회합니다.")
     @GetMapping
@@ -91,6 +86,47 @@ public class UserController {
         return CustomApiResponse.success("회원 탈퇴 사유 리스트 조회에 성공했습니다",
                 userWithdrawService.getAllUserWithdrawReasons());
     }
+
+    @Operation(summary = "페르소나 리스트 조회", description = "선택할 페르소나 정보들을 조회합니다.")
+    @GetMapping("/persona")
+    public ResponseEntity<CustomApiResponse<UserPersonaListGetResponse>> getUserPersonaList() {
+        return CustomApiResponse.success("선택할 페르소나 정보 조회에 성공했습니다.",
+                userService.getUserPersonaList());
+    }
+
+
+    @Operation(summary = "회원 정보 업데이트", description = "회원 정보를 업데이트합니다.")
+    @PatchMapping()
+    public ResponseEntity<CustomApiResponse<UserUpdateResponse>> updateUser(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody UserUpdateRequest request
+    ) {
+        return CustomApiResponse.success("회원 정보 업데이트에 성공했습니다",
+                userService.updateUserInfo(userId, request));
+    }
+
+    @Operation(summary = "온보딩 기반 회원 정보 업데이트", description = "온보딩에서 회원 정보를 업데이트합니다.")
+    @PatchMapping("/onboarding")
+    public ResponseEntity<CustomApiResponse<UserInOnboardingUpdateResponse>> updateUserInOnboarding(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody UserInOnboardingUpdateRequest request
+    ) {
+        return CustomApiResponse.success("온보딩 기반 회원 정보 업데이트에 성공했습니다",
+                userService.updateUserInfoInOnboarding(userId, request));
+    }
+
+
+
+    @Operation(summary = "회원의 동네 관련 정보 업데이트", description = "회원의 선택한 동네 및 관심 동네들을 업데이트합니다.")
+    @PatchMapping("/towns")
+    public ResponseEntity<CustomApiResponse<UserTownsUpdateResponse>> updateUserTowns(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody UserTownsUpdateRequest request
+    ) {
+        return CustomApiResponse.success("회원의 동네 정보 업데이트에 성공했습니다",
+                userService.updateUserTowns(userId, request));
+    }
+
 
     @Operation(summary = "회원 탈퇴", description = "회원 탈퇴를 진행합니다.")
     @DeleteMapping("/withdraw")

@@ -9,14 +9,16 @@ import org.sopt.solply_server.domain.user.entity.UserPersona;
 public record UserProfileGetResponse(
         Long userId,
         String nickname,
+        String profileImageUrl,
         UserTownInfoDto selectedTown,
         UserPersona persona,
         List<UserPlacePreviewDto> myPlacePreviews
 ) {
-    public static UserProfileGetResponse of(User user, UserTownInfoDto selectedTown,
+    public static UserProfileGetResponse of(User user, String profileImageUrl, UserTownInfoDto selectedTown,
             List<UserPlacePreviewDto> myPlacePreviews) {
         return new UserProfileGetResponse(
                 user.getId(),
+                profileImageUrl,
                 user.getNickname(),
                 selectedTown,
                 user.getPersona(),

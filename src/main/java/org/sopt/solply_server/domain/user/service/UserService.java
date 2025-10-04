@@ -1,21 +1,29 @@
 package org.sopt.solply_server.domain.user.service;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.town.entity.Town;
+import org.sopt.solply_server.domain.user.dto.UserPersonaDto;
 import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
+import org.sopt.solply_server.domain.user.dto.request.UserInOnboardingUpdateRequest;
+import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserInOnboardingUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserPersonaListGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.domain.user.entity.UserWithdraw;
 import org.sopt.solply_server.domain.user.entity.WithdrawReason;
 import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
@@ -26,6 +34,10 @@ import org.sopt.solply_server.global.dto.PagedResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.s3.PresignedUrlProvider;
+import org.sopt.solply_server.global.util.s3.S3FileMoveService;
+import org.sopt.solply_server.global.util.s3.TargetDir;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -45,6 +57,10 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserWithdrawRepository userWithdrawRepository;
     private final SocialUserInfoRepository socialUserInfoRepository;
+
+    private final String uniqueNicknameIndexName = "ux_users_nickname";
+    private final PresignedUrlProvider presignedUrlProvider;
+    private final S3FileMoveService s3FileMoveService;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -75,24 +91,11 @@ public class UserService {
                 .toList();
 
         return UserProfileGetResponse.of(
-                user, UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()), myPlacePreviews);
+                user,
+                presignedUrlProvider.createPresignedUrlToRead(user.getProfileImageFileKey()),
+                UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()), myPlacePreviews);
     }
 
-
-    @Transactional
-    public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
-        User user = entityLoader.getUser(userId);
-//        List<Town> towns = request.favoriteTownIdList().stream()
-//                .map(entityLoader::getTown)
-//                .toList();
-//        userInterestTownService.updateUserInterestTowns(user, towns);
-        Town selectedTown = entityLoader.getTown(request.selectedTownId());
-        user.updateSelectedTown(request.selectedTownId());
-
-        return UserTownsUpdateResponse.of(
-                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName())
-        );
-    }
 
     public UserTownGetResponse getTownsRelatedUser(Long userId) {
         User user = entityLoader.getUser(userId);
@@ -129,6 +132,77 @@ public class UserService {
         );
     }
 
+    public UserPersonaListGetResponse getUserPersonaList() {
+        List<UserPersonaDto> personaDtos = Arrays.stream(UserPersona.values())
+                .map(UserPersonaDto::from)
+                .toList();
+        return UserPersonaListGetResponse.of(personaDtos);
+    }
+
+    @Transactional
+    public UserInOnboardingUpdateResponse updateUserInfoInOnboarding(
+            final Long userId, UserInOnboardingUpdateRequest request) {
+        User user = entityLoader.getUser(userId);
+        Town selectedTown = entityLoader.getTown(request.selectedTownId());
+
+        userValidator.validateOnboardingAvailable(user);
+        userValidator.validateNickname(user.getNickname(), request.nickname());
+
+        user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTownId());
+
+        try {
+            userRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            // 무결성에 걸릴 경우가 닉네임 중복밖에 없음
+            throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
+        }
+
+        return UserInOnboardingUpdateResponse.of(
+                user,
+                selectedTown
+        );
+    }
+
+    @Transactional
+    public UserUpdateResponse updateUserInfo(final Long userId, UserUpdateRequest request) {
+        User user = entityLoader.getUser(userId);
+        userValidator.validateNickname(user.getNickname(), request.nickname());
+
+        // 임시로 올린 프로필 이미지를 해당 유저 디렉토리로 이동
+        String movedFileKey = s3FileMoveService.moveToDir(request.profileImageFileKey(), userId, TargetDir.USER_PROFILE);
+        String profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(movedFileKey);
+
+        if (profileImageUrl == null) {
+            user.updateuserInfo(request.persona(), request.nickname(), null);
+        } else {
+            user.updateuserInfo(request.persona(), request.nickname(), movedFileKey);
+        }
+
+        try {
+            userRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            // 무결성에 걸릴 경우가 닉네임 중복밖에 없음
+            throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
+        }
+
+        return UserUpdateResponse.of(user, profileImageUrl);
+    }
+
+    @Transactional
+    public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
+        User user = entityLoader.getUser(userId);
+//        List<Town> towns = request.favoriteTownIdList().stream()
+//                .map(entityLoader::getTown)
+//                .toList();
+//        userInterestTownService.updateUserInterestTowns(user, towns);
+        Town selectedTown = entityLoader.getTown(request.selectedTownId());
+        user.updateSelectedTown(request.selectedTownId());
+
+        return UserTownsUpdateResponse.of(
+                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName())
+        );
+    }
+
     @Transactional
     public void withdraw(Long userId, UserWithdrawRequest userWithdrawRequest) {
         User user = entityLoader.getUser(userId);
@@ -149,4 +223,7 @@ public class UserService {
 
         userRepository.delete(user);
     }
+
+
+
 }

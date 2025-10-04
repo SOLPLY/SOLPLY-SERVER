@@ -4,19 +4,26 @@ import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.file.dto.PresignedUrlInfo;
+import org.sopt.solply_server.domain.file.dto.PresignedPutUrlInfo;
+import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.util.InputValidator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 @Component
 @RequiredArgsConstructor
 public class PresignedUrlProvider {
 
+    private final S3FileMoveService s3FileMoveService;
     @Value("${aws.s3.bucket}")
     private String bucketName;
 
@@ -28,16 +35,18 @@ public class PresignedUrlProvider {
 
     private final S3Presigner s3Presigner;
 
+    private final S3Client s3Client;
+
     private static final Set<String> ALLOWED_MIME = Set.of(
             "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"
     );
 
-    public PresignedUrlInfo createStagingUploadUrl(Long userId, String originalFileName, Duration ttl) {
+    public PresignedPutUrlInfo createStagingUploadUrl(Long userId, String originalFileName, Duration ttl) {
         String ext = guessExt(originalFileName);
-        if (ext == null) return new PresignedUrlInfo(originalFileName, null, null, 0);
+        if (ext == null) return new PresignedPutUrlInfo(originalFileName, null, null, 0);
 
         String mime = guessMime(ext);
-        if (!ALLOWED_MIME.contains(mime)) return new PresignedUrlInfo(originalFileName, null, null, 0);
+        if (!ALLOWED_MIME.contains(mime)) return new PresignedPutUrlInfo(originalFileName, null, null, 0);
 
         String key = String.format("%s/uploads/_staging/%d/%s.%s",
                 envPrefix, userId, UUID.randomUUID(), ext);
@@ -46,41 +55,27 @@ public class PresignedUrlProvider {
     }
 
 
+    public String createPresignedUrlToRead(final String fileKey) {
+        if (InputValidator.isBlank(fileKey)) return null;
 
-//    public PresignedUrlInfo createCategorizedUploadUrl(final ImageCategory imageCategory, final String id, final String originalFileName, final Duration ttl) {
-//        // 확장자 & MIME 확인
-//        String ext = guessExt(originalFileName);
-//        if (ext == null) {
-//            return new PresignedUrlInfo(originalFileName, null, null, 0);
-//        }
-//
-//        String mime = guessMime(ext);
-//        if (!ALLOWED_MIME.contains(mime)) {
-//            return new PresignedUrlInfo(originalFileName, null, null, 0);
-//        }
-//
-//        String uuid = UUID.randomUUID().toString();
-//        String fileKey = buildKey(envPrefix, imageCategory.getDir(), id, uuid, ext);
-//
-//        return createPutPresignedUrl(fileKey, mime, ttl, originalFileName);
-//    }
+        if (s3FileMoveService.isUploaded(fileKey)) {
+            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofSeconds(expirationSeconds))
+                    .getObjectRequest(req -> req
+                            .bucket(bucketName)
+                            .key(fileKey)
+                            .build())
+                    .build();
+            PresignedGetObjectRequest presignGetObject = s3Presigner.presignGetObject(presignRequest);
 
-//    public String createPresignedUrlToRead(final String fileKey) {
-//        if (InputValidator.isBlank(fileKey)) return null;
-//
-//        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-//                .signatureDuration(Duration.ofSeconds(expirationSeconds))
-//                .getObjectRequest(req -> req
-//                        .bucket(bucketName)
-//                        .key(fileKey)
-//                        .build())
-//                .build();
-//
-//        return s3Presigner.presignGetObject(presignRequest).url().toExternalForm();
-//    }
+            return presignGetObject.url().toExternalForm();
+        } else {
+            return null;
+        }
+    }
 
 
-    private PresignedUrlInfo createPutPresignedUrl(final String fileKey, final String mime, final Duration ttl, final String originalName) {
+    private PresignedPutUrlInfo createPutPresignedUrl(final String fileKey, final String mime, final Duration ttl, final String originalName) {
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(fileKey)
@@ -92,15 +87,17 @@ public class PresignedUrlProvider {
                 .putObjectRequest(putObjectRequest)
                 .build();
 
-        var preSignedRequest = s3Presigner.presignPutObject(preSignRequest);
+        PresignedPutObjectRequest preSignedRequest = s3Presigner.presignPutObject(preSignRequest);
 
-        return PresignedUrlInfo.of(
+        return PresignedPutUrlInfo.of(
                 originalName,
                 fileKey,
                 preSignedRequest.url().toExternalForm(),
                 ttl.toSeconds()
         );
     }
+
+
 
     private static String buildKey(String env, String categoryDir, String idSegment, String uuid, String ext) {
         // env/uploads/{category}/{id}/xxxx.ext

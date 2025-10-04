@@ -4,19 +4,22 @@ import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class S3FileMoveService {
 
-    private final S3Client s3;
+    private final S3Client s3Client;
 
     @Value("${app.env-prefix}")
     private String envPrefix;
@@ -29,27 +32,42 @@ public class S3FileMoveService {
      *
      * @param stagingKey ex) env/uploads/_staging/{userId}/{uploadToken}/{uuid}.ext
      * @param targetId   requestId or placeId
-     * @param targetDir  PLACE_REQUESTS or PLACE_REPORTS
+     * @param targetDir
      * @return 최종 destKey
      */
-    public String moveToDir(String stagingKey, long targetId, TargetDir targetDir) {
-        String fileName = stagingKey.substring(stagingKey.lastIndexOf('/') + 1);
-        String destKey = String.format("%s/uploads/%s/%d/%s",
-                envPrefix, targetDir.getDir(), targetId, fileName);
+    public String moveToDir(final String stagingKey, final long targetId, final TargetDir targetDir) {
+        if(isUploaded(stagingKey)) {
+            String fileName = stagingKey.substring(stagingKey.lastIndexOf('/') + 1);
+            String destKey = String.format("%s/uploads/%s/%d/%s",
+                    envPrefix, targetDir.getDir(), targetId, fileName);
 
-        s3.copyObject(CopyObjectRequest.builder()
-                .sourceBucket(bucketName)
-                .sourceKey(stagingKey)
-                .destinationBucket(bucketName)
-                .destinationKey(destKey)
-                .build());
+            s3Client.copyObject(CopyObjectRequest.builder()
+                    .sourceBucket(bucketName)
+                    .sourceKey(stagingKey)
+                    .destinationBucket(bucketName)
+                    .destinationKey(destKey)
+                    .build());
 
-        s3.deleteObject(DeleteObjectRequest.builder()
-                .bucket(bucketName)
-                .key(stagingKey)
-                .build());
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(stagingKey)
+                    .build());
 
-        return destKey;
+            return destKey;
+        }
+
+        return null;
+    }
+
+    public boolean isUploaded(final String fileKey) {
+        if (fileKey == null || fileKey.isBlank()) return false;
+        try {
+            s3Client.headObject(builder -> builder.bucket(bucketName).key(fileKey));
+        } catch (NoSuchKeyException e) {
+            log.warn("파일이 존재하지 않습니다. fileKey={}", fileKey);
+            return false;
+        }
+        return true;
     }
 }
 

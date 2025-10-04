@@ -1,13 +1,10 @@
 package org.sopt.solply_server.domain.file.service;
 
-import static java.util.stream.Collectors.toList;
-
 import jakarta.validation.Valid;
 import java.time.Duration;
 import java.util.List;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.file.dto.PresignedUrlInfo;
+import org.sopt.solply_server.domain.file.dto.PresignedPutUrlInfo;
 import org.sopt.solply_server.domain.file.dto.request.FilesUploadRequest;
 import org.sopt.solply_server.domain.file.dto.response.FilesUploadResponse;
 import org.sopt.solply_server.global.util.s3.PresignedUrlProvider;
@@ -21,20 +18,15 @@ public class FileService {
 
     public FilesUploadResponse createPresignedUrlToUpload(Long userId, @Valid FilesUploadRequest request) {
 
-        List<PresignedUrlInfo> presignedUrlInfos = request.files().stream()
+        List<PresignedPutUrlInfo> presignedPutUrlInfos = request.files().stream()
                         .map(file ->
                             presignedUrlProvider.createStagingUploadUrl(
                                     userId, file.fileName(), PRESIGN_TTL
                             )
                         ).toList();
         return new FilesUploadResponse(
-                presignedUrlInfos
+                presignedPutUrlInfos
         );
     }
 
-//    public List<String> createPresignedUrlsToRead(List<String> fileKeys) {
-//        return fileKeys.stream()
-//                .map(presignedUrlProvider::createPresignedUrlToRead)
-//                .toList();
-//    }
 }

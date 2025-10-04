@@ -89,8 +89,6 @@ public class PlaceController {
     }
 
 
-    //== 장소 북마크 관련 API==//
-
     @Operation(summary = "나만의 장소 썸네일 리스트 조회", description = "나만의 장소 썸네일 리스트를 조회합니다.")
     @GetMapping("/bookmarks/folders/preview")
     public ResponseEntity<CustomApiResponse<PlaceFolderPreviewListGetResponse>> getMyPlaceFolderPreviewList(
@@ -130,7 +128,6 @@ public class PlaceController {
         return CustomApiResponse.success("내 장소에서 장소들을 삭제했습니다.");
     }
 
-    // == 장소 제보 관련 API == //
     @Operation(summary = "잘못된 장소 정보 제보", description = "잘못된 장소의 정보를 제보합니다.")
     @PostMapping("/{placeId}/reports")
     public ResponseEntity<CustomApiResponse<PlaceReportCreateResponse>> reportPlace(

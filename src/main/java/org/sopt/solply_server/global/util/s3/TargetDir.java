@@ -7,7 +7,8 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum TargetDir {
     PLACE_REQUEST("place-requests"),
-    PLACE_REPORT("place-reports");
+    PLACE_REPORT("place-reports"),
+    USER_PROFILE("user-profiles");
 
     private final String dir;
 

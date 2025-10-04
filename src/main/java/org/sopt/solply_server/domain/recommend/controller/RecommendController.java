@@ -25,7 +25,6 @@ public class RecommendController {
 
     private final RecommendService recommendService;
 
-    //==장소 추천 API==//
     @Operation(summary = "장소 추천 조회", description = "장소 추천을 위한 썸네일 리스트를 조회합니다.")
     @GetMapping("/places")
     public ResponseEntity<CustomApiResponse<PlaceRecommendationGetResponse>> recommendPlaces(
@@ -37,7 +36,6 @@ public class RecommendController {
         );
     }
 
-    //==코스 추천 API==//
     @Operation(summary = "추천 코스 목록 조회", description = "특정 동네의 공유된 코스 목록을 조회합니다.")
     @GetMapping("/courses")
     public ResponseEntity<CustomApiResponse<CourseRecommendGetResponse>> findRecommendCourses(

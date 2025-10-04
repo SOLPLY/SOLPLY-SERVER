@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.repository.PlaceReportRepository;
+import org.sopt.solply_server.global.listener.ImageFieldUpdater;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
