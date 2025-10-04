@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 @RequiredArgsConstructor
 public class PresignedUrlProvider {
 
+    private final S3FileMoveService s3FileMoveService;
     @Value("${aws.s3.bucket}")
     private String bucketName;
 
@@ -57,7 +58,7 @@ public class PresignedUrlProvider {
     public String createPresignedUrlToRead(final String fileKey) {
         if (InputValidator.isBlank(fileKey)) return null;
 
-        if (isUploaded(fileKey)) {
+        if (s3FileMoveService.isUploaded(fileKey)) {
             GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
                     .signatureDuration(Duration.ofSeconds(expirationSeconds))
                     .getObjectRequest(req -> req
@@ -96,14 +97,7 @@ public class PresignedUrlProvider {
         );
     }
 
-    public boolean isUploaded(String fileKey) {
-        try {
-            s3Client.headObject(builder -> builder.bucket(bucketName).key(fileKey));
-        } catch (NoSuchKeyException e) {
-            return false;
-        }
-        return true;
-    }
+
 
     private static String buildKey(String env, String categoryDir, String idSegment, String uuid, String ext) {
         // env/uploads/{category}/{id}/xxxx.ext

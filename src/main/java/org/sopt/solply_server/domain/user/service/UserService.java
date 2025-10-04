@@ -170,7 +170,7 @@ public class UserService {
         String movedFileKey = s3FileMoveService.moveToDir(request.profileImageFileKey(), userId, TargetDir.USER_PROFILE);
         String profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(movedFileKey);
 
-        if (profileImageUrl.isBlank()) {
+        if (profileImageUrl == null) {
             user.updateuserInfo(request.persona(), request.nickname(), null);
         } else {
             user.updateuserInfo(request.persona(), request.nickname(), movedFileKey);

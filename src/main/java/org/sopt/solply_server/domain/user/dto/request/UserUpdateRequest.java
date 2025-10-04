@@ -15,7 +15,7 @@ public record UserUpdateRequest(
         @NotNull(message = "유저 성향은 필수입니다")
         UserPersona persona,
 
-        @Schema(description = "프로필 이미지 파일 키", example = "/dev/uploads/temp", nullable = true)
+        @Schema(description = "프로필 이미지 파일 키", example = "dev/uploads/_staging/1", nullable = true)
         String profileImageFileKey
 ) {
 }
