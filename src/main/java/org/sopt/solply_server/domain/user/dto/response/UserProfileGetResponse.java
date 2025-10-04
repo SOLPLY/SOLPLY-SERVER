@@ -18,8 +18,8 @@ public record UserProfileGetResponse(
             List<UserPlacePreviewDto> myPlacePreviews) {
         return new UserProfileGetResponse(
                 user.getId(),
-                profileImageUrl,
                 user.getNickname(),
+                profileImageUrl,
                 selectedTown,
                 user.getPersona(),
                 myPlacePreviews
