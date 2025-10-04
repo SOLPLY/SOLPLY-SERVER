@@ -1,21 +1,28 @@
 package org.sopt.solply_server.domain.user.service;
 
+import jakarta.validation.Valid;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.town.entity.Town;
+import org.sopt.solply_server.domain.user.dto.UserPersonaDto;
 import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
+import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserPersonaListGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.domain.user.entity.UserWithdraw;
 import org.sopt.solply_server.domain.user.entity.WithdrawReason;
 import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
@@ -79,21 +86,6 @@ public class UserService {
     }
 
 
-    @Transactional
-    public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
-        User user = entityLoader.getUser(userId);
-//        List<Town> towns = request.favoriteTownIdList().stream()
-//                .map(entityLoader::getTown)
-//                .toList();
-//        userInterestTownService.updateUserInterestTowns(user, towns);
-        Town selectedTown = entityLoader.getTown(request.selectedTownId());
-        user.updateSelectedTown(request.selectedTownId());
-
-        return UserTownsUpdateResponse.of(
-                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName())
-        );
-    }
-
     public UserTownGetResponse getTownsRelatedUser(Long userId) {
         User user = entityLoader.getUser(userId);
 
@@ -129,6 +121,38 @@ public class UserService {
         );
     }
 
+    public UserPersonaListGetResponse getUserPersonaList(Long userId) {
+        User user = entityLoader.getUser(userId);
+        userValidator.validateOnboardingAvailable(user);
+        List<UserPersonaDto> personaDtos = Arrays.stream(UserPersona.values())
+                .map(UserPersonaDto::from)
+                .toList();
+        return UserPersonaListGetResponse.from(personaDtos);
+    }
+
+    @Transactional
+    public UserUpdateResponse updateUserInfo(Long userId, @Valid UserUpdateRequest request) {
+        User user = entityLoader.getUser(userId);
+        userValidator.validateNickname(user.getNickname(), request.nickname());
+        user.updateuserInfo(request.persona(), request.nickname(), request.selectedTownId());
+        return UserUpdateResponse.of(user, entityLoader.getTown(request.selectedTownId()));
+    }
+
+    @Transactional
+    public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
+        User user = entityLoader.getUser(userId);
+//        List<Town> towns = request.favoriteTownIdList().stream()
+//                .map(entityLoader::getTown)
+//                .toList();
+//        userInterestTownService.updateUserInterestTowns(user, towns);
+        Town selectedTown = entityLoader.getTown(request.selectedTownId());
+        user.updateSelectedTown(request.selectedTownId());
+
+        return UserTownsUpdateResponse.of(
+                UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName())
+        );
+    }
+
     @Transactional
     public void withdraw(Long userId, UserWithdrawRequest userWithdrawRequest) {
         User user = entityLoader.getUser(userId);
@@ -149,4 +173,6 @@ public class UserService {
 
         userRepository.delete(user);
     }
+
+
 }
