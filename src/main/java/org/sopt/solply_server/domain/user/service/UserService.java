@@ -91,7 +91,9 @@ public class UserService {
                 .toList();
 
         return UserProfileGetResponse.of(
-                user, UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()), myPlacePreviews);
+                user,
+                presignedUrlProvider.createPresignedUrlToRead(user.getProfileImageFileKey()),
+                UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName()), myPlacePreviews);
     }
 
 
