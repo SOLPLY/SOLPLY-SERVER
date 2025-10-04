@@ -143,7 +143,16 @@ public class UserService {
     public UserUpdateResponse updateUserInfo(final Long userId, UserUpdateRequest request) {
         User user = entityLoader.getUser(userId);
         userValidator.validateNickname(user.getNickname(), request.nickname());
-        user.updateuserInfo(request.persona(), request.nickname(), request.profileImageFileKey());
+
+        // 임시로 올린 프로필 이미지를 해당 유저 디렉토리로 이동
+        String movedFileKey = s3FileMoveService.moveToDir(request.profileImageFileKey(), userId, TargetDir.USER_PROFILE);
+        String profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(movedFileKey);
+
+        if (profileImageUrl.isBlank()) {
+            user.updateuserInfo(request.persona(), request.nickname(), null);
+        } else {
+            user.updateuserInfo(request.persona(), request.nickname(), movedFileKey);
+        }
 
         try {
             userRepository.flush();
@@ -151,15 +160,6 @@ public class UserService {
             // 무결성에 걸릴 경우가 닉네임 중복밖에 없음
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
-
-        String profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(request.profileImageFileKey());
-
-        if (profileImageUrl.isBlank()) {
-            profileImageUrl = null;
-        }
-
-        // 임시로 올린 프로필 이미지를 해당 유저 디렉토리로 이동
-        s3FileMoveService.moveToDir(request.profileImageFileKey(), userId, TargetDir.USER_PROFILE);
 
         return UserUpdateResponse.of(user, profileImageUrl);
     }
