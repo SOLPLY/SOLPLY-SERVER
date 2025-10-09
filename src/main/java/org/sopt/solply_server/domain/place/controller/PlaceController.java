@@ -144,7 +144,7 @@ public class PlaceController {
     @PostMapping("/requests")
     public ResponseEntity<CustomApiResponse<PlaceRequestCreateResponse>> createPlaceRequest(
             @CurrentUserId Long userId,
-            @RequestBody @Validated PlaceRequestCreateRequest request) {
+            @RequestBody @Valid PlaceRequestCreateRequest request) {
         return CustomApiResponse.success(
                 "장소 등록 요청이 접수되었습니다.",
                 placeRequestService.createPlaceRequest(userId,request)

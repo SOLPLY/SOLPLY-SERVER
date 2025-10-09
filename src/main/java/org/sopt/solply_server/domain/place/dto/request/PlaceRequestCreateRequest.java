@@ -13,7 +13,6 @@ public record PlaceRequestCreateRequest(
     @Size(max = 255, message = "장소 이름은 255자를 초과할 수 없습니다.")
     String placeName,
 
-    @NotBlank(message = "주소는 필수입니다.")
     @Size(max = 255, message = "주소는 255자를 초과할 수 없습니다.")
     String address,
 
@@ -23,7 +22,6 @@ public record PlaceRequestCreateRequest(
     List<Long> subTagAIds,
     List<Long> subTagBIds,
 
-    @NotBlank(message = "장소 요청 사유는 필수입니다.")
     String reason,
 
     List<ImageRequest> images

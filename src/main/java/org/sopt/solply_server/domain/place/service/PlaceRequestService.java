@@ -47,7 +47,7 @@ public class PlaceRequestService {
 
         List<PlaceRequestImageInfo> imageInfos = Optional.ofNullable(request.images())
                 .orElseGet(List::of).stream()
-                .filter(img -> img != null && img.tempFileKey() != null && img.displayOrder() != null)
+                .filter(img -> img != null && img.tempFileKey() != null &&  !img.tempFileKey().isBlank() && img.displayOrder() != null)
                 .sorted(Comparator.comparing(PlaceRequestCreateRequest.ImageRequest::displayOrder))
                 .map(img -> new PlaceRequestImageInfo(img.tempFileKey(), img.displayOrder()))
                 .toList();

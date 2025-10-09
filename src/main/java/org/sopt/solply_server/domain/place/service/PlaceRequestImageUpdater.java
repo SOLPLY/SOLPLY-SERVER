@@ -30,6 +30,7 @@ class PlaceRequestImageUpdater implements ImageFieldUpdater {
         pr.getImages().clear();
         int order = 0;
         for (String key : new LinkedHashSet<>(destKeys)) {
+            if (key == null || key.isBlank()) continue;
             pr.getImages().add(new PlaceRequestImageInfo(key, order++));
         }
     }
