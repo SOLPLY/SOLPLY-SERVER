@@ -134,7 +134,7 @@ public class UserController {
             @CurrentUserId Long userId,
             @RequestBody @Valid UserWithdrawRequest request
     ) {
-        userService.withdraw(userId, request);
+        userWithdrawService.withdraw(userId, request);
         return CustomApiResponse.success("회원 탈퇴에 성공했습니다", null);
     }
 

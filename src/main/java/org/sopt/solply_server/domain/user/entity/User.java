@@ -1,9 +1,6 @@
 package org.sopt.solply_server.domain.user.entity;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -78,5 +75,15 @@ public class User {
         this.selectedTownId = selectedTownId;
         this.isNewUser = false;
 
+    }
+
+    public void reactivate() {
+        this.isDeleted = false;
+        this.deletedAt = null;
+        this.isNewUser = true;
+    }
+
+    public void updateEmail(String email) {
+        this.email = email;
     }
 }

@@ -19,26 +19,33 @@ public class SocialUserService {
     private final UserRepository userRepository;
 
     @Transactional
-    public User createSocialUser(final SocialPlatform socialPlatform, final String socialId, final String email, final String nickname) {
-        String socialCode = createSocialCode(socialPlatform, socialId);
-        // 동일한 소셜 계정 확인
-        Optional<SocialUserInfo> existingSocial = socialUserInfoRepository.findBySocialCode(socialCode);
+    public User createSocialUser(final SocialPlatform socialPlatform, final String socialId, final String email) {
+        final String socialCode = createSocialCode(socialPlatform, socialId);
 
-        if (existingSocial.isPresent()) {
-            return existingSocial.get().getUser();
+        Optional<SocialUserInfo> socialUserInfoOpt = socialUserInfoRepository.findAnyBySocialCode(socialCode);
+        Optional<User> userOpt = userRepository.findAnyUserBySocialCode(socialCode);
+        if (userOpt.isPresent() && socialUserInfoOpt.isPresent()) {
+            var owner = userOpt.get();
+            var socialUserInfo = socialUserInfoOpt.get();
+            if (owner.isDeleted()) {
+                owner.reactivate();
+                socialUserInfoRepository.reactivateById(socialUserInfo.getId(), owner.getId());
+
+                if (!owner.getEmail().equals(email) && !userRepository.existsByEmail(email)) {
+                    owner.updateEmail(email);
+                }
+                return owner;
+            }
+
+            return owner;
         }
 
-        // 이메일로 기존 유저 확인
-        User user = userRepository.findByEmail(email);
+        // 신규 이용자
+        User newUser = User.create(email);
+        userRepository.save(newUser);
+        linkSocialAccount(newUser, socialPlatform, socialId);
 
-        if (user == null) {
-            user = User.create(email);
-            user = userRepository.save(user);
-        }
-
-        linkSocialAccount(user, socialPlatform, socialId);
-
-        return user;
+        return newUser;
     }
 
     private String createSocialCode(SocialPlatform socialPlatform, String socialId) {

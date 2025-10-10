@@ -20,6 +20,8 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @Builder
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@SQLDelete(sql = "UPDATE social_user_info SET is_deleted = true WHERE id = ?")
+@Where(clause = "is_deleted = false")
 public class SocialUserInfo extends BaseTimeEntity {
 
     @Id

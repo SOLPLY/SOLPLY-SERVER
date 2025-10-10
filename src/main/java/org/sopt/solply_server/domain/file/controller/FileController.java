@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "파일 업로드 API", description = "S3 관리")
 @Slf4j
 @RestController
-@RequestMapping("/files")
+@RequestMapping("/api/files")
 @RequiredArgsConstructor
 public class FileController {
 
