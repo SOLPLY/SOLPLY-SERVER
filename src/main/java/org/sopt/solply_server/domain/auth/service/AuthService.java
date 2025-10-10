@@ -41,11 +41,11 @@ public class AuthService {
         OAuthService oAuthService = oAuthServiceProvider.getService(socialPlatform);
         User user = oAuthService.socialLogin(request.oauthAccessToken());
 
-        Town town1 = entityLoader.getTown(Long.parseLong("2")); // 연희동
-        Town town2 = entityLoader.getTown(Long.parseLong("3")); // 망원동
-        List<Town> initialTowns = new ArrayList<>();
-        initialTowns.add(town1);
-        initialTowns.add(town2);
+//        Town town1 = entityLoader.getTown(Long.parseLong("2")); // 연희동
+//        Town town2 = entityLoader.getTown(Long.parseLong("3")); // 망원동
+//        List<Town> initialTowns = new ArrayList<>();
+//        initialTowns.add(town1);
+//        initialTowns.add(town2);
 
 //        userInterestTownService.updateUserInterestTowns(user, initialTowns);
 

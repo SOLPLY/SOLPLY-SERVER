@@ -33,8 +33,7 @@ public class KakaoOAuthServiceImpl implements OAuthService {
         return socialUserService.createSocialUser(
                 SocialPlatform.KAKAO,
                 String.valueOf(profile.getId()),
-                profile.getEmail(),
-                profile.getNickname()
+                profile.getEmail()
         );
     }
 

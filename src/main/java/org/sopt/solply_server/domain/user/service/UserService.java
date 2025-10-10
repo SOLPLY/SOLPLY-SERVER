@@ -51,14 +51,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserValidator userValidator;
-    private final UserInterestTownService userInterestTownService;
     private final EntityLoader entityLoader;
     private final MyPageFacade myPageFacade;
     private final UserRepository userRepository;
-    private final UserWithdrawRepository userWithdrawRepository;
-    private final SocialUserInfoRepository socialUserInfoRepository;
-
-    private final String uniqueNicknameIndexName = "ux_users_nickname";
     private final PresignedUrlProvider presignedUrlProvider;
     private final S3FileMoveService s3FileMoveService;
 
@@ -202,28 +197,4 @@ public class UserService {
                 UserTownInfoDto.of(request.selectedTownId(), selectedTown.getName())
         );
     }
-
-    @Transactional
-    public void withdraw(Long userId, UserWithdrawRequest userWithdrawRequest) {
-        User user = entityLoader.getUser(userId);
-        // 기타 사유 검증
-        if (userWithdrawRequest.withdrawReason() == WithdrawReason.OTHERS) {
-            if (userWithdrawRequest.reasonText() == null || userWithdrawRequest.reasonText().isBlank()) {
-                throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY);
-            }
-        }
-
-        userWithdrawRepository.save(UserWithdraw.create(user, userWithdrawRequest.withdrawReason(), userWithdrawRequest.reasonText()));
-
-        socialUserInfoRepository.softDeleteByUserId(userId);
-        String suffix = String.valueOf(userId);
-        String email = "deleted+" + suffix + "@example.com";
-        String nickname = "탈퇴회원_" + suffix;
-        userRepository.withdraw(userId, email, nickname);
-
-        userRepository.delete(user);
-    }
-
-
-
 }

@@ -49,6 +49,7 @@ public enum ErrorCode {
     DUPLICATE_NICKNAME(HttpStatus.BAD_REQUEST, "USER-002", "이미 사용 중인 닉네임입니다."),
     ONBOARDING_ALREADY_COMPLETED(HttpStatus.BAD_REQUEST, "USER-003", "이미 온보딩이 완료된 사용자입니다."),
     NOT_FOUND_PERSONA(HttpStatus.NOT_FOUND, "USER-004" , "페르소나가 설정돼있지 않은 사용자입니다." ),
+    NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-005" , "유저가 선택한 동네가 없습니다."),
 
 
     // 장소 관련 (PLACE-xxx)
@@ -75,7 +76,7 @@ public enum ErrorCode {
     INVALID_TAG_TYPE(HttpStatus.BAD_REQUEST, "TAG-002", "잘못된 타입의 태그입니다."),
     INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "TAG-004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다."),
     NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다."),
-    NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-006" , "유저가 선택한 동네가 없어서 온보딩을 진행해야 합니다."),
+
 
     // 북마크 관련 (BOOKMARK-xxx)
     NOT_BOOKMARKED_COURSE(HttpStatus.FORBIDDEN, "BOOKMARK-001", "북마크된 코스가 아닙니다."),
@@ -84,7 +85,7 @@ public enum ErrorCode {
     INVALID_KEYWORD(HttpStatus.BAD_REQUEST, "SEARCH-001", "검색어는 최소 2자 이상이어야 합니다."),
 
     // 제보 관련 (REPORT-xxx)
-    REPORT_LIMIT_EXCEEDED_USER(HttpStatus.TOO_MANY_REQUESTS, "REPORT-001", "동일 장소에 대해 하루에 한 번만 제보할 수 있습니다."),
+    REPORT_LIMIT_EXCEEDED_USER(HttpStatus.BAD_REQUEST, "REPORT-001", "동일 장소에 대해 하루에 한 번만 제보할 수 있습니다."),
     INVALID_IMAGE_KEY(HttpStatus.BAD_REQUEST, "REPORT-002", "유효하지 않은 이미지 파일입니다."),
     NOT_FOUND_REPORT(HttpStatus.NOT_FOUND, "REPORT-003", "존재하지 않는 제보입니다."),
     INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-004", "유효하지 않은 제보 유형입니다.");
