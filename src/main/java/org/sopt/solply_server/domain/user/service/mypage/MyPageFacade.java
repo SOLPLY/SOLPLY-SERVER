@@ -26,13 +26,14 @@ public class MyPageFacade {
 
     @Transactional(readOnly = true)
     public Page<PlacePreviewDto> getPlacesCreatedBy(Long userId, Pageable pageable) {
-        Page<Place> places = placeRepository.findByCreatedByIdOrderByCreatedAtDesc(userId, pageable);
+        Page<Place> places = placeRepository.findByUserIdWithTown(userId, pageable);
         return places.map(place -> PlacePreviewDto.of(
                     place.getId(),
                     place.getName(),
                     imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                     place.getMainTag(),
-                    false // isBookmarked 정보는 여기에 포함되지 않음
+                    false, // isBookmarked 정보는 여기에 포함되지 않음
+                    place.getTown().getId()
                 )
         );
     }

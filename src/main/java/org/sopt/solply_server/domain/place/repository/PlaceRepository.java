@@ -28,5 +28,4 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
 
     List<Place> findTop3ByCreatedByOrderByCreatedAtDesc(User createdBy);
 
-    Page<Place> findByCreatedByIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 }

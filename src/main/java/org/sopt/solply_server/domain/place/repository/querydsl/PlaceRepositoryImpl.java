@@ -1,9 +1,13 @@
 package org.sopt.solply_server.domain.place.repository.querydsl;
 
+import static org.sopt.solply_server.domain.place.entity.QPlace.place;
+import static org.sopt.solply_server.domain.town.entity.QTown.town;
+
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
+import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import java.util.Arrays;
@@ -20,6 +24,9 @@ import org.sopt.solply_server.domain.place.entity.QPlaceTag;
 import org.sopt.solply_server.domain.tag.entity.QTag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.QTown;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -90,8 +97,8 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 //    }
 
     public List<Place> findPlacesWithTownByKeyword(final String keyword) {
-        QPlace qPlace = QPlace.place;
-        QTown qTown = QTown.town;
+        QPlace qPlace = place;
+        QTown qTown = town;
 
         String kw = keyword == null ? "" : keyword.trim();
         if (kw.isEmpty()) return List.of();
@@ -144,6 +151,25 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                     .limit(10)
                     .fetch();
         }
+    }
+
+    @Override
+    public Page<Place> findByUserIdWithTown(Long userId, Pageable pageable) {
+        List<Place> results = queryFactory
+                .selectFrom(place)
+                .join(place.town, town).fetchJoin()
+                .where(place.createdBy.id.eq(userId))
+                .orderBy(place.createdAt.desc())
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+
+        JPAQuery<Long> countQuery = queryFactory
+                .select(place.count())
+                .from(place)
+                .where(place.createdBy.id.eq(userId));
+
+        return PageableExecutionUtils.getPage(results, pageable, countQuery::fetchOne);
     }
 
     private String sanitizeForBooleanMode(final String token) {
