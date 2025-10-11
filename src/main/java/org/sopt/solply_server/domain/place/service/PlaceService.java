@@ -89,7 +89,8 @@ public class PlaceService {
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                         place.getMainTag(),
-                        placeBookmarkService.isBookmarked(userId, place.getId())
+                        placeBookmarkService.isBookmarked(userId, place.getId()),
+                        townId
                 ))
                 .toList();
 
