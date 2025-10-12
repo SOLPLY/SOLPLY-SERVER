@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.town.service;
 
+import java.util.ArrayList;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.town.dto.TownDto;
@@ -21,27 +22,19 @@ public class TownService {
 
     private final TownRepository townRepository;
 
-    public Town findTownById(Long townId) {
-        return townRepository.findById(townId)
-                .orElseThrow(() -> {
-                    log.warn("존재하지 않는 동네 ID: townId={}", townId);
-                    return new BusinessException(ErrorCode.NOT_FOUND_TOWN);
-                });
-    }
-
     public TownAllGetResponse getAllTowns() {
         List<Town> parentTowns = townRepository.findByParentIsNull();
 
-        List<TownDto> allTowns = parentTowns.stream()
-                .map(parent -> {
-                    List<Town> childTowns = townRepository.findByParent(parent);
-                    List<TownDto> childTownDtos = childTowns.stream()
-                            .map(child -> TownDto.of(child, null))
-                            .toList();
+        List<TownDto> allTowns = new ArrayList<>();
 
-                    return TownDto.of(parent, childTownDtos);
-                })
-                .toList();
+        for (Town parent : parentTowns) {
+            allTowns.add(new TownDto(parent.getId(), parent.getName(), null));
+
+            List<Town> childTowns = townRepository.findByParent(parent);
+            for (Town child : childTowns) {
+                allTowns.add(TownDto.of(child, parent));
+            }
+        }
 
         return new TownAllGetResponse(allTowns);
     }

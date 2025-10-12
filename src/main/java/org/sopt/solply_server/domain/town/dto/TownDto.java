@@ -7,13 +7,13 @@ import java.util.List;
 public record TownDto(
         Long townId,
         String townName,
-        List<TownDto> subTowns
+        Long parentTownId
 ) {
-    public static TownDto of(Town town, List<TownDto> subTowns) {
+    public static TownDto of(Town town, Town parentTown) {
         return new TownDto(
                 town.getId(),
                 town.getName(),
-                subTowns
+                parentTown != null ? parentTown.getId() : null
         );
     }
 }
