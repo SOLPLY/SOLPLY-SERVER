@@ -84,11 +84,15 @@ public enum ErrorCode {
     // 검색 관련 (SEARCH-xxx)
     INVALID_KEYWORD(HttpStatus.BAD_REQUEST, "SEARCH-001", "검색어는 최소 2자 이상이어야 합니다."),
 
+    // S3 파일 관련 (S3-xxx)
+    NOT_UPLOADED_IMAGE(HttpStatus.BAD_REQUEST, "S3-001", "업로드에 실패한 이미지 파일입니다."),
+    INVALID_IMAGE_KEY(HttpStatus.BAD_REQUEST, "S3-002", "유효하지 않은 이미지 파일 키입니다."),
+
+
     // 제보 관련 (REPORT-xxx)
     REPORT_LIMIT_EXCEEDED_USER(HttpStatus.BAD_REQUEST, "REPORT-001", "동일 장소에 대해 하루에 한 번만 제보할 수 있습니다."),
-    INVALID_IMAGE_KEY(HttpStatus.BAD_REQUEST, "REPORT-002", "유효하지 않은 이미지 파일입니다."),
-    NOT_FOUND_REPORT(HttpStatus.NOT_FOUND, "REPORT-003", "존재하지 않는 제보입니다."),
-    INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-004", "유효하지 않은 제보 유형입니다.");
+    NOT_FOUND_REPORT(HttpStatus.NOT_FOUND, "REPORT-002", "존재하지 않는 제보입니다."),
+    INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-003", "유효하지 않은 제보 유형입니다.");
   
 
     private final HttpStatus httpStatus;

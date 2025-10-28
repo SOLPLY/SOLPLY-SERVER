@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.service;
 
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
@@ -10,7 +11,12 @@ import org.sopt.solply_server.domain.place.entity.PlaceReport;
 import org.sopt.solply_server.domain.place.repository.PlaceReportRepository;
 import org.sopt.solply_server.domain.place.util.PlaceReportValidator;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
+import org.sopt.solply_server.global.util.s3.S3FileMoveService;
+import org.sopt.solply_server.global.util.s3.S3KeyUtils;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -27,13 +33,15 @@ public class PlaceReportService {
     private final EntityLoader entityLoader;
 
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final ImageFileKeyValidator imageFileKeyValidator;
 
     @Transactional
     public PlaceReportCreateResponse createPlaceReport(final Long userId, final Long placeId, PlaceReportCreateRequest request) {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
 
-        placeReportValidator.validateReportLimits(userId, placeId);
+        List<String> fileKeys = request.imageKeys() == null ? List.of() : request.imageKeys();
+        imageFileKeyValidator.validateFileKeys(fileKeys);
 
         PlaceReport report = PlaceReport.create(
                 place,
@@ -59,4 +67,5 @@ public class PlaceReportService {
 
         return PlaceReportCreateResponse.from(savedReport);
     }
+
 }

@@ -14,6 +14,7 @@ public class PlaceReportValidator {
 
     private final PlaceReportRepository placeReportRepository;
 
+    @Deprecated
     public void validateReportLimits(Long userId, Long placeId) {
         LocalDateTime dayAgo = LocalDateTime.now().minusDays(1);
 
