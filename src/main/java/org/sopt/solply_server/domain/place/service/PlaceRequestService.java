@@ -122,7 +122,7 @@ public class PlaceRequestService {
             if (k.isBlank()) {
                 throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
             }
-            if (s3FileMoveService.isUploaded(k)) {
+            if (!s3FileMoveService.isUploaded(k)) {
                 throw new BusinessException(ErrorCode.NOT_UPLOADED_IMAGE);
             }
         }

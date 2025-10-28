@@ -39,8 +39,6 @@ public class PlaceReportService {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
 
-        placeReportValidator.validateReportLimits(userId, placeId);
-
         List<String> fileKeys = request.imageKeys() == null ? List.of() : request.imageKeys();
         checkFileKeyTemplates(fileKeys);
 
@@ -77,7 +75,7 @@ public class PlaceReportService {
             if (k.isBlank()) {
                 throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
             }
-            if (s3FileMoveService.isUploaded(k)) {
+            if (!s3FileMoveService.isUploaded(k)) {
                 throw new BusinessException(ErrorCode.NOT_UPLOADED_IMAGE);
             }
         }
