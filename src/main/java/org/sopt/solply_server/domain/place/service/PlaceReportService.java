@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.service;
 
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
@@ -10,7 +11,10 @@ import org.sopt.solply_server.domain.place.entity.PlaceReport;
 import org.sopt.solply_server.domain.place.repository.PlaceReportRepository;
 import org.sopt.solply_server.domain.place.util.PlaceReportValidator;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.s3.S3KeyUtils;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -35,6 +39,9 @@ public class PlaceReportService {
 
         placeReportValidator.validateReportLimits(userId, placeId);
 
+        List<String> fileKeys = request.imageKeys() == null ? List.of() : request.imageKeys();
+        checkFileKeyTemplates(fileKeys);
+
         PlaceReport report = PlaceReport.create(
                 place,
                 user,
@@ -58,5 +65,17 @@ public class PlaceReportService {
         applicationEventPublisher.publishEvent(event);
 
         return PlaceReportCreateResponse.from(savedReport);
+    }
+
+    private static void checkFileKeyTemplates(final List<String> fileKeys) {
+
+        for (String k : fileKeys) {
+            if (S3KeyUtils.isUrl(k)) {
+                throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
+            }
+            if (k.isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
+            }
+        }
     }
 }

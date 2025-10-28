@@ -15,6 +15,7 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.s3.S3KeyUtils;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,12 @@ public class PlaceRequestService {
         log.info("장소 등록 요청 저장 시작 - placeName: {}", request.placeName());
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
+
+        List<String> fileKeys = request.images() == null ? List.of() : request.images().stream()
+                .map(PlaceRequestCreateRequest.ImageRequest::tempFileKey)
+                .toList();
+
+        checkFileKeys(fileKeys);
 
         List<PlaceRequestImageInfo> imageInfos = Optional.ofNullable(request.images())
                 .orElseGet(List::of).stream()
@@ -105,7 +112,16 @@ public class PlaceRequestService {
 
         return PlaceRequestCreateResponse.of(saved.getId(), saved.getUser().getId());
     }
-
+    private static void checkFileKeys(List<String> fileKeys) {
+        for (String k : fileKeys) {
+            if (S3KeyUtils.isUrl(k)) {
+                throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
+            }
+            if (k.isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
+            }
+        }
+    }
 
 }
 
