@@ -14,6 +14,7 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.s3.S3FileMoveService;
 import org.sopt.solply_server.global.util.s3.S3KeyUtils;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
@@ -31,6 +32,7 @@ public class PlaceReportService {
     private final EntityLoader entityLoader;
 
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final S3FileMoveService s3FileMoveService;
 
     @Transactional
     public PlaceReportCreateResponse createPlaceReport(final Long userId, final Long placeId, PlaceReportCreateRequest request) {
@@ -67,14 +69,16 @@ public class PlaceReportService {
         return PlaceReportCreateResponse.from(savedReport);
     }
 
-    private static void checkFileKeyTemplates(final List<String> fileKeys) {
-
+    private void checkFileKeyTemplates(final List<String> fileKeys) {
         for (String k : fileKeys) {
             if (S3KeyUtils.isUrl(k)) {
                 throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
             }
             if (k.isBlank()) {
                 throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
+            }
+            if (s3FileMoveService.isUploaded(k)) {
+                throw new BusinessException(ErrorCode.NOT_UPLOADED_IMAGE);
             }
         }
     }

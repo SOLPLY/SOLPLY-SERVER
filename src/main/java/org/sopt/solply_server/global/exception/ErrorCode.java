@@ -85,7 +85,8 @@ public enum ErrorCode {
     INVALID_KEYWORD(HttpStatus.BAD_REQUEST, "SEARCH-001", "검색어는 최소 2자 이상이어야 합니다."),
 
     // S3 파일 관련 (S3-xxx)
-    INVALID_IMAGE_KEY(HttpStatus.BAD_REQUEST, "S3-001", "업로드에 실패한 이미지 파일입니다."),
+    NOT_UPLOADED_IMAGE(HttpStatus.BAD_REQUEST, "S3-001", "업로드에 실패한 이미지 파일입니다."),
+    INVALID_IMAGE_KEY(HttpStatus.BAD_REQUEST, "S3-002", "유효하지 않은 이미지 파일 키입니다."),
 
 
     // 제보 관련 (REPORT-xxx)
