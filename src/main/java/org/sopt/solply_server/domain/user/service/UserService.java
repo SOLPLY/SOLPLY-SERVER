@@ -12,7 +12,6 @@ import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
 import org.sopt.solply_server.domain.user.dto.request.UserInOnboardingUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserUpdateRequest;
-import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserInOnboardingUpdateResponse;
@@ -24,11 +23,7 @@ import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
-import org.sopt.solply_server.domain.user.entity.UserWithdraw;
-import org.sopt.solply_server.domain.user.entity.WithdrawReason;
-import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
-import org.sopt.solply_server.domain.user.repository.UserWithdrawRepository;
 import org.sopt.solply_server.domain.user.service.mypage.MyPageFacade;
 import org.sopt.solply_server.global.dto.PagedResponse;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -144,6 +139,10 @@ public class UserService {
         userValidator.validateNickname(user.getNickname(), request.nickname());
 
         user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTownId());
+
+        for (var policyInfo : request.policyAgreementInfos()) {
+
+        }
 
         try {
             userRepository.flush();

@@ -5,7 +5,9 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.user.entity.SocialUserInfo;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.entity.UserPolicyAgreement;
 import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
+import org.sopt.solply_server.domain.user.repository.UserPolicyAgreementRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,8 @@ public class SocialUserService {
         // 신규 이용자
         User newUser = User.create(email);
         userRepository.save(newUser);
+        UserPolicyAgreement userPolicyAgreement = UserPolicyAgreement.create(newUser);
+
         linkSocialAccount(newUser, socialPlatform, socialId);
 
         return newUser;
