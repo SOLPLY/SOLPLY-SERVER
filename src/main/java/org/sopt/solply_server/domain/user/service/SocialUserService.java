@@ -1,10 +1,12 @@
 package org.sopt.solply_server.domain.user.service;
 
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.user.entity.SocialUserInfo;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.entity.UserPolicy;
 import org.sopt.solply_server.domain.user.entity.UserPolicyAgreement;
 import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
 import org.sopt.solply_server.domain.user.repository.UserPolicyAgreementRepository;
@@ -45,7 +47,6 @@ public class SocialUserService {
         // 신규 이용자
         User newUser = User.create(email);
         userRepository.save(newUser);
-        UserPolicyAgreement userPolicyAgreement = UserPolicyAgreement.create(newUser);
 
         linkSocialAccount(newUser, socialPlatform, socialId);
 

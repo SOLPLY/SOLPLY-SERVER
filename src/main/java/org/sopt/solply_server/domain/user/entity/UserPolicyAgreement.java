@@ -35,25 +35,25 @@ public class UserPolicyAgreement extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "user_policy_agreement_id")
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id")
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "policy_id", nullable = false)
-    private UserPolicy policy;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_policy_id", nullable = false)
+    private UserPolicy userPolicy;
 
     @Column(nullable = false)
     private Boolean isAgree;
 
 
-    public static UserPolicyAgreement create(User newUser, UserPolicy policy) {
+    public static UserPolicyAgreement create(User user, UserPolicy userPolicy, Boolean isAgree) {
         return UserPolicyAgreement.builder()
-                .user(newUser)
-                .policy(policy)
-                .isAgree(true)
+                .user(user)
+                .userPolicy(userPolicy)
+                .isAgree(isAgree)
                 .build();
     }
 

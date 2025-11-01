@@ -23,6 +23,7 @@ import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
+import org.sopt.solply_server.domain.user.repository.UserPolicyRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.domain.user.service.mypage.MyPageFacade;
 import org.sopt.solply_server.global.dto.PagedResponse;
@@ -51,6 +52,8 @@ public class UserService {
     private final UserRepository userRepository;
     private final PresignedUrlProvider presignedUrlProvider;
     private final S3FileMoveService s3FileMoveService;
+    private final UserPolicyRepository userPolicyRepository;
+    private final UserPolicyService userPolicyService;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -140,8 +143,9 @@ public class UserService {
 
         user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTownId());
 
+        // 약관 동의 여부 저장
         for (var policyInfo : request.policyAgreementInfos()) {
-
+            userPolicyService.updateUserPolicyAgreement(user, policyInfo.policyId(), policyInfo.isAgree());
         }
 
         try {

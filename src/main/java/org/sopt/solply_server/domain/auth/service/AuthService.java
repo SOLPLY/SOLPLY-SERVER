@@ -30,24 +30,9 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final OAuthServiceProvider oAuthServiceProvider;
 
-    // 관심 지역 임시 처리
-    private final UserInterestTownService userInterestTownService;
-
-
-    private final JwtTokenResolver jwtTokenResolver;
-    private final EntityLoader entityLoader;
-
     public SocialLoginResponse socialLogin(SocialPlatform socialPlatform, SocialLoginRequest request) {
         OAuthService oAuthService = oAuthServiceProvider.getService(socialPlatform);
         User user = oAuthService.socialLogin(request.oauthAccessToken());
-
-//        Town town1 = entityLoader.getTown(Long.parseLong("2")); // 연희동
-//        Town town2 = entityLoader.getTown(Long.parseLong("3")); // 망원동
-//        List<Town> initialTowns = new ArrayList<>();
-//        initialTowns.add(town1);
-//        initialTowns.add(town2);
-
-//        userInterestTownService.updateUserInterestTowns(user, initialTowns);
 
         return SocialLoginResponse.of(
                 saveTokenCollection(user.getId()),

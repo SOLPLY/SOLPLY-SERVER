@@ -50,6 +50,8 @@ public enum ErrorCode {
     ONBOARDING_ALREADY_COMPLETED(HttpStatus.BAD_REQUEST, "USER-003", "이미 온보딩이 완료된 사용자입니다."),
     NOT_FOUND_PERSONA(HttpStatus.NOT_FOUND, "USER-004" , "페르소나가 설정돼있지 않은 사용자입니다." ),
     NOT_FOUND_USER_SELECTED_TOWN(HttpStatus.NOT_FOUND, "USER-005" , "유저가 선택한 동네가 없습니다."),
+    INVALID_USER_POLICY(HttpStatus.BAD_REQUEST, "USER-006", "유효하지 않은 약관 정보입니다."),
+    REQUIRED_USER_POLICY_NOT_AGREED(HttpStatus.BAD_REQUEST, "USER-007" , "필수 동의 항목에 대한 동의가 필요합니다." ),
 
 
     // 장소 관련 (PLACE-xxx)
