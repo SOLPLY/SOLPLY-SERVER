@@ -9,7 +9,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
-import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
@@ -40,7 +40,7 @@ public class PlaceController {
 
     @Operation(summary = "장소 상세 조회", description = "장소 ID를 통해 장소의 상세 정보를 조회합니다.")
     @GetMapping("/{placeId}")
-    public ResponseEntity<CustomApiResponse<PlaceAllGetResponse>> getPlaceDetailsbyId(
+    public ResponseEntity<CustomApiResponse<PlaceDetailsGetResponse>> getPlaceDetailsbyId(
             @CurrentUserId Long userId,
             @PathVariable Long placeId) {
         return CustomApiResponse.success(
