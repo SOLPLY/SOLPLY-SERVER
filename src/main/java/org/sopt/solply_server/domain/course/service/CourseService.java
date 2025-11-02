@@ -182,9 +182,6 @@ public class CourseService {
                 .map(coursePlace -> coursePlace.getPlace().getId())
                 .toList();
 
-        // 장소 태그 정보를 영속성 컨텍스트에 로드
-        courseRepository.findPlacesWithTagsByIds(placeIds);
-
         Map<Long, Boolean> placeBookmarkMap = placeIds.isEmpty() ? Map.of() :
                 placeIds.stream().collect(Collectors.toMap(
                         placeId -> placeId,
@@ -221,13 +218,9 @@ public class CourseService {
             final Long townId,
             final Long candidatePlaceId) {
 
-        if (townId == null && candidatePlaceId == null) {
-            throw new BusinessException(ErrorCode.MISSING_REQUIRED_PARAMETER);
-        }
+        if (townId == null && candidatePlaceId == null) throw new BusinessException(ErrorCode.MISSING_REQUIRED_PARAMETER);
 
-        if (townId != null && candidatePlaceId != null) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY);
-        }
+        if (townId != null && candidatePlaceId != null) throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY);
 
         final Long targetTownId;
         final Place candidatePlace;
@@ -269,19 +262,13 @@ public class CourseService {
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
-        List<Long> filteredCourseIds = filteredCourses.stream()
-                .map(Course::getId)
-                .toList();
-
-        // 코스 태그 정보 배치 로딩
-        courseRepository.findPlacesWithTagsByCourseIds(filteredCourseIds);
-
         // 상세 검증 결과 준비 (코스 추가 모드일 때만)
         Map<Long, CourseValidationResult> validationResults = prepareValidationResults(
                 filteredCourses, candidatePlace, candidatePlaceId != null);
 
         List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
-                .map(course -> createCourseInfoDto(course, validationResults, candidatePlaceId != null))
+                .map(course -> createCourseInfoDto(
+                        course, validationResults, candidatePlaceId != null))
                 .sorted(
                         (dto1, dto2) -> {
                             LocalDateTime createdAt1 = courseIdCreatedAtMap.get(dto1.courseId());
@@ -296,75 +283,6 @@ public class CourseService {
         return CourseBookmarkListGetResponse.from(courseInfoDtos);
     }
 
-
-    /**
-     * 사용자가 북마크한 코스 목록 조회 (동네 기준 필터링 + 장소 추가 가능 여부)
-     */
-    @Deprecated
-    public CourseBookmarkListGetResponse getBookmarkedCoursesByTownByLatest(final Long userId, final Long townId, final Long placeId) {
-        townValidator.validateTownId(townId);
-
-        // placeId가 있는 경우에만 장소 조회 및 검증
-        Place candidatePlace = null;
-        boolean checkCanAddPlaceToCourse = (placeId != null);
-
-        if (checkCanAddPlaceToCourse) {
-            candidatePlace = entityLoader.getPlace(placeId);
-        }
-
-        // Redis에서 활성화된 코스 북마크 데이터 조회
-        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
-
-        if (activeBookmarks.isEmpty()) {
-            log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
-            return CourseBookmarkListGetResponse.from(List.of());
-        }
-
-        // 코스 ID와 북마크 저장 시간을 매핑하여 저장
-        Map<Long, LocalDateTime> courseIdCreatedAtMap = activeBookmarks.stream()
-                .collect(Collectors.toMap(
-                        CourseBookmarkRedisDto::courseId,
-                        CourseBookmarkRedisDto::createdAt
-                ));
-
-        List<Long> courseIds = activeBookmarks.stream()
-                .map(CourseBookmarkRedisDto::courseId)
-                .toList();
-
-        // 동네 ID와 북마크된 코스 ID로 필터링
-        List<Course> filteredCourses = courseRepository.findBookmarkedCoursesByTownId(courseIds, townId);
-
-        if (filteredCourses.isEmpty()) {
-            log.info("동네 {}에 북마크된 코스가 없습니다.", townId);
-            return CourseBookmarkListGetResponse.from(List.of());
-        }
-
-        List<Long> filteredCourseIds = filteredCourses.stream()
-                .map(Course::getId)
-                .toList();
-
-        // 코스 태그 정보 배치 로딩
-        courseRepository.findPlacesWithTagsByCourseIds(filteredCourseIds);
-
-        // 상세 검증 결과 준비
-        Map<Long, CourseValidationResult> validationResults = prepareValidationResults(
-                filteredCourses, candidatePlace, checkCanAddPlaceToCourse);
-
-        // DTO 변환
-        List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
-                .map(course -> createCourseInfoDto(course, validationResults, checkCanAddPlaceToCourse))
-                .sorted( // 최신 순으로 정렬
-                        (dto1, dto2) -> {
-                            LocalDateTime createdAt1 = courseIdCreatedAtMap.get(dto1.courseId());
-                            LocalDateTime createdAt2 = courseIdCreatedAtMap.get(dto2.courseId());
-                            return createdAt2.compareTo(createdAt1);
-                        }
-                )
-                .toList();
-
-        log.info("북마크 코스 {}개 조회 완료", courseInfoDtos.size());
-        return CourseBookmarkListGetResponse.from(courseInfoDtos);
-    }
 
 
     /**
@@ -478,7 +396,7 @@ public class CourseService {
                 .map(CourseBookmarkRedisDto::courseId)
                 .toList();
 
-        Map<Long, Long> courseToTownMap = courseRepository.findAllById(courseIds).stream()
+        Map<Long, Long> courseToTownMap = entityLoader.getCourseWithTowns(courseIds).stream()
                 .collect(Collectors.toMap(
                         Course::getId,
                         course -> course.getTown().getId()

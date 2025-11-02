@@ -24,7 +24,7 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @Getter
 @Table(name = "user_policy_agreements",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_user_policy", columnNames = {"user_id", "policy_id"})
+                @UniqueConstraint(name = "uk_user_policy", columnNames = {"user_id", "user_policy_id"})
         }
 )
 @Builder
