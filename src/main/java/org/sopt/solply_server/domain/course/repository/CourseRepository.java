@@ -65,10 +65,11 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
      */
     @Query("""
         SELECT DISTINCT c FROM Course c
-        JOIN FETCH c.town t WITH t.id = :townId
+        JOIN FETCH c.town t
         LEFT JOIN FETCH c.coursePlaces cp
         LEFT JOIN FETCH cp.place p
-        WHERE c.id IN :courseIds
+        WHERE t.id = :townId
+          AND c.id IN :courseIds
     """)
     List<Course> findBookmarkedCoursesByTownId(@Param("courseIds") List<Long> courseIds,
             @Param("townId") Long townId);
