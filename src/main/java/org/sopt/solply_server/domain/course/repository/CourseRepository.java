@@ -17,18 +17,11 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
      * 코스 상세 조회 - 코스와 관련된 장소 목록 조회 (단계별 조회로 MultipleBagFetchException 해결)
      * Course, CoursePlace, Place 모두 한 번에 로딩
      */
-    @Query("SELECT c FROM Course c " +
+    @Query("SELECT DISTINCT c FROM Course c " +
             "JOIN FETCH c.coursePlaces cp " +
             "JOIN FETCH cp.place p " +
             "WHERE c.id = :courseId")
     Optional<Course> findByIdWithPlaces(@Param("courseId") Long courseId);
-
-    // 필요한 Place들의 태그 정보 배치 로딩
-    @Query("SELECT p FROM Place p " +
-            "LEFT JOIN FETCH p.placeTags pt " +
-            "LEFT JOIN FETCH pt.tag " +
-            "WHERE p.id IN :placeIds")
-    List<Place> findPlacesWithTagsByIds(@Param("placeIds") List<Long> placeIds);
 
     /**
      * 특정 동네의 공유된 코스 목록 조회 (단계별 조회로 MultipleBagFetchException 해결)
@@ -50,16 +43,6 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             "(SELECT cp.place.id FROM CoursePlace cp WHERE cp.course.id IN :courseIds)")
     List<Place> findPlacesWithTagsByCourseIds(@Param("courseIds") List<Long> courseIds);
 
-    /**
-     * 특정 코스들의 장소 개수 조회
-     * 코스 ID와 해당 코스의 장소 개수를 Map 형태로 반환
-     */
-    @Query("SELECT cp.course.id, COUNT(cp) " +
-            "FROM CoursePlace cp " +
-            "WHERE cp.course.id IN :courseIds " +
-            "GROUP BY cp.course.id")
-    List<Object[]> countPlacesByCourseIds(@Param("courseIds") List<Long> courseIds);
-
 
     /**
      * 사용자의 북마크된 코스 목록 조회
@@ -75,37 +58,21 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         """)
     List<Course> findBookmarkedCoursesWithPlacesByIds(@Param("courseIds") List<Long> courseIds);
 
-    /**
-     * 동네의 코스명 패턴 조회 (중복 이름 체크용)
-     */
-    @Query("SELECT c.name FROM Course c " +
-            "WHERE c.town.id = :townId " +
-            "AND c.name LIKE :namePattern " +
-            "ORDER BY c.name")
-    List<String> findCourseNamesByTownAndNamePattern(@Param("townId") Long townId,
-                                                     @Param("namePattern") String namePattern);
 
     /**
      * 특정 동네의 북마크된 코스 목록 조회
      * 코스와 코스 내 장소들을 함께 조회
      */
     @Query("""
-    SELECT DISTINCT c FROM Course c
-    JOIN FETCH c.town t
-    JOIN FETCH c.coursePlaces cp
-    JOIN FETCH cp.place p
-    WHERE c.id IN :courseIds 
-    AND c.town.id = :townId
-    ORDER BY c.createdAt DESC
+        SELECT DISTINCT c FROM Course c
+        JOIN FETCH c.town t WITH t.id = :townId
+        LEFT JOIN FETCH c.coursePlaces cp
+        LEFT JOIN FETCH cp.place p
+        WHERE c.id IN :courseIds
     """)
     List<Course> findBookmarkedCoursesByTownId(@Param("courseIds") List<Long> courseIds,
-                                               @Param("townId") Long townId);
+            @Param("townId") Long townId);
 
-    @Query("SELECT c FROM Course c " +
-            "JOIN FETCH c.coursePlaces cp " +
-            "JOIN FETCH cp.place p " +
-            "WHERE c.id IN :courseIds")
-    List<Course> findByIdInWithPlaces(@Param("courseIds") List<Long> courseIds);
 
     @Modifying
     @Query("DELETE FROM CoursePlace cp WHERE cp.course.id = :courseId")
@@ -119,4 +86,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             "AND c.name LIKE :namePattern")
     List<String> findCourseNamesByBookmarkedCourses(
             @Param("courseIds") List<Long> courseIds, @Param("namePattern") String namePattern);
+
+    @Query("SELECT c FROM Course c " +
+            "JOIN FETCH c.town t " +
+            "WHERE c.id IN :courseIds")
+    List<Course> findAllByIdsWithTowns(@Param("courseIds") List<Long> courseIds);
 }

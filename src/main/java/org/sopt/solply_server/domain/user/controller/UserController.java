@@ -13,6 +13,7 @@ import org.sopt.solply_server.domain.user.dto.request.UserWithdrawRequest;
 import org.sopt.solply_server.domain.user.dto.request.UserTownsUpdateRequest;
 import org.sopt.solply_server.domain.user.dto.response.NicknameCheckResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserInOnboardingUpdateResponse;
+import org.sopt.solply_server.domain.user.dto.response.UserPolicyAllGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserUpdateResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserPersonaListGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserProfileGetResponse;
@@ -20,6 +21,7 @@ import org.sopt.solply_server.domain.user.dto.response.UserRequestedPlaceAllGetR
 import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserWithdrawReasonAllGetResponse;
+import org.sopt.solply_server.domain.user.service.UserPolicyService;
 import org.sopt.solply_server.domain.user.service.UserService;
 import org.sopt.solply_server.domain.user.service.UserWithdrawService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -37,6 +39,7 @@ public class UserController {
 
     private final UserService userService;
     private final UserWithdrawService userWithdrawService;
+    private final UserPolicyService userPolicyService;
 
     @Operation(summary = "닉네임 중복 검사", description = "닉네임 사용 가능 여부를 확인합니다.")
     @GetMapping("/check-nickname")
@@ -94,6 +97,14 @@ public class UserController {
                 userService.getUserPersonaList());
     }
 
+    @Operation(summary = "사용자 약관 정보 조회", description = "사용자 약관 정보를 조회합니다.")
+    @GetMapping("/policies")
+    public ResponseEntity<CustomApiResponse<UserPolicyAllGetResponse>> getUserPolicies() {
+        return CustomApiResponse.success("사용자 약관 정보 조회에 성공했습니다.",
+                userPolicyService.getAllUserPolicies()
+        );
+    }
+
 
     @Operation(summary = "회원 정보 업데이트", description = "회원 정보를 업데이트합니다.")
     @PatchMapping()
@@ -114,6 +125,7 @@ public class UserController {
         return CustomApiResponse.success("온보딩 기반 회원 정보 업데이트에 성공했습니다",
                 userService.updateUserInfoInOnboarding(userId, request));
     }
+
 
 
 
