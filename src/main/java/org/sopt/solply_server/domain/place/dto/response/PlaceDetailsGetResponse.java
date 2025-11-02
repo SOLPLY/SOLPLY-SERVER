@@ -6,9 +6,10 @@ import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.SnsLinkDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.tag.entity.TagName;
+import org.sopt.solply_server.domain.town.entity.Town;
 
 @Builder
-public record PlaceAllGetResponse(
+public record PlaceDetailsGetResponse(
         long placeId,
         String placeName,
         TagName mainTag,
@@ -22,11 +23,14 @@ public record PlaceAllGetResponse(
         List<SnsLinkDto> snsLinks,
         boolean isBookmarked,
         String placeType,
-        long placeDefaultId
+        long placeDefaultId,
+        long townId,
+        String townName
 ) {
 
-    public static PlaceAllGetResponse of(Place place, TagName mainTag, List<PlaceImageInfoDto> placeImageInfos, boolean isBookmarked) {
-        return PlaceAllGetResponse.builder()
+    public static PlaceDetailsGetResponse of(Place place, TagName mainTag, List<PlaceImageInfoDto> placeImageInfos,
+            boolean isBookmarked, Town town) {
+        return PlaceDetailsGetResponse.builder()
                 .placeId(place.getId())
                 .placeName(place.getName())
                 .mainTag(mainTag)
@@ -41,6 +45,8 @@ public record PlaceAllGetResponse(
                 .isBookmarked(isBookmarked)
                 .placeType(place.getPlaceType())
                 .placeDefaultId(place.getPlaceDefaultId())
+                .townId(town.getId())
+                .townName(town.getName())
                 .build();
     }
 }

@@ -14,7 +14,7 @@ import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchResultDto;
-import org.sopt.solply_server.domain.place.dto.response.PlaceAllGetResponse;
+import org.sopt.solply_server.domain.place.dto.response.PlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
@@ -50,7 +50,7 @@ public class PlaceService {
     /**
      * 장소 상세 정보 조회
      */
-    public PlaceAllGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
+    public PlaceDetailsGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
         Place place = entityLoader.getPlace(placeId);
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
@@ -62,11 +62,14 @@ public class PlaceService {
 
         boolean isBookmarked = placeBookmarkService.isBookmarked(userId, placeId);
 
-        return PlaceAllGetResponse.of(
+        Town town = place.getTown();
+
+        return PlaceDetailsGetResponse.of(
                 place,
                 place.getMainTag(),
                 imageInfos,
-                isBookmarked
+                isBookmarked,
+                town
         );
     }
 
