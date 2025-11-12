@@ -169,7 +169,7 @@ public class CourseBookmarkRedisDataManager implements RedisDataManager {
         String bookmarkKey = String.format("%s:%d:%d",
                 CachePrefix.COURSE_BOOKMARK.getPrefix(),
                 bookmarkData.userId(),
-                bookmarkData.placeId());
+                bookmarkData.courseId());
         cacheService.delete(bookmarkKey);
         log.debug("유효하지 않은 Redis 데이터 제거 - key: {}", bookmarkKey);
     }
