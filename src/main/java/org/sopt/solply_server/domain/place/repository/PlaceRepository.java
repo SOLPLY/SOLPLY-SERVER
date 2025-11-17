@@ -7,6 +7,7 @@ import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCu
 import org.sopt.solply_server.domain.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -26,6 +27,10 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     @Query("SELECT p FROM Place p WHERE p.id IN :placeIds")
     List<Place> findByIdIn(@Param("placeIds") List<Long> placeIds);
 
+    @EntityGraph(attributePaths = {
+            "placeTags",
+            "placeTags.tag"
+    })
     List<Place> findTop3ByCreatedByOrderByCreatedAtDesc(User createdBy);
 
 }
