@@ -1,10 +1,12 @@
 package org.sopt.solply_server.domain.user.service.mypage;
 
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.data.domain.Page;
@@ -14,17 +16,34 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class MyPageFacade {
 
     private final PlaceRepository placeRepository;
     private final ImageUrlProvider imageUrlProvider;
+    private final PlaceBookmarkQueryService placeBookmarkQueryService;
 
-    @Transactional(readOnly = true)
-    public List<Place> getMyPlacesTop3(User user) {
-        return placeRepository.findTop3ByCreatedByOrderByCreatedAtDesc(user);
+    public List<UserPlacePreviewDto> getMyPlacePreviewsTop3(User user) {
+        List<Place> places = placeRepository.findTop3ByCreatedByOrderByCreatedAtDesc(user);
+
+        List<Long> placeIds = places.stream()
+                .map(Place::getId)
+                .toList();
+
+        Map<Long, Boolean> bookmarkMap =
+                placeBookmarkQueryService.getBookmarkStatus(user.getId(), placeIds);
+
+        return places.stream()
+                .map(place -> UserPlacePreviewDto.of(
+                        place.getId(),
+                        place.getName(),
+                        imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
+                        place.getMainTag(),
+                        bookmarkMap.getOrDefault(place.getId(), false)
+                ))
+                .toList();
     }
 
-    @Transactional(readOnly = true)
     public Page<PlacePreviewDto> getPlacesCreatedBy(Long userId, Pageable pageable) {
         Page<Place> places = placeRepository.findByUserIdWithTown(userId, pageable);
         return places.map(place -> PlacePreviewDto.of(

@@ -27,6 +27,7 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -90,6 +91,8 @@ public class Place extends BaseTimeEntity {
     @Column(name = "url", columnDefinition = "TEXT")
     private Map<SnsPlatform, String> snsLinks = new HashMap<>();
 
+
+    @BatchSize(size = 50)
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "place_images", joinColumns = @JoinColumn(name = "place_id"))
     @OrderBy("displayOrder ASC") // displayOrder가 낮은 순서로 DB 내에서 정렬

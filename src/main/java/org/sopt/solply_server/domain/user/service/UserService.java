@@ -74,14 +74,7 @@ public class UserService {
         }
         Town selectedTown = entityLoader.getTown(user.getSelectedTownId());
 
-        List<UserPlacePreviewDto> myPlacePreviews = myPageFacade.getMyPlacesTop3(user)
-                .stream()
-                .map(place -> UserPlacePreviewDto.of(
-                        place.getId(),
-                        place.getName(),
-                        place.getThumbnailFileKey()
-                ))
-                .toList();
+        List<UserPlacePreviewDto> myPlacePreviews = myPageFacade.getMyPlacePreviewsTop3(user);
 
         return UserProfileGetResponse.of(
                 user,
