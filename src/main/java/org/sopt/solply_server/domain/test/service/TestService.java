@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.test.service;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
 import org.sopt.solply_server.domain.test.dto.response.TestLoginResponse;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -72,7 +73,7 @@ public class TestService {
 
     // 토큰 발급(테스트용)
     private TokenCollectionDto saveTokenCollection(Long userId) {
-        TokenCollectionDto newTokens = jwtTokenProvider.createTokenCollection(userId);
+        TokenCollectionDto newTokens = jwtTokenProvider.createTokenCollection(userId, SocialPlatform.KAKAO);
         refreshTokenRepository.save(userId, newTokens.refreshToken());
         return newTokens;
     }

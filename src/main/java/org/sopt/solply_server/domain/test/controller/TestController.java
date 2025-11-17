@@ -29,7 +29,8 @@ public class TestController {
     //테스트로그인(기존유저)
     @Operation(summary = "기존 테스트 유저 로그인")
     @PostMapping("/login/{userId}")
-    public ResponseEntity<CustomApiResponse<TestLoginResponse>> loginExisting(@PathVariable Long userId) {
+    public ResponseEntity<CustomApiResponse<TestLoginResponse>> loginExisting(
+            @PathVariable Long userId) {
         return CustomApiResponse.success("테스트 로그인 성공", testService.loginById(userId));
     }
 

@@ -2,12 +2,13 @@ package org.sopt.solply_server.domain.auth.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.auth.dto.response.LoginInfoResponse;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
 import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.service.AuthService;
-import org.sopt.solply_server.global.annotation.CurrentUserId;
+import org.sopt.solply_server.global.annotation.CurrentSocialLoginPlatform;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -39,4 +40,16 @@ public class AuthController {
                 authService.refreshToken(refreshToken)
         );
     }
+
+
+    @GetMapping("/login-info")
+    public ResponseEntity<CustomApiResponse<LoginInfoResponse>> getLoginInfo(
+            @CurrentSocialLoginPlatform SocialPlatform socialPlatform
+    ) {
+        return CustomApiResponse.success(
+                "현재 소셜 로그인 정보 조회에 성공했습니다.",
+                authService.getSocialLoginInfo(socialPlatform)
+        );
+    }
+
 }

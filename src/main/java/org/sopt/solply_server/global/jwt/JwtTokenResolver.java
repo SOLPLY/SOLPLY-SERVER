@@ -8,6 +8,7 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.springframework.stereotype.Component;
@@ -24,5 +25,10 @@ public class JwtTokenResolver {
         if (v instanceof Number n) return n.longValue();
         if (v != null) return Long.parseLong(v.toString());
         return Long.parseLong(c.getSubject()); // fallback
+    }
+
+    public SocialPlatform getPlatform(Claims claims) {
+        String platformStr = claims.get("platform", String.class);
+        return platformStr != null ? SocialPlatform.valueOf(platformStr) : null;
     }
 }

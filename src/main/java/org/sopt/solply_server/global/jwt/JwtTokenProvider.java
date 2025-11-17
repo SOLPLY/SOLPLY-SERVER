@@ -4,6 +4,7 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
@@ -30,39 +31,42 @@ public class JwtTokenProvider {
         this.refreshTokenExpireTime = jwtProperties.getRefreshTokenExpireTime();
     }
 
-    // JwtTokenCollection(AccessToken, RefreshToken) 생성
-    public TokenCollectionDto createTokenCollection(Long userId) {
+
+    // JwtTokenCollection 생성
+    public TokenCollectionDto createTokenCollection(Long userId, SocialPlatform platform) {
         return TokenCollectionDto.of(
-                generateAccessToken(userId),
-                generateRefreshToken(userId)
+                generateAccessToken(userId, platform),
+                generateRefreshToken(userId, platform)
         );
     }
 
     // Access Token 생성
-    public String generateAccessToken(Long userId) {
+    public String generateAccessToken(Long userId, SocialPlatform platform) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + accessTokenExpireTime);
 
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))
-                .claim("type", "access") // Access Token용 Claim 추가
+                .claim("type", "access")
+                .claim("platform", platform.name())
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
-                .signWith(accessKey, SignatureAlgorithm.HS512) // Access Key 사용
+                .signWith(accessKey, SignatureAlgorithm.HS512)
                 .compact();
     }
 
     // Refresh Token 생성
-    public String generateRefreshToken(Long userId) {
+    public String generateRefreshToken(Long userId, SocialPlatform platform) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + refreshTokenExpireTime);
 
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))
-                .claim("type", "refresh") // Refresh Token용 Claim 추가
+                .claim("type", "refresh")
+                .claim("platform", platform.name())   // ★ 여기!
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
-                .signWith(refreshKey, SignatureAlgorithm.HS512) // Refresh Key 사용
+                .signWith(refreshKey, SignatureAlgorithm.HS512)
                 .compact();
     }
 
