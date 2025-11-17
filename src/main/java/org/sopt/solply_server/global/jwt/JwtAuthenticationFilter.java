@@ -8,7 +8,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.global.exception.JwtTokenException;
+import org.sopt.solply_server.global.security.PrincipalDetails;
 import org.sopt.solply_server.global.security.PrincipalDetailsService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -35,7 +37,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final HandlerExceptionResolver handlerExceptionResolver;
 
     private static final RequestMatcher WHITELIST = new OrRequestMatcher(List.of(
-            new AntPathRequestMatcher("/api/auth/**"),
+            new AntPathRequestMatcher("/api/auth/social/**"),
+            new AntPathRequestMatcher("/api/auth/refresh"),
             new AntPathRequestMatcher("/swagger-ui/**"),
             new AntPathRequestMatcher("/v3/api-docs/**"),
             new AntPathRequestMatcher("/api/test/**")
@@ -70,10 +73,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 Claims claims = jwtTokenProvider.parseAccessToken(accessToken);
                 Long userId = jwtTokenResolver.getUserId(claims);
+                SocialPlatform platform = jwtTokenResolver.getPlatform(claims);
 
-                UserDetails userDetails = principalDetailsService.loadUserByUsername(userId.toString());
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
+                PrincipalDetails principal = principalDetailsService.loadUserWithPlatform(userId, platform);
+
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                principal,
+                                null,
+                                principal.getAuthorities()
+                        );
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }

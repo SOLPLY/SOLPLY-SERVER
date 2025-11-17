@@ -1,21 +1,17 @@
 package org.sopt.solply_server.domain.auth.service;
 
 import io.jsonwebtoken.Claims;
-import java.util.ArrayList;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.auth.dto.response.LoginInfoResponse;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
 import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
-import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
-import org.sopt.solply_server.domain.user.service.UserInterestTownService;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.jwt.JwtTokenProvider;
-import org.sopt.solply_server.global.jwt.JwtTokenResolver;
 import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
@@ -35,7 +31,7 @@ public class AuthService {
         User user = oAuthService.socialLogin(request.oauthAccessToken());
 
         return SocialLoginResponse.of(
-                saveTokenCollection(user.getId()),
+                saveTokenCollection(user.getId(), socialPlatform),
                 user.isNewUser()
         );
     }
@@ -54,13 +50,21 @@ public class AuthService {
             throw new JwtTokenException(ErrorCode.NOT_MATCH_REFRESH_TOKEN);
         }
 
-        TokenCollectionDto newTokens = saveTokenCollection(userId);
+        String platformStr = claims.get("platform", String.class);
+        SocialPlatform socialPlatform = SocialPlatform.valueOf(platformStr);
+
+        TokenCollectionDto newTokens = saveTokenCollection(userId, socialPlatform);
 
         return RefreshResponse.of(newTokens);
     }
 
-    private TokenCollectionDto saveTokenCollection(Long userId) {
-        TokenCollectionDto newTokens = jwtTokenProvider.createTokenCollection(userId);
+    @Transactional(readOnly = true)
+    public LoginInfoResponse getSocialLoginInfo(SocialPlatform socialPlatform) {
+        return LoginInfoResponse.of(socialPlatform);
+    }
+
+    private TokenCollectionDto saveTokenCollection(Long userId, SocialPlatform socialPlatform) {
+        TokenCollectionDto newTokens = jwtTokenProvider.createTokenCollection(userId, socialPlatform);
         refreshTokenRepository.save(userId, newTokens.refreshToken());
         return newTokens;
     }
