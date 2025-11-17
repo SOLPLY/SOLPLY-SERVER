@@ -37,6 +37,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.parameters.P;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -164,17 +165,33 @@ public class UserService {
     @Transactional
     public UserUpdateResponse updateUserInfo(final Long userId, UserUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        userValidator.validateNickname(user.getNickname(), request.nickname());
+        UserPersona updatedPersona = request.persona() != null
+                ? request.persona()
+                : user.getPersona();
 
-        // 임시로 올린 프로필 이미지를 해당 유저 디렉토리로 이동
-        String movedFileKey = s3FileMoveService.moveToDir(request.profileImageFileKey(), userId, TargetDir.USER_PROFILE);
-        String profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(movedFileKey);
+        String updatedNickname = request.nickname() != null
+                ? request.nickname()
+                : user.getNickname();
 
-        if (profileImageUrl == null) {
-            user.updateuserInfo(request.persona(), request.nickname(), null);
-        } else {
-            user.updateuserInfo(request.persona(), request.nickname(), movedFileKey);
+        if (!updatedNickname.equals(user.getNickname())) {
+            userValidator.validateNickname(user.getNickname(), updatedNickname);
         }
+
+        String updatedProfileImageFileKey = user.getProfileImageFileKey();
+        String profileImageUrl = null;
+
+        if (request.profileImageFileKey() != null) {
+            updatedProfileImageFileKey = s3FileMoveService.moveToDir(
+                    request.profileImageFileKey(),
+                    userId,
+                    TargetDir.USER_PROFILE
+            );
+            profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(updatedProfileImageFileKey);
+        } else if (updatedProfileImageFileKey != null) {
+            profileImageUrl = presignedUrlProvider.createPresignedUrlToRead(updatedProfileImageFileKey);
+        }
+
+        user.updateuserInfo(updatedPersona, updatedNickname, updatedProfileImageFileKey);
 
         try {
             userRepository.flush();
