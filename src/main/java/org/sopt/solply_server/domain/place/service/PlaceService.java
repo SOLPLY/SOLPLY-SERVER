@@ -21,6 +21,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.cache.PlaceBookmarkRedisDataManager;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
@@ -66,7 +67,7 @@ public class PlaceService {
 
         return PlaceDetailsGetResponse.of(
                 place,
-                place.getMainTag(),
+                place.getMainTag().map(Tag::getName).orElse(null),
                 imageInfos,
                 isBookmarked,
                 town
@@ -91,7 +92,7 @@ public class PlaceService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag(),
+                        place.getMainTag().map(Tag::getName).orElse(null),
                         placeBookmarkService.isBookmarked(userId, place.getId()),
                         townId
                 ))
@@ -138,7 +139,7 @@ public class PlaceService {
                             place.getId(),
                             place.getName(),
                             imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                            place.getMainTag(),
+                                place.getMainTag().map(Tag::getName).orElse(null),
                             place.getAddress(),
                             false, // 검색 결과에서는 북마크 여부를 제공 X,
                             town.getId()

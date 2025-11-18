@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -38,7 +39,7 @@ public class MyPageFacade {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag(),
+                        place.getMainTag().map(Tag::getName).orElse(null),
                         bookmarkMap.getOrDefault(place.getId(), false)
                 ))
                 .toList();
@@ -50,7 +51,7 @@ public class MyPageFacade {
                     place.getId(),
                     place.getName(),
                     imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                    place.getMainTag(),
+                    place.getMainTag().map(Tag::getName).orElse(null),
                     false, // isBookmarked 정보는 여기에 포함되지 않음
                     place.getTown().getId()
                 )

@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -74,8 +75,7 @@ public class Place extends BaseTimeEntity {
     @Column(name = "longitude")
     private Double longitude;
 
-    @Column(nullable = false)
-    private Long placeDefaultId;
+    @Column(nullable = false) private Long placeDefaultId;
 
     @Column(nullable = false)
     private String placeType;
@@ -111,13 +111,11 @@ public class Place extends BaseTimeEntity {
     /**
      * 장소의 1차 태그(MAIN) 추출
      */
-    public TagName getMainTag() {
+    public Optional<Tag> getMainTag() {
         return this.placeTags.stream()
                 .map(PlaceTag::getTag)
                 .filter(tag -> tag.getType() == TagType.MAIN)
-                .findFirst()
-                .map(Tag::getName)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_TAG_REQUIRED));
+                .findFirst();
     }
 
     /**

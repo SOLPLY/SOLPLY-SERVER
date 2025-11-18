@@ -22,6 +22,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
 import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
 import org.sopt.solply_server.domain.place.service.PlaceService;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
@@ -198,7 +199,7 @@ public class CourseService {
                     return CoursePlaceDetailsDto.of(
                             place,
                             thumbnailUrl,
-                            place.getMainTag(),
+                            place.getMainTag().map(Tag::getName).orElse(null),
                             placeBookmarkMap.getOrDefault(place.getId(), false),
                             coursePlace.getPlaceOrder()
                     );
