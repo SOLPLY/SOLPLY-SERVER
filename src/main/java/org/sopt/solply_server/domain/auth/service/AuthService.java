@@ -60,6 +60,9 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public LoginInfoResponse getSocialLoginInfo(SocialPlatform socialPlatform) {
+        if (socialPlatform == null) {
+            return null;
+        }
         return LoginInfoResponse.of(socialPlatform);
     }
 

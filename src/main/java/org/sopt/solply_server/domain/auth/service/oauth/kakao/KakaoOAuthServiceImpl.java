@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.auth.service.oauth;
+package org.sopt.solply_server.domain.auth.service.oauth.kakao;
 
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
@@ -8,7 +8,6 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.service.SocialUserService;
 import org.sopt.solply_server.global.feign.oauth.kakao.KakaoServerClient;
 import org.sopt.solply_server.global.feign.oauth.kakao.dto.KakaoSocialUserProfile;
-import org.sopt.solply_server.global.jwt.JwtProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class KakaoOAuthServiceImpl implements OAuthService {
 
-    private final JwtProperties jwtProperties;
     private final KakaoServerClient kakaoServerClient;
     private final SocialUserService socialUserService;
 
