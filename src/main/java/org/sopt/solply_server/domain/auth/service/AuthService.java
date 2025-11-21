@@ -28,7 +28,7 @@ public class AuthService {
 
     public SocialLoginResponse socialLogin(SocialPlatform socialPlatform, SocialLoginRequest request) {
         OAuthService oAuthService = oAuthServiceProvider.getService(socialPlatform);
-        User user = oAuthService.socialLogin(request.oauthAccessToken());
+        User user = oAuthService.socialLogin(request.token());
 
         return SocialLoginResponse.of(
                 saveTokenCollection(user.getId(), socialPlatform),
