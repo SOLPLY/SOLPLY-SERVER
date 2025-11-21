@@ -10,7 +10,8 @@ import org.sopt.solply_server.global.exception.ErrorCode;
 @AllArgsConstructor
 public enum SocialPlatform {
 
-    KAKAO("kakao");
+    KAKAO("kakao"),
+    APPLE("apple"),;
 
     private final String name;
 
