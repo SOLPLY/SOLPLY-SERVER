@@ -51,10 +51,14 @@ public class ApplePublicKeyProvider {
                 throw new BusinessException(ErrorCode.APPLE_INVALID_ISSUER);
             }
 
+            // TODO: aud(client_id) 검증 필요
+
             String sub = claimsSet.getSubject();
             String email = claimsSet.getStringClaim("email");
 
             return new Payload(sub, email);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.APPLE_INVALID_TOKEN);
         }
