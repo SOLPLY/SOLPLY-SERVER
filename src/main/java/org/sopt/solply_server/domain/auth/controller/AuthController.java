@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.service.AuthService;
 import org.sopt.solply_server.global.annotation.CurrentSocialLoginPlatform;
+import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,6 +39,17 @@ public class AuthController {
         return CustomApiResponse.success(
                 "토큰 재발급에 성공했습니다.",
                 authService.refreshToken(refreshToken)
+        );
+    }
+
+    @DeleteMapping("/logout")
+    public ResponseEntity<CustomApiResponse<Void>> logout(
+            @CurrentUserId Long currentUserId
+    ) {
+        authService.logout(currentUserId);
+        return CustomApiResponse.success(
+                "로그아웃에 성공했습니다.",
+                null
         );
     }
 
