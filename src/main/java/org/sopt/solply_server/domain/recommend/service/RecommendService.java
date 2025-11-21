@@ -16,6 +16,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.recommend.dto.PlaceInfoDto;
 import org.sopt.solply_server.domain.recommend.dto.response.PlaceRecommendationGetResponse;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -77,7 +78,7 @@ public class RecommendService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag(),
+                        place.getMainTag().map(Tag::getName).orElse(null),
                         place.getIntroduction()
                 ))
                 .collect(Collectors.toList());
