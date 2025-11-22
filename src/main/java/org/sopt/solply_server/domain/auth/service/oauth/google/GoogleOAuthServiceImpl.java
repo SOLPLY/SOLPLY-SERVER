@@ -11,8 +11,6 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.feign.oauth.google.GoogleServerClient;
 import org.sopt.solply_server.global.feign.oauth.google.dto.GoogleSocialUserProfile;
-import org.sopt.solply_server.global.feign.oauth.kakao.KakaoServerClient;
-import org.sopt.solply_server.global.feign.oauth.kakao.dto.KakaoSocialUserProfile;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -40,7 +38,7 @@ public class GoogleOAuthServiceImpl implements OAuthService {
         }
 
         // aud 검증
-        if (!googleClientId.equals(googleSocialUserProfile .getAud())) {
+        if (!googleClientId.equals(googleSocialUserProfile.getAud())) {
             log.warn("Google aud mismatch. expected={}, actual={}", googleClientId, googleSocialUserProfile .getAud());
             throw new BusinessException(ErrorCode.INVALID_AUDIENCE);
         }
