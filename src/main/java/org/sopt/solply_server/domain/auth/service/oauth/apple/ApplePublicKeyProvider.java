@@ -58,7 +58,7 @@ public class ApplePublicKeyProvider {
             var audience = claimsSet.getAudience();
             if (audience == null || !audience.contains(clientId)) {
                 // aud가 우리 앱 번들 아이디가 아니면 무조건 잘못된 토큰
-                throw new BusinessException(ErrorCode.APPLE_INVALID_TOKEN);
+                throw new BusinessException(ErrorCode.INVALID_AUDIENCE);
             }
 
 
@@ -69,7 +69,7 @@ public class ApplePublicKeyProvider {
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            throw new BusinessException(ErrorCode.APPLE_INVALID_TOKEN);
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
         }
     }
 

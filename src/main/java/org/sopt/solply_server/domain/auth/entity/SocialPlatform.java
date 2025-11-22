@@ -11,7 +11,8 @@ import org.sopt.solply_server.global.exception.ErrorCode;
 public enum SocialPlatform {
 
     KAKAO("kakao"),
-    APPLE("apple"),;
+    APPLE("apple"),
+    GOOGLE("google"),;
 
     private final String name;
 
