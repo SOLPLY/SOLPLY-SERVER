@@ -43,8 +43,9 @@ public enum ErrorCode {
     INVALID_SOCIAL_TOKEN(HttpStatus.UNAUTHORIZED, "SOCIAL-002", "유효하지 않은 소셜 로그인 토큰입니다."),
     SOCIAL_API_BAD_REQUEST(HttpStatus.BAD_REQUEST, "SOCIAL-003", "소셜 API 요청이 잘못되었습니다."),
     SOCIAL_API_ERROR(HttpStatus.BAD_GATEWAY, "SOCIAL-004", "소셜 API 서버 오류입니다."),
-    APPLE_INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "SOCIAL-005", "Apple ID Token 검증에 실패했습니다."),
-    APPLE_INVALID_ISSUER(HttpStatus.UNAUTHORIZED, "SOCIAL-006" , "애플 토큰의 발급자(issuer)가 유효하지 않습니다." ),
+    APPLE_INVALID_ISSUER(HttpStatus.UNAUTHORIZED, "SOCIAL-005" , "애플 토큰의 발급자(issuer)가 유효하지 않습니다." ),
+    INVALID_AUDIENCE(HttpStatus.UNAUTHORIZED, "SOCIAL-006" , "우리 서비스에 해당하는 토큰이 아닙니다." ),
+    EXPIRED_TOKEN(HttpStatus.UNAUTHORIZED, "SOCIAL-007", "만료된 토큰입니다."),
 
     // 유저 관련 (USER-xxx)
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
@@ -97,7 +98,7 @@ public enum ErrorCode {
     REPORT_LIMIT_EXCEEDED_USER(HttpStatus.BAD_REQUEST, "REPORT-001", "동일 장소에 대해 하루에 한 번만 제보할 수 있습니다."),
     NOT_FOUND_REPORT(HttpStatus.NOT_FOUND, "REPORT-002", "존재하지 않는 제보입니다."),
     INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-003", "유효하지 않은 제보 유형입니다.");
-  
+
 
     private final HttpStatus httpStatus;
     private final String code;
@@ -108,5 +109,6 @@ public enum ErrorCode {
         this.code = code;
         this.message = message;
     }
+
 }
 
