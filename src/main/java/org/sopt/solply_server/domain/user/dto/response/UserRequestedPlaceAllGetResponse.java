@@ -1,11 +1,12 @@
 package org.sopt.solply_server.domain.user.dto.response;
 
+import java.util.List;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
-import org.sopt.solply_server.global.dto.PagedResponse;
-import org.springframework.data.domain.Page;
+import org.sopt.solply_server.global.dto.PagedInfo;
 
 public record UserRequestedPlaceAllGetResponse(
-    PagedResponse<PlacePreviewDto> content
+        List<PlacePreviewDto> content,
+        PagedInfo pagedInfo
 ) {
 
 }

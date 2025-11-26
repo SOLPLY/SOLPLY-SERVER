@@ -26,7 +26,7 @@ import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.domain.user.repository.UserPolicyRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.domain.user.service.mypage.MyPageFacade;
-import org.sopt.solply_server.global.dto.PagedResponse;
+import org.sopt.solply_server.global.dto.PagedInfo;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -37,7 +37,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.parameters.P;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -108,8 +107,8 @@ public class UserService {
         Pageable pageable = PageRequest.of(page, size);
         Page<PlacePreviewDto> places = myPageFacade.getPlacesCreatedBy(userId, pageable);
         return new UserRequestedPlaceAllGetResponse(
-                new PagedResponse<>(
-                        places.getContent(),
+                places.getContent(),
+                new PagedInfo(
                         places.getNumber(),
                         places.getSize(),
                         places.getTotalElements(),
