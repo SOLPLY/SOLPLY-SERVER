@@ -47,15 +47,18 @@ public class MyPageFacade {
 
     public Page<PlacePreviewDto> getPlacesCreatedBy(Long userId, Pageable pageable) {
         Page<Place> places = placeRepository.findByUserIdWithTown(userId, pageable);
+        List<Long> placeIds = places.stream().map(Place::getId).toList();
+        Map<Long, Boolean> bookmarkMap =
+                placeBookmarkQueryService.getBookmarkStatus(userId, placeIds);
+
         return places.map(place -> PlacePreviewDto.of(
-                    place.getId(),
-                    place.getName(),
-                    imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                    place.getMainTag().map(Tag::getName).orElse(null),
-                    false, // isBookmarked 정보는 여기에 포함되지 않음
-                    place.getTown().getId()
+                        place.getId(),
+                        place.getName(),
+                        imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
+                        place.getMainTag().map(Tag::getName).orElse(null),
+                        bookmarkMap.getOrDefault(place.getId(), false),
+                        place.getTown().getId()
                 )
         );
     }
-
 }
