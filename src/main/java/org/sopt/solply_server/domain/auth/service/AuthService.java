@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.auth.service;
 
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.auth.dto.response.LoginInfoResponse;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.dto.request.SocialLoginRequest;
@@ -17,6 +18,7 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -43,7 +45,7 @@ public class AuthService {
     // 토큰 재발급
     public RefreshResponse refreshToken(String refreshToken) {
         Claims claims = jwtTokenProvider.parseRefreshToken(refreshToken);
-        Long userId = claims.get("userId", Long.class);
+        Long userId = Long.valueOf(claims.getSubject());
 
         String storedRefreshToken = refreshTokenRepository.findByUserId(userId);
         if (storedRefreshToken == null || !storedRefreshToken.equals(refreshToken)) {
