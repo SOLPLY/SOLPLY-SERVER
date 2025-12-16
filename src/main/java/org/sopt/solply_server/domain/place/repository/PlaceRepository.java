@@ -33,4 +33,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     })
     List<Place> findTop3ByCreatedByOrderByCreatedAtDesc(User createdBy);
 
+    @Query("""
+        select p.id, p.town.id
+        from Place p
+        where p.id in :placeIds
+    """)
+    List<Object[]> findPlaceIdAndTownIdByPlaceIds(@Param("placeIds") List<Long> placeIds);
+
+
 }

@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.course.repository;
 
-import java.util.Map;
+import java.util.Collection;
+import java.util.Set;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -56,7 +57,7 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         WHERE c.id IN :courseIds
         ORDER BY c.id
         """)
-    List<Course> findBookmarkedCoursesWithPlacesByIds(@Param("courseIds") List<Long> courseIds);
+    List<Course> findCoursesWithPlacesByIds(@Param("courseIds") List<Long> courseIds);
 
 
     /**
@@ -71,8 +72,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         WHERE t.id = :townId
           AND c.id IN :courseIds
     """)
-    List<Course> findBookmarkedCoursesByTownId(@Param("courseIds") List<Long> courseIds,
+    List<Course> findCoursesFilteredByTownId(@Param("courseIds") List<Long> courseIds,
             @Param("townId") Long townId);
+
 
 
     @Modifying
@@ -86,10 +88,18 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             "WHERE c.id in :courseIds " +
             "AND c.name LIKE :namePattern")
     List<String> findCourseNamesByBookmarkedCourses(
-            @Param("courseIds") List<Long> courseIds, @Param("namePattern") String namePattern);
+            @Param("courseIds") Set<Long> courseIds, @Param("namePattern") String namePattern);
 
     @Query("SELECT c FROM Course c " +
             "JOIN FETCH c.town t " +
             "WHERE c.id IN :courseIds")
     List<Course> findAllByIdsWithTowns(@Param("courseIds") List<Long> courseIds);
+
+    @Query("""
+        select c.id, c.town.id
+        from Course c
+        where c.id in :courseIds
+    """)
+    List<Object[]> findCourseIdAndTownIdByCourseIds(@Param("courseIds") List<Long> courseIds);
+
 }

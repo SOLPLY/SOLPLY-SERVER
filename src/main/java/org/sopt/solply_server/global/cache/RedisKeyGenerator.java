@@ -1,19 +1,11 @@
 package org.sopt.solply_server.global.cache;
 
+import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
+
 public class RedisKeyGenerator {
 
-    /**
-     * Place 북마크 전용 키 생성
-     */
-    public static String generatePlaceBookmarkKey(Long userId, Long placeId) {
-        return String.format("%s:%d:%d", CachePrefix.PLACE_BOOKMARK.getPrefix(), userId, placeId);
-    }
-
-    /**
-     * Course 북마크 전용 키 생성
-     */
-    public static String generateCourseBookmarkKey(Long userId, Long courseId) {
-        return String.format("%s:%d:%d", CachePrefix.COURSE_BOOKMARK.getPrefix(), userId, courseId);
+    public static String generateBookmarkKey(Long userId, BookmarkTargetType type, Long targetId) {
+        return "bookmark:%d:%s:%d".formatted(userId, type.name(), targetId);
     }
 
 }

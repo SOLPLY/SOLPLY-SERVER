@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -24,6 +25,7 @@ import java.util.function.Supplier;
 public class RedisCacheService implements CacheService {
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper; // TypeReference 지원을 위해 유지
 
     // == 기본 CRUD == //
@@ -309,6 +311,37 @@ public class RedisCacheService implements CacheService {
         });
 
         log.info("캐시 워밍업 완료 - prefix: {}", keyPrefix);
+    }
+
+    @Override
+    public void sAdd(String key, Long member) {
+        stringRedisTemplate.opsForSet().add(key, String.valueOf(member));
+    }
+
+    @Override
+    public void sAddAll(String key, Set<Long> members) {
+        if (members == null || members.isEmpty()) return;
+        String[] arr = members.stream().map(String::valueOf).toArray(String[]::new);
+        stringRedisTemplate.opsForSet().add(key, arr);
+    }
+
+    @Override
+    public void sRem(String key, Long member) {
+        stringRedisTemplate.opsForSet().remove(key, String.valueOf(member));
+    }
+
+    @Override
+    public Boolean sIsMember(String key, Long member) {
+        return stringRedisTemplate.opsForSet().isMember(key, String.valueOf(member));
+    }
+
+    @Override
+    public Set<Long> sMembers(String key) {
+        Set<String> raw = stringRedisTemplate.opsForSet().members(key);
+        if (raw == null || raw.isEmpty()) return Set.of();
+        return raw.stream()
+                .map(Long::parseLong)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     // == Private Helper Methods == //

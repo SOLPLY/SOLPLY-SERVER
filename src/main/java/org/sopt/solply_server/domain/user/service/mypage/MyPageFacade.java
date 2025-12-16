@@ -22,17 +22,14 @@ public class MyPageFacade {
 
     private final PlaceRepository placeRepository;
     private final ImageUrlProvider imageUrlProvider;
-    private final PlaceBookmarkQueryService placeBookmarkQueryService;
+    private final MyPageBookmarkReader myPageBookmarkReader;
 
     public List<UserPlacePreviewDto> getMyPlacePreviewsTop3(User user) {
         List<Place> places = placeRepository.findTop3ByCreatedByOrderByCreatedAtDesc(user);
-
-        List<Long> placeIds = places.stream()
-                .map(Place::getId)
-                .toList();
+        List<Long> placeIds = places.stream().map(Place::getId).toList();
 
         Map<Long, Boolean> bookmarkMap =
-                placeBookmarkQueryService.getBookmarkStatus(user.getId(), placeIds);
+                myPageBookmarkReader.getPlaceBookmarkMap(user.getId(), placeIds);
 
         return places.stream()
                 .map(place -> UserPlacePreviewDto.of(
@@ -48,17 +45,17 @@ public class MyPageFacade {
     public Page<PlacePreviewDto> getPlacesCreatedBy(Long userId, Pageable pageable) {
         Page<Place> places = placeRepository.findByUserIdWithTown(userId, pageable);
         List<Long> placeIds = places.stream().map(Place::getId).toList();
+
         Map<Long, Boolean> bookmarkMap =
-                placeBookmarkQueryService.getBookmarkStatus(userId, placeIds);
+                myPageBookmarkReader.getPlaceBookmarkMap(userId, placeIds);
 
         return places.map(place -> PlacePreviewDto.of(
-                        place.getId(),
-                        place.getName(),
-                        imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag().map(Tag::getName).orElse(null),
-                        bookmarkMap.getOrDefault(place.getId(), false),
-                        place.getTown().getId()
-                )
-        );
+                place.getId(),
+                place.getName(),
+                imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
+                place.getMainTag().map(Tag::getName).orElse(null),
+                bookmarkMap.getOrDefault(place.getId(), false),
+                place.getTown().getId()
+        ));
     }
 }
