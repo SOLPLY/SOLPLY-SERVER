@@ -22,7 +22,6 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -419,7 +418,7 @@ public class CourseService {
                 .map(courseMap::get)
                 .filter(Objects::nonNull)
                 .map(course -> {
-                    List<TagName> primaryTags = courseUtils.extractTopTwoPlaceMainTags(course);
+                    List<String> primaryTags = courseUtils.extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
                     return CourseFolderDto.of(course, primaryTags, thumbnailUrl);
                 })
@@ -431,7 +430,7 @@ public class CourseService {
             Map<Long, CourseValidationResult> validationResults,
             boolean checkCanAddPlaceToCourse) {
 
-        List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
+        List<String> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
         if (checkCanAddPlaceToCourse) {

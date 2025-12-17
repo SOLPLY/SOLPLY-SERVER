@@ -1,12 +1,11 @@
 package org.sopt.solply_server.domain.tag.dto;
 
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 
 public record TagDto(
     Long tagId,
     String tagType,
-    TagName name,
+    String name,
     Long parentId
 ){
     public static TagDto from(Tag tag){

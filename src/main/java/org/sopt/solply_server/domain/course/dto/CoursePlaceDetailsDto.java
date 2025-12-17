@@ -4,14 +4,13 @@ import java.util.Map;
 import lombok.Builder;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 
 @Builder
 public record CoursePlaceDetailsDto(
         Long placeId,
         String placeName,
         String thumbnailUrl,
-        TagName primaryTag,
+        String primaryTag,
         String address,
         boolean isBookmarked,
         int placeOrder,
@@ -21,7 +20,7 @@ public record CoursePlaceDetailsDto(
         Long placeDefaultId
 ) {
 
-    public static CoursePlaceDetailsDto of(Place place, String thumbnailUrl, TagName primaryTag,
+    public static CoursePlaceDetailsDto of(Place place, String thumbnailUrl, String primaryTag,
             boolean isBookmarked, int placeOrder) {
         return CoursePlaceDetailsDto.builder()
                 .placeId(place.getId())

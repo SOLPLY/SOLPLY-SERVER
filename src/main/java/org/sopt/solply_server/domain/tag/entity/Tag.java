@@ -35,7 +35,7 @@ public class Tag {
     private Long id;
 
     @Enumerated(EnumType.STRING)
-    private TagName name;
+    private String name;
 
     @Enumerated(EnumType.STRING)
     private TagType type;

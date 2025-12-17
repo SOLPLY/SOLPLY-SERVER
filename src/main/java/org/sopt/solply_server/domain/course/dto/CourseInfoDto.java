@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Builder;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.util.CourseValidationResult;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 
 import java.util.List;
 
@@ -13,7 +12,7 @@ public record CourseInfoDto(
         Long courseId,
         String courseName,
         String thumbnailImage,
-        List<TagName> mainTags,
+        List<String> mainTags,
         boolean isBookmarked,
         @JsonInclude(JsonInclude.Include.NON_NULL)
         Boolean isDuplicated,
@@ -26,7 +25,7 @@ public record CourseInfoDto(
      * 장소 추가 가능 여부 체크가 필요한 경우 (candidatePlaceId가 있는 경우)
      */
     public static CourseInfoDto withPlaceCheck(Course course, String thumbnailImage,
-            List<TagName> mainTags, CourseValidationResult validation) {
+            List<String> mainTags, CourseValidationResult validation) {
         return CourseInfoDto.builder()
                 .courseId(course.getId())
                 .courseName(course.getName())
@@ -42,7 +41,7 @@ public record CourseInfoDto(
     /**
      * 기본 북마크 목록 조회 (candidatePlaceId가 없는 경우)
      */
-    public static CourseInfoDto of(Course course, String thumbnailImage, List<TagName> mainTags) {
+    public static CourseInfoDto of(Course course, String thumbnailImage, List<String> mainTags) {
         return CourseInfoDto.builder()
                 .courseId(course.getId())
                 .courseName(course.getName())
