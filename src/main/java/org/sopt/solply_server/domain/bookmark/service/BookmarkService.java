@@ -8,11 +8,14 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
+import org.sopt.solply_server.domain.bookmark.service.event.BookmarkCreatedEvent;
+import org.sopt.solply_server.domain.bookmark.entity.BookmarkDeletedEvent;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidatorRegistry;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +29,7 @@ public class BookmarkService {
     private final BookmarkCacheManager bookmarkCacheManager;
     private final BookmarkTargetValidatorRegistry validatorRegistry;
     private final EntityLoader entityLoader;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** 북마크 생성: DB 즉시 반영 + Redis Set(SADD) */
     @Transactional
@@ -35,14 +39,14 @@ public class BookmarkService {
         validatorRegistry.validator(type).validate(targetId);
 
         bookmarkRepository.save(Bookmark.create(user, type, targetId));
-        bookmarkCacheManager.addActive(userId, type, targetId);
+        eventPublisher.publishEvent(new BookmarkCreatedEvent(userId, type, targetId));
     }
 
     /** 북마크 삭제: DB 즉시 반영 + Redis Set(SREM) */
     @Transactional
     public void delete(Long userId, BookmarkTargetType type, Long targetId) {
         bookmarkRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-        bookmarkCacheManager.removeActive(userId, type, targetId);
+        eventPublisher.publishEvent(new BookmarkDeletedEvent(userId, type, targetId));
     }
 
     /** 단건 체크: Redis set 우선 -> DB fallback -> Redis backfill */
@@ -101,7 +105,7 @@ public class BookmarkService {
         return map;
     }
 
-    /** 캐시 -> DB fallback (실패시) */
+    /** 북마크한 targetId 조회: 캐시 -> DB fallback (실패시) -> Redis backfill */
     private Set<Long> findBookmarkedTargetIds(Long userId, BookmarkTargetType type) {
         Set<Long> activeIds = bookmarkCacheManager.getActiveTargetIds(userId, type);
         // 캐시 미스
