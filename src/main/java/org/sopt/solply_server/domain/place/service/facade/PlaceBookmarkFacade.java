@@ -1,9 +1,8 @@
-package org.sopt.solply_server.domain.place.service;
+package org.sopt.solply_server.domain.place.service.facade;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
@@ -15,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class PlaceBookmarkService {
+public class PlaceBookmarkFacade {
 
     private final BookmarkService bookmarkService;
 
@@ -57,16 +56,9 @@ public class PlaceBookmarkService {
         return bookmarkService.isBookmarked(userId, BookmarkTargetType.PLACE, placeId);
     }
 
-    /**
-     * 북마크된 장소들 조회
-     */
-    public Set<Long> getBookmarkedPlaceIds(final Long userId) {
-        return bookmarkService.getActiveBookmarkedIds(userId, BookmarkTargetType.PLACE);
-    }
 
     public Map<Long, LocalDateTime> findBookmarkedPlaceCreatedAtMap(Long userId) {
-        Set<Long> placeIds = getBookmarkedPlaceIds(userId);
-        return bookmarkService.getBookmarkCreatedAtMap(userId, BookmarkTargetType.PLACE, placeIds);
+        return bookmarkService.getBookmarkCreatedAtMap(userId, BookmarkTargetType.PLACE);
     }
 
     /**

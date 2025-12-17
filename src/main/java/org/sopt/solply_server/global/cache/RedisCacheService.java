@@ -2,11 +2,13 @@ package org.sopt.solply_server.global.cache;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -315,33 +317,67 @@ public class RedisCacheService implements CacheService {
 
     @Override
     public void sAdd(String key, Long member) {
-        stringRedisTemplate.opsForSet().add(key, String.valueOf(member));
+        try {
+            stringRedisTemplate.opsForSet()
+                    .add(key, String.valueOf(member));
+        } catch (DataAccessException e) {
+            log.error("[Redis] sAdd failed. key={}, member={}", key, member, e);
+        }
     }
 
     @Override
     public void sAddAll(String key, Set<Long> members) {
         if (members == null || members.isEmpty()) return;
-        String[] arr = members.stream().map(String::valueOf).toArray(String[]::new);
-        stringRedisTemplate.opsForSet().add(key, arr);
+
+        try {
+            String[] arr = members.stream()
+                    .map(String::valueOf)
+                    .toArray(String[]::new);
+
+            stringRedisTemplate.opsForSet().add(key, arr);
+        } catch (DataAccessException e) {
+            log.error("[Redis] sAddAll failed. key={}, size={}", key, members.size(), e);
+        }
     }
 
     @Override
     public void sRem(String key, Long member) {
-        stringRedisTemplate.opsForSet().remove(key, String.valueOf(member));
+        try {
+            stringRedisTemplate.opsForSet()
+                    .remove(key, String.valueOf(member));
+        } catch (DataAccessException e) {
+            log.error("[Redis] sRem failed. key={}, member={}", key, member, e);
+        }
     }
 
     @Override
     public Boolean sIsMember(String key, Long member) {
-        return stringRedisTemplate.opsForSet().isMember(key, String.valueOf(member));
+        try {
+            return stringRedisTemplate.opsForSet()
+                    .isMember(key, String.valueOf(member));
+        } catch (DataAccessException e) {
+            log.error("[Redis] sIsMember failed. key={}, member={}", key, member, e);
+            return false; // Redis 실패 시 안전하게 false
+        }
     }
 
     @Override
     public Set<Long> sMembers(String key) {
+        // key 자체가 없으면 cache miss
+        if (!stringRedisTemplate.hasKey(key)) {
+            return null;
+        }
+
+        // key가 있으면 members 조회
         Set<String> raw = stringRedisTemplate.opsForSet().members(key);
-        if (raw == null || raw.isEmpty()) return Set.of();
+
+        if (raw == null || raw.isEmpty()) {
+            return Set.of(); // 정상 empty
+        }
+
         return raw.stream()
                 .map(Long::parseLong)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     // == Private Helper Methods == //

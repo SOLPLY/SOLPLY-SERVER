@@ -22,6 +22,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGe
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -44,7 +45,7 @@ public class PlaceService {
     private final PlaceRepository placeRepository;
     private final ImageUrlProvider imageUrlProvider;
     private final TagValidator tagValidator;
-    private final PlaceBookmarkService placeBookmarkService;
+    private final PlaceBookmarkFacade placeBookmarkFacade;
     private final TownValidator townValidator;
     private final EntityLoader entityLoader;
 
@@ -61,7 +62,7 @@ public class PlaceService {
                 ))
                 .toList();
 
-        boolean isBookmarked = placeBookmarkService.isBookmarked(userId, placeId);
+        boolean isBookmarked = placeBookmarkFacade.isBookmarked(userId, placeId);
 
         Town town = place.getTown();
 
@@ -93,7 +94,7 @@ public class PlaceService {
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                         place.getMainTag().map(Tag::getName).orElse(null),
-                        placeBookmarkService.isBookmarked(userId, place.getId()),
+                        placeBookmarkFacade.isBookmarked(userId, place.getId()),
                         townId
                 ))
                 .toList();
@@ -107,7 +108,7 @@ public class PlaceService {
      */
     public PlaceFolderPreviewListGetResponse getBookmarkedPlaceFolderPreviewList(final Long userId) {
         Map<Long, LocalDateTime> createdAtMap =
-                placeBookmarkService.findBookmarkedPlaceCreatedAtMap(userId);
+                placeBookmarkFacade.findBookmarkedPlaceCreatedAtMap(userId);
 
         if (createdAtMap.isEmpty()) {
             return PlaceFolderPreviewListGetResponse.from(List.of());
@@ -215,7 +216,7 @@ public class PlaceService {
     ) {
         // DB에서 북마크 메타 조회: placeId -> createdAt
         Map<Long, LocalDateTime> placeIdToCreatedAtMap =
-                placeBookmarkService.findBookmarkedPlaceCreatedAtMap(userId);
+                placeBookmarkFacade.findBookmarkedPlaceCreatedAtMap(userId);
 
         if (placeIdToCreatedAtMap.isEmpty()) {
             return List.of();

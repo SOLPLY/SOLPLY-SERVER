@@ -1,7 +1,6 @@
-package org.sopt.solply_server.domain.course.service;
+package org.sopt.solply_server.domain.course.service.facade;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,10 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class CourseBookmarkService {
+public class CourseBookmarkFacade {
 
     private final BookmarkService bookmarkService;
-
 
     /**
      * 코스 북마크 생성 (통합 BookmarkService 위임)
@@ -79,8 +77,7 @@ public class CourseBookmarkService {
 
     /** 활성 북마크 코스의 courseId -> createdAt 맵 */
     public Map<Long, LocalDateTime> findBookmarkedCourseCreatedAtMap(final Long userId) {
-        Set<Long> courseIdSet = findBookmarkedCourseIds(userId);
-        return bookmarkService.getBookmarkCreatedAtMap(userId, BookmarkTargetType.COURSE, courseIdSet);
+        return bookmarkService.getBookmarkCreatedAtMap(userId, BookmarkTargetType.COURSE);
     }
 
     /**

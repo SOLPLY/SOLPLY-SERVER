@@ -14,7 +14,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
-import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
+import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.service.PlaceReportService;
 import org.sopt.solply_server.domain.place.service.PlaceRequestService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
@@ -33,7 +33,7 @@ import org.springframework.web.bind.annotation.*;
 public class PlaceController {
 
     private final PlaceService placeService;
-    private final PlaceBookmarkService placeBookmarkService;
+    private final PlaceBookmarkFacade placeBookmarkFacade;
     private final PlaceReportService placeReportService;
     private final PlaceRequestService placeRequestService;
 
@@ -104,7 +104,7 @@ public class PlaceController {
     public ResponseEntity<CustomApiResponse<Void>> bookmarkPlace(
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId) {
-        placeBookmarkService.createPlaceBookmark(userId, placeId);
+        placeBookmarkFacade.createPlaceBookmark(userId, placeId);
         return CustomApiResponse.success("내 장소에 저장했습니다.");
     }
 
@@ -113,7 +113,7 @@ public class PlaceController {
     public ResponseEntity<CustomApiResponse<Void>> deleteBookmarkPlace(
             @CurrentUserId Long userId,
             @PathVariable("placeId") Long placeId) {
-        placeBookmarkService.deletePlaceBookmark(userId, placeId);
+        placeBookmarkFacade.deletePlaceBookmark(userId, placeId);
         return CustomApiResponse.success("내 장소에서 삭제했습니다.");
     }
 
@@ -124,7 +124,7 @@ public class PlaceController {
             @RequestParam("placeIds")
             @NotEmpty(message = "placeIds는 null 혹은 비어있을 수 없습니다")
             List<Long> placeIds) {
-        placeBookmarkService.deletePlaceBookmarks(userId, placeIds);
+        placeBookmarkFacade.deletePlaceBookmarks(userId, placeIds);
         return CustomApiResponse.success("내 장소에서 장소들을 삭제했습니다.");
     }
 

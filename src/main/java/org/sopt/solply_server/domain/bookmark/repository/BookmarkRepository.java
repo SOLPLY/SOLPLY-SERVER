@@ -15,18 +15,16 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
     boolean existsByUserIdAndTargetTypeAndTargetId(Long userId, BookmarkTargetType type, Long targetId);
 
+
+    List<Bookmark> findByUserIdAndTargetTypeAndTargetIdIn(Long userId, BookmarkTargetType type, Set<Long> ids);
+
     @Query("""
         select b.targetId
         from Bookmark b
         where b.user.id = :userId
           and b.targetType = :targetType
-          and b.targetId in :targetIds
     """)
     Set<Long> findBookmarkedTargetIds(
             @Param("userId") Long userId,
-            @Param("targetType") BookmarkTargetType targetType,
-            @Param("targetIds") List<Long> targetIds
-    );
-
-    List<Bookmark> findByUserIdAndTargetTypeAndTargetIdIn(Long userId, BookmarkTargetType type, List<Long> ids);
+            @Param("targetType") BookmarkTargetType targetType);
 }

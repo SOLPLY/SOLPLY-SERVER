@@ -10,6 +10,7 @@ import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
+import org.sopt.solply_server.domain.course.service.facade.CourseBookmarkFacade;
 import org.sopt.solply_server.domain.course.util.CoursePlaceValidator;
 import org.sopt.solply_server.domain.course.util.CourseUtils;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
@@ -18,8 +19,7 @@ import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.course.util.CourseValidationResult;
 import org.sopt.solply_server.domain.course.dto.response.CourseAddPlaceResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
-import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
+import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagName;
@@ -45,8 +45,8 @@ public class CourseService {
     private final CourseRepository courseRepository;
 
     private final CoursePlaceService coursePlaceService;
-    private final CourseBookmarkService courseBookmarkService;
-    private final PlaceBookmarkService placeBookmarkService;
+    private final CourseBookmarkFacade courseBookmarkFacade;
+    private final PlaceBookmarkFacade placeBookmarkFacade;
     private final PlaceService placeService;
 
     private final ImageUrlProvider imageUrlProvider;
@@ -91,7 +91,7 @@ public class CourseService {
         Course originCourse = entityLoader.getCourseWithPlaces(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         List<PlaceInCourseInfo> placeInfosInCourse = PlaceInCourseInfo.from(request.places());
 
@@ -107,7 +107,7 @@ public class CourseService {
         }
         else { // 남의 공유된 코스인 경우
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
-            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
+            courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
             Course copiedCourses = createNewCourse(
                     user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
@@ -125,7 +125,7 @@ public class CourseService {
         Course originCourse = entityLoader.getCourseWithPlaces(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validateCanAddPlace(originCourse, place);
@@ -142,7 +142,7 @@ public class CourseService {
             List<Place> places = originCourse.getPlaces();
 
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
-            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
+            courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
             Course copiedCourse = createNewCourse(
                     user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
@@ -170,7 +170,7 @@ public class CourseService {
     public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
         Course course = entityLoader.getCourseWithPlaces(courseId);
 
-        boolean isCourseBookmarked = courseBookmarkService.isBookmarked(userId, courseId);
+        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
 
         if (course.getCoursePlaces().isEmpty()) {
             return CourseDetailGetResponse.of(course, isCourseBookmarked, List.of());
@@ -180,7 +180,7 @@ public class CourseService {
                 .map(coursePlace -> coursePlace.getPlace().getId())
                 .toList();
 
-        Map<Long, Boolean> placeBookmarkMap = placeBookmarkService.getPlaceBookmarkStatusMap(userId, placeIds);
+        Map<Long, Boolean> placeBookmarkMap = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, placeIds);
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
                 .map(coursePlace -> {
@@ -228,7 +228,7 @@ public class CourseService {
         }
 
         // courseId -> createdAt(북마크 생성 시각)
-        Map<Long, LocalDateTime> courseIdCreatedAtMap = courseBookmarkService.findBookmarkedCourseCreatedAtMap(userId);
+        Map<Long, LocalDateTime> courseIdCreatedAtMap = courseBookmarkFacade.findBookmarkedCourseCreatedAtMap(userId);
         if (courseIdCreatedAtMap.isEmpty()) {
             log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
             return CourseBookmarkListGetResponse.from(List.of());
@@ -267,7 +267,7 @@ public class CourseService {
      */
     public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
         Map<Long, LocalDateTime> createdAtMap =
-                courseBookmarkService.findBookmarkedCourseCreatedAtMap(userId);
+                courseBookmarkFacade.findBookmarkedCourseCreatedAtMap(userId);
 
         if (createdAtMap.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
@@ -321,7 +321,7 @@ public class CourseService {
         coursePlaceService.addPlacesToTargetCourse(newCourse, placeInfos, placesToAdd);
 
         // 북마크 등록
-        courseBookmarkService.createCourseBookmark(user.getId(), newCourse.getId());
+        courseBookmarkFacade.createCourseBookmark(user.getId(), newCourse.getId());
 
         return newCourse;
     }

@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
-import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
+import org.sopt.solply_server.domain.course.service.facade.CourseBookmarkFacade;
 import org.sopt.solply_server.domain.course.util.CourseUtils;
 import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -41,7 +41,7 @@ public class RecommendService {
     private final PersonaTagMappingStrategy personaTagMappingStrategy;
     private final ImageUrlProvider imageUrlProvider;
     private final TownValidator townValidator;
-    private final CourseBookmarkService courseBookmarkService;
+    private final CourseBookmarkFacade courseBookmarkFacade;
     private final CourseUtils courseUtils;
     private final EntityLoader entityLoader;
 
@@ -108,7 +108,7 @@ public class RecommendService {
         courseRepository.findPlacesWithTagsByCourseIds(courseIds);
 
         // 북마크 정보 배치로 조회
-        Map<Long, Boolean> courseBookmarkMap = courseBookmarkService.getBookmarkStatusMap(userId, courseIds);
+        Map<Long, Boolean> courseBookmarkMap = courseBookmarkFacade.getBookmarkStatusMap(userId, courseIds);
 
         List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
                 .map(course -> {
