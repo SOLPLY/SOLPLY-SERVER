@@ -34,7 +34,6 @@ public class Tag {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Enumerated(EnumType.STRING)
     private String name;
 
     @Enumerated(EnumType.STRING)
