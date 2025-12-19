@@ -45,8 +45,13 @@ public class BookmarkService {
     /** 북마크 삭제: DB 즉시 반영 + Redis Set(SREM) */
     @Transactional
     public void delete(Long userId, BookmarkTargetType type, Long targetId) {
-        bookmarkRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-        eventPublisher.publishEvent(new BookmarkDeletedEvent(userId, type, targetId));
+        boolean existed = bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
+        if (existed) {
+            bookmarkRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
+            eventPublisher.publishEvent(new BookmarkDeletedEvent(userId, type, targetId));
+        } else {
+            log.debug("삭제할 북마크가 존재하지 않음 - userId={}, type={}, targetId={}", userId, type, targetId);
+        }
     }
 
     /** 단건 체크: Redis set 우선 -> DB fallback -> Redis backfill */
@@ -96,11 +101,7 @@ public class BookmarkService {
         for (Bookmark b : bookmarks) {
             Long targetId = b.getTargetId();
             LocalDateTime createdAt = b.getCreatedAt();
-
-            LocalDateTime prev = map.get(targetId);
-            if (prev == null || createdAt.isAfter(prev)) {
-                map.put(targetId, createdAt);
-            }
+            map.put(targetId, createdAt);
         }
         return map;
     }
