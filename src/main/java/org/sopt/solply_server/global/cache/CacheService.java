@@ -50,4 +50,13 @@ public interface CacheService {
     <T> void warmUp(String keyPrefix, Map<String, Supplier<T>> dataSuppliers,
             int timeout, TimeUnit timeUnit);
 
+    void sAdd(String key, Long targetId);
+
+    void sRem(String key, Long targetId);
+
+    Set<Long> sMembers(String key);
+
+    Boolean sIsMember(String key, Long targetId);
+
+    void sAddAll(String key, Set<Long> targetIds);
 }

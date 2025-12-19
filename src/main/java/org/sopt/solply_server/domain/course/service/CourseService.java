@@ -10,20 +10,18 @@ import org.sopt.solply_server.domain.course.dto.response.*;
 import org.sopt.solply_server.domain.course.dto.response.CourseCreateResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse;
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
+import org.sopt.solply_server.domain.course.service.facade.CourseBookmarkFacade;
 import org.sopt.solply_server.domain.course.util.CoursePlaceValidator;
 import org.sopt.solply_server.domain.course.util.CourseUtils;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
-import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
 import org.sopt.solply_server.domain.course.util.CourseValidationResult;
 import org.sopt.solply_server.domain.course.dto.response.CourseAddPlaceResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.service.PlaceBookmarkService;
-import org.sopt.solply_server.domain.course.util.CourseNameGenerator;
+import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -46,11 +44,9 @@ public class CourseService {
     private final CourseRepository courseRepository;
 
     private final CoursePlaceService coursePlaceService;
-    private final CourseBookmarkService courseBookmarkService;
-    private final PlaceBookmarkService placeBookmarkService;
+    private final CourseBookmarkFacade courseBookmarkFacade;
+    private final PlaceBookmarkFacade placeBookmarkFacade;
     private final PlaceService placeService;
-
-    private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
 
     private final ImageUrlProvider imageUrlProvider;
 
@@ -94,7 +90,7 @@ public class CourseService {
         Course originCourse = entityLoader.getCourseWithPlaces(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         List<PlaceInCourseInfo> placeInfosInCourse = PlaceInCourseInfo.from(request.places());
 
@@ -110,7 +106,7 @@ public class CourseService {
         }
         else { // 남의 공유된 코스인 경우
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
-            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
+            courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
             Course copiedCourses = createNewCourse(
                     user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
@@ -128,7 +124,7 @@ public class CourseService {
         Course originCourse = entityLoader.getCourseWithPlaces(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkService.checkCourseIsBookmarked(userId, courseId);
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validateCanAddPlace(originCourse, place);
@@ -145,7 +141,7 @@ public class CourseService {
             List<Place> places = originCourse.getPlaces();
 
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
-            courseBookmarkService.deleteCourseBookmark(userId, originCourse.getId());
+            courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
             Course copiedCourse = createNewCourse(
                     user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
@@ -173,7 +169,7 @@ public class CourseService {
     public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
         Course course = entityLoader.getCourseWithPlaces(courseId);
 
-        boolean isCourseBookmarked = courseBookmarkService.isBookmarked(userId, courseId);
+        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
 
         if (course.getCoursePlaces().isEmpty()) {
             return CourseDetailGetResponse.of(course, isCourseBookmarked, List.of());
@@ -183,11 +179,7 @@ public class CourseService {
                 .map(coursePlace -> coursePlace.getPlace().getId())
                 .toList();
 
-        Map<Long, Boolean> placeBookmarkMap = placeIds.isEmpty() ? Map.of() :
-                placeIds.stream().collect(Collectors.toMap(
-                        placeId -> placeId,
-                        placeId -> placeBookmarkService.isBookmarked(userId, placeId)
-                ));
+        Map<Long, Boolean> placeBookmarkMap = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, placeIds);
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
                 .map(coursePlace -> {
@@ -220,125 +212,80 @@ public class CourseService {
             final Long candidatePlaceId) {
 
         if (townId == null && candidatePlaceId == null) throw new BusinessException(ErrorCode.MISSING_REQUIRED_PARAMETER);
-
         if (townId != null && candidatePlaceId != null) throw new BusinessException(ErrorCode.INVALID_REQUEST_BODY);
 
         final Long targetTownId;
         final Place candidatePlace;
 
-        // 장소 추가 모드
         if (candidatePlaceId != null) {
             candidatePlace = entityLoader.getPlace(candidatePlaceId);
             targetTownId = candidatePlace.getTown().getId();
-        }
-        // 북마크 폴더 조회 모드
-        else {
+        } else {
             townValidator.validateTownId(townId);
             targetTownId = townId;
             candidatePlace = null;
         }
 
-        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
-
-        if (activeBookmarks.isEmpty()) {
+        // courseId -> createdAt(북마크 생성 시각)
+        Map<Long, LocalDateTime> courseIdCreatedAtMap = courseBookmarkFacade.findBookmarkedCourseCreatedAtMap(userId);
+        if (courseIdCreatedAtMap.isEmpty()) {
             log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
-        // 코스 ID와 북마크 저장 시간을 매핑하여 저장
-        Map<Long, LocalDateTime> courseIdCreatedAtMap = activeBookmarks.stream()
-                .collect(Collectors.toMap(
-                        CourseBookmarkRedisDto::courseId,
-                        CourseBookmarkRedisDto::createdAt
-                ));
-
-        List<Long> courseIds = activeBookmarks.stream()
-                .map(CourseBookmarkRedisDto::courseId)
-                .toList();
-
-        List<Course> filteredCourses = courseRepository.findBookmarkedCoursesByTownId(courseIds, targetTownId);
+        // 북마크된 코스 아이디 추출
+        List<Long> courseIds = new ArrayList<>(courseIdCreatedAtMap.keySet());
+        List<Course> filteredCourses = courseRepository.findCoursesFilteredByTownId(courseIds, targetTownId);
 
         if (filteredCourses.isEmpty()) {
             log.info("동네 {}에 북마크된 코스가 없습니다.", targetTownId);
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
-        // 상세 검증 결과 준비 (코스 추가 모드일 때만)
-        Map<Long, CourseValidationResult> validationResults = prepareValidationResults(
-                filteredCourses, candidatePlace, candidatePlaceId != null);
+        Map<Long, CourseValidationResult> validationResults =
+                prepareValidationResults(filteredCourses, candidatePlace, candidatePlaceId != null);
 
         List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
-                .map(course -> createCourseInfoDto(
-                        course, validationResults, candidatePlaceId != null))
-                .sorted(
-                        (dto1, dto2) -> {
-                            LocalDateTime createdAt1 = courseIdCreatedAtMap.get(dto1.courseId());
-                            LocalDateTime createdAt2 = courseIdCreatedAtMap.get(dto2.courseId());
-                            return createdAt2.compareTo(createdAt1);
-                        }
-                )
+                .map(course -> createCourseInfoDto(course, validationResults, candidatePlaceId != null))
+                .sorted((dto1, dto2) -> {
+                    LocalDateTime createdAt1 = courseIdCreatedAtMap.getOrDefault(dto1.courseId(), LocalDateTime.MIN);
+                    LocalDateTime createdAt2 = courseIdCreatedAtMap.getOrDefault(dto2.courseId(), LocalDateTime.MIN);
+                    return createdAt2.compareTo(createdAt1);
+                })
                 .toList();
 
         log.info("북마크 코스 {}개 조회 완료 (townId: {}, candidatePlaceId: {})",
                 courseInfoDtos.size(), targetTownId, candidatePlaceId);
+
         return CourseBookmarkListGetResponse.from(courseInfoDtos);
     }
-
-
 
     /**
      * 코스 북마크 폴더 프리뷰 조회
      * 동네별로 가장 최근에 북마크한 코스를 반환
      */
     public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
-        // Redis에서 활성화된 코스 북마크 데이터 조회
-        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
+        Map<Long, LocalDateTime> createdAtMap =
+                courseBookmarkFacade.findBookmarkedCourseCreatedAtMap(userId);
 
-        if (activeBookmarks.isEmpty()) {
-            log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
+        if (createdAtMap.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        // 동네별 최신 북마크 코스 필터링
-        Map<Long, CourseBookmarkRedisDto> latestBookmarkByTown = getLatestBookmarkByTown(activeBookmarks);
-
-        // 북마크 시간 기준으로 정렬된 코스 ID 리스트 생성
-        List<Long> sortedCourseIds = latestBookmarkByTown.values().stream()
-                .sorted((dto1, dto2)
-                        -> dto2.createdAt().compareTo(dto1.createdAt()))
-                .map(CourseBookmarkRedisDto::courseId)
-                .toList();
-
-        // 코스 정보와 장소 정보 배치 조회
-        List<Course> notSortedCourseList = courseRepository.findBookmarkedCoursesWithPlacesByIds(sortedCourseIds);
-
-        if (notSortedCourseList.isEmpty()) {
+        List<Long> latestCourseIds = findLatestBookmarkedCourseIdsByTown(createdAtMap);
+        if (latestCourseIds.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        courseRepository.findPlacesWithTagsByCourseIds(sortedCourseIds);
+        List<Long> sortedCourseIds = sortIdsByCreatedAtDesc(latestCourseIds, createdAtMap);
 
-        // 코스들을 정렬된 순서대로 재배열
-        Map<Long, Course> courseMap = notSortedCourseList.stream()
-                .collect(Collectors.toMap(Course::getId, Function.identity()));
+        List<Course> courses = loadCoursesWithPlacesAndTags(sortedCourseIds);
+        if (courses.isEmpty()) {
+            return CourseFolderPreviewListGetResponse.from(List.of());
+        }
 
-        List<Course> sortedCourses = sortedCourseIds.stream()
-                .map(courseMap::get)
-                .filter(Objects::nonNull)
-                .toList();
-
-        // DTO 변환 (이미 정렬된 순서)
-        List<CourseFolderDto> folderDtos = sortedCourses.stream()
-                .map(course -> {
-                    List<TagName> primaryTags = courseUtils.extractTopTwoPlaceMainTags(course);
-                    String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-                    return CourseFolderDto.of(course, primaryTags, thumbnailUrl);
-                })
-                .toList();
-
-        return CourseFolderPreviewListGetResponse.from(folderDtos);
+        return CourseFolderPreviewListGetResponse.from(toFolderDtos(sortedCourseIds, courses));
     }
-
 
     //=== private method ===//
 
@@ -373,7 +320,7 @@ public class CourseService {
         coursePlaceService.addPlacesToTargetCourse(newCourse, placeInfos, placesToAdd);
 
         // 북마크 등록
-        courseBookmarkService.createCourseBookmark(user.getId(), newCourse.getId());
+        courseBookmarkFacade.createCourseBookmark(user.getId(), newCourse.getId());
 
         return newCourse;
     }
@@ -386,32 +333,6 @@ public class CourseService {
         coursePlaceValidator.validatePlacesForCourse(placeInfos, places);
 
         return places;
-    }
-
-    /**
-     * 동네별로 가장 최근에 북마크한 코스 필터링
-     */
-    private Map<Long, CourseBookmarkRedisDto> getLatestBookmarkByTown(List<CourseBookmarkRedisDto> activeBookmarks) {
-        // 코스 ID로 먼저 코스 정보 조회 (동네 정보 포함)
-        List<Long> courseIds = activeBookmarks.stream()
-                .map(CourseBookmarkRedisDto::courseId)
-                .toList();
-
-        Map<Long, Long> courseToTownMap = entityLoader.getCourseWithTowns(courseIds).stream()
-                .collect(Collectors.toMap(
-                        Course::getId,
-                        course -> course.getTown().getId()
-                ));
-
-        // 동네별 최신 북마크 필터링
-        return activeBookmarks.stream()
-                .filter(bookmark -> courseToTownMap.containsKey(bookmark.courseId()))
-                .collect(Collectors.toMap(
-                        bookmark -> courseToTownMap.get(bookmark.courseId()), // townId를 키로 사용
-                        bookmark -> bookmark,
-                        (existing, replacement) ->
-                                replacement.createdAt().isAfter(existing.createdAt()) ? replacement : existing
-                ));
     }
 
 
@@ -432,15 +353,84 @@ public class CourseService {
                 ));
     }
 
+    /** createdAtMap(courseId->time)을 기반으로 “동네별 최신 courseId”만 뽑는다 */
+    private List<Long> findLatestBookmarkedCourseIdsByTown(Map<Long, LocalDateTime> createdAtMap) {
+        List<Long> courseIds = new ArrayList<>(createdAtMap.keySet());
+
+        Map<Long, Long> courseToTownMap = loadCourseToTownMap(courseIds);
+
+        Map<Long, Long> latestCourseIdByTown = new HashMap<>();
+        Map<Long, LocalDateTime> latestTimeByTown = new HashMap<>();
+
+        for (Long courseId : courseIds) {
+            Long townId = courseToTownMap.get(courseId);
+            if (townId == null) continue;
+
+            LocalDateTime t = createdAtMap.get(courseId);
+            if (t == null) continue;
+
+            LocalDateTime prev = latestTimeByTown.get(townId);
+            if (prev == null || t.isAfter(prev)) {
+                latestTimeByTown.put(townId, t);
+                latestCourseIdByTown.put(townId, courseId);
+            }
+        }
+
+        return new ArrayList<>(latestCourseIdByTown.values());
+    }
+
+    private Map<Long, Long> loadCourseToTownMap(List<Long> courseIds) {
+        return courseRepository.findCourseIdAndTownIdByCourseIds(courseIds).stream()
+                .collect(Collectors.toMap(
+                        row -> (Long) row[0],   // courseId
+                        row -> (Long) row[1]    // townId
+                ));
+    }
+
+    private List<Long> sortIdsByCreatedAtDesc(List<Long> ids, Map<Long, LocalDateTime> createdAtMap) {
+        return ids.stream()
+                .sorted((a, b) ->
+                        createdAtMap.getOrDefault(b, LocalDateTime.MIN)
+                                .compareTo(createdAtMap.getOrDefault(a, LocalDateTime.MIN)))
+                .toList();
+    }
+
+    /** Course + places 조회하고, place tags까지 필요한 경우 여기서 처리 */
+    private List<Course> loadCoursesWithPlacesAndTags(List<Long> sortedCourseIds) {
+        List<Course> courses = courseRepository.findCoursesWithPlacesByIds(sortedCourseIds);
+        if (courses.isEmpty()) return List.of();
+
+        // place 단위 태그 fetch (필요한 경우에만)
+        courseRepository.findPlacesWithTagsByCourseIds(sortedCourseIds);
+
+        return courses;
+    }
+
     /**
      * DTO 생성
      */
+
+    private List<CourseFolderDto> toFolderDtos(List<Long> sortedCourseIds, List<Course> courses) {
+        Map<Long, Course> courseMap = courses.stream()
+                .collect(Collectors.toMap(Course::getId, Function.identity()));
+
+        return sortedCourseIds.stream()
+                .map(courseMap::get)
+                .filter(Objects::nonNull)
+                .map(course -> {
+                    List<String> primaryTags = courseUtils.extractTopTwoPlaceMainTags(course);
+                    String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
+                    return CourseFolderDto.of(course, primaryTags, thumbnailUrl);
+                })
+                .toList();
+    }
+
     private CourseInfoDto createCourseInfoDto(
             Course course,
             Map<Long, CourseValidationResult> validationResults,
             boolean checkCanAddPlaceToCourse) {
 
-        List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
+        List<String> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
         if (checkCanAddPlaceToCourse) {

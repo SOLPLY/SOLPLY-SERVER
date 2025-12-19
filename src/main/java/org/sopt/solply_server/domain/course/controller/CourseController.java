@@ -12,7 +12,7 @@ import org.sopt.solply_server.domain.course.dto.response.CourseDetailGetResponse
 import org.sopt.solply_server.domain.course.dto.response.CourseFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.course.dto.request.CourseUpdateRequest;
 import org.sopt.solply_server.domain.course.dto.response.*;
-import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
+import org.sopt.solply_server.domain.course.service.facade.CourseBookmarkFacade;
 import org.sopt.solply_server.domain.course.service.CourseService;
 import org.sopt.solply_server.domain.course.dto.response.CourseAddPlaceResponse;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -31,7 +31,7 @@ import java.util.List;
 public class CourseController {
 
     private final CourseService courseService;
-    private final CourseBookmarkService courseBookmarkService;
+    private final CourseBookmarkFacade courseBookmarkFacade;
 
     @Operation(summary = "코스 생성", description = "새로운 코스를 생성합니다.")
     @PostMapping
@@ -107,7 +107,7 @@ public class CourseController {
             @CurrentUserId Long userId,
             @Parameter(description = "코스 ID", required = true)
             @PathVariable("courseId") Long courseId) {
-        courseBookmarkService.createCourseBookmark(userId, courseId);
+        courseBookmarkFacade.createCourseBookmark(userId, courseId);
         return CustomApiResponse.success("코스를 수집함에 저장했습니다.");
     }
 
@@ -118,7 +118,7 @@ public class CourseController {
             @CurrentUserId Long userId,
             @Parameter(description = "코스 ID", required = true)
             @PathVariable("courseId") Long courseId) {
-        courseBookmarkService.deleteCourseBookmark(userId, courseId);
+        courseBookmarkFacade.deleteCourseBookmark(userId, courseId);
         return CustomApiResponse.success("코스를 수집함에서 삭제했습니다.");
     }
 
@@ -131,7 +131,7 @@ public class CourseController {
             @RequestParam("courseIds")
             @NotNull(message = "courseIds는 null 혹은 비어있을 수 없습니다")
             List<Long> courseIds) {
-        courseBookmarkService.deleteCourseBookmarks(userId, courseIds);
+        courseBookmarkFacade.deleteCourseBookmarks(userId, courseIds);
         return CustomApiResponse.success("선택한 코스를 수집함에서 삭제했습니다.");
     }
 

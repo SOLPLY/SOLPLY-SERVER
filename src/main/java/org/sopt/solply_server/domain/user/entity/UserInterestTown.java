@@ -20,7 +20,7 @@ import org.sopt.solply_server.domain.town.entity.Town;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "user_town",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"user_id", "town_id"}) // 한 유자가 같은 동네를 여러 번 관심 등록하지 X
+                @UniqueConstraint(columnNames = {"user_id", "town_id"}) // 한 유저가 같은 동네를 여러 번 관심 등록하지 X
         },
         indexes = {
             @Index(name = "idx_user_interest_town_user", columnList = "user_id"),

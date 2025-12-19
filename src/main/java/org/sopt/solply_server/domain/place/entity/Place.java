@@ -30,13 +30,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.BatchSize;
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
-import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 
 @Entity
 @Getter
@@ -131,12 +128,6 @@ public class Place extends BaseTimeEntity {
     public List<Tag> getTags() {
         return placeTags.stream()
                 .map(PlaceTag::getTag)
-                .collect(Collectors.toList());
-    }
-
-    public List<TagName> getTagNames() {
-        return placeTags.stream()
-                .map(placeTag -> placeTag.getTag().getName())
                 .collect(Collectors.toList());
     }
 

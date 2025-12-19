@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
-import org.sopt.solply_server.domain.course.service.CourseBookmarkService;
+import org.sopt.solply_server.domain.course.service.facade.CourseBookmarkFacade;
 import org.sopt.solply_server.domain.course.util.CourseUtils;
 import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -17,7 +17,6 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.recommend.dto.PlaceInfoDto;
 import org.sopt.solply_server.domain.recommend.dto.response.PlaceRecommendationGetResponse;
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
@@ -41,7 +40,7 @@ public class RecommendService {
     private final PersonaTagMappingStrategy personaTagMappingStrategy;
     private final ImageUrlProvider imageUrlProvider;
     private final TownValidator townValidator;
-    private final CourseBookmarkService courseBookmarkService;
+    private final CourseBookmarkFacade courseBookmarkFacade;
     private final CourseUtils courseUtils;
     private final EntityLoader entityLoader;
 
@@ -62,7 +61,7 @@ public class RecommendService {
         }
 
         // 페르소나에 맞는 추천 태그 조회
-        List<TagName> recommendedTags = personaTagMappingStrategy.getTagsByPersona(persona);
+        List<String> recommendedTags = personaTagMappingStrategy.getTagsByPersona(persona);
 
         // 해당 타운의 장소들을 태그와 함께 조회
         List<Place> places = placeRepository.findPlacesByTownIdWithTags(townId);
@@ -108,11 +107,11 @@ public class RecommendService {
         courseRepository.findPlacesWithTagsByCourseIds(courseIds);
 
         // 북마크 정보 배치로 조회
-        Map<Long, Boolean> courseBookmarkMap = courseBookmarkService.getBookmarkStatusMap(userId, courseIds);
+        Map<Long, Boolean> courseBookmarkMap = courseBookmarkFacade.getBookmarkStatusMap(userId, courseIds);
 
         List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
                 .map(course -> {
-                    List<TagName> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
+                    List<String> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
                     return CoursePreviewDto.of(course, mainTags, thumbnailUrl, courseBookmarkMap);
                 })
@@ -121,16 +120,16 @@ public class RecommendService {
         return CourseRecommendGetResponse.from(coursePreviewDtos);
     }
 
-    private boolean hasMatchingTags(Place place, List<TagName> recommendedTags) {
-        Set<TagName> placeTags = place.getPlaceTags().stream()
+    private boolean hasMatchingTags(Place place, List<String> recommendedTags) {
+        Set<String> placeTags = place.getPlaceTags().stream()
                 .map(placeTag -> placeTag.getTag().getName())
                 .collect(Collectors.toSet());
 
         return recommendedTags.stream().anyMatch(placeTags::contains);
     }
 
-    private int calculateMatchingTagsCount(Place place, List<TagName> recommendedTags) {
-        Set<TagName> placeTags = place.getPlaceTags().stream()
+    private int calculateMatchingTagsCount(Place place, List<String> recommendedTags) {
+        Set<String> placeTags = place.getPlaceTags().stream()
                 .map(placeTag -> placeTag.getTag().getName())
                 .collect(Collectors.toSet());
 

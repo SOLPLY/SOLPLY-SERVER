@@ -1,14 +1,13 @@
 package org.sopt.solply_server.domain.place.dto;
 
 import lombok.Builder;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 
 @Builder
 public record PlaceSearchResultDto(
         long placeId,
         String placeName,
         String thumbnailImageUrl,
-        TagName primaryTag,
+        String primaryTag,
         String address,
         boolean isBookmarked,
         long townId
@@ -18,7 +17,7 @@ public record PlaceSearchResultDto(
             long placeId,
             String placeName,
             String thumbnailImageUrl,
-            TagName primaryTag,
+            String primaryTag,
             String address,
             boolean isBookmarked,
             long townId

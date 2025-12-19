@@ -1,13 +1,11 @@
-package org.sopt.solply_server.domain.course.util;
+package org.sopt.solply_server.domain.course.service;
 
 import java.util.HashSet;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.course.dto.CourseBookmarkRedisDto;
-import org.sopt.solply_server.domain.course.dto.response.CourseBookmarkListGetResponse;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
-import org.sopt.solply_server.domain.course.service.cache.CourseBookmarkRedisDataManager;
+import org.sopt.solply_server.domain.course.service.facade.CourseBookmarkFacade;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -18,7 +16,7 @@ import java.util.List;
 public class CourseNameGenerator {
 
     private final CourseRepository courseRepository;
-    private final CourseBookmarkRedisDataManager courseBookmarkRedisDataManager;
+    private final CourseBookmarkFacade courseBookmarkFacade;
 
     /**
      * 사용자별 고유한 코스명 생성
@@ -27,13 +25,10 @@ public class CourseNameGenerator {
         log.debug("사용자별 코스명 생성 시작 - baseName: '{}', userId: {}", baseName, userId);
 
         // 해당 사용자가 북마크한 것들의 코스명 리스트 조회
-        List<CourseBookmarkRedisDto> activeBookmarks = courseBookmarkRedisDataManager.getActiveCourseBookmarks(userId);
-        List<Long> courseIds = activeBookmarks.stream()
-                .map(CourseBookmarkRedisDto::courseId)
-                .toList();
+        Set<Long> bookmarkedCourseIds = courseBookmarkFacade.findBookmarkedCourseIds(userId);
 
         List<String> existingNames =
-                courseRepository.findCourseNamesByBookmarkedCourses(courseIds, baseName + "%");
+                courseRepository.findCourseNamesByBookmarkedCourses(bookmarkedCourseIds, baseName + "%");
 
         if (existingNames.isEmpty()) {
             log.debug("기존 코스명이 없어 원본 이름 사용: '{}'", baseName);

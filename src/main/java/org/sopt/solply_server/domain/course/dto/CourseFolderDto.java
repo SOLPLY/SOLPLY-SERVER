@@ -2,7 +2,6 @@ package org.sopt.solply_server.domain.course.dto;
 
 import lombok.Builder;
 import org.sopt.solply_server.domain.course.entity.Course;
-import org.sopt.solply_server.domain.tag.entity.TagName;
 
 import java.util.List;
 
@@ -11,11 +10,11 @@ public record CourseFolderDto(
         Long townId,
         String townName,
         String courseName,
-        List<TagName> primaryTags,
+        List<String> primaryTags,
         String thumbnailUrl
 ) {
 
-    public static CourseFolderDto of(Course course, List<TagName> primaryTags, String thumbnailUrl) {
+    public static CourseFolderDto of(Course course, List<String> primaryTags, String thumbnailUrl) {
         return CourseFolderDto.builder()
                 .townId(course.getTown().getId())
                 .townName(course.getTown().getName())

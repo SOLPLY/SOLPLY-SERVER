@@ -35,8 +35,6 @@ import org.springframework.stereotype.Repository;
 public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
     private final JPAQueryFactory queryFactory;
-    private final EntityManager entityManager;
-
     public List<Place> findPlacesByConditions(PlaceSearchConditionDto condition) {
         QPlace place = QPlace.place;
         BooleanBuilder whereCondition = createBasicConditions(place, condition);
