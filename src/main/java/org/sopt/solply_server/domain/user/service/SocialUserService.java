@@ -1,16 +1,14 @@
 package org.sopt.solply_server.domain.user.service;
 
-import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.user.entity.SocialUserInfo;
 import org.sopt.solply_server.domain.user.entity.User;
-import org.sopt.solply_server.domain.user.entity.UserPolicy;
-import org.sopt.solply_server.domain.user.entity.UserPolicyAgreement;
 import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
-import org.sopt.solply_server.domain.user.repository.UserPolicyAgreementRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +23,10 @@ public class SocialUserService {
     @Transactional
     public User createSocialUser(final SocialPlatform socialPlatform, final String socialId, final String email) {
         final String socialCode = createSocialCode(socialPlatform, socialId);
+
+        if (socialId == null || socialId.isBlank() || email == null || email.isBlank()) {
+            throw new BusinessException(ErrorCode.INVALID_SOCIAL_LOGIN_PAYLOAD);
+        }
 
         Optional<SocialUserInfo> socialUserInfoOpt = socialUserInfoRepository.findAnyBySocialCode(socialCode);
         Optional<User> userOpt = userRepository.findAnyUserBySocialCode(socialCode);

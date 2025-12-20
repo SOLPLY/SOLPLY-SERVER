@@ -46,6 +46,7 @@ public enum ErrorCode {
     APPLE_INVALID_ISSUER(HttpStatus.UNAUTHORIZED, "SOCIAL-005" , "애플 토큰의 발급자(issuer)가 유효하지 않습니다." ),
     INVALID_AUDIENCE(HttpStatus.UNAUTHORIZED, "SOCIAL-006" , "우리 서비스에 해당하는 토큰이 아닙니다." ),
     EXPIRED_TOKEN(HttpStatus.UNAUTHORIZED, "SOCIAL-007", "만료된 토큰입니다."),
+    INVALID_SOCIAL_LOGIN_PAYLOAD(HttpStatus.BAD_REQUEST, "SOCIAL-008" , "이메일 혹은 socailId 값이 비어있습니다." ),
 
     // 유저 관련 (USER-xxx)
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
