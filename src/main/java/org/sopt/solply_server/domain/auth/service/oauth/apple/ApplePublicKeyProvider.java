@@ -64,10 +64,6 @@ public class ApplePublicKeyProvider {
             String sub = claimsSet.getSubject();
             String email = claimsSet.getStringClaim("email");
 
-            if (sub == null || sub.isBlank() || email == null || email.isBlank()) {
-                throw new BusinessException(ErrorCode.INVALID_SOCIAL_LOGIN_PAYLOAD);
-            }
-
             return new Payload(sub, email);
         } catch (BusinessException e) {
             throw e;

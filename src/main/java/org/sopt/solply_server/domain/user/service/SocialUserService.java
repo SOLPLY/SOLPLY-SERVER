@@ -46,6 +46,10 @@ public class SocialUserService {
             return owner;
         }
 
+        if (socialId.isBlank()) {
+            throw new BusinessException(ErrorCode.INVALID_SOCIAL_LOGIN_PAYLOAD);
+        }
+
         // 신규 이용자
         User newUser = User.create(email);
         userRepository.save(newUser);
