@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.user.repository;
 
 import io.lettuce.core.dynamic.annotation.Param;
+import java.util.List;
 import java.util.Optional;
 import org.sopt.solply_server.domain.user.entity.SocialUserInfo;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,8 +12,8 @@ public interface SocialUserInfoRepository extends JpaRepository<SocialUserInfo, 
 
     Optional<SocialUserInfo> findBySocialCode(String socialCode);
 
-    @Query(value = "SELECT * FROM social_user_info WHERE social_code = :code LIMIT 1", nativeQuery = true)
-    Optional<SocialUserInfo> findAnyBySocialCode(@Param("code") String code);
+
+    List<SocialUserInfo> findAllBySocialCode(String socialCode);
 
     @Modifying
     @Query(value = "UPDATE social_user_info SET is_deleted = false, user_id = :userId WHERE id = :id", nativeQuery = true)
@@ -20,4 +21,8 @@ public interface SocialUserInfoRepository extends JpaRepository<SocialUserInfo, 
 
 
     Optional<SocialUserInfo> findByUserId(Long userId);
+
+    Optional<SocialUserInfo> findByUserIdAndSocialCode(Long id, String socialCode);
+
+    boolean existsBySocialCode(String socialCode);
 }

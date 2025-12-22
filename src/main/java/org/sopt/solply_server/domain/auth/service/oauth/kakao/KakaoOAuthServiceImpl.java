@@ -28,7 +28,7 @@ public class KakaoOAuthServiceImpl implements OAuthService {
             throw e; // GlobalExceptionHandler로 위임
         }
 
-        return socialUserService.createSocialUser(
+        return socialUserService.createOrLoginSocialUser(
                 SocialPlatform.KAKAO,
                 String.valueOf(profile.getId()),
                 profile.getEmail()

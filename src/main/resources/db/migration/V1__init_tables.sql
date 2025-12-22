@@ -10,7 +10,7 @@ SET time_zone = '+09:00';
 CREATE TABLE users (
                        id BIGINT AUTO_INCREMENT PRIMARY KEY,
                        nickname VARCHAR(30) UNIQUE,
-                       email VARCHAR(255) NOT NULL UNIQUE,
+                       email VARCHAR(255) UNIQUE,
                        profile_image_file_key TEXT,
                        is_new_user BOOLEAN NOT NULL DEFAULT TRUE,
                        persona VARCHAR(50), -- UserPersona (EnumType.STRING)

@@ -9,10 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    User findByEmail(String email);
-
     boolean existsByNickname(String nickname);
-
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
@@ -23,9 +20,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
         where u.id = :userId
     """)
     void withdraw(Long userId, String email, String nickname);
-
-    @Query(value = "SELECT * FROM users WHERE email = :email LIMIT 1", nativeQuery = true)
-    Optional<User> findAnyByEmail(@Param("email") String email);
 
 
     boolean existsByEmail(String email);
@@ -39,4 +33,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     """, nativeQuery = true)
     Optional<User> findAnyUserBySocialCode(@Param("socialCode") String socialCode);
 
+
+    Optional<User> findUserByEmail(String email);
 }

@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.user.service;
 
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
@@ -21,42 +22,53 @@ public class SocialUserService {
     private final UserRepository userRepository;
 
     @Transactional
-    public User createSocialUser(final SocialPlatform socialPlatform, final String socialId, final String email) {
+    public User createOrLoginSocialUser(
+            final SocialPlatform socialPlatform,
+            final String socialId,
+            final String email
+    ) {
+        validateSocialPayload(socialId); // socialId 필수
+
         final String socialCode = createSocialCode(socialPlatform, socialId);
 
-        if (socialId == null || socialId.isBlank() || email == null || email.isBlank()) {
+        // 1) email로 사용자 찾기 (없으면 신규)
+        User user = userRepository.findUserByEmail(email)
+                .map(this::reactivateIfDeleted)
+                .orElseGet(() -> {
+                    User newUser = User.create(email);
+                    return userRepository.save(newUser);
+                });
+
+        // 2) 해당 user에 이 소셜 계정이 이미 연결돼 있는지 확인
+        Optional<SocialUserInfo> linkOpt =
+                socialUserInfoRepository.findByUserIdAndSocialCode(user.getId(), socialCode);
+
+        if (linkOpt.isPresent()) {
+            // 이미 연결됨 → 로그인 처리(여기서는 user 반환)
+            return user;
+        }
+
+        // 3) 아직 연결 안됨 → 새로 연결 생성
+        // (주의) 같은 socialCode가 다른 user에 이미 연결돼 있으면 막아야 함 (중요)
+        if (socialUserInfoRepository.existsBySocialCode(socialCode)) {
+            throw new BusinessException(ErrorCode.SOCIAL_ACCOUNT_ALREADY_LINKED);
+        }
+
+        linkSocialAccount(user, socialPlatform, socialId); // 내부에서 SocialUserInfo save
+        return user;
+    }
+
+    private void validateSocialPayload(String socialId) {
+        if (socialId == null || socialId.isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_SOCIAL_LOGIN_PAYLOAD);
         }
+    }
 
-        Optional<SocialUserInfo> socialUserInfoOpt = socialUserInfoRepository.findAnyBySocialCode(socialCode);
-        Optional<User> userOpt = userRepository.findAnyUserBySocialCode(socialCode);
-        if (userOpt.isPresent() && socialUserInfoOpt.isPresent()) {
-            var owner = userOpt.get();
-            var socialUserInfo = socialUserInfoOpt.get();
-            if (owner.isDeleted()) {
-                owner.reactivate();
-                socialUserInfoRepository.reactivateById(socialUserInfo.getId(), owner.getId());
-
-                if (!owner.getEmail().equals(email) && !userRepository.existsByEmail(email)) {
-                    owner.updateEmail(email);
-                }
-                return owner;
-            }
-
-            return owner;
+    private User reactivateIfDeleted(User user) {
+        if (user.isDeleted()) {
+            user.reactivate();
         }
-
-        if (socialId.isBlank()) {
-            throw new BusinessException(ErrorCode.INVALID_SOCIAL_LOGIN_PAYLOAD);
-        }
-
-        // 신규 이용자
-        User newUser = User.create(email);
-        userRepository.save(newUser);
-
-        linkSocialAccount(newUser, socialPlatform, socialId);
-
-        return newUser;
+        return user;
     }
 
     private String createSocialCode(SocialPlatform socialPlatform, String socialId) {

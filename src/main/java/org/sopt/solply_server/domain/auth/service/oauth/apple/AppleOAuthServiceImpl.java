@@ -19,7 +19,7 @@ public class AppleOAuthServiceImpl implements OAuthService {
     @Override
     public User socialLogin(String idToken) {
         ApplePublicKeyProvider.Payload payload = applePublicKeyProvider.parseAndValidate(idToken);
-        return socialUserService.createSocialUser(
+        return socialUserService.createOrLoginSocialUser(
                 SocialPlatform.APPLE,
                 payload.sub(),
                 payload.email()

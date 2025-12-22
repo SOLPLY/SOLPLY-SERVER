@@ -61,7 +61,7 @@ public class GoogleOAuthServiceImpl implements OAuthService {
         }
 
         // 유저 생성/로그인
-        return socialUserService.createSocialUser(
+        return socialUserService.createOrLoginSocialUser(
                 SocialPlatform.GOOGLE,
                 String.valueOf(profile.getSub()),
                 profile.getEmail()

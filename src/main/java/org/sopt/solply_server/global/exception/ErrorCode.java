@@ -47,6 +47,7 @@ public enum ErrorCode {
     INVALID_AUDIENCE(HttpStatus.UNAUTHORIZED, "SOCIAL-006" , "우리 서비스에 해당하는 토큰이 아닙니다." ),
     EXPIRED_TOKEN(HttpStatus.UNAUTHORIZED, "SOCIAL-007", "만료된 토큰입니다."),
     INVALID_SOCIAL_LOGIN_PAYLOAD(HttpStatus.BAD_REQUEST, "SOCIAL-008" , "이메일 혹은 socailId 값이 비어있습니다." ),
+    SOCIAL_ACCOUNT_ALREADY_LINKED(HttpStatus.BAD_REQUEST, "SOCIAL-009" , "이미 해당 소셜 계정으로 가입되어 있는 사용장입니다." ),
 
     // 유저 관련 (USER-xxx)
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
