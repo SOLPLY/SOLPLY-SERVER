@@ -127,6 +127,8 @@ CREATE TABLE places (
 
 CREATE INDEX idx_places_town_id ON places(town_id);
 CREATE INDEX idx_places_created_by_created_at ON places(created_by, created_at);
+-- fulltext search (for MATCH(name) AGAINST ...)
+CREATE FULLTEXT INDEX ft_places_name ON places(name);
 
 
 -- =========================
