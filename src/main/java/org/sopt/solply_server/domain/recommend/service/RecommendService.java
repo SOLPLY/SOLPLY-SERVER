@@ -17,10 +17,10 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.recommend.dto.PlaceInfoDto;
 import org.sopt.solply_server.domain.recommend.dto.response.PlaceRecommendationGetResponse;
 import org.sopt.solply_server.domain.tag.entity.Tag;
+import org.sopt.solply_server.domain.tag.repository.TagPersonaMappingRepository;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
-import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -35,9 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecommendService {
 
     private final PlaceRepository placeRepository;
-    private final UserRepository userRepository;
+    private final TagPersonaMappingRepository tagPersonaMappingRepository;
     private final CourseRepository courseRepository;
-    private final PersonaTagMappingStrategy personaTagMappingStrategy;
     private final ImageUrlProvider imageUrlProvider;
     private final TownValidator townValidator;
     private final CourseBookmarkFacade courseBookmarkFacade;
@@ -53,37 +52,50 @@ public class RecommendService {
      * - 추천 점수(단순하게 매칭되는 태그 수) 계산 -> 바로 dto로 변환
      */
     public PlaceRecommendationGetResponse getRecommendPlaces(Long userId, Long townId) {
-        // 사용자 페르소나 조회
         User user = entityLoader.getUser(userId);
         UserPersona persona = user.getPersona();
-        if (persona == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_PERSONA);
-        }
+        if (persona == null) throw new BusinessException(ErrorCode.NOT_FOUND_PERSONA);
 
-        // 페르소나에 맞는 추천 태그 조회
-        List<String> recommendedTags = personaTagMappingStrategy.getTagsByPersona(persona);
+        // persona -> recommendedTagIds (Set)
+        Set<Long> recommendedTagIds =
+                tagPersonaMappingRepository.findAllByPersonaOrderByWeightDesc(persona).stream()
+                        .map(m -> m.getTag().getId())
+                        .collect(Collectors.toSet());
 
-        // 해당 타운의 장소들을 태그와 함께 조회
         List<Place> places = placeRepository.findPlacesByTownIdWithTags(townId);
 
-        // 추천 점수(단순하게 매칭되는 태그 수) 계산 -> 바로 dto로 변환
         List<PlaceInfoDto> placeInfos = places.stream()
-                .filter(place -> hasMatchingTags(place, recommendedTags)) // 매칭되는 태그가 있는 장소만
-                .sorted((p1, p2) -> Integer.compare(
-                        calculateMatchingTagsCount(p2, recommendedTags), // 내림차순
-                        calculateMatchingTagsCount(p1, recommendedTags)
-                ))
-                .map(place -> PlaceInfoDto.from(
-                        place.getId(),
-                        place.getName(),
-                        imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag().map(Tag::getName).orElse(null),
-                        place.getIntroduction()
-                ))
-                .collect(Collectors.toList());
+                .map(place -> {
+                    // placeTagIds 한 번만 생성
+                    Set<Long> placeTagIds = place.getPlaceTags().stream()
+                            .map(pt -> pt.getTag().getId())
+                            .collect(Collectors.toSet());
+
+                    int score = (int) placeTagIds.stream()
+                            .filter(recommendedTagIds::contains)
+                            .count();
+
+                    return new ScoredPlace(place, score);
+                })
+                .filter(sp -> sp.score() > 0)
+                .sorted((a, b) -> Integer.compare(b.score(), a.score()))
+                .limit(3)
+                .map(sp -> {
+                    Place place = sp.place();
+                    return PlaceInfoDto.from(
+                            place.getId(),
+                            place.getName(),
+                            imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
+                            place.getMainTag().map(Tag::getName).orElse(null),
+                            place.getIntroduction()
+                    );
+                })
+                .toList();
 
         return new PlaceRecommendationGetResponse(placeInfos);
     }
+
+    private record ScoredPlace(Place place, int score) {}
 
 
     /**

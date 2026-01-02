@@ -84,8 +84,8 @@ CREATE INDEX idx_user_interest_town_user ON user_town(user_id);
 -- =========================
 CREATE TABLE tags (
                       id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                      name VARCHAR(255) NULL,   -- TagName
-                      type VARCHAR(50) NULL,    -- TagType
+                      name VARCHAR(255) NOT NULL,
+                      type VARCHAR(50) NOT NULL,
                       parent_id BIGINT NULL,
 
                       CONSTRAINT fk_tags_parent
@@ -95,6 +95,27 @@ CREATE TABLE tags (
 CREATE INDEX idx_tag_parent_id ON tags(parent_id);
 CREATE INDEX idx_tag_id_type ON tags(id, type);
 CREATE INDEX idx_tag_type_parent ON tags(type, parent_id);
+
+
+-- =========================
+-- X) tag_persona_mappings (TagPersonaMapping)
+-- =========================
+CREATE TABLE tag_persona_mappings (
+                                      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                                      tag_id BIGINT NOT NULL,
+                                      persona VARCHAR(30) NOT NULL,   -- UserPersona (EnumType.STRING)
+                                      weight INT NOT NULL DEFAULT 1,
+
+                                      CONSTRAINT fk_tpm_tag
+                                          FOREIGN KEY (tag_id) REFERENCES tags(id),
+
+                                      CONSTRAINT uk_tag_persona
+                                          UNIQUE (tag_id, persona)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_tpm_persona ON tag_persona_mappings(persona);
+CREATE INDEX idx_tpm_tag ON tag_persona_mappings(tag_id);
+CREATE INDEX idx_tpm_persona_weight ON tag_persona_mappings(persona, weight);
 
 
 -- =========================
