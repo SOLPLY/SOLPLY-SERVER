@@ -1,6 +1,5 @@
 package org.sopt.solply_server.domain.user.service;
 
-import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
@@ -23,38 +22,46 @@ public class SocialUserService {
 
     @Transactional
     public User createOrLoginSocialUser(
-            final SocialPlatform socialPlatform,
-            final String socialId,
-            final String email
+            SocialPlatform platform,
+            String socialId,
+            String email
     ) {
-        validateSocialPayload(socialId); // socialId 필수
+        validateSocialPayload(socialId);
 
-        final String socialCode = createSocialCode(socialPlatform, socialId);
+        String socialCode = createSocialCode(platform, socialId);
 
-        // 1) email로 사용자 찾기 (없으면 신규)
-        User user = userRepository.findUserByEmail(email)
-                .map(this::reactivateIfDeleted)
-                .orElseGet(() -> {
-                    User newUser = User.create(email);
-                    return userRepository.save(newUser);
-                });
+        // 1) socialCode 우선 로그인
+        Optional<Long> userIdBySocialCode = socialUserInfoRepository.findAnyUserIdBySocialCode(socialCode);
+        if (userIdBySocialCode.isPresent()) {
+            User user = userIdBySocialCode
+                    .flatMap(userRepository::findAnyById)   // Long → Optional<User>
+                    .map(this::reactivateIfDeleted)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
 
-        // 2) 해당 user에 이 소셜 계정이 이미 연결돼 있는지 확인
-        Optional<SocialUserInfo> linkOpt =
-                socialUserInfoRepository.findByUserIdAndSocialCode(user.getId(), socialCode);
-
-        if (linkOpt.isPresent()) {
-            // 이미 연결됨 → 로그인 처리(여기서는 user 반환)
+            if (email != null && user.getEmail() == null) {
+                user.updateEmail(email);
+            }
             return user;
         }
 
-        // 3) 아직 연결 안됨 → 새로 연결 생성
-        // (주의) 같은 socialCode가 다른 user에 이미 연결돼 있으면 막아야 함 (중요)
-        if (socialUserInfoRepository.existsBySocialCode(socialCode)) {
-            throw new BusinessException(ErrorCode.SOCIAL_ACCOUNT_ALREADY_LINKED);
+        // 2) 해당 소셜 링크가 없으면, email로 기존 유저 연동 시도
+        User user = null;
+
+        if (email != null) {
+            user = userRepository.findAnyByEmail(email)
+                    .map(this::reactivateIfDeleted)
+                    .orElse(null);
         }
 
-        linkSocialAccount(user, socialPlatform, socialId); // 내부에서 SocialUserInfo save
+        // 3) 없으면 신규 생성
+        if (user == null) {
+            user = userRepository.save(User.create(email)); // email은 null 가능하게
+        }
+
+        // 4) 소셜 링크 생성
+        // socialCode는 유니크라서 여기서 동시성 안전하게 처리하는 게 좋음(아래 참고)
+        linkSocialAccount(user, platform, socialId);
+
         return user;
     }
 
@@ -81,7 +88,6 @@ public class SocialUserService {
                 platform,
                 socialId
         );
-
         socialUserInfoRepository.save(socialInfo);
     }
 

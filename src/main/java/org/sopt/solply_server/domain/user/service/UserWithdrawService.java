@@ -59,9 +59,8 @@ public class UserWithdrawService {
         }
 
         String suffix = String.valueOf(userId);
-        String email = "deleted+" + suffix + "@example.com";
         String nickname = "탈퇴회원_" + suffix;
-        userRepository.withdraw(userId, email, nickname);
+        userRepository.withdraw(userId, nickname);
 
         userRepository.flush();
 

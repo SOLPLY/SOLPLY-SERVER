@@ -14,25 +14,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
        update User u
-          set u.email = :email,
-              u.nickname = :nickname,
+          set u.nickname = :nickname,
               u.isNewUser = true
         where u.id = :userId
     """)
-    void withdraw(Long userId, String email, String nickname);
+    void withdraw(Long userId, String nickname);
+
+    @Query(value = "SELECT * FROM users WHERE id = :id LIMIT 1", nativeQuery = true)
+    Optional<User> findAnyById(@Param("id") Long id);
 
 
-    boolean existsByEmail(String email);
+    // 소셜/재가입용(삭제 포함) - native로 @Where 우회
+    @Query(value = "SELECT * FROM users WHERE email = :email LIMIT 1", nativeQuery = true)
+    Optional<User> findAnyByEmail(@Param("email") String email);
 
-    @Query(value = """
-        SELECT u.*
-          FROM users u
-          JOIN social_user_info s ON s.user_id = u.id
-         WHERE s.social_code = :socialCode
-         LIMIT 1
-    """, nativeQuery = true)
-    Optional<User> findAnyUserBySocialCode(@Param("socialCode") String socialCode);
-
-
-    Optional<User> findUserByEmail(String email);
 }
