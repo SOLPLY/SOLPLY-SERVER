@@ -40,5 +40,13 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     """)
     List<Object[]> findPlaceIdAndTownIdByPlaceIds(@Param("placeIds") List<Long> placeIds);
 
+    @Query("""
+        select distinct p
+        from Place p
+        left join fetch p.placeTags pt
+        left join fetch pt.tag t
+        where p.id in :placeIds
+    """)
+    List<Place> findByIdInWithTags(List<Long> placeIds);
 
 }

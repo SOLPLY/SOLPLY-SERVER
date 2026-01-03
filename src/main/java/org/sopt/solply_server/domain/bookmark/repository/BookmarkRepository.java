@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.bookmark.repository;
 
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
@@ -27,4 +28,13 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
     Set<Long> findBookmarkedTargetIds(
             @Param("userId") Long userId,
             @Param("targetType") BookmarkTargetType targetType);
+
+    @Query("""
+        select b.targetId
+        from Bookmark b
+        where b.user.id = :userId
+          and b.targetType = :type
+          and b.createdAt >= :since
+    """)
+    List<Long> findTargetIdsByUserAndTypeSince(Long userId, BookmarkTargetType type, LocalDateTime since);
 }
