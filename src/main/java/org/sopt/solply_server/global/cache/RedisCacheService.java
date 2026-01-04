@@ -380,6 +380,25 @@ public class RedisCacheService implements CacheService {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
+    @Override
+    public void expire(String key, long timeout, TimeUnit unit) {
+        try {
+            stringRedisTemplate.expire(key, timeout, unit);
+        } catch (DataAccessException e) {
+            log.error("[Redis] expire failed. key={}, timeout={}{}", key, timeout, unit, e);
+        }
+    }
+
+    @Override
+    public Boolean hasKey(String key) {
+        try {
+            return stringRedisTemplate.hasKey(key);
+        } catch (DataAccessException e) {
+            log.error("[Redis] hasKey failed. key={}", key, e);
+            return false;
+        }
+    }
+
     // == Private Helper Methods == //
     private <T> T safeGet(String key, Class<T> clazz) {
         try {
