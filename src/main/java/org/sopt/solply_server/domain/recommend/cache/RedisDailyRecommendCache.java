@@ -23,7 +23,7 @@ public class RedisDailyRecommendCache implements DailyRecommendCache {
     private final CacheService cacheService;
 
     @Override
-    public List<Long> getTodayPlaceIds(Long userId, Long townId, LocalDate date) {
+    public List<Long> getTodayPlaceIds(final Long userId, final Long townId, final LocalDate date) {
         if (userId == null || townId == null || date == null) return List.of();
 
         String key = key(userId, townId, date);
@@ -32,7 +32,8 @@ public class RedisDailyRecommendCache implements DailyRecommendCache {
     }
 
     @Override
-    public void saveTodayRecommendedPlaceIds(Long userId, Long townId, LocalDate date, List<Long> placeIds) {
+    public void saveTodayRecommendedPlaceIds(final Long userId, final Long townId, final LocalDate date,
+            final List<Long> placeIds, final int retentionDays) {
         if (userId == null || townId == null || date == null) return;
         if (placeIds == null || placeIds.isEmpty()) return;
 
@@ -45,24 +46,23 @@ public class RedisDailyRecommendCache implements DailyRecommendCache {
 
         String key = key(userId, townId, date);
 
-        long ttlSeconds = ttlSecondsUntilEndOfDay();
+        long ttlSeconds = ttlSecondsUntilExpireDate(date, retentionDays);
         if (ttlSeconds <= 0) {
-            // 혹시나 자정이 지났거나 계산이 꼬였을 때: 그냥 저장(또는 저장하지 않기)
-            cacheService.setList(key, normalized);
+            cacheService.setList(key, placeIds);
             return;
         }
 
-        cacheService.setList(key, normalized, (int) ttlSeconds, TimeUnit.SECONDS);
+        cacheService.setList(key, placeIds, (int) ttlSeconds, TimeUnit.SECONDS);
     }
 
     @Override
-    public Set<Long> getCooldownPlaceIds(Long userId, Long townId, LocalDate date, int days) {
+    public Set<Long> getCooldownPlaceIds(final Long userId, final Long townId, final LocalDate date, final int cooldownDays) {
         if (userId == null || townId == null || date == null) return Set.of();
-        if (days <= 0) return Set.of();
+        if (cooldownDays <= 0) return Set.of();
 
-        // 오늘 제외: date-1 ~ date-days
+        // 오늘 제외: date-1 ~ date-cooldownDays
         Set<Long> result = new HashSet<>();
-        for (int i = 1; i <= days; i++) {
+        for (int i = 1; i <= cooldownDays; i++) {
             LocalDate d = date.minusDays(i);
             String key = key(userId, townId, d);
 
@@ -76,21 +76,22 @@ public class RedisDailyRecommendCache implements DailyRecommendCache {
 
     // ---------------- helpers ----------------
 
-    private String key(Long userId, Long townId, LocalDate date) {
+    private String key(final Long userId, final Long townId, final LocalDate date) {
         return KEY_PREFIX + ":" + userId + ":" + townId + ":" + yyyymmdd(date);
     }
 
-    private String yyyymmdd(LocalDate date) {
+    private String yyyymmdd(final LocalDate date) {
         return date.toString().replace("-", "");
     }
 
     /**
-     * "오늘 자정(다음날 00:00)"까지 남은 TTL(초)
+     * "오늘 자정(3일 후 00:00)"까지 남은 TTL(초)
      * - date 파라미터와 무관하게 '지금 기준 오늘'로 계산 (RecommendService도 LocalDate.now() 쓰는 전제)
      */
-    private long ttlSecondsUntilEndOfDay() {
+    private long ttlSecondsUntilExpireDate(LocalDate date, int days) {
         ZonedDateTime now = ZonedDateTime.now(KST);
-        ZonedDateTime endExclusive = now.toLocalDate().plusDays(1).atStartOfDay(KST);
-        return Duration.between(now, endExclusive).getSeconds();
+        ZonedDateTime expireAt =
+                date.plusDays(days).plusDays(1).atStartOfDay(KST);
+        return Duration.between(now, expireAt).getSeconds();
     }
 }

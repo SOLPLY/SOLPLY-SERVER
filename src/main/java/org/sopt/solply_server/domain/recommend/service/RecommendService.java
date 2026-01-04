@@ -118,18 +118,13 @@ public class RecommendService {
                                         Integer::sum
                                 ));
 
-        // 5) 최근 3일 추천 쿨다운 제외
-        final Set<Long> cooldownIds  = Optional.ofNullable(
-                dailyRecommendCache.getCooldownPlaceIds(userId, townId, today, COOLDOWN_DAYS)
-        ).orElse(Set.of());
-
-        // 6) 동네 장소 조회(+tags)
+        // 5) 동네 장소 조회(+tags)
         List<Place> townPlaces = placeRepository.findPlacesByTownIdWithTags(townId);
         if (townPlaces == null || townPlaces.isEmpty()) {
             return new PlaceRecommendationGetResponse(List.of());
         }
 
-        // 7) 점수 계산 → 후보 Top10 추림 (쿨다운 적용 + 필요시 완화)
+        // 6) 점수 계산 → 후보 Top10 추림 (쿨다운 적용 + 필요시 완화)
         List<ScoredPlace> topCandidates = buildTopCandidates(
                 townPlaces,
                 personaTagIds,
@@ -141,16 +136,16 @@ public class RecommendService {
             return new PlaceRecommendationGetResponse(List.of());
         }
 
-        // 8) Top10에서 가중치 랜덤으로 3개 뽑기(중복 없이)
+        // 7) Top10에서 가중치 랜덤으로 3개 뽑기(중복 없이)
         List<ScoredPlace> picked = pickWeightedRandomWithoutDup(topCandidates, PICK_K);
 
-        // 9) 오늘 결과 저장(하루 고정)
+        // 8) 오늘 결과 저장(하루 고정)
         List<Long> pickedIds = picked.stream()
                 .map(sp -> sp.place().getId())
                 .toList();
-        dailyRecommendCache.saveTodayRecommendedPlaceIds(userId, townId, today, pickedIds);
+        dailyRecommendCache.saveTodayRecommendedPlaceIds(userId, townId, today, pickedIds, COOLDOWN_DAYS);
 
-        // 10) 응답
+        // 9) 응답
         List<PlaceInfoDto> placeInfos = picked.stream()
                 .map(sp -> toDto(sp.place()))
                 .toList();
