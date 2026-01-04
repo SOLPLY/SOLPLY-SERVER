@@ -59,4 +59,7 @@ public interface CacheService {
     Boolean sIsMember(String key, Long targetId);
 
     void sAddAll(String key, Set<Long> targetIds);
+
+    void expire(String key, long timeout, TimeUnit unit);
+    Boolean hasKey(String key);
 }

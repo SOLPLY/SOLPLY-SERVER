@@ -39,6 +39,7 @@ public class BookmarkService {
         validatorRegistry.validator(type).validate(targetId);
 
         bookmarkRepository.save(Bookmark.create(user, type, targetId));
+
         eventPublisher.publishEvent(new BookmarkCreatedEvent(userId, type, targetId));
     }
 
@@ -56,13 +57,19 @@ public class BookmarkService {
 
     /** 단건 체크: Redis set 우선 -> DB fallback -> Redis backfill */
     public boolean isBookmarked(Long userId, BookmarkTargetType type, Long targetId) {
+        // 1) ttl로 인해 데이터가 없으면: DB에서 전체 backfill
+        if (!bookmarkCacheManager.hasActiveSet(userId, type)) {
+            Set<Long> ids = getBookmarkedTargetIds(userId, type);
+            bookmarkCacheManager.addActiveAll(userId, type, ids);
+            return ids.contains(targetId);
+        }
+
+        // 2) key 있으면: Redis 우선
         if (bookmarkCacheManager.isActive(userId, type, targetId)) return true;
 
+        // 3) 그래도 없으면 DB 확인 후 단건 보정
         boolean exists = bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-        // DB에 있으면 Redis에 재적재
-        if (exists)
-            bookmarkCacheManager.addActive(userId, type, targetId);
-
+        if (exists) bookmarkCacheManager.addActive(userId, type, targetId);
         return exists;
     }
 
@@ -70,7 +77,7 @@ public class BookmarkService {
     public Map<Long, Boolean> getBookmarkStatusMap(Long userId, BookmarkTargetType type, List<Long> targetIds) {
         if (targetIds == null || targetIds.isEmpty()) return Map.of();
 
-        Set<Long> activeIds = findBookmarkedTargetIds(userId, type);
+        Set<Long> activeIds = getBookmarkedTargetIds(userId, type);
 
         Map<Long, Boolean> result = new HashMap<>();
         for (Long id : targetIds) {
@@ -81,7 +88,7 @@ public class BookmarkService {
 
     /** “활성 북마크 id들 가져오는 메서드” */
     public Set<Long> getActiveBookmarkedIds(Long userId, BookmarkTargetType type) {
-        return findBookmarkedTargetIds(userId, type);
+        return getBookmarkedTargetIds(userId, type);
     }
 
     @Transactional(readOnly = true)
@@ -89,7 +96,7 @@ public class BookmarkService {
             Long userId,
             BookmarkTargetType type
     ) {
-        Set<Long> activeIds = findBookmarkedTargetIds(userId, type);
+        Set<Long> activeIds = getBookmarkedTargetIds(userId, type);
         if (activeIds == null || activeIds.isEmpty()) return Map.of();
         List<Bookmark> bookmarks = bookmarkRepository.findByUserIdAndTargetTypeAndTargetIdIn(
                 userId, type, activeIds
@@ -107,7 +114,7 @@ public class BookmarkService {
     }
 
     /** 북마크한 targetId 조회: 캐시 -> DB fallback (실패시) -> Redis backfill */
-    private Set<Long> findBookmarkedTargetIds(Long userId, BookmarkTargetType type) {
+    private Set<Long> getBookmarkedTargetIds(Long userId, BookmarkTargetType type) {
         Set<Long> activeIds = bookmarkCacheManager.getActiveTargetIds(userId, type);
         // 캐시 미스
         if (activeIds == null) {
