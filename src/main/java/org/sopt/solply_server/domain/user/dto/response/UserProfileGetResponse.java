@@ -10,7 +10,6 @@ public record UserProfileGetResponse(
         Long userId,
         String nickname,
         String profileImageUrl,
-        UserTownInfoDto selectedTown,
         UserPersona persona,
         List<UserPlacePreviewDto> myPlacePreviews
 ) {
@@ -20,7 +19,6 @@ public record UserProfileGetResponse(
                 user.getId(),
                 user.getNickname(),
                 profileImageUrl,
-                selectedTown,
                 user.getPersona(),
                 myPlacePreviews
         );

@@ -52,10 +52,6 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));
     }
 
-    public List<Course> getCourseWithTowns(List<Long> courseIds) {
-        return courseRepository.findAllByIdsWithTowns(courseIds);
-    }
-
 //    public List<UserInterestTown> getInterestTownsWithTownsByIds(Long userId) {
 //        return userInterestTownRepository.findAllByUserWithTown(userId);
 //    }
