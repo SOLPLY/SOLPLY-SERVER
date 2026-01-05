@@ -23,7 +23,6 @@ import org.sopt.solply_server.domain.user.dto.response.UserTownGetResponse;
 import org.sopt.solply_server.domain.user.dto.response.UserTownsUpdateResponse;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
-import org.sopt.solply_server.domain.user.repository.UserPolicyRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.domain.user.service.mypage.MyPageFacade;
 import org.sopt.solply_server.global.dto.PagedInfo;
@@ -52,8 +51,9 @@ public class UserService {
     private final UserRepository userRepository;
     private final PresignedUrlProvider presignedUrlProvider;
     private final S3FileMoveService s3FileMoveService;
-    private final UserPolicyRepository userPolicyRepository;
     private final UserPolicyService userPolicyService;
+
+    private final int INITIAL_TOWN_ID = 2;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -129,12 +129,12 @@ public class UserService {
     public UserInOnboardingUpdateResponse updateUserInfoInOnboarding(
             final Long userId, UserInOnboardingUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Town selectedTown = entityLoader.getTown(request.selectedTownId());
+        Town selectedTown = entityLoader.getTown((long)INITIAL_TOWN_ID);
 
         userValidator.validateOnboardingAvailable(user);
         userValidator.validateNickname(user.getNickname(), request.nickname());
 
-        user.updateOnboardingInfo(request.persona(), request.nickname(), request.selectedTownId());
+        user.updateOnboardingInfo(request.persona(), request.nickname(), (long)INITIAL_TOWN_ID);
 
         // 약관 동의 여부 저장
         for (var policyInfo : request.policyAgreementInfos()) {

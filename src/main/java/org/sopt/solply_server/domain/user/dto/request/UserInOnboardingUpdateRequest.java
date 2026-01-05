@@ -7,9 +7,6 @@ import java.util.List;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
 public record UserInOnboardingUpdateRequest(
-        @NotNull(message = "동네 선택은 필수입니다")
-        Long selectedTownId,
-
         @NotNull(message = "유저 성향은 필수입니다")
         UserPersona persona,
 
