@@ -13,12 +13,12 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AppleOAuthServiceImpl implements OAuthService {
 
-    private final ApplePublicKeyProvider applePublicKeyProvider;
+    private final AppleIdTokenProvider applePublicKeyProvider;
     private final SocialUserService socialUserService;
 
     @Override
     public User socialLogin(String idToken) {
-        ApplePublicKeyProvider.Payload payload = applePublicKeyProvider.parseAndValidate(idToken);
+        AppleIdTokenProvider.Payload payload = applePublicKeyProvider.parseAndValidate(idToken);
         return socialUserService.createOrLoginSocialUser(
                 SocialPlatform.APPLE,
                 payload.sub(),

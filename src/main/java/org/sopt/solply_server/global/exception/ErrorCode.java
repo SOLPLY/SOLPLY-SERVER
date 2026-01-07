@@ -48,6 +48,7 @@ public enum ErrorCode {
     EXPIRED_TOKEN(HttpStatus.UNAUTHORIZED, "SOCIAL-007", "만료된 토큰입니다."),
     INVALID_SOCIAL_LOGIN_PAYLOAD(HttpStatus.BAD_REQUEST, "SOCIAL-008" , "이메일 혹은 socailId 값이 비어있습니다." ),
     SOCIAL_ACCOUNT_ALREADY_LINKED(HttpStatus.BAD_REQUEST, "SOCIAL-009" , "이미 해당 소셜 계정으로 가입되어 있는 사용장입니다." ),
+    GOOGLE_INVALID_ISSUER(HttpStatus.UNAUTHORIZED, "SOCIAL-010" , "구글 토큰의 발급자(issuer)가 유효하지 않습니다." ),
 
     // 유저 관련 (USER-xxx)
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),

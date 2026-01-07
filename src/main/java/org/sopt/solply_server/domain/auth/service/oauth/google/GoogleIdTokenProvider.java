@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.auth.service.oauth.apple;
+package org.sopt.solply_server.domain.auth.service.oauth.google;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -11,66 +11,86 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import java.net.URI;
 import java.net.URL;
+import java.util.Set;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
+import org.sopt.solply_server.domain.auth.service.oauth.IdTokenProvider;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ApplePublicKeyProvider {
+public class GoogleIdTokenProvider implements IdTokenProvider {
 
-    private static final String ISSUER = "https://appleid.apple.com";
-    private static final String JWK_SET_URL = "https://appleid.apple.com/auth/keys";
+    private static final Set<String> ISSUERS = Set.of(
+            "https://accounts.google.com",
+            "accounts.google.com"
+    );
+
+    private static final String JWK_SET_URL = "https://www.googleapis.com/oauth2/v3/certs";
     private final JWKSource<SecurityContext> keySource;
 
-    @Value("${oauth.apple.client-id}")
+    @Value("${oauth.google.client-id}")
     private String clientId;
 
-    public ApplePublicKeyProvider() {
+    public GoogleIdTokenProvider() {
         try {
             URL jwkSetUrl = URI.create(JWK_SET_URL).toURL();
 
             DefaultResourceRetriever resourceRetriever = new DefaultResourceRetriever(
-                    2000,  // connect timeout (ms)
-                    2000,  // read timeout (ms)
-                    1024 * 1024 // size limit (1MB)
+                    2000,
+                    2000,
+                    1024 * 1024
             );
 
             this.keySource = new RemoteJWKSet<>(jwkSetUrl, resourceRetriever);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize ApplePublicKeyProvider", e);
+            throw new RuntimeException("Failed to initialize GoogleIdTokenProvider", e);
         }
     }
 
+    @Override
+    public SocialPlatform platform() {
+        return SocialPlatform.GOOGLE;
+    }
+
+    @Override
     public Payload parseAndValidate(String idToken) {
         try {
             DefaultJWTProcessor<SecurityContext> jwtProcessor = new DefaultJWTProcessor<>();
-            JWSKeySelector<SecurityContext> keySelector = new JWSVerificationKeySelector<>(
-                    JWSAlgorithm.RS256, keySource);
+            JWSKeySelector<SecurityContext> keySelector =
+                    new JWSVerificationKeySelector<>(JWSAlgorithm.RS256, keySource);
             jwtProcessor.setJWSKeySelector(keySelector);
 
             JWTClaimsSet claimsSet = jwtProcessor.process(idToken, null);
 
-            if (!ISSUER.equals(claimsSet.getIssuer())) {
-                throw new BusinessException(ErrorCode.APPLE_INVALID_ISSUER);
+            // iss 검증
+            String issuer = claimsSet.getIssuer();
+            if (issuer == null || !ISSUERS.contains(issuer)) {
+                throw new BusinessException(ErrorCode.GOOGLE_INVALID_ISSUER);
             }
 
+            // aud 검증
             var audience = claimsSet.getAudience();
             if (audience == null || !audience.contains(clientId)) {
-                // aud가 우리 앱 번들 아이디가 아니면 무조건 잘못된 토큰
                 throw new BusinessException(ErrorCode.INVALID_AUDIENCE);
+            }
+
+            // exp 확인
+            if (claimsSet.getExpirationTime() == null ||
+                    claimsSet.getExpirationTime().getTime() < System.currentTimeMillis()) {
+                throw new BusinessException(ErrorCode.EXPIRED_TOKEN);
             }
 
             String sub = claimsSet.getSubject();
             String email = claimsSet.getStringClaim("email");
 
             return new Payload(sub, email);
+
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INVALID_TOKEN);
         }
     }
-
-    public record Payload(String sub, String email) { }
 }

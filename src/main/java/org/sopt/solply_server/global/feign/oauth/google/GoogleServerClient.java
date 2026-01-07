@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+@Deprecated
 @FeignClient(name = "googleServerClient", url = "https://www.googleapis.com")
 public interface GoogleServerClient {
 
