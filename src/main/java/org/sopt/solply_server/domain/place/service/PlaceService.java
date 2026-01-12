@@ -30,6 +30,7 @@ import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.InputValidator;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -81,6 +82,11 @@ public class PlaceService {
     public PlaceFilterGetResponse getPlacesByTownAndTag(
             final Long userId, final Long townId, final Boolean isBookmarkSearch, final Long mainTagId,
             final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
+
+        if (userId == null && Boolean.TRUE.equals(isBookmarkSearch)) {
+            throw new JwtTokenException(ErrorCode.UNAUTHORIZED_USER);
+        }
+
         // 동네 검증
         townValidator.validateTownId(townId);
 

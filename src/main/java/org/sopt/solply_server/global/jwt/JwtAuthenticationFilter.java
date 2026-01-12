@@ -36,13 +36,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final PrincipalDetailsService principalDetailsService;
     private final HandlerExceptionResolver handlerExceptionResolver;
 
-    private static final RequestMatcher WHITELIST = new OrRequestMatcher(List.of(
-            new AntPathRequestMatcher("/api/auth/social/**"),
-            new AntPathRequestMatcher("/api/auth/refresh"),
-            new AntPathRequestMatcher("/swagger-ui/**"),
-            new AntPathRequestMatcher("/v3/api-docs/**"),
-            new AntPathRequestMatcher("/api/test/**")
-    ));
 
     public JwtAuthenticationFilter(
             JwtTokenProvider jwtTokenProvider,
@@ -54,11 +47,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.jwtTokenResolver = jwtTokenResolver;
         this.principalDetailsService = principalDetailsService;
         this.handlerExceptionResolver = handlerExceptionResolver;
-    }
-
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        return WHITELIST.matches(request);
     }
 
 
