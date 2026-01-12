@@ -21,23 +21,25 @@ jobs:
           java-version: '21'
 
       - name: Create application.yml
+        env:
+          APPLICATION_DEV_YML: ${{ secrets.APPLICATION_DEV_YML }}
         run: |
-          # create application.yml
-          cd src/main/resources
-          touch ./application.yml
-            
-          # GitHub Actions 시크릿 변수 -> application.yml 파일에 작성
-          echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application.yml
-        working-directory: ${{ env.working-directory }}
+          mkdir -p src/main/resources
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("src/main/resources/application.yml")
+          p.write_text(os.environ["APPLICATION_DEV_YML"], encoding="utf-8")
+          PY
 
       - name: Create gradle.properties
+        env:
+          GRADLE_DEV_PROPERTIES: ${{ secrets.GRADLE_DEV_PROPERTIES }}
         run: |
-          # create gradle.properties in project root
-          touch ./gradle.properties
-            
-          # GitHub Actions 시크릿 변수 -> gradle.properties 파일에 작성
-          echo "${{ secrets.GRADLE_DEV_PROPERTIES }}" > ./gradle.properties
-        working-directory: ${{ env.working-directory }}
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("gradle.properties")
+          p.write_text(os.environ["GRADLE_DEV_PROPERTIES"], encoding="utf-8")
+          PY
 
       - name: Build with Gradle
         run: |
