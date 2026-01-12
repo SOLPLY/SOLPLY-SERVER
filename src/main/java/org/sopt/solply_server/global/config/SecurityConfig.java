@@ -57,7 +57,25 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
+                        // 기존 화이트리스트
                         .requestMatchers(AUTH_WHITELIST).permitAll()
+
+                        // ✅ 비로그인 허용
+                        .requestMatchers(HttpMethod.GET, "/api/towns").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/tags/**").permitAll()
+
+                        // places: 상세/리스트/검색만 허용
+                        .requestMatchers(HttpMethod.GET, "/api/places/search").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/places/*").permitAll()   // place 상세
+                        .requestMatchers(HttpMethod.GET, "/api/places").permitAll()     // place 리스트
+
+                        // courses: 상세만 허용
+                        .requestMatchers(HttpMethod.GET, "/api/courses/*").permitAll()
+
+                        // recommend: courses만 허용
+                        .requestMatchers(HttpMethod.GET, "/api/recommend/courses").permitAll()
+
+                        // ❌ 나머지 전부 로그인 필요
                         .anyRequest().authenticated()
                 )
                 .build();
