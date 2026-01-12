@@ -87,7 +87,8 @@ public class SecurityConfig {
 
         config.setAllowedOrigins(Arrays.asList(
                 "https://solply.store",
-                "https://www.solply.store"
+                "https://www.solply.store",
+                "https://api.solply.store"
                 // 필요하면 개발 프론트도 추가
                 // "https://dev.solply.store"
         ));
