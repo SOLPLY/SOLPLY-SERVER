@@ -21,17 +21,20 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      # ✅ 여기만 수정 (echo -> python으로 안전하게 write)
       - name: Create application-dev.yml
         env:
           APPLICATION_DEV_YML: ${{ secrets.APPLICATION_DEV_YML }}
         run: |
-          mkdir -p src/main/resources
           python3 - <<'PY'
           import os, pathlib
           p = pathlib.Path("src/main/resources/application-dev.yml")
+          p.parent.mkdir(parents=True, exist_ok=True)
           p.write_text(os.environ["APPLICATION_DEV_YML"], encoding="utf-8")
           PY
+        working-directory: ${{ env.working-directory }}
 
+      # ✅ 여기만 수정 (echo -> python으로 안전하게 write)
       - name: Create gradle.properties
         env:
           GRADLE_DEV_PROPERTIES: ${{ secrets.GRADLE_DEV_PROPERTIES }}
@@ -41,6 +44,7 @@ jobs:
           p = pathlib.Path("gradle.properties")
           p.write_text(os.environ["GRADLE_DEV_PROPERTIES"], encoding="utf-8")
           PY
+        working-directory: ${{ env.working-directory }}
 
       - name: Build with Gradle
         run: |
@@ -70,6 +74,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Upload deploy.sh to EC2
         uses: appleboy/scp-action@master
         with:
@@ -86,17 +93,7 @@ jobs:
           host: ${{ secrets.SERVER_PUBLIC_IP }}
           key: ${{ secrets.EC2_ACCESS_KEY }}
           script: |
-            set -euo pipefail
             cd /home/ubuntu/solply-server
-            
-            python3 - <<'PY'
-            import os, base64, pathlib
-            b64 = os.environ["DOCKER_COMPOSE_DEV_YML_BASE64"]
-            data = base64.b64decode(b64.encode("utf-8"))
-            pathlib.Path("docker-compose.yml").write_bytes(data)
-            PY
-            
+            echo "${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}" | base64 -d > docker-compose.yml
             chmod +x ./scripts/deploy.sh
             ./scripts/deploy.sh
-        env:
-          DOCKER_COMPOSE_DEV_YML_BASE64: ${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}
