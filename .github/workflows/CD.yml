@@ -22,20 +22,25 @@ jobs:
           java-version: '21'
 
       - name: Create application-dev.yml
+        env:
+          APPLICATION_DEV_YML: ${{ secrets.APPLICATION_DEV_YML }}
         run: |
-          cd src/main/resources
-          echo "${{ secrets.APPLICATION_DEV_YML }}" > ./application-dev.yml
-        working-directory: ${{ env.working-directory }}
+          mkdir -p src/main/resources
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("src/main/resources/application-dev.yml")
+          p.write_text(os.environ["APPLICATION_DEV_YML"], encoding="utf-8")
+          PY
 
       - name: Create gradle.properties
+        env:
+          GRADLE_DEV_PROPERTIES: ${{ secrets.GRADLE_DEV_PROPERTIES }}
         run: |
-          # create gradle.properties in project root
-          touch ./gradle.properties
-          
-          # GitHub Actions 시크릿 변수 -> gradle.properties 파일에 작성
-          echo "${{ secrets.GRADLE_DEV_PROPERTIES }}" > ./gradle.properties
-        working-directory: ${{ env.working-directory }}
-
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("gradle.properties")
+          p.write_text(os.environ["GRADLE_DEV_PROPERTIES"], encoding="utf-8")
+          PY
 
       - name: Build with Gradle
         run: |
@@ -65,9 +70,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
       - name: Upload deploy.sh to EC2
         uses: appleboy/scp-action@master
         with:
@@ -84,7 +86,17 @@ jobs:
           host: ${{ secrets.SERVER_PUBLIC_IP }}
           key: ${{ secrets.EC2_ACCESS_KEY }}
           script: |
+            set -euo pipefail
             cd /home/ubuntu/solply-server
-            echo "${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}" | base64 -d > docker-compose.yml
+            
+            python3 - <<'PY'
+            import os, base64, pathlib
+            b64 = os.environ["DOCKER_COMPOSE_DEV_YML_BASE64"]
+            data = base64.b64decode(b64.encode("utf-8"))
+            pathlib.Path("docker-compose.yml").write_bytes(data)
+            PY
+            
             chmod +x ./scripts/deploy.sh
             ./scripts/deploy.sh
+        env:
+          DOCKER_COMPOSE_DEV_YML_BASE64: ${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}
