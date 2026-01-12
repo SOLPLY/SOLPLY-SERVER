@@ -83,20 +83,22 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
+        CorsConfiguration config = new CorsConfiguration();
 
-        // 허용할 Origin 설정 (개발환경)
-        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
-        // 운영환경에서는 구체적인 도메인 설정
-        // configuration.setAllowedOrigins(Arrays.asList("https://your-frontend-domain.com"));
+        config.setAllowedOrigins(Arrays.asList(
+                "https://solply.store",
+                "https://www.solply.store"
+                // 필요하면 개발 프론트도 추가
+                // "https://dev.solply.store"
+        ));
 
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        config.setAllowedHeaders(Arrays.asList("*"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
+        source.registerCorsConfiguration("/**", config);
         return source;
     }
 }
