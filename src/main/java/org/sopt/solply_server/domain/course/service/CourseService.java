@@ -73,8 +73,9 @@ public class CourseService {
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validatePlacesForCourse(placeInfos, placesToAdd);
 
-        Course savedCourse = createNewCourse(
-                user, request.courseName(), request.courseDescription(), placeInfos, placesToAdd);
+        boolean isCourseNameUniqueRequired = request.isCourseNameUniqueRequired();
+        Course savedCourse = createNewCourse(user, request.courseName(), request.courseDescription(), placeInfos,
+                placesToAdd, isCourseNameUniqueRequired);
 
         return CourseCreateResponse.from(savedCourse.getId());
     }
@@ -107,8 +108,8 @@ public class CourseService {
         else { // 남의 공유된 코스인 경우
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
-            Course copiedCourses = createNewCourse(
-                    user, request.courseName(), request.courseDescription(), placeInfosInCourse, placesToAdd);
+            Course copiedCourses = createNewCourse(user, request.courseName(), request.courseDescription(),
+                    placeInfosInCourse, placesToAdd, false);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
             return CourseUpdateResponse.of(copiedCourses.getId(), copiedCourses.getName(), copiedCourses.getIntroduction(), true);
         }
@@ -142,8 +143,8 @@ public class CourseService {
 
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
-            Course copiedCourse = createNewCourse(
-                    user, originCourse.getName(), originCourse.getIntroduction(), placesInCourse, places);
+            Course copiedCourse = createNewCourse(user, originCourse.getName(), originCourse.getIntroduction(),
+                    placesInCourse, places, false);
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
 
             return CourseAddPlaceResponse.of(
@@ -304,16 +305,19 @@ public class CourseService {
     /**
      * 사용자 소유의 새로운 코스 생성
      */
-    private Course createNewCourse(User user, String courseName, String intro,
-            List<PlaceInCourseInfo> placeInfos, List<Place> placesToAdd) {
+    private Course createNewCourse(User user, final String courseName, final String intro, final List<PlaceInCourseInfo> placeInfos,
+            final List<Place> placesToAdd, final boolean isCourseNameUniqueRequired) {
         if (placesToAdd.isEmpty()) {
             throw new BusinessException(ErrorCode.NOT_SUFFICIENT_PLACE_COUNT);
         }
 
         // 코스 생성
-        String uniqueCourseName = courseNameGenerator.generateUniqueNameForUser(courseName, user.getId());
+        String newCourseName = courseName;
+        if (isCourseNameUniqueRequired) {
+           newCourseName = courseNameGenerator.generateUniqueNameForUser(courseName, user.getId());
+        }
         Town town = placesToAdd.getFirst().getTown();
-        Course newCourse = Course.create(uniqueCourseName, intro, town, user);
+        Course newCourse = Course.create(newCourseName, intro, town, user);
         courseRepository.save(newCourse);
 
         // 장소들 추가

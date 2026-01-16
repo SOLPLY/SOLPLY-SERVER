@@ -18,6 +18,9 @@ public record CourseCreateRequest(
         @NotEmpty(message = "코스에는 2개 이상의 장소가 포함되어야 합니다.")
         @Size(min = 2, max = 6, message = "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.")
         @Valid
-        List<CoursePlaceRequest> places
+        List<CoursePlaceRequest> places,
+
+        @NotNull(message = "기존 북마크한 코스들과 중복된 코스명을 허용할 것인지에 대한 여부가 필요합니다.")
+        Boolean isCourseNameUniqueRequired
 ) {
 }
