@@ -7,8 +7,8 @@ body:
   - type: textarea
     id: refactor-contents
     attributes:
-      label: 🎨 리팩토링 부분 설명
-      description: 자세한 리팩토링 사항을 설명해 주세요.
+      label: 🎨 리팩토링 이슈 설명
+      description: 어떤 것과 관련된 이슈인지 작성해주세요.
     validations:
       required: true
   - type: textarea
@@ -22,11 +22,3 @@ body:
         - [ ]
     validations:
       required: true
-  - type: textarea
-    id: consider
-    attributes:
-      label: ⚠️ 주의할 점(Optional)
-      description: 주의해야할 점을 써주세요
-      placeholder: "ex. 검색시 여러 칼럼을 동시에 봐야한다"
-    validations:
-      required: false
