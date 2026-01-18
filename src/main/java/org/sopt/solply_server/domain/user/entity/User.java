@@ -28,6 +28,11 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private UserRole role;
+
+
     @Column(unique = true, length = 30)
     private String nickname;
 
@@ -36,7 +41,6 @@ public class User {
 
     @Column(length = 2048)
     private String profileImageFileKey;
-
 
     @Column(nullable = false)
     private boolean isNewUser;
@@ -53,6 +57,7 @@ public class User {
 
     public static User create(String email) {
         return User.builder()
+                .role(UserRole.USER)
                 .email(email)
                 .isNewUser(true)
                 .persona(UserPersona.ANYTHING)
