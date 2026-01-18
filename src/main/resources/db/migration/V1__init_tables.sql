@@ -9,6 +9,7 @@ SET time_zone = '+09:00';
 -- =========================
 CREATE TABLE users (
                        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                       role VARCHAR(20) NOT NULL,
                        nickname VARCHAR(30) UNIQUE,
                        email VARCHAR(255) UNIQUE,
                        profile_image_file_key TEXT,
