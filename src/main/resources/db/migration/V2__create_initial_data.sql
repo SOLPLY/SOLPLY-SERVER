@@ -40,8 +40,8 @@ INSERT INTO tags (id, parent_id, name, type) VALUES
                                                  (30, 3, '팝업/플리마켓', 'OPTION1');
 
 -- 외래 키 제약 조건을 만족시키기 위해 admin 유저를 먼저 생성합니다. !!!
-INSERT INTO `users` (id, nickname, email, is_new_user)
-VALUES (1, 'admin', 'admin@solply.com', false);
+INSERT INTO `users` (id, role, nickname, email, is_new_user)
+VALUES (1, 'ADMIN', 'admin', 'admin@solply.com', false);
 
 -- places 데이터 삽입
 INSERT INTO `places`
