@@ -58,7 +58,7 @@ public class AdminPlaceReportController {
             summary = "제보 해결 처리",
             description = "제보 상태를 RESOLVED로 변경합니다."
     )
-    @PatchMapping("/{id}/resolve")
+    @PatchMapping("/{id}/resolution")
     public ResponseEntity<CustomApiResponse<AdminPlaceReportResolveResponse>> resolvePlaceReport(
             @Parameter(description = "제보 ID", required = true, example = "10")
             @PathVariable("id") Long id
