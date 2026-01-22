@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 @Getter
@@ -36,9 +37,7 @@ public class PrincipalDetails implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() { // 유저 권한 정보 반환(미사용)
-        List<GrantedAuthority> auth = new ArrayList<>();
-//        auth.add(new SimpleGrantedAuthority(user.getUserRole().getAuthority()));
-        return auth;
+        return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
     }
 
     @Override

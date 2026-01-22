@@ -75,6 +75,8 @@ public class SecurityConfig {
                         // recommend: courses만 허용
                         .requestMatchers(HttpMethod.GET, "/api/recommend/courses").permitAll()
 
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
                         // ❌ 나머지 전부 로그인 필요
                         .anyRequest().authenticated()
                 )
