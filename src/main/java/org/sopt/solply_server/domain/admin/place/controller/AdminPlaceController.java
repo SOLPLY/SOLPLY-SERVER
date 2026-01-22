@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertRequest;
+import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
@@ -46,6 +47,19 @@ public class AdminPlaceController {
                 adminPlaceService.updatePlace(placeId, request)
         );
     }
+
+    @Operation(summary = "어드민 장소 상세 조회", description = "placeId 기준으로 장소 상세 정보를 조회합니다.")
+    @GetMapping("/{id}")
+    public ResponseEntity<CustomApiResponse<AdminPlaceDetailsGetResponse>> getPlaceDetails(
+            @Parameter(description = "장소 ID", required = true, example = "10")
+            @PathVariable("id") Long placeId
+    ) {
+        return CustomApiResponse.success(
+                "장소 상세 조회 성공",
+                adminPlaceService.getPlaceDetails(placeId)
+        );
+    }
+
 
     @Operation(summary = "어드민 키워드 기반 장소 검색", description = "키워드를 기반으로 장소를 검색합니다.")
     @GetMapping("/search")

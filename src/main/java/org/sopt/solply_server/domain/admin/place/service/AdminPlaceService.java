@@ -6,10 +6,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.admin.place.dto.AdminPlaceSummaryDto;
 import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertRequest;
+import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
+import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -20,6 +23,7 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
+import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -34,9 +38,10 @@ public class AdminPlaceService {
     private final PlaceRepository placeRepository;
     private final EntityLoader entityLoader;
 
-    private final TagValidator tagValidator;                 // ✅ 추가
+    private final TagValidator tagValidator;
     private final ImageFileKeyValidator imageFileKeyValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final ImageUrlProvider imageUrlProvider;
 
     @Transactional
     public AdminPlaceUpsertResponse createPlace(final Long adminUserId, final AdminPlaceUpsertRequest req) {
@@ -119,6 +124,55 @@ public class AdminPlaceService {
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
         return AdminPlaceUpsertResponse.of(place.getId());
+    }
+
+    public AdminPlaceDetailsGetResponse getPlaceDetails(final Long placeId) {
+        Place place = entityLoader.getPlace(placeId);
+
+        Town town = place.getTown();
+
+        // 이미지 URL 변환
+        List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
+                .map(info -> PlaceImageInfoDto.of(
+                        info.getDisplayOrder(),
+                        imageUrlProvider.getImageUrl(info.getImageFileKey())
+                ))
+                .toList();
+
+        // 태그 id 추출
+        Long mainTagId = place.getMainTag().map(Tag::getId).orElse(null);
+
+        List<Long> option1TagIds = place.getPlaceTags().stream()
+                .map(PlaceTag::getTag)
+                .filter(t -> t.getType() == TagType.OPTION1)
+                .map(Tag::getId)
+                .toList();
+
+        List<Long> option2TagIds = place.getPlaceTags().stream()
+                .map(PlaceTag::getTag)
+                .filter(t -> t.getType() == TagType.OPTION2)
+                .map(Tag::getId)
+                .toList();
+
+        return AdminPlaceDetailsGetResponse.of(
+                place.getId(),
+                place.getName(),
+                place.getIntroduction(),
+                place.getAddress(),
+                place.getPlaceDefaultId(),
+                place.getLatitude(),
+                place.getLongitude(),
+                place.getContactNumber(),
+                place.getOpeningHours(),
+                place.getPlaceType(),
+                town.getId(),
+                town.getName(),
+                mainTagId,
+                option1TagIds,
+                option2TagIds,
+                place.getSnsLinks(),
+                imageInfos
+        );
     }
 
     public AdminPlaceListResponse searchPlaces(final String keyword) {
