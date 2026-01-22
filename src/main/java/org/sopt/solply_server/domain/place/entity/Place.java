@@ -103,6 +103,129 @@ public class Place extends BaseTimeEntity {
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
 
+    public static Place create(
+            String name,
+            String introduction,
+            String address,
+            Long placeDefaultId,
+            Double latitude,
+            Double longitude,
+            String contactNumber,
+            String openingHours,
+            String placeType,
+            Map<SnsPlatform, String> snsLinks,
+            List<String> imageFileKeys,
+            Town town,
+            User createdBy,
+            Tag mainTag,
+            List<Tag> option1Tags,
+            List<Tag> option2Tags
+    ) {
+        Place p = new Place();
+        p.name = name;
+        p.introduction = introduction;
+        p.address = address;
+        p.placeDefaultId = placeDefaultId;
+        p.latitude = latitude;
+        p.longitude = longitude;
+        p.contactNumber = contactNumber;
+        p.openingHours = openingHours;
+        p.placeType = placeType;
+        p.town = town;
+        p.createdBy = createdBy;
+
+        p.applySnsLinks(snsLinks);
+        p.replaceImagesByKeys(imageFileKeys);
+        p.replaceTags(mainTag, option1Tags, option2Tags);
+
+        return p;
+    }
+
+    public void update(
+            String name,
+            String introduction,
+            String address,
+            Long placeDefaultId,
+            Double latitude,
+            Double longitude,
+            String contactNumber,
+            String openingHours,
+            String placeType,
+            Town town,
+            Map<SnsPlatform, String> snsLinks,
+            List<String> imageFileKeys,
+            Tag mainTag,
+            List<Tag> option1Tags,
+            List<Tag> option2Tags
+    ) {
+        this.name = name;
+        this.introduction = introduction;
+        this.address = address;
+        this.placeDefaultId = placeDefaultId;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.contactNumber = contactNumber;
+        this.openingHours = openingHours;
+        this.placeType = placeType;
+        this.town = town;
+
+        applySnsLinks(snsLinks);
+        replaceImagesByKeys(imageFileKeys);
+        replaceTags(mainTag, option1Tags, option2Tags);
+    }
+    private void applySnsLinks(Map<SnsPlatform, String> links) {
+        this.snsLinks.clear();
+        if (links == null || links.isEmpty()) return;
+
+        // 값이 null/blank면 제거하고 저장
+        links.forEach((platform, url) -> {
+            if (platform == null) return;
+            if (url == null) return;
+            String trimmed = url.trim();
+            if (trimmed.isBlank()) return;
+            this.snsLinks.put(platform, trimmed);
+        });
+    }
+
+    private void replaceImagesByKeys(List<String> imageFileKeys) {
+        this.placeImageInfos.clear();
+        if (imageFileKeys == null || imageFileKeys.isEmpty()) return;
+
+        // 중복 제거(순서 유지) + displayOrder 1부터
+        int order = 1;
+        for (String key : new java.util.LinkedHashSet<>(imageFileKeys)) {
+            if (key == null) continue;
+            String k = key.trim();
+            if (k.isBlank()) continue;
+            this.placeImageInfos.add(new PlaceImageInfo(k, order++));
+        }
+    }
+
+    private void replaceTags(Tag mainTag, List<Tag> option1Tags, List<Tag> option2Tags) {
+        this.placeTags.clear();
+
+        // MAIN (필수)
+        if (mainTag != null) {
+            this.placeTags.add(PlaceTag.of(this, mainTag));
+        }
+
+        // OPTION1 (1개 이상)
+        if (option1Tags != null) {
+            for (Tag t : new java.util.LinkedHashSet<>(option1Tags)) {
+                if (t == null) continue;
+                this.placeTags.add(PlaceTag.of(this, t));
+            }
+        }
+
+        // OPTION2 (선택)
+        if (option2Tags != null) {
+            for (Tag t : new java.util.LinkedHashSet<>(option2Tags)) {
+                if (t == null) continue;
+                this.placeTags.add(PlaceTag.of(this, t));
+            }
+        }
+    }
+
     // === 편의 메서드 추가 ===
 
     /**

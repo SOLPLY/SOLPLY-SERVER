@@ -6,6 +6,7 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum TargetDir {
+    PLACE("places"),
     PLACE_REQUEST("place-requests"),
     PLACE_REPORT("place-reports"),
     USER_PROFILE("user-profiles");

@@ -7,6 +7,8 @@ import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.tag.entity.Tag;
+import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -26,6 +28,7 @@ public class EntityLoader {
     private final PlaceRepository placeRepository;
     private final TownRepository townRepository;
     private final UserInterestTownRepository userInterestTownRepository;
+    private final TagRepository tagRepository;
 
     public User getUser(Long userId) {
         return userRepository.findById(userId)
@@ -50,6 +53,11 @@ public class EntityLoader {
     public Town getTown(Long townId) {
         return townRepository.findById(townId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));
+    }
+
+    public Tag getTag(Long id) {
+        return tagRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
     }
 
 //    public List<UserInterestTown> getInterestTownsWithTownsByIds(Long userId) {
