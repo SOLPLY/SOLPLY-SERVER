@@ -1,4 +1,4 @@
-package org.sopt.solply_server.global.config;
+package org.sopt.solply_server.global.config.swagger;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
