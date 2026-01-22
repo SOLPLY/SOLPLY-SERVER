@@ -20,9 +20,11 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -203,25 +205,26 @@ public class Place extends BaseTimeEntity {
 
     private void replaceTags(Tag mainTag, List<Tag> option1Tags, List<Tag> option2Tags) {
         this.placeTags.clear();
+        Set<Tag> notDuplicated = new LinkedHashSet<>();
 
         // MAIN (필수)
-        if (mainTag != null) {
+        if (mainTag != null && notDuplicated.add(mainTag)) {
             this.placeTags.add(PlaceTag.of(this, mainTag));
         }
 
         // OPTION1 (1개 이상)
         if (option1Tags != null) {
-            for (Tag t : new java.util.LinkedHashSet<>(option1Tags)) {
+            for (Tag t : option1Tags) {
                 if (t == null) continue;
-                this.placeTags.add(PlaceTag.of(this, t));
+                if (notDuplicated.add(t)) this.placeTags.add(PlaceTag.of(this, t));
             }
         }
 
         // OPTION2 (선택)
         if (option2Tags != null) {
-            for (Tag t : new java.util.LinkedHashSet<>(option2Tags)) {
+            for (Tag t : option2Tags) {
                 if (t == null) continue;
-                this.placeTags.add(PlaceTag.of(this, t));
+                if (notDuplicated.add(t)) this.placeTags.add(PlaceTag.of(this, t));
             }
         }
     }
