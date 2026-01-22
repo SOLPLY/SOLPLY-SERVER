@@ -1,5 +1,3 @@
-// package org.sopt.solply_server.domain.admin.place.controller;
-
 package org.sopt.solply_server.domain.admin.place.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,7 +13,7 @@ import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@Tag(name = "Admin(잘못된 정보 제보) API", description = "잘못된 정보(장소) 제보 관련 Admin용 API")
+@Tag(name = "어드민(잘못된 정보 제보) API", description = "잘못된 정보(장소) 제보 관련 Admin용 API")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/place-reports")
