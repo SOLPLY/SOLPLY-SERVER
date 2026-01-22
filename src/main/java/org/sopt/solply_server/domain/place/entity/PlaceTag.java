@@ -46,4 +46,12 @@ public class PlaceTag {
     @JoinColumn(name = "tag_id", nullable = false)
     private Tag tag;
 
+
+    public static PlaceTag of(Place place, Tag tag) {
+        PlaceTag pt = new PlaceTag();
+        pt.place = place;
+        pt.tag = tag;
+        return pt;
+    }
+
 }
