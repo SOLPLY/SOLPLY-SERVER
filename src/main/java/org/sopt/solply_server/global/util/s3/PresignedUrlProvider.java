@@ -5,14 +5,11 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.file.dto.PresignedPutUrlInfo;
-import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.util.InputValidator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
@@ -23,7 +20,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 @RequiredArgsConstructor
 public class PresignedUrlProvider {
 
-    private final S3FileMoveService s3FileMoveService;
+    private final S3FileService s3FileService;
     @Value("${aws.s3.bucket}")
     private String bucketName;
 
@@ -58,7 +55,7 @@ public class PresignedUrlProvider {
     public String createPresignedUrlToRead(final String fileKey) {
         if (InputValidator.isBlank(fileKey)) return null;
 
-        if (s3FileMoveService.isUploaded(fileKey)) {
+        if (s3FileService.isUploaded(fileKey)) {
             GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
                     .signatureDuration(Duration.ofSeconds(expirationSeconds))
                     .getObjectRequest(req -> req

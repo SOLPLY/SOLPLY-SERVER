@@ -48,6 +48,33 @@ public class PlaceRequest extends BaseTimeEntity {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String reason;
 
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private PlaceRequestStatus status;
+
+    public static PlaceRequest create(
+            String placeName,
+            String address,
+            String reason,
+            User user
+    ) {
+        return PlaceRequest.builder()
+                .placeName(placeName)
+                .address(address)
+                .reason(reason)
+                .user(user)
+                .status(PlaceRequestStatus.PENDING)
+                .build();
+    }
+
+    public void approve() {
+        this.status = PlaceRequestStatus.APPROVED;
+    }
+
+    public void reject() {
+        this.status = PlaceRequestStatus.REJECTED;
+    }
+
 
     public void addTags(Collection<Tag> tags) {
         if (tags == null || tags.isEmpty()) return;

@@ -1,8 +1,5 @@
 package org.sopt.solply_server.global.util.s3;
 
-import java.util.List;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,13 +8,12 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.S3Object;
 
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class S3FileMoveService {
+public class S3FileService {
 
     private final S3Client s3Client;
 
@@ -68,6 +64,23 @@ public class S3FileMoveService {
             return false;
         }
         return true;
+    }
+
+    public String copyToDir(final String sourceKey, final long targetId, final TargetDir targetDir) {
+        if (!isUploaded(sourceKey)) return null;
+
+        String fileName = sourceKey.substring(sourceKey.lastIndexOf('/') + 1);
+        String destKey = String.format("%s/uploads/%s/%d/%s",
+                envPrefix, targetDir.getDir(), targetId, fileName);
+
+        s3Client.copyObject(CopyObjectRequest.builder()
+                .sourceBucket(bucketName)
+                .sourceKey(sourceKey)
+                .destinationBucket(bucketName)
+                .destinationKey(destKey)
+                .build());
+
+        return destKey;
     }
 }
 

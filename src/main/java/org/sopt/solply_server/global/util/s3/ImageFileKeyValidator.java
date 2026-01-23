@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class ImageFileKeyValidator {
-    private final S3FileMoveService s3FileMoveService;
+    private final S3FileService s3FileService;
 
     public void validateFileKeys(List<String> fileKeys) {
         for (String k : fileKeys) {
@@ -19,7 +19,7 @@ public class ImageFileKeyValidator {
             if (k.isBlank()) {
                 throw new BusinessException(ErrorCode.INVALID_IMAGE_KEY);
             }
-            if (!s3FileMoveService.isUploaded(k)) {
+            if (!s3FileService.isUploaded(k)) {
                 throw new BusinessException(ErrorCode.NOT_UPLOADED_IMAGE);
             }
         }

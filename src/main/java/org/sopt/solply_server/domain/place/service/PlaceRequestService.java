@@ -2,7 +2,8 @@ package org.sopt.solply_server.domain.place.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
+import org.sopt.solply_server.global.util.s3.FileTransferMode;
+import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
 import org.sopt.solply_server.domain.place.entity.PlaceRequest;
@@ -16,8 +17,7 @@ import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
-import org.sopt.solply_server.global.util.s3.S3FileMoveService;
-import org.sopt.solply_server.global.util.s3.S3KeyUtils;
+import org.sopt.solply_server.global.util.s3.S3FileService;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -41,7 +41,7 @@ public class PlaceRequestService {
 
     private final TagValidator tagValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
-    private final S3FileMoveService s3FileMoveService;
+    private final S3FileService s3FileService;
     private final ImageFileKeyValidator imageFileKeyValidator;
 
     @Transactional
@@ -63,12 +63,12 @@ public class PlaceRequestService {
                 .map(img -> new PlaceRequestImageInfo(img.tempFileKey(), img.displayOrder()))
                 .toList();
 
-        PlaceRequest placeRequest = PlaceRequest.builder()
-                .placeName(request.placeName())
-                .address(request.address())
-                .reason(request.reason())
-                .user(user)
-                .build();
+        PlaceRequest placeRequest = PlaceRequest.create(
+                request.placeName(),
+                request.address(),
+                request.reason(),
+                user
+        );
 
         if (!imageInfos.isEmpty()) {
             placeRequest.getImages().addAll(imageInfos);
@@ -109,7 +109,8 @@ public class PlaceRequestService {
                     user.getId(),
                     saved.getId(),
                     TargetDir.PLACE_REQUEST,
-                    stagingKeys
+                    stagingKeys,
+                    FileTransferMode.MOVE
             );
             applicationEventPublisher.publishEvent(event);
         }
