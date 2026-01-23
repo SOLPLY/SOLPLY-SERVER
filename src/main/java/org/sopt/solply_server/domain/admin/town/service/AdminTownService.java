@@ -47,7 +47,7 @@ public class AdminTownService {
 				AdminTownDto.of(
 					town.getId(),
 					town.getName(),
-					town.getParent().getName()
+					town.getParent() == null ? "-" : town.getParent().getName()
 				)
 			).toList()
 		);
