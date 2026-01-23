@@ -3,7 +3,8 @@ package org.sopt.solply_server.domain.place.service;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
+import org.sopt.solply_server.global.util.s3.FileTransferMode;
+import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.dto.request.PlaceReportCreateRequest;
 import org.sopt.solply_server.domain.place.dto.response.PlaceReportCreateResponse;
@@ -11,12 +12,8 @@ import org.sopt.solply_server.domain.place.entity.PlaceReport;
 import org.sopt.solply_server.domain.place.repository.PlaceReportRepository;
 import org.sopt.solply_server.domain.place.util.PlaceReportValidator;
 import org.sopt.solply_server.domain.user.entity.User;
-import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
-import org.sopt.solply_server.global.util.s3.S3FileMoveService;
-import org.sopt.solply_server.global.util.s3.S3KeyUtils;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -60,7 +57,8 @@ public class PlaceReportService {
                 user.getId(),
                 savedReport.getId(),
                 TargetDir.PLACE_REPORT,
-                savedReport.getImageKeys()
+                savedReport.getImageKeys(),
+                FileTransferMode.MOVE
         );
 
         applicationEventPublisher.publishEvent(event);

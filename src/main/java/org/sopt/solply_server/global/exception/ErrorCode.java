@@ -100,7 +100,11 @@ public enum ErrorCode {
     // 제보 관련 (REPORT-xxx)
     REPORT_LIMIT_EXCEEDED_USER(HttpStatus.BAD_REQUEST, "REPORT-001", "동일 장소에 대해 하루에 한 번만 제보할 수 있습니다."),
     NOT_FOUND_REPORT(HttpStatus.NOT_FOUND, "REPORT-002", "존재하지 않는 제보입니다."),
-    INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-003", "유효하지 않은 제보 유형입니다.");
+    INVALID_REPORT_TYPE(HttpStatus.BAD_REQUEST, "REPORT-003", "유효하지 않은 제보 유형입니다."),
+
+    // 장소 등록 요청 관련 (PLACE_REQUEST-xxx)
+    NOT_FOUND_PLACE_REQUEST(HttpStatus.NOT_FOUND, "PLACE_REQUEST-001", "존재하지 않는 장소 등록 요청입니다." ),
+    INVALID_REQUEST_STATE(HttpStatus.BAD_REQUEST, "PLACE_REQUEST-002", "승인할 수 없는 장소 등록 요청입니다." );
 
 
     private final HttpStatus httpStatus;
