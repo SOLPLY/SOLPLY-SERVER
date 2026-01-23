@@ -40,4 +40,12 @@ public class Town {
 
         return t;
     }
+
+    public void update(
+        String name,
+        Town parent
+    ){
+        this.name = name;
+        this.parent = parent;
+    }
 }

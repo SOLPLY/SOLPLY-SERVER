@@ -36,8 +36,24 @@ public class AdminTownService {
 		);
 		Town saved = townRepository.save(town);
 
-		log.info("어드민 동네 생성 - adminId: {}, palecId:{}", adminUserId, saved.getId());
+		log.info("어드민 동네 생성 - adminId: {}, townId:{}", adminUserId, saved.getId());
 		return AdminTownUpsertResponse.of(saved.getId());
+	}
+
+	@Transactional
+	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
+		townValidator.validateTownId(townId);
+
+		Town town = entityLoader.getTown(townId);
+		Town parent = entityLoader.getTown(req.townId());
+
+		town.update(
+			req.name(),
+			parent
+		);
+
+		log.info("어드민 동네 수정 - townId:{}", town.getId());
+		return AdminTownUpsertResponse.of(town.getId());
 	}
 
 	public AdminTownListResponse getTowns() {
