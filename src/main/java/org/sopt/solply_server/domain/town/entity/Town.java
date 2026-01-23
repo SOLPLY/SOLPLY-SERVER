@@ -29,4 +29,15 @@ public class Town {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private Town parent;
+
+    public static Town create(
+        String name,
+        Town parent
+    ){
+        Town t = new Town();
+        t.name = name;
+        t.parent = parent;
+
+        return t;
+    }
 }
