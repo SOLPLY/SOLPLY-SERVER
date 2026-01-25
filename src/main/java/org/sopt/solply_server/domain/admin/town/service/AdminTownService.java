@@ -74,4 +74,18 @@ public class AdminTownService {
 		townValidator.validateDeletableTown(townId);
 		townRepository.delete(town);
 	}
+
+	public AdminTownListResponse getParentsTowns() {
+		List<Town> parentList = townRepository.findByParentIsNull();
+		return AdminTownListResponse.of(
+			parentList.stream().map(town ->
+				AdminTownDto.of(
+					town.getId(),
+					town.getName(),
+					"-"
+				)
+			).toList()
+		);
+	}
+
 }

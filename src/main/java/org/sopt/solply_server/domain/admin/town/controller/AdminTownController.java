@@ -72,4 +72,13 @@ public class AdminTownController {
 		adminTownService.deleteTown(townId);
 		return CustomApiResponse.success("지역/동네 삭제 성공");
 	}
+
+	@Operation(summary = "지역 목록 조회", description = "어드민이 지역 목록을 조회합니다.")
+	@GetMapping
+	public ResponseEntity<CustomApiResponse<AdminTownListResponse>> getParentsTowns() {
+		return CustomApiResponse.success(
+			"지역 목록 조회 성공",
+			adminTownService.getParentsTowns()
+		);
+	}
 }
