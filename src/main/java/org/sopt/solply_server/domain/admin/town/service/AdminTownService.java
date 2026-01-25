@@ -3,7 +3,8 @@ package org.sopt.solply_server.domain.admin.town.service;
 import java.util.List;
 
 import org.sopt.solply_server.domain.admin.town.dto.AdminTownDto;
-import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
+import org.sopt.solply_server.domain.admin.town.dto.request.AdminParentTownUpsertRequest;
+import org.sopt.solply_server.domain.admin.town.dto.request.AdminSubTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -28,7 +29,7 @@ public class AdminTownService {
 	private final TownValidator townValidator;
 
 	@Transactional
-	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminTownUpsertRequest req) {
+	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminSubTownUpsertRequest req) {
 		Town parent = (req.townId() != null ? entityLoader.getTown(req.townId()) : null);
 		Town town = Town.create(
 			req.name(),
@@ -41,7 +42,7 @@ public class AdminTownService {
 	}
 
 	@Transactional
-	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
+	public AdminTownUpsertResponse updateSubTown(final Long townId, final AdminSubTownUpsertRequest req) {
 		townValidator.validateTownId(townId);
 		townValidator.validateSubTown(townId);
 
@@ -89,4 +90,19 @@ public class AdminTownService {
 		);
 	}
 
+	@Transactional
+	public AdminTownUpsertResponse updateParentTown(final Long townId, final AdminParentTownUpsertRequest req) {
+		townValidator.validateTownId(townId);
+		townValidator.validateParentTown(townId);
+
+		Town town = entityLoader.getTown(townId);
+
+		town.update(
+			req.name(),
+			town.getParent()
+		);
+
+		log.info("어드민 지역 수정 - townId:{}", town.getId());
+		return AdminTownUpsertResponse.of(town.getId());
+	}
 }
