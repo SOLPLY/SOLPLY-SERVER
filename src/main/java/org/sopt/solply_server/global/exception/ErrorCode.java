@@ -77,6 +77,7 @@ public enum ErrorCode {
 
     // 동네 관련 (TOWN-xxx)
     NOT_FOUND_TOWN(HttpStatus.NOT_FOUND, "TOWN-001" , "존재하지 않는 동네입니다."),
+    CANNOT_DELETE_TOWN(HttpStatus.BAD_REQUEST,"TOWN-002","삭제할 수 없는 동네입니다."),
 
 
     // 태그 관련 (TAG-xxx)

@@ -7,6 +7,7 @@ import org.sopt.solply_server.domain.admin.town.service.AdminTownService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -60,5 +61,15 @@ public class AdminTownController {
 			"지역/동네 수정 성공",
 			adminTownService.updateTown(townId, request)
 		);
+	}
+
+	@Operation(summary = "어드민 지역/동네 삭제", description = "어드민이 지역/동네를 삭제합니다.")
+	@DeleteMapping("/{id}")
+	public ResponseEntity<CustomApiResponse<Void>> deleteTown(
+		@Parameter(description = "동네/지역 ID", required = true, example = "4")
+		@PathVariable("id") Long townId
+	) {
+		adminTownService.deleteTown(townId);
+		return CustomApiResponse.success("지역/동네 삭제 성공");
 	}
 }

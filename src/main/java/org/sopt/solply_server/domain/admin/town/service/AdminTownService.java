@@ -68,4 +68,10 @@ public class AdminTownService {
 			).toList()
 		);
 	}
+
+	public void deleteTown(final Long townId) {
+		Town town = entityLoader.getTown(townId);
+		townValidator.validateDeletableTown(townId);
+		townRepository.delete(town);
+	}
 }

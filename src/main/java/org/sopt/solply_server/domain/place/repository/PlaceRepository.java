@@ -1,6 +1,8 @@
 package org.sopt.solply_server.domain.place.repository;
 
 import io.lettuce.core.dynamic.annotation.Param;
+import software.amazon.awssdk.services.s3.endpoints.internal.Value;
+
 import java.util.List;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCustom;
@@ -58,4 +60,5 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     """)
     List<Place> findAdminPlacesByTownId(@Param("townId") Long townId);
 
+    boolean existsByTown_Id(@Param("townId") Long townId);
 }
