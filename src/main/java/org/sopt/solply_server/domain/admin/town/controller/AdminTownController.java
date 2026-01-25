@@ -50,15 +50,15 @@ public class AdminTownController {
 		);
 	}
 
-	@Operation(summary = "어드민 지역/동네 수정", description = "어드민이 지역/동네를 수정합니다.")
+	@Operation(summary = "어드민 동네 수정", description = "어드민이 동네를 수정합니다.")
 	@PatchMapping("/{id}")
 	public ResponseEntity<CustomApiResponse<AdminTownUpsertResponse>> updateTown(
-		@Parameter(description = "동네/지역 ID", required = true, example = "3")
+		@Parameter(description = "동네 ID", required = true, example = "3")
 		@PathVariable("id") Long townId,
 		@Valid @RequestBody AdminTownUpsertRequest request
 	) {
 		return CustomApiResponse.success(
-			"지역/동네 수정 성공",
+			"동네 수정 성공",
 			adminTownService.updateTown(townId, request)
 		);
 	}

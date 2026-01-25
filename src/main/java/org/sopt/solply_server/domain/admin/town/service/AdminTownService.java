@@ -43,6 +43,7 @@ public class AdminTownService {
 	@Transactional
 	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
 		townValidator.validateTownId(townId);
+		townValidator.validateSubTown(townId);
 
 		Town town = entityLoader.getTown(townId);
 		Town parent = entityLoader.getTown(req.townId());

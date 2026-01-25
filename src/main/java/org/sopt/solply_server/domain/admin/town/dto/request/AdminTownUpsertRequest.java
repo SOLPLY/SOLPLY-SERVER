@@ -8,5 +8,6 @@ public record AdminTownUpsertRequest(
 	@Size(max = 100, message = "동네명은 100자를 초과할 수 없습니다.")
 	String name,
 
+	@NotBlank(message = "지역 id는 필수입니다.")
 	Long townId
 ) {}
