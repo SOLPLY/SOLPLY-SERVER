@@ -231,14 +231,30 @@ public class Place extends BaseTimeEntity {
 
     // === 편의 메서드 추가 ===
 
-    /**
-     * 장소의 1차 태그(MAIN) 추출
-     */
-    public Optional<Tag> getMainTag() {
-        return this.placeTags.stream()
+    /** active tag만 */
+    public List<Tag> getActiveTags() {
+        return placeTags.stream()
                 .map(PlaceTag::getTag)
+                .filter(Tag::isActive)
+                .toList();
+    }
+
+    /** active MAIN만 */
+    public Optional<Tag> getActiveMainTag() {
+        return placeTags.stream()
+                .map(PlaceTag::getTag)
+                .filter(Tag::isActive)
                 .filter(tag -> tag.getType() == TagType.MAIN)
                 .findFirst();
+    }
+
+    /** active tagId Set (추천/스코어링용) */
+    public Set<Long> getActiveTagIds() {
+        return placeTags.stream()
+                .map(PlaceTag::getTag)
+                .filter(Tag::isActive)
+                .map(Tag::getId)
+                .collect(Collectors.toSet());
     }
 
     /**
@@ -249,12 +265,6 @@ public class Place extends BaseTimeEntity {
                 .findFirst()
                 .map(PlaceImageInfo::getImageFileKey)
                 .orElse(null);
-    }
-
-    public List<Tag> getTags() {
-        return placeTags.stream()
-                .map(PlaceTag::getTag)
-                .collect(Collectors.toList());
     }
 
 }

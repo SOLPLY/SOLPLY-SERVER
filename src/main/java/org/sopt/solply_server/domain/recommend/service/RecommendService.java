@@ -96,9 +96,10 @@ public class RecommendService {
         if (persona == null) throw new BusinessException(ErrorCode.NOT_FOUND_PERSONA);
 
         // 2) persona 추천 태그 Set
-        Set<Long> personaTagIds = tagPersonaMappingRepository.findAllByPersonaOrderByWeightDesc(persona).stream()
-                .map(m -> m.getTag().getId())
-                .collect(Collectors.toSet());
+        Set<Long> personaTagIds =
+                tagPersonaMappingRepository.findActiveByPersonaOrderByWeightDesc(persona).stream()
+                        .map(m -> m.getTag().getId())
+                        .collect(Collectors.toSet());
 
         // 3) 최근 1달 북마크한 PLACE ids (DB 기준 createdAt)
         LocalDateTime since = LocalDateTime.now().minusMonths(1);
@@ -110,8 +111,8 @@ public class RecommendService {
                 (recentBookmarkedPlaceIds == null || recentBookmarkedPlaceIds.isEmpty())
                         ? Map.of()
                         : placeRepository.findByIdInWithTags(recentBookmarkedPlaceIds).stream()
-                                .flatMap(p -> p.getPlaceTags().stream())
-                                .map(pt -> pt.getTag().getId())
+                                .flatMap(p -> p.getActiveTags().stream())
+                                .map(Tag::getId)
                                 .collect(Collectors.toMap(
                                         tagId -> tagId,
                                         tagId -> 1,
@@ -155,9 +156,7 @@ public class RecommendService {
 
     private ScoredPlace scorePlace(Place place, Set<Long> personaTagIds, Map<Long, Integer> bookmarkTagCount) {
         // placeTagIds 1회 생성
-        Set<Long> placeTagIds = place.getPlaceTags().stream()
-                .map(pt -> pt.getTag().getId())
-                .collect(Collectors.toSet());
+        Set<Long> placeTagIds = place.getActiveTagIds();
 
         int personaScore = 0;
         int bookmarkScore = 0;
@@ -252,7 +251,7 @@ public class RecommendService {
                 place.getId(),
                 place.getName(),
                 imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                place.getMainTag().map(Tag::getName).orElse(null),
+                place.getActiveMainTag().map(Tag::getName).orElse(null),
                 place.getIntroduction()
         );
     }
