@@ -89,7 +89,7 @@ CREATE TABLE tags (
                       name VARCHAR(255) NOT NULL,
                       type VARCHAR(50) NOT NULL,
                       parent_id BIGINT NULL,
-                      active BOOLEAN NOT NULL DEFAULT TRUE
+                      active BOOLEAN NOT NULL DEFAULT TRUE,
 
                       CONSTRAINT fk_tags_parent
                           FOREIGN KEY (parent_id) REFERENCES tags(id)
