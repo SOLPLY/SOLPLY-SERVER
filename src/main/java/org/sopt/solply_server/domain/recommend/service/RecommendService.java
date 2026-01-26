@@ -70,7 +70,6 @@ public class RecommendService {
      * 1) 하루동안 동일한 추천(캐시)
      * 2) 최근 3일 추천 쿨다운(재노출 방지)
      * 3) Top10 후보에서 랜덤(가중치)으로 3개 선택
-     * 4) 이미 북마크한 장소는 제외
      */
     public PlaceRecommendationGetResponse getRecommendPlaces(Long userId, Long townId) {
         LocalDate today = LocalDate.now();
