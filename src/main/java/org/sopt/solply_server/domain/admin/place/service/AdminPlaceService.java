@@ -141,7 +141,7 @@ public class AdminPlaceService {
                 .toList();
 
         // 태그 id 추출
-        Long mainTagId = place.getMainTag().map(Tag::getId).orElse(null);
+        Long mainTagId = place.getActiveMainTag().map(Tag::getId).orElse(null);
 
         List<Long> option1TagIds = place.getPlaceTags().stream()
                 .map(PlaceTag::getTag)
@@ -193,7 +193,7 @@ public class AdminPlaceService {
                         p.getId(),
                         p.getName(),
                         p.getTown().getName(),
-                        p.getMainTag().map(Tag::getName).orElse(null)
+                        p.getActiveMainTag().map(Tag::getName).orElse(null)
                 ))
                 .toList();
 
@@ -209,7 +209,7 @@ public class AdminPlaceService {
                         p.getId(),
                         p.getName(),
                         p.getTown().getName(),
-                        p.getMainTag().map(Tag::getName).orElse(null)
+                        p.getActiveMainTag().map(Tag::getName).orElse(null)
                 ))
                 .toList();
 

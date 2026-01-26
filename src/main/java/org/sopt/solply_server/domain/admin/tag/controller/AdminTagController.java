@@ -5,10 +5,11 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagActivationRequest;
 import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
-import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagToggleResponse;
+import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagActivationResponse;
 import org.sopt.solply_server.domain.admin.tag.service.AdminTagService;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -69,15 +70,14 @@ public class AdminTagController {
 
     @Operation(summary = "어드민 태그 활성/비활성", description = "태그 활성 상태를 변경합니다. 비활성화 시 하위 태그도 함께 비활성화됩니다.")
     @PatchMapping("/{id}")
-    public ResponseEntity<CustomApiResponse<AdminTagToggleResponse>> toggleTagActive(
+    public ResponseEntity<CustomApiResponse<AdminTagActivationResponse>> toggleTagActive(
             @Parameter(description = "태그 ID", required = true, example = "1")
             @PathVariable Long id,
-            @Parameter(description = "활성 여부", required = true, example = "false")
-            @RequestParam("active") boolean active
+            @Valid @RequestBody AdminTagActivationRequest request
     ) {
         return CustomApiResponse.success(
                 "태그 활성 상태 변경 성공",
-                adminTagService.toggleActive(id, active)
+                adminTagService.toggleActive(id, request)
         );
     }
 }

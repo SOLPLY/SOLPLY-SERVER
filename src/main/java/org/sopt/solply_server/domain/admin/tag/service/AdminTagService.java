@@ -1,20 +1,18 @@
 package org.sopt.solply_server.domain.admin.tag.service;
 
 
-import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagActivationRequest;
 import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest;
+import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagActivationResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
-import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse.AdminTagSummaryDto;
-import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagToggleResponse;
+import org.sopt.solply_server.domain.admin.town.util.AdminTagValidator;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagPersonaMapping;
-import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
-import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -30,9 +28,11 @@ public class AdminTagService {
     private final TagRepository tagRepository;
     private final EntityLoader entityLoader;
 
+    private final AdminTagValidator adminTagValidator;
+
     @Transactional
     public Long createTag(AdminTagUpsertRequest req) {
-        Tag parent = resolveAndValidateParentForAdmin(req.type(), req.parentId(), req.active());
+        Tag parent = adminTagValidator.resolveAndValidateParentForAdmin(req.type(), req.parentId(), req.active());
 
         Tag tag = Tag.create(
                 req.name(),
@@ -48,11 +48,28 @@ public class AdminTagService {
         return tagRepository.save(tag).getId();
     }
 
+    @Transactional(readOnly = true)
+    public AdminTagListResponse getTags() {
+        return AdminTagListResponse.of(
+                tagRepository.findAllWithParent().stream()
+                        .map(AdminTagListResponse.AdminTagSummaryDto::from)
+                        .toList()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public AdminTagDetailsResponse getTagDetails(Long id) {
+        Tag tag = tagRepository.findByIdWithDetails(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
+
+        return AdminTagDetailsResponse.from(tag);
+    }
+
     @Transactional
     public Long updateTag(Long id, AdminTagUpsertRequest req) {
         Tag tag = entityLoader.getTag(id);
 
-        Tag parent = resolveAndValidateParentForAdmin(req.type(), req.parentId(), req.active());
+        Tag parent = adminTagValidator.resolveAndValidateParentForAdmin(req.type(), req.parentId(), req.active());
 
         tag.updateBasic(req.type(), parent, req.name(), req.active());
 
@@ -70,47 +87,23 @@ public class AdminTagService {
     }
 
     @Transactional
-    public AdminTagToggleResponse toggleActive(Long id, boolean active) {
+    public AdminTagActivationResponse toggleActive(Long id, AdminTagActivationRequest req) {
         Tag tag = entityLoader.getTag(id);
 
         // 활성화 요청인데 parent가 비활성이면 에러
-        if (active && tag.getParent() != null && !tag.getParent().isActive()) {
+        if (req.active() && tag.getParent() != null && !tag.getParent().isActive()) {
             throw new BusinessException(ErrorCode.CANNOT_ACTIVATE_TAG_PARENT_INACTIVE);
         }
 
-        tag.setActive(active);
+        tag.setActive(req.active());
 
-        if (!active) {
+        if (!req.active()) {
             deactivateCascade(tag.getId());
         }
 
-        return AdminTagToggleResponse.of(id, active);
+        return AdminTagActivationResponse.of(id, req.active());
     }
 
-    // ===== admin 전용 parent 검증 =====
-    private Tag resolveAndValidateParentForAdmin(TagType type, Long parentId, boolean requestedActive) {
-        if (type == TagType.MAIN) {
-            if (parentId != null) throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
-            return null;
-        }
-
-        // OPTION1/2는 parent 필수
-        if (parentId == null) throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
-
-        // parent 존재 + MAIN 타입 검증 (active는 보지 않음)
-        if (!tagRepository.existsByIdAndType(parentId, TagType.MAIN)) {
-            throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
-        }
-
-        Tag parent = entityLoader.getTag(parentId);
-
-        // parent 비활성인데 자식을 활성화하려고 하면 에러
-        if (requestedActive && !parent.isActive()) {
-            throw new BusinessException(ErrorCode.CANNOT_ACTIVATE_TAG_PARENT_INACTIVE);
-        }
-
-        return parent;
-    }
 
     private void deactivateCascade(Long parentId) {
         List<Tag> children = tagRepository.findChildren(parentId);

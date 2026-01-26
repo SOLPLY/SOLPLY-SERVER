@@ -41,7 +41,6 @@ public class PlaceRequestService {
 
     private final TagValidator tagValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
-    private final S3FileService s3FileService;
     private final ImageFileKeyValidator imageFileKeyValidator;
 
     @Transactional
@@ -88,9 +87,8 @@ public class PlaceRequestService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
-
         if (!allTagIds.isEmpty()) {
-            List<Tag> tags = tagRepository.findAllById(allTagIds);
+            List<Tag> tags = tagRepository.findAllByIdInAndActiveTrue(allTagIds);
             placeRequest.addTags(tags);
         }
 
