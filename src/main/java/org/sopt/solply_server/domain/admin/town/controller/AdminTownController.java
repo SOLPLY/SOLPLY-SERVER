@@ -1,7 +1,6 @@
 package org.sopt.solply_server.domain.admin.town.controller;
 
-import org.sopt.solply_server.domain.admin.town.dto.request.AdminParentTownUpsertRequest;
-import org.sopt.solply_server.domain.admin.town.dto.request.AdminSubTownUpsertRequest;
+import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
 import org.sopt.solply_server.domain.admin.town.service.AdminTownService;
@@ -34,7 +33,7 @@ public class AdminTownController {
 	@PostMapping
 	public ResponseEntity<CustomApiResponse<AdminTownUpsertResponse>> createTowns(
 		@CurrentUserId Long adminUserId,
-		@Valid @RequestBody AdminSubTownUpsertRequest request
+		@Valid @RequestBody AdminTownUpsertRequest request
 	) {
 		return CustomApiResponse.success(
 			"지역/동네 생성 성공",
@@ -51,16 +50,16 @@ public class AdminTownController {
 		);
 	}
 
-	@Operation(summary = "어드민 동네 수정", description = "어드민이 동네를 수정합니다.")
+	@Operation(summary = "어드민 지역/동네 수정", description = "어드민이 지역/동네를 수정합니다.")
 	@PatchMapping("/{id}")
 	public ResponseEntity<CustomApiResponse<AdminTownUpsertResponse>> updateTown(
-		@Parameter(description = "동네 ID", required = true, example = "3")
+		@Parameter(description = "지역/동네 ID", required = true, example = "3")
 		@PathVariable("id") Long townId,
-		@Valid @RequestBody AdminSubTownUpsertRequest request
+		@Valid @RequestBody AdminTownUpsertRequest request
 	) {
 		return CustomApiResponse.success(
-			"동네 수정 성공",
-			adminTownService.updateSubTown(townId, request)
+			"지역/동네 수정 성공",
+			adminTownService.updateTown(townId, request)
 		);
 	}
 
@@ -80,19 +79,6 @@ public class AdminTownController {
 		return CustomApiResponse.success(
 			"지역 목록 조회 성공",
 			adminTownService.getParentsTowns()
-		);
-	}
-
-	@Operation(summary = "어드민 지역 수정", description = "어드민이 지역을 수정합니다.")
-	@PatchMapping("/parents/{id}")
-	public ResponseEntity<CustomApiResponse<AdminTownUpsertResponse>> updateParentTown(
-		@Parameter(description = "동네 ID", required = true, example = "3")
-		@PathVariable("id") Long townId,
-		@Valid @RequestBody AdminParentTownUpsertRequest request
-	) {
-		return CustomApiResponse.success(
-			"지역 수정 성공",
-			adminTownService.updateParentTown(townId, request)
 		);
 	}
 

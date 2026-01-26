@@ -3,8 +3,7 @@ package org.sopt.solply_server.domain.admin.town.service;
 import java.util.List;
 
 import org.sopt.solply_server.domain.admin.town.dto.AdminTownDto;
-import org.sopt.solply_server.domain.admin.town.dto.request.AdminParentTownUpsertRequest;
-import org.sopt.solply_server.domain.admin.town.dto.request.AdminSubTownUpsertRequest;
+import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -29,32 +28,32 @@ public class AdminTownService {
 	private final TownValidator townValidator;
 
 	@Transactional
-	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminSubTownUpsertRequest req) {
-		Town parent = (req.townId() != null ? entityLoader.getTown(req.townId()) : null);
+	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminTownUpsertRequest req) {
+		Town parent = (req.parentId() != null ? entityLoader.getTown(req.parentId()) : null);
 		Town town = Town.create(
 			req.name(),
 			parent
 		);
 		Town saved = townRepository.save(town);
 
-		log.info("어드민 동네 생성 - adminId: {}, townId:{}", adminUserId, saved.getId());
+		log.info("어드민 동네 생성 - adminId: {}, parentId:{}", adminUserId, saved.getId());
 		return AdminTownUpsertResponse.of(saved.getId());
 	}
 
 	@Transactional
-	public AdminTownUpsertResponse updateSubTown(final Long townId, final AdminSubTownUpsertRequest req) {
+	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
 		townValidator.validateTownId(townId);
-		townValidator.validateSubTown(townId);
+		boolean isParent = townRepository.existsByIdAndParentIsNull(townId);
 
 		Town town = entityLoader.getTown(townId);
-		Town parent = entityLoader.getTown(req.townId());
+		Town parent = isParent ? null : entityLoader.getTown(req.parentId());
 
 		town.update(
 			req.name(),
 			parent
 		);
 
-		log.info("어드민 동네 수정 - townId:{}", town.getId());
+		log.info("어드민 동네 수정 - parentId:{}", town.getId());
 		return AdminTownUpsertResponse.of(town.getId());
 	}
 
@@ -88,21 +87,5 @@ public class AdminTownService {
 				)
 			).toList()
 		);
-	}
-
-	@Transactional
-	public AdminTownUpsertResponse updateParentTown(final Long townId, final AdminParentTownUpsertRequest req) {
-		townValidator.validateTownId(townId);
-		townValidator.validateParentTown(townId);
-
-		Town town = entityLoader.getTown(townId);
-
-		town.update(
-			req.name(),
-			town.getParent()
-		);
-
-		log.info("어드민 지역 수정 - townId:{}", town.getId());
-		return AdminTownUpsertResponse.of(town.getId());
 	}
 }

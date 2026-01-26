@@ -12,13 +12,5 @@ public interface TownRepository extends JpaRepository<Town, Long> {
     List<Town> findByParentIsNull();
     List<Town> findByParent(Town parent);
 
-    @Query("""
-        select count(t) > 0
-        from Town t
-        where t.id = :townId
-        and t.parent is not null
-    """)
-    boolean existsParent(@Param("townId") Long townId);
-
     boolean existsByIdAndParentIsNull(Long townId);
 }
