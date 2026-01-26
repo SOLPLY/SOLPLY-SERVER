@@ -35,11 +35,13 @@ public class Town {
 
     public static Town create(
         String name,
-        Town parent
+        Town parent,
+        Boolean active
     ){
         Town t = new Town();
         t.name = name;
         t.parent = parent;
+        t.active = active;
 
         return t;
     }

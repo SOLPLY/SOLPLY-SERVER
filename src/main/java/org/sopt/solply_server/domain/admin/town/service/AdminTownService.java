@@ -38,22 +38,27 @@ public class AdminTownService {
 
 		Town town = Town.create(
 			req.name(),
-			parent
+			parent,
+			true
 		);
 		Town saved = townRepository.save(town);
 
-		log.info("어드민 동네 생성 - adminId: {}, parentId:{}", adminUserId, saved.getId());
+		log.info("어드민 동네 생성 - adminId: {}, townId:{}", adminUserId, saved.getId());
 		return AdminTownUpsertResponse.of(saved.getId());
 	}
 
 	@Transactional
 	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
-		townValidator.validateTownId(townId);
-		townValidator.validateActivatableTown(townId, req.parentId());
-		boolean isParent = townRepository.existsByIdAndParentIsNull(townId);
-
 		Town town = entityLoader.getTown(townId);
-		Town parent = isParent ? null : entityLoader.getTown(req.parentId());
+
+		Town parent;
+		if (req.parentId() == null) {
+			townValidator.validateParentTown(townId);
+			parent = null;
+		} else {
+			townValidator.validateChildTown(townId);
+			parent = entityLoader.getTown(req.parentId());
+		}
 
 		town.update(
 			req.name(),
@@ -79,6 +84,7 @@ public class AdminTownService {
 		return AdminTownListResponse.of(townDtoList);
 	}
 
+	@Transactional
 	public void deleteTown(final Long townId) {
 		Town town = entityLoader.getTown(townId);
 		townValidator.validateDeletableTown(townId);

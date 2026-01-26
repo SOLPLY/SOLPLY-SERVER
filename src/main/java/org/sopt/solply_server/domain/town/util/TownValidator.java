@@ -27,13 +27,15 @@ public class TownValidator {
 		}
 	}
 
-	public void validateActivatableTown(Long townId, Long parentId) {
-		boolean isParentTown = townRepository.existsByIdAndParentIsNull(townId);
-		boolean haveParentId = parentId != null;
+	public void validateParentTown(Long townId) {
+		if (!townRepository.existsByIdAndParentIsNull(townId)) {
+			throw new BusinessException(ErrorCode.NOT_PARENT_TOWN);
+		}
+	}
 
-		if ((isParentTown && haveParentId)
-			|| (!isParentTown && !haveParentId)) {
-			throw new BusinessException(ErrorCode.CANNOT_UPDATE_TOWN);
+	public void validateChildTown(Long townId) {
+		if (townRepository.existsByIdAndParentIsNull(townId)) {
+			throw new BusinessException(ErrorCode.NOT_CHILD_TOWN);
 		}
 	}
 }
