@@ -1,7 +1,6 @@
 package org.sopt.solply_server.domain.admin.place.service;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,13 +9,14 @@ import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertReq
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceRequestDetailsResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceRequestListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
+import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRequestRepository;
+import org.sopt.solply_server.domain.place.entity.PlaceRequestImageInfo;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.PlaceRequest;
 import org.sopt.solply_server.domain.place.entity.PlaceRequestStatus;
-import org.sopt.solply_server.domain.place.repository.PlaceRequestRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -33,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AdminPlaceRequestService {
 
-    private final PlaceRequestRepository placeRequestRepository;
+    private final AdminPlaceRequestRepository adminPlaceRequestRepository;
     private final AdminPlaceService adminPlaceService; // ✅ 중복 최소화: 실제 place 생성은 기존 서비스 재사용
     private final EntityLoader entityLoader;
 
@@ -45,7 +45,7 @@ public class AdminPlaceRequestService {
      * 어드민: 장소 등록 요청 목록 조회
      */
     public AdminPlaceRequestListResponse getPlaceRequests() {
-        List<PlaceRequest> list = placeRequestRepository.findAllByOrderByCreatedAtDesc();
+        List<PlaceRequest> list = adminPlaceRequestRepository.findAllByOrderByCreatedAtDesc();
         return AdminPlaceRequestListResponse.of(
                 list.stream().map(AdminPlaceRequestSummaryDto::from).toList()
         );
@@ -55,7 +55,7 @@ public class AdminPlaceRequestService {
      * 어드민: 장소 등록 요청 상세 조회
      */
     public AdminPlaceRequestDetailsResponse getPlaceRequestDetails(final Long requestId) {
-        PlaceRequest pr = placeRequestRepository.findByIdWithUserAndTags(requestId)
+        PlaceRequest pr = adminPlaceRequestRepository.findByIdWithUserAndTags(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_PLACE_REQUEST));
 
         Long mainTagId = null;
@@ -113,7 +113,7 @@ public class AdminPlaceRequestService {
         AdminPlaceUpsertResponse created = adminPlaceService.createPlace(adminUserId, req);
 
         List<String> requestImageKeys = pr.getImages().stream()
-                .map(i -> i.getImageFileKey())
+                .map(PlaceRequestImageInfo::getImageFileKey)
                 .toList();
 
         if (!requestImageKeys.isEmpty()) {

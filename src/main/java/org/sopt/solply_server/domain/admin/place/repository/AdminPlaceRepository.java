@@ -1,0 +1,31 @@
+package org.sopt.solply_server.domain.admin.place.repository;
+
+import io.lettuce.core.dynamic.annotation.Param;
+import java.util.List;
+import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCustom;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+
+public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceRepositoryCustom {
+
+    @Query("""
+        select distinct p
+        from Place p
+        join fetch p.town t
+        left join fetch p.placeTags pt
+        left join fetch pt.tag tg
+        where t.id = :townId
+        order by p.createdAt desc
+    """)
+    List<Place> findAdminPlacesByTownId(@Param("townId") Long townId);
+
+    @Query("""
+        select distinct p
+        from Place p
+        left join fetch p.placeTags pt
+        left join fetch pt.tag t
+        where p.id in :placeIds
+    """)
+    List<Place> findByIdInWithTags(List<Long> placeIds);
+}

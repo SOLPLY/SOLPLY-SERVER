@@ -9,16 +9,15 @@ import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertReq
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
+import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
-import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -37,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AdminPlaceService {
 
-    private final PlaceRepository placeRepository;
+    private final AdminPlaceRepository adminPlaceRepository;
     private final EntityLoader entityLoader;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -80,7 +79,7 @@ public class AdminPlaceService {
                 opt2
         );
 
-        Place saved = placeRepository.save(place);
+        Place saved = adminPlaceRepository.save(place);
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
 
@@ -182,12 +181,12 @@ public class AdminPlaceService {
             throw new BusinessException(ErrorCode.INVALID_KEYWORD);
         }
 
-        List<Place> base = placeRepository.findPlacesWithTownByKeyword(keyword);
+        List<Place> base = adminPlaceRepository.findPlacesWithTownByKeyword(keyword);
         if (base.isEmpty()) return AdminPlaceListResponse.of(List.of());
 
         // tags 로딩(N+1 방지)
         List<Long> ids = base.stream().map(Place::getId).toList();
-        placeRepository.findByIdInWithTags(ids);
+        adminPlaceRepository.findByIdInWithTags(ids);
 
         List<AdminPlaceSummaryDto> result = base.stream()
                 .map(p -> AdminPlaceSummaryDto.of(
@@ -203,7 +202,7 @@ public class AdminPlaceService {
 
     public AdminPlaceListResponse getPlacesByTown(final Long townId) {
         Town town = entityLoader.getTown(townId); // 존재 검증
-        List<Place> places = placeRepository.findAdminPlacesByTownId(town.getId());
+        List<Place> places = adminPlaceRepository.findAdminPlacesByTownId(town.getId());
 
         List<AdminPlaceSummaryDto> result = places.stream()
                 .map(p -> AdminPlaceSummaryDto.of(
