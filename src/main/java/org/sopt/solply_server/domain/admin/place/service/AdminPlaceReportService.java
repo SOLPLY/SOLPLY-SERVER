@@ -8,9 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceReportDetailsGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceReportListGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceReportResolveResponse;
+import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceReportRepository;
 import org.sopt.solply_server.domain.place.entity.PlaceReport;
 import org.sopt.solply_server.domain.place.entity.PlaceReportStatus;
-import org.sopt.solply_server.domain.place.repository.PlaceReportRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.PresignedUrlProvider;
@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AdminPlaceReportService {
 
-    private final PlaceReportRepository placeReportRepository;
+    private final AdminPlaceReportRepository adminPlaceReportRepository;
     private final PresignedUrlProvider presignedUrlProvider;
 
     /**
@@ -34,7 +34,7 @@ public class AdminPlaceReportService {
                 status != null ? status : PlaceReportStatus.PENDING;
 
         List<PlaceReport> reports =
-                placeReportRepository.findAllWithPlaceByStatusOrderByCreatedAtDesc(targetStatus);
+                adminPlaceReportRepository.findAllWithPlaceByStatusOrderByCreatedAtDesc(targetStatus);
 
         return AdminPlaceReportListGetResponse.of(reports);
     }
@@ -44,7 +44,7 @@ public class AdminPlaceReportService {
      */
 
     public AdminPlaceReportDetailsGetResponse getPlaceReportDetails(final Long reportId) {
-        PlaceReport report = placeReportRepository.findByIdWithPlace(reportId)
+        PlaceReport report = adminPlaceReportRepository.findByIdWithPlace(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_REPORT));
 
         List<String> imageUrls = (report.getImageKeys() == null ? List.<String>of() : report.getImageKeys())
@@ -69,7 +69,7 @@ public class AdminPlaceReportService {
      */
     @Transactional
     public AdminPlaceReportResolveResponse resolvePlaceReport(final Long reportId) {
-        PlaceReport report = placeReportRepository.findById(reportId)
+        PlaceReport report = adminPlaceReportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_REPORT));
 
         if (report.getStatus() != PlaceReportStatus.RESOLVED) {

@@ -48,17 +48,6 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     """)
     List<Place> findByIdInWithTags(List<Long> placeIds);
 
-    // ✅ 어드민 리스트: town + tags(fetch)
-    @Query("""
-        select distinct p
-        from Place p
-        join fetch p.town t
-        left join fetch p.placeTags pt
-        left join fetch pt.tag tg
-        where t.id = :townId
-        order by p.createdAt desc
-    """)
-    List<Place> findAdminPlacesByTownId(@Param("townId") Long townId);
 
     boolean existsByTown_Id(@Param("townId") Long townId);
 }
