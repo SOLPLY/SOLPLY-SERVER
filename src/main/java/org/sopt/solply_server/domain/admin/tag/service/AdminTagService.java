@@ -9,7 +9,7 @@ import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagActivationResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
-import org.sopt.solply_server.domain.admin.town.util.AdminTagValidator;
+import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagPersonaMapping;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
@@ -32,7 +32,18 @@ public class AdminTagService {
 
     @Transactional
     public Long createTag(AdminTagUpsertRequest req) {
-        Tag parent = adminTagValidator.resolveAndValidateParentForAdmin(req.type(), req.parentId(), req.active());
+
+        Tag parent = null;
+        if (req.parentId() != null) {
+            parent = entityLoader.getTag(req.parentId()); // admin은 active 무시
+        }
+
+        adminTagValidator.validateParentForAdmin(
+                req.type(),
+                req.parentId(),
+                req.active(),
+                parent
+        );
 
         Tag tag = Tag.create(
                 req.name(),
@@ -42,7 +53,9 @@ public class AdminTagService {
         );
 
         if (req.personas() != null) {
-            req.personas().forEach(p -> tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1)));
+            req.personas().forEach(p ->
+                    tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1))
+            );
         }
 
         return tagRepository.save(tag).getId();
@@ -69,16 +82,27 @@ public class AdminTagService {
     public Long updateTag(Long id, AdminTagUpsertRequest req) {
         Tag tag = entityLoader.getTag(id);
 
-        Tag parent = adminTagValidator.resolveAndValidateParentForAdmin(req.type(), req.parentId(), req.active());
+        Tag parent = null;
+        if (req.parentId() != null) {
+            parent = entityLoader.getTag(req.parentId());
+        }
+
+        adminTagValidator.validateParentForAdmin(
+                req.type(),
+                req.parentId(),
+                req.active(),
+                parent
+        );
 
         tag.updateBasic(req.type(), parent, req.name(), req.active());
 
         tag.getPersonaMappings().clear();
         if (req.personas() != null) {
-            req.personas().forEach(p -> tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1)));
+            req.personas().forEach(p ->
+                    tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1))
+            );
         }
 
-        // 비활성화면 하위까지
         if (!req.active()) {
             deactivateCascade(tag.getId());
         }
