@@ -14,15 +14,19 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
 @Getter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(
@@ -53,5 +57,26 @@ public class Tag {
 
     @OneToMany(mappedBy = "tag", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TagPersonaMapping> personaMappings = new ArrayList<>();
+
+    public static Tag create(String name, TagType type, Tag parent, Boolean active) {
+        return Tag.builder()
+                .name(name)
+                .type(type)
+                .parent(parent)
+                .active(active)
+                .build();
+    }
+
+    public void updateBasic(TagType type, Tag parent, String name, boolean active) {
+        this.type = type;
+        this.parent = parent;
+        this.name = name;
+        this.active = active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
 
 }
