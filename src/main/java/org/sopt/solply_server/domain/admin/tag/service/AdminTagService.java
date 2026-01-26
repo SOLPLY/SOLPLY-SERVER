@@ -33,7 +33,7 @@ public class AdminTagService {
 
     @Transactional
     public Long createTag(AdminTagUpsertRequest req) {
-        validateUpsert(req);
+        boolean active = normalizeActiveByParent(req);
 
         Tag parent = req.parentId() == null ? null : entityLoader.getTag(req.parentId());
 
@@ -41,14 +41,12 @@ public class AdminTagService {
                 req.name(),
                 req.type(),
                 parent,
-                req.active()
+                active
         );
 
         if (req.personas() != null) {
             req.personas().forEach(p ->
-                    tag.getPersonaMappings().add(
-                            TagPersonaMapping.of(tag, p, 1)
-                    )
+                    tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1))
             );
         }
 
@@ -74,22 +72,20 @@ public class AdminTagService {
     @Transactional
     public Long updateTag(Long id, AdminTagUpsertRequest req) {
         Tag tag = entityLoader.getTag(id);
-        validateUpsert(req);
 
+        boolean active = normalizeActiveByParent(req);
         Tag parent = req.parentId() == null ? null : entityLoader.getTag(req.parentId());
 
-        tag.updateBasic(req.type(), parent, req.name(), req.active());
+        tag.updateBasic(req.type(), parent, req.name(), active);
 
         tag.getPersonaMappings().clear();
         if (req.personas() != null) {
             req.personas().forEach(p ->
-                    tag.getPersonaMappings().add(
-                            TagPersonaMapping.of(tag, p, 1)
-                    )
+                    tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1))
             );
         }
 
-        if (!req.active()) {
+        if (!active) {
             deactivateCascade(tag.getId());
         }
 
@@ -103,8 +99,15 @@ public class AdminTagService {
     @Transactional
     public AdminTagToggleResponse toggleActive(Long id, boolean active) {
         Tag tag = entityLoader.getTag(id);
+
+        // 활성화 요청인데, parent가 비활성이면 불가 -> 에러
+        if (active && tag.getParent() != null && !tag.getParent().isActive()) {
+            throw new BusinessException(ErrorCode.CANNOT_ACTIVATE_TAG_PARENT_INACTIVE);
+        }
+
         tag.setActive(active);
 
+        // 비활성화면 하위까지 같이 끔
         if (!active) {
             deactivateCascade(tag.getId());
         }
@@ -114,30 +117,6 @@ public class AdminTagService {
 
     // ===== private =====
 
-    private void validateUpsert(AdminTagUpsertRequest req) {
-        if (req.type() == TagType.MAIN) {
-            if (req.parentId() != null) {
-                throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
-            }
-            return;
-        }
-
-        // OPTION1/2
-        if (req.parentId() == null) {
-            throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
-        }
-
-        // parent는 MAIN이어야 함 (존재+타입 검증)
-        tagValidator.validateTagType(req.parentId(), TagType.MAIN);
-
-        // parent가 active인지까지 보려면
-        Tag parent = entityLoader.getTag(req.parentId());
-        if (!parent.isActive()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
-        }
-    }
-
-
     private void deactivateCascade(Long parentId) {
         List<Tag> children = tagRepository.findChildren(parentId);
         for (Tag child : children) {
@@ -146,5 +125,32 @@ public class AdminTagService {
                 deactivateCascade(child.getId());
             }
         }
+    }
+
+    private boolean normalizeActiveByParent(AdminTagUpsertRequest req) {
+        // MAIN은 parent 없음. 요청값 그대로 사용
+        if (req.type() == TagType.MAIN) {
+            if (req.parentId() != null) {
+                throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
+            }
+            return req.active();
+        }
+
+        // OPTION1/2는 parent 필수
+        if (req.parentId() == null) {
+            throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
+        }
+
+        // parent는 MAIN이어야 함(존재 + 타입)
+        tagValidator.validateTagType(req.parentId(), TagType.MAIN);
+
+        Tag parent = entityLoader.getTag(req.parentId());
+
+        // parent가 비활성이라면 자식은 무조건 비활성로 강제
+        if (!parent.isActive()) {
+            return false;
+        }
+
+        return req.active();
     }
 }
