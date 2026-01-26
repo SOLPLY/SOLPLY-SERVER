@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertReq
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
+import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -39,10 +40,10 @@ public class AdminPlaceService {
     private final PlaceRepository placeRepository;
     private final EntityLoader entityLoader;
 
-    private final TagValidator tagValidator;
     private final ImageFileKeyValidator imageFileKeyValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final ImageUrlProvider imageUrlProvider;
+    private final AdminTagValidator adminTagValidator;
 
     @Transactional
     public AdminPlaceUpsertResponse createPlace(final Long adminUserId, final AdminPlaceUpsertRequest req) {
@@ -50,7 +51,7 @@ public class AdminPlaceService {
         Town town = entityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
-        tagValidator.validateTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
+        adminTagValidator.validateTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
 
         Tag mainTag = entityLoader.getTag(req.mainTagId());
         List<Tag> opt1 = loadTags(req.option1TagIds());
@@ -93,7 +94,7 @@ public class AdminPlaceService {
         Town town = entityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
-        tagValidator.validateTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
+        adminTagValidator.validateTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
 
         Tag mainTag = entityLoader.getTag(req.mainTagId());
         List<Tag> opt1 = loadTags(req.option1TagIds());
