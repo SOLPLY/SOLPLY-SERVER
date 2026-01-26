@@ -256,6 +256,7 @@ CREATE TABLE place_requests (
                                 address VARCHAR(255) NOT NULL,
                                 user_id BIGINT NOT NULL,
                                 reason TEXT NOT NULL,
+                                status VARCHAR(50) NOT NULL,
 
                                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

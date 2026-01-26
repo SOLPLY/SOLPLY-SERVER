@@ -9,7 +9,8 @@ import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertReq
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
-import org.sopt.solply_server.domain.place.dto.ImageFileKeyUpdateEvent;
+import org.sopt.solply_server.global.util.s3.FileTransferMode;
+import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
@@ -227,7 +228,8 @@ public class AdminPlaceService {
                 userId,
                 placeId,
                 TargetDir.PLACE,
-                imageKeys
+                imageKeys,
+                FileTransferMode.MOVE
         );
         applicationEventPublisher.publishEvent(event);
     }

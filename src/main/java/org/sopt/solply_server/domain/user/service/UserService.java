@@ -30,7 +30,7 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.PresignedUrlProvider;
-import org.sopt.solply_server.global.util.s3.S3FileMoveService;
+import org.sopt.solply_server.global.util.s3.S3FileService;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -50,7 +50,7 @@ public class UserService {
     private final MyPageFacade myPageFacade;
     private final UserRepository userRepository;
     private final PresignedUrlProvider presignedUrlProvider;
-    private final S3FileMoveService s3FileMoveService;
+    private final S3FileService s3FileService;
     private final UserPolicyService userPolicyService;
 
     private final int INITIAL_TOWN_ID = 2;
@@ -173,7 +173,7 @@ public class UserService {
         String profileImageUrl = null;
 
         if (request.profileImageFileKey() != null) {
-            updatedProfileImageFileKey = s3FileMoveService.moveToDir(
+            updatedProfileImageFileKey = s3FileService.moveToDir(
                     request.profileImageFileKey(),
                     userId,
                     TargetDir.USER_PROFILE
