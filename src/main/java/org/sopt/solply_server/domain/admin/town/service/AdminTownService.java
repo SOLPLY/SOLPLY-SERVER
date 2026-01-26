@@ -30,7 +30,12 @@ public class AdminTownService {
 
 	@Transactional
 	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminTownUpsertRequest req) {
-		Town parent = (req.parentId() != null ? entityLoader.getTown(req.parentId()) : null);
+		Town parent = null;
+		if (req.parentId() != null) {
+			townValidator.validateTownId(req.parentId());
+			parent = entityLoader.getTown(req.parentId());
+		}
+
 		Town town = Town.create(
 			req.name(),
 			parent
