@@ -57,6 +57,7 @@ public class AdminTownService {
 			parent = null;
 		} else {
 			townValidator.validateChildTown(townId);
+			townValidator.validateParentTown(req.parentId());
 			parent = entityLoader.getTown(req.parentId());
 		}
 
