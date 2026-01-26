@@ -27,7 +27,7 @@ public class TownValidator {
 		}
 	}
 
-	public void validateParentOrSubTown(Long townId, Long parentId) {
+	public void validateActivatableTown(Long townId, Long parentId) {
 		boolean isParentTown = townRepository.existsByIdAndParentIsNull(townId);
 		boolean haveParentId = parentId != null;
 

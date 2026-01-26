@@ -44,6 +44,7 @@ public class AdminTownService {
 	@Transactional
 	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
 		townValidator.validateTownId(townId);
+		townValidator.validateActivatableTown(townId, req.parentId());
 		boolean isParent = townRepository.existsByIdAndParentIsNull(townId);
 
 		Town town = entityLoader.getTown(townId);
