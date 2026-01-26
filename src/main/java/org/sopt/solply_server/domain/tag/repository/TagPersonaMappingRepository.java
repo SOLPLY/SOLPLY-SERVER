@@ -11,7 +11,7 @@ public interface TagPersonaMappingRepository extends JpaRepository<TagPersonaMap
     @Query("""
         select m
         from TagPersonaMapping m
-        join m.tag t
+        join fetch m.tag t
         where m.persona = :persona
           and t.active = true
         order by m.weight desc
