@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.tag.entity;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -46,6 +47,9 @@ public class Tag {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private Tag parent;
+
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
+    private boolean active;
 
     @OneToMany(mappedBy = "tag", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TagPersonaMapping> personaMappings = new ArrayList<>();
