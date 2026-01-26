@@ -9,10 +9,10 @@ import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagActivationResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
+import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagPersonaMapping;
-import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -25,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AdminTagService {
 
-    private final TagRepository tagRepository;
+    private final AdminTagRepository adminTagRepository;
     private final EntityLoader entityLoader;
 
     private final AdminTagValidator adminTagValidator;
@@ -58,13 +58,13 @@ public class AdminTagService {
             );
         }
 
-        return tagRepository.save(tag).getId();
+        return adminTagRepository.save(tag).getId();
     }
 
     @Transactional(readOnly = true)
     public AdminTagListResponse getTags() {
         return AdminTagListResponse.of(
-                tagRepository.findAllWithParent().stream()
+                adminTagRepository.findAllWithParent().stream()
                         .map(AdminTagListResponse.AdminTagSummaryDto::from)
                         .toList()
         );
@@ -72,7 +72,7 @@ public class AdminTagService {
 
     @Transactional(readOnly = true)
     public AdminTagDetailsResponse getTagDetails(Long id) {
-        Tag tag = tagRepository.findByIdWithDetails(id)
+        Tag tag = adminTagRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
 
         return AdminTagDetailsResponse.from(tag);
@@ -130,7 +130,7 @@ public class AdminTagService {
 
 
     private void deactivateCascade(Long parentId) {
-        List<Tag> children = tagRepository.findChildren(parentId);
+        List<Tag> children = adminTagRepository.findChildren(parentId);
         for (Tag child : children) {
             if (child.isActive()) {
                 child.setActive(false);

@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.admin.tag.util;
 
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AdminTagValidator {
 
-    private final TagRepository tagRepository;
+    private final AdminTagRepository adminTagRepository;
 
     public void validateParentForAdmin(
             TagType type,
@@ -34,7 +35,7 @@ public class AdminTagValidator {
         }
 
         // parent 타입 검증 (active는 보지 않음)
-        if (!tagRepository.existsByIdAndType(parentId, TagType.MAIN)) {
+        if (!adminTagRepository.existsByIdAndType(parentId, TagType.MAIN)) {
             throw new BusinessException(ErrorCode.INVALID_TAG_RELATIONSHIP);
         }
 

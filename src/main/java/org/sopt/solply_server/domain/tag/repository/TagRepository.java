@@ -14,37 +14,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface TagRepository extends JpaRepository<Tag, Long> {
 
-    /**
-     * admin용
-     */
-    boolean existsByIdAndType(Long id, TagType type);
-    @Query("""
-        select t from Tag t
-        where t.parent.id = :parentId
-    """)
-    List<Tag> findChildren(@Param("parentId") Long parentId);
-
-    @Query("""
-        select t
-        from Tag t
-        left join fetch t.parent p
-        order by t.id asc
-    """)
-    List<Tag> findAllWithParent();
-
-    @Query("""
-        select distinct t
-        from Tag t
-        left join fetch t.parent p
-        left join fetch t.personaMappings pm
-        where t.id = :id
-    """)
-    Optional<Tag> findByIdWithDetails(@Param("id") Long id);
-
-
-    /**
-     * public용(active=true)
-      */
     List<Tag> findByTypeAndActiveTrue(TagType type);
     List<Tag> findByParentIdAndActiveTrueOrderById(Long parentId);
 
