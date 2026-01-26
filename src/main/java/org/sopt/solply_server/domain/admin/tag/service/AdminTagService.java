@@ -52,11 +52,8 @@ public class AdminTagService {
                 req.active()
         );
 
-        if (req.personas() != null) {
-            req.personas().forEach(p ->
-                    tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1))
-            );
-        }
+        // 하드코딩: 가중치
+        tag.replacePersonaMappings(req.personas(), 1);
 
         return adminTagRepository.save(tag).getId();
     }
@@ -96,12 +93,8 @@ public class AdminTagService {
 
         tag.updateBasic(req.type(), parent, req.name(), req.active());
 
-        tag.getPersonaMappings().clear();
-        if (req.personas() != null) {
-            req.personas().forEach(p ->
-                    tag.getPersonaMappings().add(TagPersonaMapping.of(tag, p, 1))
-            );
-        }
+        // 하드코딩: 가중치
+        tag.replacePersonaMappings(req.personas(), 1);
 
         if (!req.active()) {
             deactivateCascade(tag.getId());

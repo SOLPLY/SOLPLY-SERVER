@@ -18,11 +18,13 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.sopt.solply_server.domain.user.entity.UserPersona;
 
 @Entity
 @Getter
@@ -78,5 +80,14 @@ public class Tag {
         this.active = active;
     }
 
+    public void replacePersonaMappings(List<UserPersona> personas, int weight) {
+        this.personaMappings.clear();
+        if (personas == null || personas.isEmpty()) return;
+
+        personas.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .forEach(p -> this.personaMappings.add(TagPersonaMapping.of(this, p, weight)));
+    }
 
 }
