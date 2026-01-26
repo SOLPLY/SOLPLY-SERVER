@@ -69,7 +69,7 @@ public class PlaceService {
 
         return PlaceDetailsGetResponse.of(
                 place,
-                place.getMainTag().map(Tag::getName).orElse(null),
+                place.getActiveMainTag().map(Tag::getName).orElse(null),
                 imageInfos,
                 isBookmarked,
                 town
@@ -99,7 +99,7 @@ public class PlaceService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag().map(Tag::getName).orElse(null),
+                        place.getActiveMainTag().map(Tag::getName).orElse(null),
                         placeBookmarkFacade.isBookmarked(userId, place.getId()),
                         townId
                 ))
@@ -147,7 +147,7 @@ public class PlaceService {
                             place.getId(),
                             place.getName(),
                             imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                                place.getMainTag().map(Tag::getName).orElse(null),
+                                place.getActiveMainTag().map(Tag::getName).orElse(null),
                             place.getAddress(),
                             false, // 검색 결과에서는 북마크 여부를 제공 X,
                             town.getId()
