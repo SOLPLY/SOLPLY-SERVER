@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.admin.town.controller;
 
+import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
@@ -7,6 +8,7 @@ import org.sopt.solply_server.domain.admin.town.service.AdminTownService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.parameters.P;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -82,4 +84,16 @@ public class AdminTownController {
 		);
 	}
 
+	@Operation(summary = "어드민 지역/동네 상태 수정", description = "어드민이 지역/동네 활성화 상태를 수정합니다.")
+	@PatchMapping("/{id}/activation")
+	public ResponseEntity<CustomApiResponse<AdminTownUpsertResponse>> updateTownStatus(
+		@Parameter(description = "동네/지역 ID", required = true,example = "5")
+		@PathVariable("id")Long townId,
+		@Valid @RequestBody AdminTownActivationRequest request
+	) {
+		return CustomApiResponse.success(
+			"지역/동네 활성화 상태 수정 성공",
+			adminTownService.updateTownStatus(townId, request)
+		);
+	}
 }

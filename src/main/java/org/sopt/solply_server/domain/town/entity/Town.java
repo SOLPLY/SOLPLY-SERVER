@@ -30,6 +30,9 @@ public class Town {
     @JoinColumn(name = "parent_id")
     private Town parent;
 
+    @Column(nullable = false)
+    private Boolean active;
+
     public static Town create(
         String name,
         Town parent
@@ -47,5 +50,11 @@ public class Town {
     ){
         this.name = name;
         this.parent = parent;
+    }
+
+    public void updateActivation(
+        boolean active
+    ) {
+        this.active = active;
     }
 }

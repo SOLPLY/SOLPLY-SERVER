@@ -51,6 +51,7 @@ CREATE TABLE towns (
                        id BIGINT AUTO_INCREMENT PRIMARY KEY,
                        name VARCHAR(255) NOT NULL,
                        parent_id BIGINT NULL,
+                       active BOOLEAN NOT NULL,
 
                        CONSTRAINT fk_towns_parent
                            FOREIGN KEY (parent_id) REFERENCES towns(id)

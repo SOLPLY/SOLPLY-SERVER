@@ -1,10 +1,10 @@
 -- towns 데이터 삽입
-INSERT INTO towns (id, parent_id, name) VALUES
-                                            (1, NULL, '서울'),
-                                            (2, 1, '망원'),
-                                            (3, 1, '연희'),
-                                            (4, 1, '연남·홍대'),
-                                            (5, 1, '합정·상수');
+INSERT INTO towns (id, parent_id, name, active) VALUES
+                                            (1, NULL, '서울', true),
+                                            (2, 1, '망원', true),
+                                            (3, 1, '연희', true),
+                                            (4, 1, '연남·홍대', true),
+                                            (5, 1, '합정·상수', true);
 
 -- tags 데이터 삽입
 INSERT INTO tags (id, parent_id, name, type) VALUES

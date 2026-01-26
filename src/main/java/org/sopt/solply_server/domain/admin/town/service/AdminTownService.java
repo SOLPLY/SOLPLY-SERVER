@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.sopt.solply_server.domain.admin.town.dto.AdminTownDto;
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
+import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -59,33 +60,49 @@ public class AdminTownService {
 
 	public AdminTownListResponse getTowns() {
 		List<Town> townList = townRepository.findAll();
-		return AdminTownListResponse.of(
+		List<AdminTownDto> townDtoList =
 			townList.stream().map(town ->
 				AdminTownDto.of(
 					town.getId(),
 					town.getName(),
 					town.getParent() == null ? "-" : town.getParent().getName()
 				)
-			).toList()
-		);
+			).toList();
+
+		log.info("어드민 지역/동네 리스트 조회 성공");
+		return AdminTownListResponse.of(townDtoList);
 	}
 
 	public void deleteTown(final Long townId) {
 		Town town = entityLoader.getTown(townId);
 		townValidator.validateDeletableTown(townId);
 		townRepository.delete(town);
+
+		log.info("어드민 지역 삭제 성공");
 	}
 
 	public AdminTownListResponse getParentsTowns() {
-		List<Town> parentList = townRepository.findByParentIsNull();
-		return AdminTownListResponse.of(
-			parentList.stream().map(town ->
+		List<AdminTownDto> parentList = townRepository.findByParentIsNull()
+			.stream().map(town ->
 				AdminTownDto.of(
 					town.getId(),
 					town.getName(),
 					"-"
 				)
-			).toList()
-		);
+			).toList();
+
+		log.info("어드민 지역 목록 조회 성공");
+		return AdminTownListResponse.of(parentList);
+	}
+
+	@Transactional
+	public AdminTownUpsertResponse updateTownStatus(final Long townId, final AdminTownActivationRequest req) {
+		townValidator.validateTownId(townId);
+		Town town = entityLoader.getTown(townId);
+
+		town.updateActivation(req.active());
+
+		log.info("어드민 지역/동네 활성화 수정 - townId: {}", town.getId());
+		return AdminTownUpsertResponse.of(town.getId());
 	}
 }
