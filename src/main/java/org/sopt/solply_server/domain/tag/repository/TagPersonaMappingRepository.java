@@ -9,11 +9,12 @@ import org.springframework.data.jpa.repository.Query;
 public interface TagPersonaMappingRepository extends JpaRepository<TagPersonaMapping, Long> {
 
     @Query("""
-        select tpm
-        from TagPersonaMapping tpm
-        join fetch tpm.tag t
-        where tpm.persona = :persona
-        order by tpm.weight desc, t.id asc
+        select m
+        from TagPersonaMapping m
+        join fetch m.tag t
+        where m.persona = :persona
+          and t.active = true
+        order by m.weight desc
     """)
-    List<TagPersonaMapping> findAllByPersonaOrderByWeightDesc(UserPersona persona);
+    List<TagPersonaMapping> findActiveByPersonaOrderByWeightDesc(UserPersona persona);
 }

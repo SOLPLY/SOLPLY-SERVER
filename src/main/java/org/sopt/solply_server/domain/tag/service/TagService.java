@@ -23,19 +23,15 @@ public class TagService {
     private final TagValidator tagValidator;
 
     public TagListGetResponse findTags(Long parentId) {
-        List<Tag> tags = List.of();
+        List<Tag> tags;
 
         if (parentId == null) {
-            tags = tagRepository.findByType(TagType.MAIN);
+            tags = tagRepository.findByTypeAndActiveTrue(TagType.MAIN);
         } else {
             tagValidator.validateTagType(parentId, TagType.MAIN);
-            tags = tagRepository.findByParentIdOrderById(parentId);
+            tags = tagRepository.findByParentIdAndActiveTrueOrderById(parentId);
         }
 
-        List<TagDto> tagDtos = tags.stream()
-                .map(TagDto::from)
-                .toList();
-
-        return TagListGetResponse.from(tagDtos);
+        return TagListGetResponse.from(tags.stream().map(TagDto::from).toList());
     }
 }

@@ -36,7 +36,7 @@ public class MyPageFacade {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getMainTag().map(Tag::getName).orElse(null),
+                        place.getActiveMainTag().map(Tag::getName).orElse(null),
                         bookmarkMap.getOrDefault(place.getId(), false)
                 ))
                 .toList();
@@ -53,7 +53,7 @@ public class MyPageFacade {
                 place.getId(),
                 place.getName(),
                 imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                place.getMainTag().map(Tag::getName).orElse(null),
+                place.getActiveMainTag().map(Tag::getName).orElse(null),
                 bookmarkMap.getOrDefault(place.getId(), false),
                 place.getTown().getId()
         ));

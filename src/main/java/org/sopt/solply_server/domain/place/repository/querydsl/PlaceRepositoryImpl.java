@@ -9,11 +9,8 @@ import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
-import jakarta.persistence.EntityManager;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -196,7 +193,8 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         QTag tag = QTag.tag;
 
         whereCondition.and(tag.id.eq(condition.mainTagId()))
-                .and(tag.type.eq(TagType.MAIN));
+                .and(tag.type.eq(TagType.MAIN))
+                .and(tag.active.isTrue());
 
         return queryFactory
                 .selectDistinct(place)
@@ -234,19 +232,20 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
     // 영속성 컨텍스트에 미리 로딩
     private void loadPlaceTagsAndTags(List<Place> places) {
-        if (places.isEmpty()) {
-            return;
-        }
+        if (places.isEmpty()) return;
 
-        List<Long> placeIds = places.stream()
-                .map(Place::getId)
-                .collect(Collectors.toList());
+        List<Long> placeIds = places.stream().map(Place::getId).toList();
 
-        // List<PlaceTag> 로딩
+        QPlaceTag pt = QPlaceTag.placeTag;
+        QTag t = QTag.tag;
+
         queryFactory
-                .selectFrom(QPlaceTag.placeTag)
-                .leftJoin(QPlaceTag.placeTag.tag).fetchJoin()
-                .where(QPlaceTag.placeTag.place.id.in(placeIds))
+                .selectFrom(pt)
+                .join(pt.tag, t).fetchJoin()
+                .where(
+                        pt.place.id.in(placeIds),
+                        t.active.isTrue()
+                )
                 .fetch();
     }
 
@@ -283,7 +282,8 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                 .join(mainPlaceTag.tag, mainTag)
                 .where(mainPlaceTag.place.eq(place)
                         .and(mainTag.id.eq(mainTagId))
-                        .and(mainTag.type.eq(TagType.MAIN)))
+                        .and(mainTag.type.eq(TagType.MAIN))
+                        .and(mainTag.active.isTrue()))
                 .exists();
     }
 
@@ -298,7 +298,8 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                 .join(subPlaceTag.tag, subTag)
                 .where(subPlaceTag.place.eq(place)
                         .and(subTag.id.in(tagIds))
-                        .and(subTag.type.eq(tagType)))
+                        .and(subTag.type.eq(tagType))
+                        .and(subTag.active.isTrue()))
                 .exists();
     }
 }

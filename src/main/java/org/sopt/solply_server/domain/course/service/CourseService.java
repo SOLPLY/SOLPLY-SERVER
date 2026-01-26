@@ -188,11 +188,14 @@ public class CourseService {
                     String thumbnailUrl = place.getThumbnailFileKey() != null
                             ? imageUrlProvider.getImageUrl(place.getThumbnailFileKey())
                             : null;
+                    String mainTagName = place.getActiveMainTag()
+                            .map(Tag::getName)
+                            .orElse(null);
 
                     return CoursePlaceDetailsDto.of(
                             place,
                             thumbnailUrl,
-                            place.getMainTag().map(Tag::getName).orElse(null),
+                            mainTagName,
                             placeBookmarkMap.getOrDefault(place.getId(), false),
                             coursePlace.getPlaceOrder()
                     );

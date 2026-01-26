@@ -49,12 +49,10 @@ public class CourseUtils {
                 .sorted(Comparator.comparing(CoursePlace::getPlaceOrder))
                 .limit(2)
                 .map(CoursePlace::getPlace)
-                .map(place -> place.getPlaceTags().stream()
-                        .map(PlaceTag::getTag)
-                        .filter(tag -> tag.getType() == TagType.MAIN)
+                .map(place -> place.getActiveMainTag()
                         .map(Tag::getName)
-                        .findFirst()
-                        .orElse(null))
+                        .orElse(null)
+                )
                 .filter(Objects::nonNull)
                 .toList();
     }
