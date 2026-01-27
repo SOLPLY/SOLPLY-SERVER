@@ -106,7 +106,7 @@ public class Place extends BaseTimeEntity {
     private User createdBy;
 
     @Column(nullable = false)
-    private Boolean active;
+    private boolean active;
 
     public static Place create(
             String name,

@@ -18,6 +18,6 @@ public class AdminPlaceValidator {
 	}
 
 	public boolean validatePlaceExistsByTownIds(List<Long> townIds) {
-		return adminPlaceRepository.exisisPlacesByTown_Ids(townIds);
+		return adminPlaceRepository.exisitsPlacesByTown_Ids(townIds);
 	}
 }

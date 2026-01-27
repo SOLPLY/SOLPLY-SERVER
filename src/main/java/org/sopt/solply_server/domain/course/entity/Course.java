@@ -47,7 +47,7 @@ public class Course extends BaseTimeEntity {
     private User createdBy;
 
     @Column(nullable = false)
-    private Boolean active;
+    private boolean active;
 
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("placeOrder ASC")

@@ -37,7 +37,7 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceR
     @Query("""
         update Place p
         set p.active = :active
-        where p.townId in :townIds
+        where p.town.id in :townIds
     """)
     int updateActiveByTownId(@Param("townIds") List<Long> townIds, @Param("active") boolean active);
 
@@ -46,5 +46,5 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceR
 		from Place p
 		where p.town.id in :townIds
 	""")
-	boolean exisisPlacesByTown_Ids(@Param("townIds") List<Long> townIds);
+	boolean exisitsPlacesByTown_Ids(@Param("townIds") List<Long> townIds);
 }
