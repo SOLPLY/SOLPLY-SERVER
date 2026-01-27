@@ -28,7 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 public class AdminTownService {
 
 	private final AdminTownRepository adminTownRepository;
-	private final EntityLoader entityLoader; // TODO: 참조 수정 예정
+	private final EntityLoader entityLoader;
 
 	private final AdminTownValidator adminTownValidator;
 	private final AdminPlaceService adminPlaceService;
@@ -118,23 +118,35 @@ public class AdminTownService {
 	@Transactional
 	public AdminTownUpsertResponse updateTownStatus(final Long townId, final AdminTownActivationRequest req) {
 		adminTownValidator.validateTownId(townId);
-		Town town = entityLoader.getTown(townId);
 
 		if (req.active()) {
-			List<Long> townIds =
-				town.getParent() == null ? adminTownRepository.findIdsByParent_Id(townId) : List.of(townId);
-			adminPlaceService.activatePlacesByTownIds(townIds);
-			town.updateActivation(true);
+			activateTown(townId);
 		} else {
-			if (town.getParent() == null) {
-				adminTownValidator.validateDeactivatableParentTown(townId);
-			} else {
-				adminTownValidator.validateDeactivatableChildTown(townId);
-			}
-			town.updateActivation(false);
+			deactivateTown(townId);
 		}
 
-		log.info("어드민 지역/동네 활성화 수정 - townId: {}", town.getId());
-		return AdminTownUpsertResponse.of(town.getId());
+		log.info("어드민 지역/동네 활성화 수정 - townId: {}", townId);
+		return AdminTownUpsertResponse.of(townId);
+	}
+
+	@Transactional
+	private void activateTown(Long townId) {
+		Town town = entityLoader.getTown(townId);
+		List<Long> townIds =
+			town.getParent() == null ? adminTownRepository.findIdsByParent_Id(townId) : List.of(townId);
+		adminPlaceService.activatePlacesByTownIds(townIds);
+		town.updateActivation(true);
+	}
+
+	@Transactional
+	private void deactivateTown(Long townId) {
+		Town town = entityLoader.getTown(townId);
+
+		if (town.getParent() == null) {
+			adminTownValidator.validateDeactivatableParentTown(townId);
+		} else {
+			adminTownValidator.validateDeactivatableChildTown(townId);
+		}
+		town.updateActivation(false);
 	}
 }
