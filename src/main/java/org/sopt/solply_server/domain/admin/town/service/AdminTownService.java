@@ -7,9 +7,12 @@ import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertReque
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
+import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
 import org.sopt.solply_server.domain.town.util.TownValidator;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +28,7 @@ public class AdminTownService {
 
 	private final TownRepository townRepository;
 	private final EntityLoader entityLoader;
+	private final PlaceRepository placeRepository; // TODO: 참조 수정 예정
 
 	private final TownValidator townValidator;
 
@@ -51,6 +55,7 @@ public class AdminTownService {
 	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
 		Town town = entityLoader.getTown(townId);
 
+		// 부모 town, 자식 town 구분
 		Town parent;
 		if (req.parentId() == null) {
 			townValidator.validateParentTown(townId);
@@ -108,12 +113,30 @@ public class AdminTownService {
 		return AdminTownListResponse.of(parentList);
 	}
 
+	// 활성화: 전파 && 비활성화: 전파X
 	@Transactional
 	public AdminTownUpsertResponse updateTownStatus(final Long townId, final AdminTownActivationRequest req) {
 		townValidator.validateTownId(townId);
 		Town town = entityLoader.getTown(townId);
 
-		town.updateActivation(req.active());
+		if (req.active()) {
+			//TODO 활성화 전파 추가해야함
+			town.updateActivation(true);
+		} else {
+			if (town.getParent() == null) {
+				List<Long> townIdList = townRepository.findIdsByParent_Id(town.getId());
+				for (Long id : townIdList) {
+					if (placeRepository.existsByTown_Id(id)) { //TODO: AdminPlaceValidator 생기면 수정
+						throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
+					}
+				}
+			} else {
+				if (placeRepository.existsByTown_Id(townId)) { //TODO: AdminPlaceValidator 생기면 수정
+					throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
+				}
+				town.updateActivation(false);
+			}
+		}
 
 		log.info("어드민 지역/동네 활성화 수정 - townId: {}", town.getId());
 		return AdminTownUpsertResponse.of(town.getId());

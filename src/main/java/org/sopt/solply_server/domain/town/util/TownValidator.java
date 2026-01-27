@@ -38,4 +38,8 @@ public class TownValidator {
 			throw new BusinessException(ErrorCode.NOT_CHILD_TOWN);
 		}
 	}
+
+	public void validateDeactivateTown(Long townId) {
+
+	}
 }
