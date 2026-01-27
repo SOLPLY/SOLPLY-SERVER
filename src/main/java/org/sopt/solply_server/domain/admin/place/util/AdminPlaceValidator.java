@@ -1,7 +1,8 @@
 package org.sopt.solply_server.domain.admin.place.util;
 
+import java.util.List;
+
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
-import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.springframework.stereotype.Component;
 
 import lombok.RequiredArgsConstructor;
@@ -14,5 +15,9 @@ public class AdminPlaceValidator {
 
 	public boolean validatePlaceExistsByTownId(Long townId) {
 		return adminPlaceRepository.existsByTown_Id(townId);
+	}
+
+	public boolean validatePlaceExistsByTownIds(List<Long> townIds) {
+		return adminPlaceRepository.exisisPlacesByTown_Ids(townIds);
 	}
 }

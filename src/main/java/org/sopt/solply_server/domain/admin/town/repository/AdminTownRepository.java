@@ -12,7 +12,7 @@ public interface AdminTownRepository extends JpaRepository<Town,Long> {
 	@Query("""
 		select t.id
 	    from Town t
-	    where t.id = :id
+	    where t.parent.id = :id
 	""")
 	List<Long> findIdsByParent_Id(@Param("id") Long parentId);
 

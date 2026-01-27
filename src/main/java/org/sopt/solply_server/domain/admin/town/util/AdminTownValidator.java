@@ -42,13 +42,10 @@ public class AdminTownValidator {
 		}
 	}
 
-
 	public void validateDeactivatableParentTown(Long townId) {
 		List<Long> townIdList = adminTownRepository.findIdsByParent_Id(townId);
-		for (Long id : townIdList) {
-			if (adminPlaceValidator.validatePlaceExistsByTownId(id)) {
-				throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
-			}
+		if (adminPlaceValidator.validatePlaceExistsByTownIds(townIdList)) {
+			throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
 		}
 	}
 

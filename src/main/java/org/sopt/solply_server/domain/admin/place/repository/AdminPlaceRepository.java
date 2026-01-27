@@ -40,4 +40,11 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceR
         where p.townId in :townIds
     """)
     int updateActiveByTownId(@Param("townIds") List<Long> townIds, @Param("active") boolean active);
+
+	@Query("""
+		select count(p) > 0
+		from Place p
+		where p.town.id in :townIds
+	""")
+	boolean exisisPlacesByTown_Ids(@Param("townIds") List<Long> townIds);
 }
