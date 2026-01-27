@@ -48,6 +48,4 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     """)
     List<Place> findByIdInWithTags(List<Long> placeIds);
 
-
-    boolean existsByTown_Id(@Param("townId") Long townId);
 }

@@ -1,7 +1,9 @@
 package org.sopt.solply_server.domain.admin.town.util;
 
+import java.util.List;
+
 import org.sopt.solply_server.domain.admin.place.util.AdminPlaceValidator;
-import org.sopt.solply_server.domain.town.repository.TownRepository;
+import org.sopt.solply_server.domain.admin.town.repository.AdminTownRepository;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -13,7 +15,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AdminTownValidator {
 
-	private final TownRepository townRepository;
+	private final AdminTownRepository adminTownRepository;
 	private final TownValidator townValidator;
 
 	private final AdminPlaceValidator adminPlaceValidator;
@@ -23,13 +25,13 @@ public class AdminTownValidator {
 	}
 
 	public void validateParentTown(Long townId) {
-		if (!townRepository.existsByIdAndParentIsNull(townId)) {
+		if (!adminTownRepository.existsByIdAndParentIsNull(townId)) {
 			throw new BusinessException(ErrorCode.NOT_PARENT_TOWN);
 		}
 	}
 
 	public void validateChildTown(Long townId) {
-		if (townRepository.existsByIdAndParentIsNull(townId)) {
+		if (adminTownRepository.existsByIdAndParentIsNull(townId)) {
 			throw new BusinessException(ErrorCode.NOT_CHILD_TOWN);
 		}
 	}
@@ -41,7 +43,18 @@ public class AdminTownValidator {
 	}
 
 
-	public void validateDeactivateTown(Long townId) {
+	public void validateDeactivatableParentTown(Long townId) {
+		List<Long> townIdList = adminTownRepository.findIdsByParent_Id(townId);
+		for (Long id : townIdList) {
+			if (adminPlaceValidator.validatePlaceExistsByTownId(id)) {
+				throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
+			}
+		}
+	}
 
+	public void validateDeactivatableChildTown(Long townId) {
+		if (adminPlaceValidator.validatePlaceExistsByTownId(townId)) {
+			throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
+		}
 	}
 }

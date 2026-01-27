@@ -28,4 +28,7 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceR
         where p.id in :placeIds
     """)
     List<Place> findByIdInWithTags(List<Long> placeIds);
+
+
+    boolean existsByTown_Id(@Param("townId") Long townId);
 }

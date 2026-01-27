@@ -2,15 +2,15 @@ package org.sopt.solply_server.domain.admin.town.service;
 
 import java.util.List;
 
+import org.sopt.solply_server.domain.admin.place.util.AdminPlaceValidator;
 import org.sopt.solply_server.domain.admin.town.dto.AdminTownDto;
-import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
+import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
+import org.sopt.solply_server.domain.admin.town.repository.AdminTownRepository;
 import org.sopt.solply_server.domain.admin.town.util.AdminTownValidator;
-import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.domain.town.repository.TownRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -26,11 +26,11 @@ import lombok.extern.slf4j.Slf4j;
 @Transactional(readOnly = true)
 public class AdminTownService {
 
-	private final TownRepository townRepository;
-	private final EntityLoader entityLoader;
-	private final PlaceRepository placeRepository; // TODO: 참조 수정 예정
+	private final AdminTownRepository adminTownRepository;
+	private final EntityLoader entityLoader; // TODO: 참조 수정 예정
 
 	private final AdminTownValidator adminTownValidator;
+	private final AdminPlaceValidator adminPlaceValidator;
 
 	@Transactional
 	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminTownUpsertRequest req) {
@@ -45,7 +45,7 @@ public class AdminTownService {
 			parent,
 			true
 		);
-		Town saved = townRepository.save(town);
+		Town saved = adminTownRepository.save(town);
 
 		log.info("어드민 동네 생성 - adminId: {}, townId:{}", adminUserId, saved.getId());
 		return AdminTownUpsertResponse.of(saved.getId());
@@ -76,7 +76,7 @@ public class AdminTownService {
 	}
 
 	public AdminTownListResponse getTowns() {
-		List<Town> townList = townRepository.findAll();
+		List<Town> townList = adminTownRepository.findAll();
 		List<AdminTownDto> townDtoList =
 			townList.stream().map(town ->
 				AdminTownDto.of(
@@ -94,13 +94,13 @@ public class AdminTownService {
 	public void deleteTown(final Long townId) {
 		Town town = entityLoader.getTown(townId);
 		adminTownValidator.validateDeletableTown(townId);
-		townRepository.delete(town);
+		adminTownRepository.delete(town);
 
 		log.info("어드민 지역 삭제 성공");
 	}
 
 	public AdminTownListResponse getParentsTowns() {
-		List<AdminTownDto> parentList = townRepository.findByParentIsNull()
+		List<AdminTownDto> parentList = adminTownRepository.findByParentIsNull()
 			.stream().map(town ->
 				AdminTownDto.of(
 					town.getId(),
@@ -120,22 +120,15 @@ public class AdminTownService {
 		Town town = entityLoader.getTown(townId);
 
 		if (req.active()) {
-			//TODO 활성화 전파 추가해야함
+			//TODO: 활성화 전파 추가해야함
 			town.updateActivation(true);
 		} else {
 			if (town.getParent() == null) {
-				List<Long> townIdList = townRepository.findIdsByParent_Id(town.getId());
-				for (Long id : townIdList) {
-					if (placeRepository.existsByTown_Id(id)) { //TODO: AdminPlaceValidator 생기면 수정
-						throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
-					}
-				}
+				adminTownValidator.validateDeactivatableParentTown(townId);
 			} else {
-				if (placeRepository.existsByTown_Id(townId)) { //TODO: AdminPlaceValidator 생기면 수정
-					throw new BusinessException(ErrorCode.CANNOT_DEACTIVATE_TOWN);
-				}
-				town.updateActivation(false);
+				adminTownValidator.validateDeactivatableChildTown(townId);
 			}
+			town.updateActivation(false);
 		}
 
 		log.info("어드민 지역/동네 활성화 수정 - townId: {}", town.getId());
