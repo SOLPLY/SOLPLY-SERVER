@@ -7,10 +7,10 @@ import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertReque
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
+import org.sopt.solply_server.domain.admin.town.util.AdminTownValidator;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
-import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -30,13 +30,13 @@ public class AdminTownService {
 	private final EntityLoader entityLoader;
 	private final PlaceRepository placeRepository; // TODO: 참조 수정 예정
 
-	private final TownValidator townValidator;
+	private final AdminTownValidator adminTownValidator;
 
 	@Transactional
 	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminTownUpsertRequest req) {
 		Town parent = null;
 		if (req.parentId() != null) {
-			townValidator.validateTownId(req.parentId());
+			adminTownValidator.validateTownId(req.parentId());
 			parent = entityLoader.getTown(req.parentId());
 		}
 
@@ -58,11 +58,11 @@ public class AdminTownService {
 		// 부모 town, 자식 town 구분
 		Town parent;
 		if (req.parentId() == null) {
-			townValidator.validateParentTown(townId);
+			adminTownValidator.validateParentTown(townId);
 			parent = null;
 		} else {
-			townValidator.validateChildTown(townId);
-			townValidator.validateParentTown(req.parentId());
+			adminTownValidator.validateChildTown(townId);
+			adminTownValidator.validateParentTown(req.parentId());
 			parent = entityLoader.getTown(req.parentId());
 		}
 
@@ -93,7 +93,7 @@ public class AdminTownService {
 	@Transactional
 	public void deleteTown(final Long townId) {
 		Town town = entityLoader.getTown(townId);
-		townValidator.validateDeletableTown(townId);
+		adminTownValidator.validateDeletableTown(townId);
 		townRepository.delete(town);
 
 		log.info("어드민 지역 삭제 성공");
@@ -116,7 +116,7 @@ public class AdminTownService {
 	// 활성화: 전파 && 비활성화: 전파X
 	@Transactional
 	public AdminTownUpsertResponse updateTownStatus(final Long townId, final AdminTownActivationRequest req) {
-		townValidator.validateTownId(townId);
+		adminTownValidator.validateTownId(townId);
 		Town town = entityLoader.getTown(townId);
 
 		if (req.active()) {
