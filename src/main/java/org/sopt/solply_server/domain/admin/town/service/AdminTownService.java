@@ -1,9 +1,9 @@
 package org.sopt.solply_server.domain.admin.town.service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
-import org.sopt.solply_server.domain.admin.place.util.AdminPlaceValidator;
 import org.sopt.solply_server.domain.admin.town.dto.AdminTownDto;
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
@@ -12,8 +12,6 @@ import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResp
 import org.sopt.solply_server.domain.admin.town.repository.AdminTownRepository;
 import org.sopt.solply_server.domain.admin.town.util.AdminTownValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -132,10 +130,15 @@ public class AdminTownService {
 	@Transactional
 	private void activateTown(Long townId) {
 		Town town = entityLoader.getTown(townId);
-		List<Long> townIds =
-			town.getParent() == null ? adminTownRepository.findIdsByParent_Id(townId) : List.of(townId);
+		List<Long> townIds = new ArrayList<>();
+
+		if (town.getParent() == null) {
+			townIds.addAll(adminTownRepository.findIdsByParent_Id(townId));
+		}
+		townIds.add(townId);
+
 		adminPlaceService.activatePlacesByTownIds(townIds);
-		town.updateActivation(true);
+		adminTownRepository.updateActiveByTownIds(townIds, true);
 	}
 
 	@Transactional
