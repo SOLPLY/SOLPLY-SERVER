@@ -29,6 +29,6 @@ public interface AdminTownRepository extends JpaRepository<Town,Long> {
 	""")
 	int updateActiveByTownIds(
 		@Param("townIds") List<Long> townIds,
-		@Param("actvie") boolean active
+		@Param("active") boolean active
 	);
 }
