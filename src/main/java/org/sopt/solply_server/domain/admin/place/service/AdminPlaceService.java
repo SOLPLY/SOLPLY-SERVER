@@ -218,8 +218,8 @@ public class AdminPlaceService {
     }
 
     @Transactional
-    public void activatePlacesByTownId(final Long townId) {
-        adminPlaceRepository.updateActiveByTownId(townId, true);
+    public void activatePlacesByTownIds(final List<Long> townIds) {
+        adminPlaceRepository.updateActiveByTownId(townIds, true);
     }
 
 

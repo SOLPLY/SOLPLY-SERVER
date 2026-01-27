@@ -121,7 +121,9 @@ public class AdminTownService {
 		Town town = entityLoader.getTown(townId);
 
 		if (req.active()) {
-			adminPlaceService.activatePlacesByTownId(townId);
+			List<Long> townIds =
+				town.getParent() == null ? adminTownRepository.findIdsByParent_Id(townId) : List.of(townId);
+			adminPlaceService.activatePlacesByTownIds(townIds);
 			town.updateActivation(true);
 		} else {
 			if (town.getParent() == null) {
