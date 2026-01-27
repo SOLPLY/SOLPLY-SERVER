@@ -74,6 +74,7 @@ public class AdminPlaceService {
                 imageKeys,
                 town,
                 admin,
+                town.getActive(),
                 mainTag,
                 opt1,
                 opt2
