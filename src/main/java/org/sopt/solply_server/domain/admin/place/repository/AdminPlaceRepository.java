@@ -5,7 +5,9 @@ import java.util.List;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCustom;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.security.core.parameters.P;
 
 public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceRepositoryCustom {
 
@@ -29,6 +31,13 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceR
     """)
     List<Place> findByIdInWithTags(List<Long> placeIds);
 
-
     boolean existsByTown_Id(@Param("townId") Long townId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Place p
+        set p.active = :active
+        where p.townId = :townId
+    """)
+    int updateActiveByTownId(@Param("townId") Long townId, @Param("active") boolean active);
 }

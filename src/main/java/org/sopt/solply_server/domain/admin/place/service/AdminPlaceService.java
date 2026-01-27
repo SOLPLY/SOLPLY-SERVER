@@ -217,6 +217,11 @@ public class AdminPlaceService {
         return AdminPlaceListResponse.of(result);
     }
 
+    @Transactional
+    public void activatePlacesByTownId(final Long townId) {
+        adminPlaceRepository.updateActiveByTownId(townId, true);
+    }
+
 
     private List<String> normalizeKeys(List<String> keys) {
         return keys == null ? List.of() : keys;

@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.admin.town.service;
 
 import java.util.List;
 
+import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.admin.place.util.AdminPlaceValidator;
 import org.sopt.solply_server.domain.admin.town.dto.AdminTownDto;
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
@@ -30,7 +31,7 @@ public class AdminTownService {
 	private final EntityLoader entityLoader; // TODO: 참조 수정 예정
 
 	private final AdminTownValidator adminTownValidator;
-	private final AdminPlaceValidator adminPlaceValidator;
+	private final AdminPlaceService adminPlaceService;
 
 	@Transactional
 	public AdminTownUpsertResponse createTown(final Long adminUserId, final AdminTownUpsertRequest req) {
@@ -120,7 +121,7 @@ public class AdminTownService {
 		Town town = entityLoader.getTown(townId);
 
 		if (req.active()) {
-			//TODO: 활성화 전파 추가해야함
+			adminPlaceService.activatePlacesByTownId(townId);
 			town.updateActivation(true);
 		} else {
 			if (town.getParent() == null) {
