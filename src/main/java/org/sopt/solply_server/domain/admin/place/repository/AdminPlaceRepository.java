@@ -46,5 +46,5 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceR
 		from Place p
 		where p.town.id in :townIds
 	""")
-	boolean exisitsPlacesByTown_Ids(@Param("townIds") List<Long> townIds);
+	boolean existsPlacesByTown_Ids(@Param("townIds") List<Long> townIds);
 }
