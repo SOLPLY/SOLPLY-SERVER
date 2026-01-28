@@ -88,7 +88,7 @@ public class CourseService {
     @Transactional
     public CourseUpdateResponse updateCourse(Long userId, Long courseId, CourseUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Course originCourse = entityLoader.getCourseWithPlaces(courseId);
+        Course originCourse = entityLoader.getCourse(courseId);
 
         // 코스 북마크 검증
         courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
