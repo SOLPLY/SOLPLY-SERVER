@@ -77,7 +77,7 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 
 
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM CoursePlace cp WHERE cp.course.id = :courseId")
     void deleteCoursePlacesByCourseId(@Param("courseId") Long courseId);
 
