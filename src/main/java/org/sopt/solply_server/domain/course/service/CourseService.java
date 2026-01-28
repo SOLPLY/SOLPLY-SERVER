@@ -301,6 +301,8 @@ public class CourseService {
         course.updateIntroduction(request.courseDescription());
 
         courseRepository.deleteCoursePlacesByCourseId(course.getId());
+        course.getCoursePlaces().clear();
+
         List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
         coursePlaceService.addPlacesToTargetCourse(course, placeInfos, placesToAdd);
     }
