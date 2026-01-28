@@ -138,6 +138,7 @@ CREATE TABLE places (
 
                         town_id BIGINT NOT NULL,
                         created_by BIGINT NOT NULL,
+                        active BOOLEAN NOT NULL ,
 
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -314,6 +315,7 @@ CREATE TABLE courses (
                          is_shared BOOLEAN NOT NULL DEFAULT FALSE,
                          town_id BIGINT NOT NULL,
                          created_by BIGINT NULL,
+                         active BOOLEAN NOT NULL,
 
                          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

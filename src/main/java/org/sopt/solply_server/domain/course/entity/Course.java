@@ -46,17 +46,21 @@ public class Course extends BaseTimeEntity {
     @JoinColumn(name = "created_by")
     private User createdBy;
 
+    @Column(nullable = false)
+    private boolean active;
+
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("placeOrder ASC")
     private List<CoursePlace> coursePlaces = new ArrayList<>();
 
-    public static Course create(String name, String introduction, Town town, User createdBy) {
+    public static Course create(String name, String introduction, Town town, User createdBy, Boolean active) {
         return Course.builder()
                 .name(name)
                 .introduction(introduction)
                 .isShared(false) // 사용자 생성 코스는 기본 비공개
                 .town(town)
                 .createdBy(createdBy)
+				.active(active)
                 .coursePlaces(new ArrayList<>())
                 .build();
     }

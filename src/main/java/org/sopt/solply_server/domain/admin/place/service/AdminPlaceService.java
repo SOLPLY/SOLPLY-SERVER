@@ -74,6 +74,7 @@ public class AdminPlaceService {
                 imageKeys,
                 town,
                 admin,
+                town.getActive(),
                 mainTag,
                 opt1,
                 opt2
@@ -214,6 +215,11 @@ public class AdminPlaceService {
                 .toList();
 
         return AdminPlaceListResponse.of(result);
+    }
+
+    @Transactional
+    public void activatePlacesByTownIds(final List<Long> townIds) {
+        adminPlaceRepository.updateActiveByTownId(townIds, true);
     }
 
 

@@ -80,6 +80,7 @@ public enum ErrorCode {
     CANNOT_DELETE_TOWN(HttpStatus.BAD_REQUEST,"TOWN-002","삭제할 수 없는 동네입니다."),
     NOT_PARENT_TOWN(HttpStatus.BAD_REQUEST, "TOWN-003", "지역/동네 형식이 올바르지 않습니다."),
     NOT_CHILD_TOWN(HttpStatus.BAD_REQUEST, "TOWN-004", "지역/동네 형식이 올바르지 않습니다."),
+    CANNOT_DEACTIVATE_TOWN(HttpStatus.BAD_REQUEST, "TOWN-005", "지역/동네를 비활성화할 수 없습니다."),
 
 
     // 태그 관련 (TAG-xxx)

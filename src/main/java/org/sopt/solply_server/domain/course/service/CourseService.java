@@ -320,7 +320,7 @@ public class CourseService {
            newCourseName = courseNameGenerator.generateUniqueNameForUser(courseName, user.getId());
         }
         Town town = placesToAdd.getFirst().getTown();
-        Course newCourse = Course.create(newCourseName, intro, town, user);
+        Course newCourse = Course.create(newCourseName, intro, town, user, town.getActive());
         courseRepository.save(newCourse);
 
         // 장소들 추가

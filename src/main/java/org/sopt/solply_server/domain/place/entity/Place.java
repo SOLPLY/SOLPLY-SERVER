@@ -105,6 +105,9 @@ public class Place extends BaseTimeEntity {
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
 
+    @Column(nullable = false)
+    private boolean active;
+
     public static Place create(
             String name,
             String introduction,
@@ -119,6 +122,7 @@ public class Place extends BaseTimeEntity {
             List<String> imageFileKeys,
             Town town,
             User createdBy,
+			Boolean active,
             Tag mainTag,
             List<Tag> option1Tags,
             List<Tag> option2Tags
@@ -135,6 +139,7 @@ public class Place extends BaseTimeEntity {
         p.placeType = placeType;
         p.town = town;
         p.createdBy = createdBy;
+		p.active = active;
 
         p.applySnsLinks(snsLinks);
         p.replaceImagesByKeys(imageFileKeys);
