@@ -138,7 +138,9 @@ public class AdminTownService {
 		townIds.add(townId);
 
 		adminPlaceService.activatePlacesByTownIds(townIds);
-		adminTownRepository.updateActiveByTownIds(townIds, true);
+		int cnt = adminTownRepository.updateActiveByTownIds(townIds, true);
+
+		log.info("어드민 지역/동네 활성화된 동네 갯수: {}", cnt);
 	}
 
 	@Transactional
