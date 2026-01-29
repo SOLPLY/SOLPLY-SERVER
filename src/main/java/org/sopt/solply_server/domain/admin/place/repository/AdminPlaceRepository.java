@@ -1,13 +1,16 @@
 package org.sopt.solply_server.domain.admin.place.repository;
 
 import io.lettuce.core.dynamic.annotation.Param;
+import jakarta.annotation.Nonnull;
+
 import java.util.List;
+import java.util.Optional;
+
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCustom;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.security.core.parameters.P;
 
 public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceRepositoryCustom {
 

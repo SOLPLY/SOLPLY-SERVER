@@ -53,6 +53,11 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
     }
 
+    public Place getPlaceWithTown(Long placeId) {
+        return placeRepository.findByIdWithTown(placeId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+    }
+
     public Town getTown(Long townId) {
         return townRepository.findById(townId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));

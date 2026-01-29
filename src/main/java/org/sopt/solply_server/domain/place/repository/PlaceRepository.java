@@ -4,6 +4,8 @@ import io.lettuce.core.dynamic.annotation.Param;
 import software.amazon.awssdk.services.s3.endpoints.internal.Value;
 
 import java.util.List;
+import java.util.Optional;
+
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCustom;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -48,4 +50,11 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     """)
     List<Place> findByIdInWithTags(List<Long> placeIds);
 
+    @Query("""
+        select p
+        from Place p
+        join fetch p.town
+        where p.id = :placeId
+    """)
+    Optional<Place> findByIdWithTown(@Param("placeId") Long placeId);
 }
