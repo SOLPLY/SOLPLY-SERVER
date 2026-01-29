@@ -88,7 +88,7 @@ public class CourseService {
     @Transactional
     public CourseUpdateResponse updateCourse(Long userId, Long courseId, CourseUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Course originCourse = entityLoader.getCourseWithPlaces(courseId);
+        Course originCourse = entityLoader.getCourse(courseId);
 
         // 코스 북마크 검증
         courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
@@ -301,6 +301,7 @@ public class CourseService {
         course.updateIntroduction(request.courseDescription());
 
         courseRepository.deleteCoursePlacesByCourseId(course.getId());
+
         List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
         coursePlaceService.addPlacesToTargetCourse(course, placeInfos, placesToAdd);
     }
