@@ -77,6 +77,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Upload nginx config to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EC2_ACCESS_KEY }}
+          source: ./nginx
+          target: /home/ubuntu/solply-server/
+
       - name: Upload deploy.sh to EC2
         uses: appleboy/scp-action@master
         with:
