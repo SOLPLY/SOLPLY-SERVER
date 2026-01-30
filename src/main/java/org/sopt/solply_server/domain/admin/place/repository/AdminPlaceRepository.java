@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.core.parameters.P;
 
-public interface AdminPlaceRepository extends JpaRepository<Place, Long>, PlaceRepositoryCustom {
+public interface AdminPlaceRepository extends JpaRepository<Place, Long> {
 
     @Query("""
         select distinct p

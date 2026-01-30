@@ -10,6 +10,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsG
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
+import org.sopt.solply_server.domain.admin.place.service.facade.AdminPlaceQueryFacade;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
@@ -43,6 +44,7 @@ public class AdminPlaceService {
     private final ApplicationEventPublisher applicationEventPublisher;
     private final ImageUrlProvider imageUrlProvider;
     private final AdminTagValidator adminTagValidator;
+    private final AdminPlaceQueryFacade adminPlaceQueryFacade;
 
     @Transactional
     public AdminPlaceUpsertResponse createPlace(final Long adminUserId, final AdminPlaceUpsertRequest req) {
@@ -182,7 +184,7 @@ public class AdminPlaceService {
             throw new BusinessException(ErrorCode.INVALID_KEYWORD);
         }
 
-        List<Place> base = adminPlaceRepository.findPlacesWithTownByKeyword(keyword);
+        List<Place> base = adminPlaceQueryFacade.findPlacesWithTownByKeyword(keyword);
         if (base.isEmpty()) return AdminPlaceListResponse.of(List.of());
 
         // tags 로딩(N+1 방지)
