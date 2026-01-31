@@ -25,7 +25,7 @@ public class MyPageFacade {
     private final MyPageBookmarkReader myPageBookmarkReader;
 
     public List<UserPlacePreviewDto> getMyPlacePreviewsTop3(User user) {
-        List<Place> places = placeRepository.findTop3ByCreatedByOrderByCreatedAtDesc(user);
+        List<Place> places = placeRepository.findTop3ByCreatedByAndActiveTrueOrderByCreatedAtDesc(user);
         List<Long> placeIds = places.stream().map(Place::getId).toList();
 
         Map<Long, Boolean> bookmarkMap =
