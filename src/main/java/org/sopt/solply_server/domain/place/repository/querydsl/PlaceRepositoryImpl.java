@@ -101,6 +101,9 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         int length = kw.codePointCount(0, kw.length());
         boolean useFullText = length >= 2;
 
+        BooleanBuilder where = new BooleanBuilder()
+                .and(qPlace.active.isTrue());
+
         if (useFullText) {
             String booleanQuery = Arrays.stream(kw.split("\\s+"))
                     .filter(s -> !s.isBlank())
@@ -113,10 +116,12 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                     qPlace.name, booleanQuery
             );
 
+            where.and(score.gt(0));
+
             return queryFactory
                     .selectFrom(qPlace)
                     .join(qPlace.town, qTown).fetchJoin()
-                    .where(score.gt(0))
+                    .where(where)
                     .orderBy(
                             score.desc(),
                             qPlace.name.asc(),
@@ -126,7 +131,9 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                     .fetch();
         } else {
             // 1글자 → LIKE fallback
-            String escaped = kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+            String escaped = kw.replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_");
             String pattern = "%" + escaped + "%";
 
             var pos = Expressions.numberTemplate(
@@ -135,9 +142,17 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                     kw, qPlace.name
             );
 
-            return queryFactory.selectFrom(qPlace)
+            where.and(
+                    Expressions.booleanTemplate(
+                            "{0} LIKE {1} ESCAPE '\\\\'",
+                            qPlace.name, pattern
+                    )
+            );
+
+            return queryFactory
+                    .selectFrom(qPlace)
                     .join(qPlace.town, qTown).fetchJoin()
-                    .where(Expressions.booleanTemplate("{0} LIKE {1} ESCAPE '\\\\'", qPlace.name, pattern))
+                    .where(where)
                     .orderBy(
                             pos.asc().nullsLast(),
                             qPlace.name.asc(),
@@ -153,7 +168,10 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         List<Place> results = queryFactory
                 .selectFrom(place)
                 .join(place.town, town).fetchJoin()
-                .where(place.createdBy.id.eq(userId))
+                .where(
+                        place.createdBy.id.eq(userId),
+                        place.active.isTrue()
+                )
                 .orderBy(place.createdAt.desc())
                 .offset(pageable.getOffset())
                 .limit(pageable.getPageSize())
@@ -162,7 +180,10 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         JPAQuery<Long> countQuery = queryFactory
                 .select(place.count())
                 .from(place)
-                .where(place.createdBy.id.eq(userId));
+                .where(
+                        place.createdBy.id.eq(userId),
+                        place.active.isTrue()
+                );
 
         return PageableExecutionUtils.getPage(results, pageable, countQuery::fetchOne);
     }
@@ -252,6 +273,9 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
     // 기본 조건(동네, 북마크) 추가 메서드
     private BooleanBuilder createBasicConditions(QPlace place, PlaceSearchConditionDto condition) {
         BooleanBuilder basicCondition = new BooleanBuilder();
+
+        basicCondition.and(place.active.isTrue());
+
         // Town 조건
         if (condition.townId() != null) {
             basicCondition.and(place.town.id.eq(condition.townId()));
