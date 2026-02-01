@@ -15,37 +15,46 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceRepositoryCustom {
 
-    @Query("SELECT p FROM Place p " +
-            "JOIN FETCH p.town " +
-            "WHERE p.id IN :placeIds")
+    @Query("""
+        SELECT p
+        FROM Place p
+        JOIN FETCH p.town
+        WHERE p.id IN :placeIds
+          AND p.active = true
+    """)
     List<Place> findAllByIdsWithTown(@Param("placeIds") List<Long> placeIds);
 
-    @Query("SELECT DISTINCT p FROM Place p " +
-            "LEFT JOIN FETCH p.placeTags pt " +
-            "LEFT JOIN FETCH pt.tag " +
-            "WHERE p.town.id = :townId")
+    @Query("""
+        SELECT DISTINCT p
+        FROM Place p
+        LEFT JOIN FETCH p.placeTags pt
+        LEFT JOIN FETCH pt.tag
+        WHERE p.town.id = :townId
+          AND p.active = true
+    """)
     List<Place> findPlacesByTownIdWithTags(@Param("townId") Long townId);
 
     @EntityGraph(attributePaths = {
             "placeTags",
             "placeTags.tag"
     })
-    List<Place> findTop3ByCreatedByOrderByCreatedAtDesc(User createdBy);
+    List<Place> findTop3ByCreatedByAndActiveTrueOrderByCreatedAtDesc(User createdBy);
 
     @Query("""
-        select p.id, p.town.id
-        from Place p
-        where p.id in :placeIds
+        SELECT p.id, p.town.id
+        FROM Place p
+        WHERE p.id IN :placeIds
+          AND p.active = true
     """)
     List<Object[]> findPlaceIdAndTownIdByPlaceIds(@Param("placeIds") List<Long> placeIds);
 
     @Query("""
-        select distinct p
-        from Place p
-        left join fetch p.placeTags pt
-        left join fetch pt.tag t
-        where p.id in :placeIds
+        SELECT DISTINCT p
+        FROM Place p
+        LEFT JOIN FETCH p.placeTags pt
+        LEFT JOIN FETCH pt.tag t
+        WHERE p.id IN :placeIds
+          AND p.active = true
     """)
-    List<Place> findByIdInWithTags(List<Long> placeIds);
-
+    List<Place> findByIdInWithTags(@Param("placeIds") List<Long> placeIds);
 }

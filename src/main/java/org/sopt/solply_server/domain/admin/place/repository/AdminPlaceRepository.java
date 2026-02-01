@@ -1,15 +1,14 @@
 package org.sopt.solply_server.domain.admin.place.repository;
 
-import io.lettuce.core.dynamic.annotation.Param;
 import java.util.List;
+import org.sopt.solply_server.domain.admin.place.repository.querydsl.AdminPlaceRepositoryCustom;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.repository.querydsl.PlaceRepositoryCustom;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.security.core.parameters.P;
+import org.springframework.data.repository.query.Param;
 
-public interface AdminPlaceRepository extends JpaRepository<Place, Long> {
+public interface AdminPlaceRepository extends JpaRepository<Place, Long>, AdminPlaceRepositoryCustom {
 
     @Query("""
         select distinct p
