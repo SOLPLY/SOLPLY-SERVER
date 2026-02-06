@@ -194,10 +194,15 @@ public class RecommendService {
         List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
                 .map(course -> {
                     Tag courseTag = course.getTag();
+                    String courseTagName = null;
+                    if (courseTag != null) {
+                        courseTagName = courseTag.isActive() ? courseTag.getName() : null;
+                    }
+
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
                     return CoursePreviewDto.of(
                             course,
-                            courseTag.isActive() ? courseTag.getName() : null,
+                            courseTagName,
                             thumbnailUrl,
                             courseBookmarkMap
                     );

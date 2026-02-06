@@ -39,22 +39,6 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 
 
     /**
-     * 사용자의 북마크된 코스 목록 조회
-     * Course, Town, CoursePlace, Place 정보를 한 번의 쿼리로 가져옴
-     */
-    @Query("""
-        SELECT DISTINCT c FROM Course c
-        JOIN FETCH c.town t
-        JOIN FETCH c.tag tag
-        JOIN FETCH c.coursePlaces cp
-        JOIN FETCH cp.place p
-        WHERE c.id IN :courseIds
-        ORDER BY c.id
-    """)
-    List<Course> findCoursesWithPlacesByIds(@Param("courseIds") List<Long> courseIds);
-
-
-    /**
      * 특정 동네의 북마크된 코스 목록 조회
      * 코스와 코스 내 장소들을 함께 조회
      */
@@ -101,4 +85,14 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     """)
     void findCoursesWithTagByIds(@Param("courseIds") List<Long> courseIds);
 
+    @Query("""
+        select distinct c
+        from Course c
+        join fetch c.town t
+        left join fetch c.tag ct
+        left join fetch c.coursePlaces cp
+        left join fetch cp.place p
+        where c.id in :courseIds
+    """)
+    List<Course> findFolderPreviewCourses(@Param("courseIds") List<Long> courseIds);
 }

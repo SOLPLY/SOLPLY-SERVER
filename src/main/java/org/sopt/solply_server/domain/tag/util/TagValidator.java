@@ -31,6 +31,13 @@ public class TagValidator {
         }
     }
 
+    public void validateCourseTagEntity(Tag tag) {
+        if (tag == null) return;
+        if (!tag.isActive()) throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
+        if (tag.getTagUsage() != TagUsage.COURSE) throw new BusinessException(ErrorCode.INVALID_TAG_USAGE);
+        if (tag.getType() != TagType.MAIN) throw new BusinessException(ErrorCode.INVALID_TAG_TYPE);
+    }
+
     public void validateTagIsActive(Tag tag) {
         if (!tag.isActive()) throw new BusinessException(ErrorCode.NOT_ACTIVE_TAG);
     }

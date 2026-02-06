@@ -198,7 +198,7 @@ public class CourseService {
         Course course = entityLoader.getCourseWithPlaces(courseId);
 
         Tag courseTag = course.getTag();
-        tagValidator.validateCourseTagCondition(courseTag.getId());
+        tagValidator.validateCourseTagEntity(courseTag);
 
         boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
 
@@ -312,19 +312,19 @@ public class CourseService {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        List<Long> latestCourseIds = findLatestBookmarkedCourseIdsByTown(createdAtMap);
-        if (latestCourseIds.isEmpty()) {
+        List<Long> latestCourseIdsByTown = findLatestBookmarkedCourseIdsByTown(createdAtMap);
+        if (latestCourseIdsByTown.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        List<Long> sortedCourseIds = sortIdsByCreatedAtDesc(latestCourseIds, createdAtMap);
+        List<Long> sortedCourseIds = sortIdsByCreatedAtDesc(latestCourseIdsByTown, createdAtMap);
 
-        List<Course> courses = loadCoursesWithPlacesAndTags(sortedCourseIds);
+        List<Course> courses = courseRepository.findFolderPreviewCourses(latestCourseIdsByTown);
         if (courses.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        return CourseFolderPreviewListGetResponse.from(toFolderDtos(sortedCourseIds, courses));
+        return CourseFolderPreviewListGetResponse.from(toSortedFolderDtos(sortedCourseIds, courses));
     }
 
     //=== private method ===//
@@ -440,28 +440,26 @@ public class CourseService {
                 .toList();
     }
 
-    /** Course + places 조회 */
-    private List<Course> loadCoursesWithPlacesAndTags(List<Long> sortedCourseIds) {
-        List<Course> courses = courseRepository.findCoursesWithPlacesByIds(sortedCourseIds);
-        if (courses.isEmpty()) return List.of();
-
-        return courses;
-    }
-
     /**
      * DTO 생성
      */
 
-    private List<CourseFolderDto> toFolderDtos(List<Long> sortedCourseIds, List<Course> courses) {
+    private List<CourseFolderDto> toSortedFolderDtos(List<Long> sortedCourseIds, List<Course> courses) {
         Map<Long, Course> courseMap = courses.stream()
                 .collect(Collectors.toMap(Course::getId, Function.identity()));
 
+        // 정렬된 sortedCourseIds 기준으로 courses 정렬
         return sortedCourseIds.stream()
                 .map(courseMap::get)
                 .filter(Objects::nonNull)
                 .map(course -> {
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-                    return CourseFolderDto.of(course, course.getTag().getName(), thumbnailUrl);
+                    Tag courseTag = course.getTag();
+                    String courseTagName = null;
+                    if (courseTag != null) {
+                        courseTagName = courseTag.isActive() ? courseTag.getName() : null;
+                    }
+                    return CourseFolderDto.of(course, courseTagName, thumbnailUrl);
                 })
                 .toList();
     }
@@ -472,8 +470,11 @@ public class CourseService {
             boolean checkCanAddPlaceToCourse) {
 
         Tag courseTag = course.getTag();
-        tagValidator.validateCourseTagCondition(courseTag.getId());
-
+        String courseTagName = null;
+        if (courseTag != null) {
+            courseTagName = courseTag.isActive() ? courseTag.getName() : null;
+            tagValidator.validateCourseTagEntity(courseTag);
+        }
 
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
@@ -482,14 +483,14 @@ public class CourseService {
             return CourseInfoDto.withPlaceCheck(
                     course,
                     thumbnailUrl,
-                    courseTag.isActive() ? courseTag.getName() : null,
+                    courseTagName,
                     validation
             );
         } else {
             return CourseInfoDto.of(
                     course,
                     thumbnailUrl,
-                    courseTag.isActive() ? courseTag.getName() : null
+                    courseTagName
             );
         }
     }
