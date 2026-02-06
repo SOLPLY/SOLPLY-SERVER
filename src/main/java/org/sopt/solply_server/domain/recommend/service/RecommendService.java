@@ -185,9 +185,6 @@ public class RecommendService {
                 .map(Course::getId)
                 .toList();
 
-        // 코스 태그 배치 로딩 (N+1 방지)
-        courseRepository.findCoursesWithTagByIds(courseIds);
-
         // 북마크 정보 배치로 조회
         Map<Long, Boolean> courseBookmarkMap = courseBookmarkFacade.getBookmarkStatusMap(userId, courseIds);
 

@@ -17,8 +17,8 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
      * Course, CoursePlace, Place 모두 한 번에 로딩
      */
     @Query("SELECT DISTINCT c FROM Course c " +
-            "JOIN FETCH c.coursePlaces cp " +
-            "JOIN FETCH cp.place p " +
+            "LEFT JOIN FETCH c.coursePlaces cp " +
+            "LEFT JOIN FETCH cp.place p " +
             "WHERE c.id = :courseId")
     Optional<Course> findByIdWithPlaces(@Param("courseId") Long courseId);
 
@@ -28,9 +28,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
      */
     @Query("""
         SELECT DISTINCT c FROM Course c
-        JOIN FETCH c.tag mt
-        JOIN FETCH c.coursePlaces cp
-        JOIN FETCH cp.place p
+        LEFT JOIN FETCH c.tag t
+        LEFT JOIN FETCH c.coursePlaces cp
+        LEFT JOIN FETCH cp.place p
         WHERE c.town.id = :townId
           AND c.isShared = true
         ORDER BY c.createdAt DESC
@@ -45,9 +45,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Query("""
         SELECT DISTINCT c FROM Course c
         JOIN FETCH c.town t
-        JOIN FETCH c.tag tag
-        JOIN FETCH c.coursePlaces cp
-        JOIN FETCH cp.place p
+        LEFT JOIN FETCH c.tag tag
+        LEFT JOIN FETCH c.coursePlaces cp
+        LEFT JOIN FETCH cp.place p
         WHERE t.id = :townId
           AND c.id IN :courseIds
     """)
@@ -76,14 +76,6 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         where c.id in :courseIds
     """)
     List<Object[]> findCourseIdAndTownIdByCourseIds(@Param("courseIds") List<Long> courseIds);
-
-    @Query("""
-        SELECT DISTINCT c
-        FROM Course c
-        JOIN FETCH c.tag t
-        WHERE c.id IN :courseIds
-    """)
-    void findCoursesWithTagByIds(@Param("courseIds") List<Long> courseIds);
 
     @Query("""
         select distinct c
