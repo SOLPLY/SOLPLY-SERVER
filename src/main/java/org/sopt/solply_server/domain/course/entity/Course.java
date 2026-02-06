@@ -54,17 +54,19 @@ public class Course extends BaseTimeEntity {
     @OrderBy("placeOrder ASC")
     private List<CoursePlace> coursePlaces = new ArrayList<>();
 
-    @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<CourseTag> courseTags = new ArrayList<>();
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_tag_id")
+    private Tag tag;
 
-    public static Course create(String name, String introduction, Town town, User createdBy, Boolean active) {
+    public static Course create(String name, String introduction, Town town, User createdBy, Boolean active, Tag tag) {
         return Course.builder()
                 .name(name)
                 .introduction(introduction)
-                .isShared(false) // 사용자 생성 코스는 기본 비공개
+                .isShared(false)
                 .town(town)
                 .createdBy(createdBy)
-				.active(active)
+                .active(active)
+                .tag(tag)
                 .coursePlaces(new ArrayList<>())
                 .build();
     }
@@ -109,25 +111,6 @@ public class Course extends BaseTimeEntity {
 
     public int getPlaceCount() {
         return this.coursePlaces.size();
-    }
-
-    public void replaceCourseTags(List<Tag> tags) {
-        this.courseTags.clear();
-        if (tags == null || tags.isEmpty()) return;
-
-        // 중복 제거(순서 유지)
-        var set = new java.util.LinkedHashSet<Tag>();
-        for (Tag t : tags) {
-            if (t == null) continue;
-            if (set.add(t)) this.courseTags.add(CourseTag.of(this, t));
-        }
-    }
-
-    public List<Tag> getActiveCourseTags() {
-        return this.courseTags.stream()
-                .map(CourseTag::getTag)
-                .filter(Tag::isActive)
-                .toList();
     }
 
 }

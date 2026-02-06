@@ -40,20 +40,5 @@ public class CourseUtils {
         return course.getCoursePlaces().isEmpty();
     }
 
-    /**
-     * 코스의 주요 태그 2개 조회
-     * - 장소의 순서에 따라 정렬 후, 첫 번째와 두 번째 장소의 주요 태그를 추출
-     */
-    public List<String> extractTopTwoPlaceMainTags(final Course course) {
-        return course.getCoursePlaces().stream()
-                .sorted(Comparator.comparing(CoursePlace::getPlaceOrder))
-                .limit(2)
-                .map(CoursePlace::getPlace)
-                .map(place -> place.getActiveMainTag()
-                        .map(Tag::getName)
-                        .orElse(null)
-                )
-                .filter(Objects::nonNull)
-                .toList();
-    }
+
 }

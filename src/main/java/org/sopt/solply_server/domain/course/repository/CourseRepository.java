@@ -1,9 +1,7 @@
 package org.sopt.solply_server.domain.course.repository;
 
-import java.util.Collection;
 import java.util.Set;
 import org.sopt.solply_server.domain.course.entity.Course;
-import org.sopt.solply_server.domain.place.entity.Place;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -28,21 +26,16 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
      * 특정 동네의 공유된 코스 목록 조회 (단계별 조회로 MultipleBagFetchException 해결)
      * 코스와 코스 내 장소들 조회
      */
-    @Query("SELECT DISTINCT c FROM Course c " +
-            "JOIN FETCH c.coursePlaces cp " +
-            "JOIN FETCH cp.place p " +
-            "WHERE c.town.id = :townId " +
-            "AND c.isShared = true " +
-            "ORDER BY c.createdAt DESC")
+    @Query("""
+        SELECT DISTINCT c FROM Course c
+        JOIN FETCH c.tag mt
+        JOIN FETCH c.coursePlaces cp
+        JOIN FETCH cp.place p
+        WHERE c.town.id = :townId
+          AND c.isShared = true
+        ORDER BY c.createdAt DESC
+    """)
     List<Course> findSharedCoursesByTownIdWithPlaces(@Param("townId") Long townId);
-
-    // 특정 코스들의 장소 태그 정보를 배치로 조회
-    @Query("SELECT DISTINCT p FROM Place p " +
-            "LEFT JOIN FETCH p.placeTags pt " +
-            "LEFT JOIN FETCH pt.tag t " +
-            "WHERE p.id IN " +
-            "(SELECT cp.place.id FROM CoursePlace cp WHERE cp.course.id IN :courseIds)")
-    List<Place> findPlacesWithTagsByCourseIds(@Param("courseIds") List<Long> courseIds);
 
 
     /**
@@ -52,11 +45,12 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Query("""
         SELECT DISTINCT c FROM Course c
         JOIN FETCH c.town t
+        JOIN FETCH c.tag tag
         JOIN FETCH c.coursePlaces cp
         JOIN FETCH cp.place p
         WHERE c.id IN :courseIds
         ORDER BY c.id
-        """)
+    """)
     List<Course> findCoursesWithPlacesByIds(@Param("courseIds") List<Long> courseIds);
 
 
@@ -67,8 +61,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Query("""
         SELECT DISTINCT c FROM Course c
         JOIN FETCH c.town t
-        LEFT JOIN FETCH c.coursePlaces cp
-        LEFT JOIN FETCH cp.place p
+        JOIN FETCH c.tag tag
+        JOIN FETCH c.coursePlaces cp
+        JOIN FETCH cp.place p
         WHERE t.id = :townId
           AND c.id IN :courseIds
     """)
@@ -99,12 +94,11 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<Object[]> findCourseIdAndTownIdByCourseIds(@Param("courseIds") List<Long> courseIds);
 
     @Query("""
-    SELECT DISTINCT c
-    FROM Course c
-    LEFT JOIN FETCH c.courseTags ct
-    LEFT JOIN FETCH ct.tag t
-    WHERE c.id IN :courseIds
-""")
-    List<Course> findCoursesWithTagsByIds(@Param("courseIds") List<Long> courseIds);
+        SELECT DISTINCT c
+        FROM Course c
+        JOIN FETCH c.tag t
+        WHERE c.id IN :courseIds
+    """)
+    void findCoursesWithTagByIds(@Param("courseIds") List<Long> courseIds);
 
 }

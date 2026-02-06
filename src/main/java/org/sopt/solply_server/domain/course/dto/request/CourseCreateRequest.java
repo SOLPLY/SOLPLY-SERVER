@@ -12,8 +12,10 @@ public record CourseCreateRequest(
         @Size(max = 50, message = "코스 이름은 50자 이하로 입력해주세요.")
         String courseName,
 
-
         String courseDescription,
+
+        @NotNull(message = "코스 태그는 필수입니다.")
+        Long courseTagId,
 
         @NotEmpty(message = "코스에는 2개 이상의 장소가 포함되어야 합니다.")
         @Size(min = 2, max = 6, message = "코스에는 2개 이상 6개 이하의 장소가 포함되어야 합니다.")

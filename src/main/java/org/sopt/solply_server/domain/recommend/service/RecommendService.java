@@ -15,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
-import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
 import org.sopt.solply_server.domain.course.dto.CoursePreviewDto;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
@@ -187,16 +186,16 @@ public class RecommendService {
                 .toList();
 
         // 코스 태그 배치 로딩 (N+1 방지)
-        courseRepository.findCoursesWithTagsByIds(courseIds);
+        courseRepository.findCoursesWithTagByIds(courseIds);
 
         // 북마크 정보 배치로 조회
         Map<Long, Boolean> courseBookmarkMap = courseBookmarkFacade.getBookmarkStatusMap(userId, courseIds);
 
         List<CoursePreviewDto> coursePreviewDtos = sharedCourses.stream()
                 .map(course -> {
-                    List<String> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
+                    String tagName = course.getTag().getName();
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-                    return CoursePreviewDto.of(course, mainTags, thumbnailUrl, courseBookmarkMap);
+                    return CoursePreviewDto.of(course, tagName, thumbnailUrl, courseBookmarkMap);
                 })
                 .toList();
 

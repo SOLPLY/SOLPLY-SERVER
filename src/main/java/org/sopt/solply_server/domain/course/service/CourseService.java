@@ -67,6 +67,8 @@ public class CourseService {
 
         List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
 
+        Tag courseTag = entityLoader.getTag(request.courseTagId());
+
         // 코스에 등록할 장소들
         List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfos);
 
@@ -75,7 +77,7 @@ public class CourseService {
 
         boolean isCourseNameUniqueRequired = request.isCourseNameUniqueRequired();
         Course savedCourse = createNewCourse(user, request.courseName(), request.courseDescription(), placeInfos,
-                placesToAdd, isCourseNameUniqueRequired);
+                placesToAdd, isCourseNameUniqueRequired, courseTag);
 
         return CourseCreateResponse.from(savedCourse.getId());
     }
@@ -108,9 +110,12 @@ public class CourseService {
         else { // 남의 공유된 코스인 경우
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
+
+            Tag courseTag = entityLoader.getTag(request.courseTagId());
             Course copiedCourses = createNewCourse(user, request.courseName(), request.courseDescription(),
-                    placeInfosInCourse, placesToAdd, false);
+                    placeInfosInCourse, placesToAdd, false, courseTag);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
+
             return CourseUpdateResponse.of(copiedCourses.getId(), copiedCourses.getName(), copiedCourses.getIntroduction(), true);
         }
     }
@@ -143,8 +148,9 @@ public class CourseService {
 
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
+
             Course copiedCourse = createNewCourse(user, originCourse.getName(), originCourse.getIntroduction(),
-                    placesInCourse, places, false);
+                    placesInCourse, places, false, originCourse.getTag());
             coursePlaceService.createAndSaveCoursePlace(copiedCourse, place);
 
             return CourseAddPlaceResponse.of(
@@ -309,8 +315,9 @@ public class CourseService {
     /**
      * 사용자 소유의 새로운 코스 생성
      */
-    private Course createNewCourse(User user, final String courseName, final String intro, final List<PlaceInCourseInfo> placeInfos,
-            final List<Place> placesToAdd, final boolean isCourseNameUniqueRequired) {
+    private Course createNewCourse(User user, final String courseName, final String intro,
+            final List<PlaceInCourseInfo> placeInfos, final List<Place> placesToAdd,
+            final boolean isCourseNameUniqueRequired, final Tag courseTag) {
         if (placesToAdd.isEmpty()) {
             throw new BusinessException(ErrorCode.NOT_SUFFICIENT_PLACE_COUNT);
         }
@@ -321,7 +328,7 @@ public class CourseService {
            newCourseName = courseNameGenerator.generateUniqueNameForUser(courseName, user.getId());
         }
         Town town = placesToAdd.getFirst().getTown();
-        Course newCourse = Course.create(newCourseName, intro, town, user, town.getActive());
+        Course newCourse = Course.create(newCourseName, intro, town, user, town.getActive(), courseTag);
         courseRepository.save(newCourse);
 
         // 장소들 추가
@@ -403,13 +410,10 @@ public class CourseService {
                 .toList();
     }
 
-    /** Course + places 조회하고, place tags까지 필요한 경우 여기서 처리 */
+    /** Course + places 조회 */
     private List<Course> loadCoursesWithPlacesAndTags(List<Long> sortedCourseIds) {
         List<Course> courses = courseRepository.findCoursesWithPlacesByIds(sortedCourseIds);
         if (courses.isEmpty()) return List.of();
-
-        // place 단위 태그 fetch (필요한 경우에만)
-        courseRepository.findPlacesWithTagsByCourseIds(sortedCourseIds);
 
         return courses;
     }
@@ -426,9 +430,8 @@ public class CourseService {
                 .map(courseMap::get)
                 .filter(Objects::nonNull)
                 .map(course -> {
-                    List<String> primaryTags = courseUtils.extractTopTwoPlaceMainTags(course);
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-                    return CourseFolderDto.of(course, primaryTags, thumbnailUrl);
+                    return CourseFolderDto.of(course, course.getTag().getName(), thumbnailUrl);
                 })
                 .toList();
     }
@@ -438,14 +441,14 @@ public class CourseService {
             Map<Long, CourseValidationResult> validationResults,
             boolean checkCanAddPlaceToCourse) {
 
-        List<String> mainTags = courseUtils.extractTopTwoPlaceMainTags(course);
+        String tagName = course.getTag().getName();
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
         if (checkCanAddPlaceToCourse) {
             CourseValidationResult validation = validationResults.get(course.getId());
-            return CourseInfoDto.withPlaceCheck(course, thumbnailUrl, mainTags, validation);
+            return CourseInfoDto.withPlaceCheck(course, thumbnailUrl, tagName, validation);
         } else {
-            return CourseInfoDto.of(course, thumbnailUrl, mainTags);
+            return CourseInfoDto.of(course, thumbnailUrl, tagName);
         }
     }
 
