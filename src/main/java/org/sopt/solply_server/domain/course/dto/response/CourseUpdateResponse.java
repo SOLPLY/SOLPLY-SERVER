@@ -4,9 +4,11 @@ public record CourseUpdateResponse(
         Long updatedCourseId,
         String updatedCourseName,
         String updatedCourseDescription,
+        String updatedCourseTagName,
         boolean isNewCourse
 ) {
-    public static CourseUpdateResponse of(Long courseId, String courseName, String courseDescription, boolean isNewCourse) {
-        return new CourseUpdateResponse(courseId, courseName, courseDescription, isNewCourse);
+    public static CourseUpdateResponse of(Long courseId, String courseName, String courseDescription,
+            String courseTagName, boolean isNewCourse) {
+        return new CourseUpdateResponse(courseId, courseName, courseDescription, courseTagName, isNewCourse);
     }
 }

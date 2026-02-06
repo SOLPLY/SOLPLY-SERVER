@@ -16,7 +16,8 @@ public record AdminTagListResponse(
             TagType type,
             String name,
             String parentName,
-            boolean active
+            boolean active,
+            String tagUsage
     ) {
         public static AdminTagSummaryDto from(Tag t) {
             return new AdminTagSummaryDto(
@@ -24,7 +25,8 @@ public record AdminTagListResponse(
                     t.getType(),
                     t.getName(),
                     t.getParent() == null ? null : t.getParent().getName(),
-                    t.isActive()
+                    t.isActive(),
+                    t.getTagUsage().name()
             );
         }
     }

@@ -1,15 +1,11 @@
 package org.sopt.solply_server.domain.tag.util;
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.domain.tag.entity.TagUsage;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -21,48 +17,55 @@ public class TagValidator {
 
     private final TagRepository tagRepository;
 
-    public void validateTagType(Long tagId, TagType tagType) {
-        if (tagId == null) throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
-
-        boolean ok = tagRepository.existsByIdAndTypeAndActiveTrue(tagId, tagType);
-        if (!ok) throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
+    /** PLACE(장소) 생성/수정용: active + usage=PLACE + 계층/타입/관계 검증 */
+    public void validatePlaceTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
+        validateHierarchicalTags(mainTagId, subTagAIdList, subTagBIdList, TagUsage.PLACE);
     }
 
-    public void validateTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
-        if (mainTagId == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
-        }
+    /** COURSE(코스) 생성/수정용: active + usage=COURSE */
+    public void validateCourseTag(Tag tag) {
+        if (tag == null) return;
+        if (!tag.isActive()) throw new BusinessException(ErrorCode.NOT_ACTIVE_TAG);
+        if (tag.getTagUsage() != TagUsage.COURSE) throw new BusinessException(ErrorCode.INVALID_TAG_USAGE);
+        if (tag.getType() != TagType.MAIN) throw new BusinessException(ErrorCode.INVALID_TAG_TYPE);
+    }
 
-        // 1) mainTag: active + MAIN
+    // =======================
+    // 내부: PLACE 계층 검증
+    // =======================
+    private void validateHierarchicalTags(Long mainTagId, List<Long> subA, List<Long> subB, TagUsage usage) {
+        if (mainTagId == null) throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
+
         Tag mainTag = tagRepository.findByIdWithParentAndActiveTrue(mainTagId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
-        if (mainTag.getType() != TagType.MAIN) {
-            throw new BusinessException(ErrorCode.INVALID_TAG_TYPE);
-        }
 
-        // 2) 서브 태그들 정규화(Null 제거 + 중복 제거)
-        List<Long> option1Ids = normalizeIds(subTagAIdList);
-        List<Long> option2Ids = normalizeIds(subTagBIdList);
+        if (mainTag.getTagUsage() != usage) throw new BusinessException(ErrorCode.INVALID_TAG_USAGE);
+        if (mainTag.getType() != TagType.MAIN) throw new BusinessException(ErrorCode.INVALID_TAG_TYPE);
 
-        // 서브 없으면 main만 검증하고 끝
-        if (option1Ids.isEmpty() && option2Ids.isEmpty()) {
-            return;
-        }
+        List<Long> option1Ids = normalizeIds(subA);
+        List<Long> option2Ids = normalizeIds(subB);
 
-        // 3) 서브 태그 전체를 한 번에 로드 (active=true, parent fetch)
+        if (option1Ids.isEmpty() && option2Ids.isEmpty()) return;
+
         Set<Long> allSubIds = new LinkedHashSet<>();
         allSubIds.addAll(option1Ids);
         allSubIds.addAll(option2Ids);
 
         List<Tag> loadedSubs = tagRepository.findAllByIdInWithParentAndActiveTrue(allSubIds);
 
-        // active=true 기준으로 못 불러온 게 있다면 -> NOT_FOUND_TAG (비활성 포함)
+        // active=true 기준으로 못 불러온 게 있다면(비활성 포함) -> NOT_FOUND
         if (loadedSubs.size() != allSubIds.size()) {
             throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
         }
 
-        // 4) 타입 검증 + parent 관계 검증
-        Map<Long, Tag> subMap = loadedSubs.stream().collect(Collectors.toMap(Tag::getId, x -> x));
+        // usage 체크
+        for (Tag t : loadedSubs) {
+            if (t.getTagUsage() != usage) throw new BusinessException(ErrorCode.INVALID_TAG_USAGE);
+        }
+
+        Map<Long, Tag> subMap = loadedSubs.stream()
+                .collect(Collectors.toMap(Tag::getId, x -> x));
+
         validateSubGroup(mainTag, subMap, option1Ids, TagType.OPTION1);
         validateSubGroup(mainTag, subMap, option2Ids, TagType.OPTION2);
     }
@@ -82,9 +85,6 @@ public class TagValidator {
 
     private List<Long> normalizeIds(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
-        return ids.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
+        return ids.stream().filter(Objects::nonNull).distinct().toList();
     }
 }

@@ -10,10 +10,7 @@ import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.course.repository.CoursePlaceRepository;
-import org.sopt.solply_server.domain.course.util.CoursePlaceValidator;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,15 +32,12 @@ public class CoursePlaceService {
         coursePlaceRepository.save(coursePlace);
     }
 
-    public void addPlacesToTargetCourse(Course course, List<PlaceInCourseInfo> placeInfos, List<Place> placesToAdd) {
+    public void addPlacesToTargetCourse(Course course, List<PlaceInCourseInfo> placeInfosForOrder, List<Place> placesToAdd) {
         Map<Long, Place> placeMap = placesToAdd.stream()
                 .collect(Collectors.toMap(Place::getId, Function.identity()));
 
-        for (PlaceInCourseInfo placeInfo : placeInfos) {
+        for (PlaceInCourseInfo placeInfo : placeInfosForOrder) {
             Place place = placeMap.get(placeInfo.placeId());
-            if (place == null) {
-                throw new BusinessException(ErrorCode.NOT_FOUND_PLACE);
-            }
 
             CoursePlace coursePlace = CoursePlace.create(course, place, placeInfo.placeOrder());
             course.addCoursePlace(coursePlace);

@@ -6,7 +6,7 @@ INSERT INTO towns (id, parent_id, name, active) VALUES
                                             (4, 1, '연남·홍대', true),
                                             (5, 1, '합정·상수', true);
 
--- tags 데이터 삽입
+-- 장소용 tags 데이터 삽입
 INSERT INTO tags (id, parent_id, name, type) VALUES
                                                  (1, NULL, '카페', 'MAIN'),
                                                  (2, NULL, '음식', 'MAIN'),

@@ -50,7 +50,7 @@ public class AdminPlaceService {
         Town town = entityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
-        adminTagValidator.validateTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
+        adminTagValidator.validatePlaceTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
 
         Tag mainTag = entityLoader.getTag(req.mainTagId());
         List<Tag> opt1 = loadTags(req.option1TagIds());
@@ -94,7 +94,7 @@ public class AdminPlaceService {
         Town town = entityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
-        adminTagValidator.validateTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
+        adminTagValidator.validatePlaceTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
 
         Tag mainTag = entityLoader.getTag(req.mainTagId());
         List<Tag> opt1 = loadTags(req.option1TagIds());

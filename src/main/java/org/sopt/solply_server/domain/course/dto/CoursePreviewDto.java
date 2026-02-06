@@ -11,26 +11,16 @@ public record CoursePreviewDto(
         Long courseId,
         String courseName,
         String thumbnailImage,
-        List<String> mainTags,
+        String courseTagName,
         boolean isBookmarked
 ) {
-    public static CoursePreviewDto of(Course course, String thumbnailImage,
-                                      List<String> mainTags, boolean isBookmarked) {
+    public static CoursePreviewDto of(Course course, String tagName, String thumbnailUrl, Map<Long, Boolean> courseBookmarkMap) {
         return CoursePreviewDto.builder()
                 .courseId(course.getId())
-                .courseName(course.getName())
-                .thumbnailImage(thumbnailImage)
-                .mainTags(mainTags)
-                .isBookmarked(isBookmarked)
+                .courseName(tagName)
+                .thumbnailImage(thumbnailUrl)
+                .courseTagName(tagName)
+                .isBookmarked(courseBookmarkMap.getOrDefault(course.getId(), false))
                 .build();
-    }
-
-    public static CoursePreviewDto of(Course course, List<String> mainTags, String thumbnailUrl, Map<Long, Boolean> courseBookmarkMap) {
-        return CoursePreviewDto.of(
-                course,
-                thumbnailUrl,
-                mainTags,
-                courseBookmarkMap.getOrDefault(course.getId(), false)
-        );
     }
 }
