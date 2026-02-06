@@ -194,7 +194,7 @@ public class PlaceService {
     private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean isOnlyBookmarkSearch,
             final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         if (mainTagId != null) {
-            tagValidator.validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+            tagValidator.validatePlaceTagConditions(mainTagId, subTagAIdList, subTagBIdList);
         }
 
         if (isOnlyBookmarkSearch) {
