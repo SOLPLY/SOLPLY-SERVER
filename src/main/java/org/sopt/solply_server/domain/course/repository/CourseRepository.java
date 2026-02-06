@@ -90,10 +90,6 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<String> findCourseNamesByBookmarkedCourses(
             @Param("courseIds") Set<Long> courseIds, @Param("namePattern") String namePattern);
 
-    @Query("SELECT c FROM Course c " +
-            "JOIN FETCH c.town t " +
-            "WHERE c.id IN :courseIds")
-    List<Course> findAllByIdsWithTowns(@Param("courseIds") List<Long> courseIds);
 
     @Query("""
         select c.id, c.town.id
@@ -101,5 +97,14 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         where c.id in :courseIds
     """)
     List<Object[]> findCourseIdAndTownIdByCourseIds(@Param("courseIds") List<Long> courseIds);
+
+    @Query("""
+    SELECT DISTINCT c
+    FROM Course c
+    LEFT JOIN FETCH c.courseTags ct
+    LEFT JOIN FETCH ct.tag t
+    WHERE c.id IN :courseIds
+""")
+    List<Course> findCoursesWithTagsByIds(@Param("courseIds") List<Long> courseIds);
 
 }

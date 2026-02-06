@@ -8,6 +8,7 @@ import java.util.List;
 import lombok.*;
 import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
@@ -52,6 +53,9 @@ public class Course extends BaseTimeEntity {
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("placeOrder ASC")
     private List<CoursePlace> coursePlaces = new ArrayList<>();
+
+    @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<CourseTag> courseTags = new ArrayList<>();
 
     public static Course create(String name, String introduction, Town town, User createdBy, Boolean active) {
         return Course.builder()
@@ -106,4 +110,24 @@ public class Course extends BaseTimeEntity {
     public int getPlaceCount() {
         return this.coursePlaces.size();
     }
+
+    public void replaceCourseTags(List<Tag> tags) {
+        this.courseTags.clear();
+        if (tags == null || tags.isEmpty()) return;
+
+        // 중복 제거(순서 유지)
+        var set = new java.util.LinkedHashSet<Tag>();
+        for (Tag t : tags) {
+            if (t == null) continue;
+            if (set.add(t)) this.courseTags.add(CourseTag.of(this, t));
+        }
+    }
+
+    public List<Tag> getActiveCourseTags() {
+        return this.courseTags.stream()
+                .map(CourseTag::getTag)
+                .filter(Tag::isActive)
+                .toList();
+    }
+
 }
