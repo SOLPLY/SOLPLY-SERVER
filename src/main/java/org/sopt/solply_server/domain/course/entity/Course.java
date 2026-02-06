@@ -113,4 +113,7 @@ public class Course extends BaseTimeEntity {
         return this.coursePlaces.size();
     }
 
+    public void updateCourseTag(Tag courseTag) {
+        this.tag = courseTag;
+    }
 }

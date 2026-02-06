@@ -67,21 +67,20 @@ public class CourseService {
     public CourseCreateResponse createCourse(Long userId, CourseCreateRequest request) {
         User user = entityLoader.getUser(userId);
 
-        List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
+        List<PlaceInCourseInfo> placeInfosForOrder = PlaceInCourseInfo.from(request.places());
 
         // 코스 태그 검증
-        tagValidator.validateCourseTagCondition(request.courseTagId());
         Tag courseTag = entityLoader.getTag(request.courseTagId());
-        tagValidator.validateTagIsActive(courseTag);
+        tagValidator.validateCourseTag(courseTag);
 
         // 코스에 등록할 장소들
-        List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfos);
+        List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfosForOrder);
 
         // 장소를 코스에 추가할 수 있는지 검증
-        coursePlaceValidator.validatePlacesForCourse(placeInfos, placesToAdd);
+        coursePlaceValidator.validatePlacesForCourse(placeInfosForOrder, placesToAdd);
 
         boolean isCourseNameUniqueRequired = request.isCourseNameUniqueRequired();
-        Course savedCourse = createNewCourse(user, request.courseName(), request.courseDescription(), placeInfos,
+        Course savedCourse = createNewCourse(user, request.courseName(), request.courseDescription(), placeInfosForOrder,
                 placesToAdd, isCourseNameUniqueRequired, courseTag);
 
         return CourseCreateResponse.from(savedCourse.getId());
@@ -100,28 +99,28 @@ public class CourseService {
         // 코스 북마크 검증
         courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
-        List<PlaceInCourseInfo> placeInfosInCourse = PlaceInCourseInfo.from(request.places());
+        List<PlaceInCourseInfo> placeInfosInCourseForOrder = PlaceInCourseInfo.from(request.places());
 
-        List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfosInCourse); // 코스에 등록할 장소들
+        // 코스에 등록할 장소들
+        List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfosInCourseForOrder);
 
         // 장소를 코스에 추가할 수 있는지 검증
-        coursePlaceValidator.validatePlacesForCourse(placeInfosInCourse, placesToAdd);
+        coursePlaceValidator.validatePlacesForCourse(placeInfosInCourseForOrder, placesToAdd);
 
         // 코스 태그 검증
-        tagValidator.validateCourseTagCondition(request.courseTagId());
-
-        Tag courseTag = entityLoader.getTag(request.courseTagId());
-        if (!courseTag.isActive()) throw new BusinessException(ErrorCode.NOT_ACTIVE_TAG);
+        Tag updatedCourseTag = entityLoader.getTag(request.courseTagId());
+        tagValidator.validateCourseTag(updatedCourseTag);
 
         if (originCourse.isCreatedBy(userId)) { // 사용자가 소유한 코스인 경우
-            updateCourseInPlace(originCourse, request, placesToAdd);
+            updateCourse(originCourse, request.courseName(), request.courseDescription(), updatedCourseTag,
+                    placeInfosInCourseForOrder, placesToAdd);
             log.info("기존 코스 수정 완료 - userId: {}, courseId: {}", userId, courseId);
             return CourseUpdateResponse.of(
                     courseId,
                     request.courseName(),
                     request.courseDescription(),
                     false,
-                    courseTag.getName()
+                    updatedCourseTag.getName()
             );
         }
         else { // 남의 공유된 코스인 경우
@@ -129,7 +128,7 @@ public class CourseService {
             courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
 
             Course copiedCourses = createNewCourse(user, request.courseName(), request.courseDescription(),
-                    placeInfosInCourse, placesToAdd, false, courseTag);
+                    placeInfosInCourseForOrder, placesToAdd, false, updatedCourseTag);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
 
             return CourseUpdateResponse.of(
@@ -198,7 +197,7 @@ public class CourseService {
         Course course = entityLoader.getCourseWithPlaces(courseId);
 
         Tag courseTag = course.getTag();
-        tagValidator.validateCourseTagEntity(courseTag);
+        tagValidator.validateCourseTag(courseTag);
 
         boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
 
@@ -332,21 +331,21 @@ public class CourseService {
     /**
      * 기존 코스 업데이트
      */
-    private void updateCourseInPlace(Course course, CourseUpdateRequest request, List<Place> placesToAdd) {
-        course.updateName(request.courseName());
-        course.updateIntroduction(request.courseDescription());
+    private void updateCourse(Course course, String courseName, String courseDescription,
+            Tag courseTag, List<PlaceInCourseInfo> placeInfosInCourseForOrder, List<Place> placesToAdd) {
+        course.updateName(courseName);
+        course.updateIntroduction(courseDescription);
+        course.updateCourseTag(courseTag);
 
         courseRepository.deleteCoursePlacesByCourseId(course.getId());
-
-        List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
-        coursePlaceService.addPlacesToTargetCourse(course, placeInfos, placesToAdd);
+        coursePlaceService.addPlacesToTargetCourse(course, placeInfosInCourseForOrder, placesToAdd);
     }
 
     /**
      * 사용자 소유의 새로운 코스 생성
      */
     private Course createNewCourse(User user, final String courseName, final String intro,
-            final List<PlaceInCourseInfo> placeInfos, final List<Place> placesToAdd,
+            final List<PlaceInCourseInfo> placeInfosForOrder, final List<Place> placesToAdd,
             final boolean isCourseNameUniqueRequired, final Tag courseTag) {
         if (placesToAdd.isEmpty()) {
             throw new BusinessException(ErrorCode.NOT_SUFFICIENT_PLACE_COUNT);
@@ -362,7 +361,7 @@ public class CourseService {
         courseRepository.save(newCourse);
 
         // 장소들 추가
-        coursePlaceService.addPlacesToTargetCourse(newCourse, placeInfos, placesToAdd);
+        coursePlaceService.addPlacesToTargetCourse(newCourse, placeInfosForOrder, placesToAdd);
 
         // 북마크 등록
         courseBookmarkFacade.createCourseBookmark(user.getId(), newCourse.getId());
@@ -473,7 +472,7 @@ public class CourseService {
         String courseTagName = null;
         if (courseTag != null) {
             courseTagName = courseTag.isActive() ? courseTag.getName() : null;
-            tagValidator.validateCourseTagEntity(courseTag);
+            tagValidator.validateCourseTag(courseTag);
         }
 
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
