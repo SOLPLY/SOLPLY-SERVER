@@ -90,7 +90,7 @@ CREATE TABLE tags (
                       type VARCHAR(50) NOT NULL,
                       parent_id BIGINT NULL,
                       active BOOLEAN NOT NULL DEFAULT TRUE,
-                      usage VARCHAR(20) NOT NULL DEFAULT 'PLACE',t a
+                      usage VARCHAR(20) NOT NULL DEFAULT 'PLACE',
 
                       CONSTRAINT fk_tags_parent
                           FOREIGN KEY (parent_id) REFERENCES tags(id)
