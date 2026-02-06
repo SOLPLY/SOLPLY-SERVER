@@ -68,6 +68,7 @@ public class CourseService {
         List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
 
         Tag courseTag = entityLoader.getTag(request.courseTagId());
+        if (!courseTag.isActive()) courseTag = null;
 
         // 코스에 등록할 장소들
         List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfos);
@@ -112,6 +113,8 @@ public class CourseService {
             courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
 
             Tag courseTag = entityLoader.getTag(request.courseTagId());
+            if (!courseTag.isActive()) courseTag = null;
+
             Course copiedCourses = createNewCourse(user, request.courseName(), request.courseDescription(),
                     placeInfosInCourse, placesToAdd, false, courseTag);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
