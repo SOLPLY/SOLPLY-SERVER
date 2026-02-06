@@ -119,8 +119,8 @@ public class CourseService {
                     courseId,
                     request.courseName(),
                     request.courseDescription(),
-                    false,
-                    updatedCourseTag.getName()
+                    updatedCourseTag.getName(),
+                    false
             );
         }
         else { // 남의 공유된 코스인 경우
@@ -135,8 +135,9 @@ public class CourseService {
                     copiedCourses.getId(),
                     copiedCourses.getName(),
                     copiedCourses.getIntroduction(),
-                    true,
-                    copiedCourses.getTag().getName());
+                    updatedCourseTag.getName(),
+                    true
+            );
         }
     }
 
