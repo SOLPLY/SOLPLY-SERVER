@@ -46,8 +46,14 @@ public class AdminTagValidator {
         }
     }
 
-    public void validateTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
-        tagValidator.validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+    // 장소 태그 검증
+    public void validatePlaceTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
+        tagValidator.validatePlaceTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+    }
+
+    // 코스 태그 검증
+    public void validateCourseTagConditions(Long courseTagId) {
+        tagValidator.validateCourseTagCondition(courseTagId);
     }
 
 

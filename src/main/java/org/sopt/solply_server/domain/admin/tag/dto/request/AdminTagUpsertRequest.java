@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.domain.tag.entity.TagUsage;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
 public record AdminTagUpsertRequest(
@@ -11,5 +12,6 @@ public record AdminTagUpsertRequest(
         Long parentId,
         @NotBlank String name,
         @NotNull Boolean active,
-        List<UserPersona> personas
+        List<UserPersona> personas,
+        @NotNull TagUsage usage
 ) {}

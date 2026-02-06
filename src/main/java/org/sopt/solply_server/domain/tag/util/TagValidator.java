@@ -23,13 +23,12 @@ public class TagValidator {
     }
 
     /** COURSE(코스) 생성/수정용: active + usage=COURSE (+원하면 type=MAIN 강제) */
-    public void validateAndGetActiveCourseTag(Long courseTagId) {
+    public void validateCourseTagCondition(Long courseTagId) {
         if (courseTagId == null) throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
 
-        Tag tag = tagRepository.findByIdAndTagUsageAndActiveTrue(courseTagId, TagUsage.COURSE)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_TAG));
-
-        if (tag.getType() != TagType.MAIN) throw new BusinessException(ErrorCode.INVALID_TAG_TYPE);
+        if (!tagRepository.existsByIdAndTagUsage(courseTagId, TagUsage.COURSE)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
+        }
     }
 
     // =======================

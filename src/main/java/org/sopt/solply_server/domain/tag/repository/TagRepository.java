@@ -37,9 +37,7 @@ public interface TagRepository extends JpaRepository<Tag, Long> {
     """)
     Optional<Tag> findByIdWithParentAndActiveTrue(@Param("id") Long id);
 
-    boolean existsByIdAndTypeAndActiveTrue(Long tagId, TagType tagType);
 
-    Optional<Tag> findByIdAndTagUsageAndActiveTrue(Long courseTagId, TagUsage tagUsage);
+    boolean existsByIdAndTagUsage(Long courseTagId, TagUsage tagUsage);
 
-    Tag findByIdAndActiveTrue(Long id);
 }

@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminPlaceRequestService {
 
     private final AdminPlaceRequestRepository adminPlaceRequestRepository;
-    private final AdminPlaceService adminPlaceService; // ✅ 중복 최소화: 실제 place 생성은 기존 서비스 재사용
+    private final AdminPlaceService adminPlaceService;
     private final EntityLoader entityLoader;
 
     private final ImageUrlProvider imageUrlProvider;
