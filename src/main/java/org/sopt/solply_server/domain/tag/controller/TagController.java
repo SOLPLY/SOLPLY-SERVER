@@ -21,7 +21,7 @@ public class TagController {
 
     private final TagService tagService;
 
-    @Operation(summary = "태그 조회", description = "장소 태그를 조회합니다.")
+    @Operation(summary = "태그 조회", description = "태그를 조회합니다.")
     @GetMapping
     public ResponseEntity<CustomApiResponse<TagListGetResponse>> findTags(
             @RequestParam(required = true) TagUsage tagUsage,
