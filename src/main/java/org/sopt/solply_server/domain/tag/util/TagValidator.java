@@ -22,13 +22,17 @@ public class TagValidator {
         validateHierarchicalTags(mainTagId, subTagAIdList, subTagBIdList, TagUsage.PLACE);
     }
 
-    /** COURSE(코스) 생성/수정용: active + usage=COURSE (+원하면 type=MAIN 강제) */
+    /** COURSE(코스) 생성/수정용: active + usage=COURSE */
     public void validateCourseTagCondition(Long courseTagId) {
         if (courseTagId == null) throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
 
         if (!tagRepository.existsByIdAndTagUsage(courseTagId, TagUsage.COURSE)) {
             throw new BusinessException(ErrorCode.NOT_FOUND_TAG);
         }
+    }
+
+    public void validateTagIsActive(Tag tag) {
+        if (!tag.isActive()) throw new BusinessException(ErrorCode.NOT_ACTIVE_TAG);
     }
 
     // =======================

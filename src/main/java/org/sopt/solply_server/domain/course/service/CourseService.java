@@ -72,7 +72,7 @@ public class CourseService {
         // 코스 태그 검증
         tagValidator.validateCourseTagCondition(request.courseTagId());
         Tag courseTag = entityLoader.getTag(request.courseTagId());
-        if (!courseTag.isActive()) throw new BusinessException(ErrorCode.NOT_ACTIVE_TAG);
+        tagValidator.validateTagIsActive(courseTag);
 
         // 코스에 등록할 장소들
         List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfos);
@@ -197,10 +197,14 @@ public class CourseService {
     public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
         Course course = entityLoader.getCourseWithPlaces(courseId);
 
+        Tag courseTag = course.getTag();
+        tagValidator.validateCourseTagCondition(courseTag.getId());
+
         boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
 
+
         if (course.getCoursePlaces().isEmpty()) {
-            return CourseDetailGetResponse.of(course, isCourseBookmarked, List.of());
+            return CourseDetailGetResponse.of(course, courseTag.getName(), isCourseBookmarked, List.of());
         }
 
         List<Long> placeIds = course.getCoursePlaces().stream()
@@ -229,7 +233,12 @@ public class CourseService {
                 })
                 .toList();
 
-        return CourseDetailGetResponse.of(course, isCourseBookmarked, coursePlaces);
+        return CourseDetailGetResponse.of(
+                course,
+                courseTag.isActive() ? courseTag.getName() : null,
+                isCourseBookmarked,
+                coursePlaces
+        );
     }
 
     /**
@@ -462,14 +471,26 @@ public class CourseService {
             Map<Long, CourseValidationResult> validationResults,
             boolean checkCanAddPlaceToCourse) {
 
-        String tagName = course.getTag().getName();
+        Tag courseTag = course.getTag();
+        tagValidator.validateCourseTagCondition(courseTag.getId());
+
+
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
         if (checkCanAddPlaceToCourse) {
             CourseValidationResult validation = validationResults.get(course.getId());
-            return CourseInfoDto.withPlaceCheck(course, thumbnailUrl, tagName, validation);
+            return CourseInfoDto.withPlaceCheck(
+                    course,
+                    thumbnailUrl,
+                    courseTag.isActive() ? courseTag.getName() : null,
+                    validation
+            );
         } else {
-            return CourseInfoDto.of(course, thumbnailUrl, tagName);
+            return CourseInfoDto.of(
+                    course,
+                    thumbnailUrl,
+                    courseTag.isActive() ? courseTag.getName() : null
+            );
         }
     }
 

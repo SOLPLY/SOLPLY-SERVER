@@ -202,15 +202,9 @@ public class PlaceService {
         }
 
         // 통합 조회
-        List<Place> places = placeRepository.findPlacesByConditions(
+        return placeRepository.findPlacesByConditions(
                 PlaceSearchConditionDto.of(selectedTownId, false, null, mainTagId, subTagAIdList, subTagBIdList)
         );
-
-
-        log.info("장소 조회 완료 - townId: {}, isOnlyBookmarkSearch: {}, mainTagId: {}, 결과: {} 개",
-                selectedTownId, isOnlyBookmarkSearch, mainTagId, places.size());
-
-        return places;
     }
 
     private List<Place> getBookmarkedPlacesByLatest(
