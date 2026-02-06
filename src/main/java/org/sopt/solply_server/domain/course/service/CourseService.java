@@ -22,6 +22,7 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
+import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -56,6 +57,7 @@ public class CourseService {
 
     private final TownValidator townValidator;
     private final CoursePlaceValidator coursePlaceValidator;
+    private final TagValidator tagValidator;
 
 
     /**
@@ -67,8 +69,10 @@ public class CourseService {
 
         List<PlaceInCourseInfo> placeInfos = PlaceInCourseInfo.from(request.places());
 
+        // 코스 태그 검증
+        tagValidator.validateCourseTagCondition(request.courseTagId());
         Tag courseTag = entityLoader.getTag(request.courseTagId());
-        if (!courseTag.isActive()) courseTag = null;
+        if (!courseTag.isActive()) throw new BusinessException(ErrorCode.NOT_ACTIVE_TAG);
 
         // 코스에 등록할 장소들
         List<Place> placesToAdd = getPlacesInOrderWithTowns(placeInfos);
@@ -103,23 +107,37 @@ public class CourseService {
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validatePlacesForCourse(placeInfosInCourse, placesToAdd);
 
+        // 코스 태그 검증
+        tagValidator.validateCourseTagCondition(request.courseTagId());
+
+        Tag courseTag = entityLoader.getTag(request.courseTagId());
+        if (!courseTag.isActive()) throw new BusinessException(ErrorCode.NOT_ACTIVE_TAG);
+
         if (originCourse.isCreatedBy(userId)) { // 사용자가 소유한 코스인 경우
             updateCourseInPlace(originCourse, request, placesToAdd);
             log.info("기존 코스 수정 완료 - userId: {}, courseId: {}", userId, courseId);
-            return CourseUpdateResponse.of(courseId, request.courseName(), request.courseDescription(), false);
+            return CourseUpdateResponse.of(
+                    courseId,
+                    request.courseName(),
+                    request.courseDescription(),
+                    false,
+                    courseTag.getName()
+            );
         }
         else { // 남의 공유된 코스인 경우
             // 기존 코스 북마크 삭제 후 새 코스 북마크 등록
             courseBookmarkFacade.deleteCourseBookmark(userId, originCourse.getId());
 
-            Tag courseTag = entityLoader.getTag(request.courseTagId());
-            if (!courseTag.isActive()) courseTag = null;
-
             Course copiedCourses = createNewCourse(user, request.courseName(), request.courseDescription(),
                     placeInfosInCourse, placesToAdd, false, courseTag);
             log.info("공유 코스 기반 새 코스 생성 및 북마크 완료 - userId: {}, newCourseId: {}", userId, copiedCourses.getId());
 
-            return CourseUpdateResponse.of(copiedCourses.getId(), copiedCourses.getName(), copiedCourses.getIntroduction(), true);
+            return CourseUpdateResponse.of(
+                    copiedCourses.getId(),
+                    copiedCourses.getName(),
+                    copiedCourses.getIntroduction(),
+                    true,
+                    copiedCourses.getTag().getName());
         }
     }
 
