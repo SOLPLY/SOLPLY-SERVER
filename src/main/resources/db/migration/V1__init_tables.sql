@@ -90,7 +90,7 @@ CREATE TABLE tags (
                       type VARCHAR(50) NOT NULL,
                       parent_id BIGINT NULL,
                       active BOOLEAN NOT NULL DEFAULT TRUE,
-                      usage VARCHAR(20) NOT NULL DEFAULT 'PLACE',
+                      tag_usage VARCHAR(20) NOT NULL DEFAULT 'PLACE',
 
                       CONSTRAINT fk_tags_parent
                           FOREIGN KEY (parent_id) REFERENCES tags(id)
@@ -99,7 +99,7 @@ CREATE TABLE tags (
 CREATE INDEX idx_tag_parent_id ON tags(parent_id);
 CREATE INDEX idx_tag_id_type ON tags(id, type);
 CREATE INDEX idx_tag_type_parent ON tags(type, parent_id);
-CREATE INDEX idx_tag_usage_type_parent ON tags(usage, type, parent_id);
+CREATE INDEX idx_tag_usage_type_parent ON tags(tag_usage, type, parent_id);
 
 
 -- =========================
