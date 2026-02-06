@@ -473,7 +473,6 @@ public class CourseService {
         String courseTagName = null;
         if (courseTag != null) {
             courseTagName = courseTag.isActive() ? courseTag.getName() : null;
-            tagValidator.validateCourseTag(courseTag);
         }
 
         String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
