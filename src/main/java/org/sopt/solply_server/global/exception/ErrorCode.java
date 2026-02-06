@@ -89,6 +89,7 @@ public enum ErrorCode {
     INVALID_TAG_RELATIONSHIP(HttpStatus.BAD_REQUEST, "TAG-004", "메인 태그와 서브 태그의 관계가 올바르지 않습니다."),
     NOT_EMPTY_SUB_TAG(HttpStatus.BAD_REQUEST, "TAG-005", "서브 태그 값은 null 혹은 id 값으로 전송해야 합니다."),
     CANNOT_ACTIVATE_TAG_PARENT_INACTIVE(HttpStatus.BAD_REQUEST, "TAG-006", "상위 태그가 비활성화되어 있는 상태입니다"),
+    INVALID_TAG_USAGE(HttpStatus.BAD_REQUEST, "TAG-007" , "태그 사용 용도(장소용/코스용)가 잘못 되었습니다." ),
 
 
     // 북마크 관련 (BOOKMARK-xxx)
@@ -110,6 +111,7 @@ public enum ErrorCode {
     // 장소 등록 요청 관련 (PLACE_REQUEST-xxx)
     NOT_FOUND_PLACE_REQUEST(HttpStatus.NOT_FOUND, "PLACE_REQUEST-001", "존재하지 않는 장소 등록 요청입니다." ),
     INVALID_REQUEST_STATE(HttpStatus.BAD_REQUEST, "PLACE_REQUEST-002", "승인할 수 없는 장소 등록 요청입니다." );
+
 
 
     private final HttpStatus httpStatus;

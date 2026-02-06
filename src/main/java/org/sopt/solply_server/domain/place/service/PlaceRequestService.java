@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.place.service.facade.PlaceTagFacade;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
@@ -17,7 +18,6 @@ import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
-import org.sopt.solply_server.global.util.s3.S3FileService;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -36,12 +36,12 @@ import java.util.stream.Stream;
 public class PlaceRequestService {
 
     private final PlaceRequestRepository placeRequestRepository;
-    private final TagRepository tagRepository;
     private final UserRepository userRepository;
 
     private final TagValidator tagValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final ImageFileKeyValidator imageFileKeyValidator;
+    private final PlaceTagFacade placeTagFacade;
 
     @Transactional
     public PlaceRequestCreateResponse createPlaceRequest(final Long userId, PlaceRequestCreateRequest request) {
@@ -76,7 +76,7 @@ public class PlaceRequestService {
         List<Long> subA = Optional.ofNullable(request.subTagAIds()).orElseGet(List::of);
         List<Long> subB = Optional.ofNullable(request.subTagBIds()).orElseGet(List::of);
 
-        tagValidator.validateTagConditions(request.mainTagId(), subA, subB);
+        tagValidator.validatePlaceTagConditions(request.mainTagId(), subA, subB);
 
         Set<Long> allTagIds = Stream.of(
                         Stream.of(request.mainTagId()),
@@ -88,7 +88,7 @@ public class PlaceRequestService {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
         if (!allTagIds.isEmpty()) {
-            List<Tag> tags = tagRepository.findAllByIdInAndActiveTrue(allTagIds);
+            List<Tag> tags = placeTagFacade.getAllTags(allTagIds);
             placeRequest.addTags(tags);
         }
 

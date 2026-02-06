@@ -60,20 +60,26 @@ public class Tag {
     @OneToMany(mappedBy = "tag", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TagPersonaMapping> personaMappings = new ArrayList<>();
 
-    public static Tag create(String name, TagType type, Tag parent, Boolean active) {
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TagUsage tagUsage;
+
+    public static Tag create(String name, TagType type, Tag parent, Boolean active, TagUsage usage) {
         return Tag.builder()
                 .name(name)
                 .type(type)
                 .parent(parent)
                 .active(active)
+                .tagUsage(usage)
                 .build();
     }
 
-    public void updateBasic(TagType type, Tag parent, String name, boolean active) {
+    public void updateBasic(TagType type, Tag parent, String name, boolean active, TagUsage usage) {
         this.type = type;
         this.parent = parent;
         this.name = name;
         this.active = active;
+        this.tagUsage = usage;
     }
 
     public void setActive(boolean active) {

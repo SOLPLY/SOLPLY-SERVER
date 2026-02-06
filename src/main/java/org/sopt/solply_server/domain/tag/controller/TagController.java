@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.tag.dto.response.TagListGetResponse;
+import org.sopt.solply_server.domain.tag.entity.TagUsage;
 import org.sopt.solply_server.domain.tag.service.TagService;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -23,9 +24,10 @@ public class TagController {
     @Operation(summary = "태그 조회", description = "장소 태그를 조회합니다.")
     @GetMapping
     public ResponseEntity<CustomApiResponse<TagListGetResponse>> findTags(
+            @RequestParam(required = true) TagUsage tagUsage,
             @RequestParam(name = "parentId", required = false) Long parentId
     ) {
-        TagListGetResponse response = tagService.findTags(parentId);
+        TagListGetResponse response = tagService.findTags(tagUsage, parentId);
         return CustomApiResponse.success("태그 조회에 성공했습니다", response);
     }
 }
