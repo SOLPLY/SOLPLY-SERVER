@@ -4,6 +4,7 @@ import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpsertR
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpsertResponse;
 import org.sopt.solply_server.domain.admin.course.repository.AdminCourseRepository;
 import org.sopt.solply_server.domain.admin.course.util.AdminCourseValidator;
+import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -26,11 +27,14 @@ public class AdminCourseService {
 
 	private final EntityLoader entityLoader;
 	private final AdminCourseValidator adminCourseValidator;
+	private final AdminTagValidator adminTagValidator;
 
 	@Transactional
 	public AdminCourseUpsertResponse createCourse(final Long adminId, final AdminCourseUpsertRequest req) {
 		User admin = entityLoader.getUser(adminId);
 		Town town = entityLoader.getTown(req.townId());
+
+		adminTagValidator.validateCourseTagConditions(req.tagId());
 		Tag tag = entityLoader.getTag(req.tagId());
 
 		adminCourseValidator.validateCourseNameUnique(req.name());
