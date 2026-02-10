@@ -49,7 +49,8 @@ public class AdminTagService {
                 req.name(),
                 req.type(),
                 parent,
-                req.active()
+                req.active(),
+                req.usage()
         );
 
         // 하드코딩: 가중치
@@ -91,7 +92,7 @@ public class AdminTagService {
                 parent
         );
 
-        tag.updateBasic(req.type(), parent, req.name(), req.active());
+        tag.updateBasic(req.type(), parent, req.name(), req.active(), req.usage());
 
         // 하드코딩: 가중치
         tag.replacePersonaMappings(req.personas(), 1);

@@ -194,7 +194,7 @@ public class PlaceService {
     private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean isOnlyBookmarkSearch,
             final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         if (mainTagId != null) {
-            tagValidator.validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+            tagValidator.validatePlaceTagConditions(mainTagId, subTagAIdList, subTagBIdList);
         }
 
         if (isOnlyBookmarkSearch) {
@@ -202,15 +202,9 @@ public class PlaceService {
         }
 
         // 통합 조회
-        List<Place> places = placeRepository.findPlacesByConditions(
+        return placeRepository.findPlacesByConditions(
                 PlaceSearchConditionDto.of(selectedTownId, false, null, mainTagId, subTagAIdList, subTagBIdList)
         );
-
-
-        log.info("장소 조회 완료 - townId: {}, isOnlyBookmarkSearch: {}, mainTagId: {}, 결과: {} 개",
-                selectedTownId, isOnlyBookmarkSearch, mainTagId, places.size());
-
-        return places;
     }
 
     private List<Place> getBookmarkedPlacesByLatest(

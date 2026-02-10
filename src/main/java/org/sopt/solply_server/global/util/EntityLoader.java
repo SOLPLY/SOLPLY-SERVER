@@ -29,7 +29,6 @@ public class EntityLoader {
     private final CourseRepository courseRepository;
     private final PlaceRepository placeRepository;
     private final TownRepository townRepository;
-    private final UserInterestTownRepository userInterestTownRepository;
     private final TagRepository tagRepository;
     private final PlaceRequestRepository placeRequestRepository;
 
@@ -67,6 +66,7 @@ public class EntityLoader {
         return tagRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
     }
+
 
     public PlaceRequest getPlaceRequest(Long requestId) {
         return placeRequestRepository.findById(requestId)

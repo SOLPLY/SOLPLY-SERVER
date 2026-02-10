@@ -10,16 +10,16 @@ public record CourseFolderDto(
         Long townId,
         String townName,
         String courseName,
-        List<String> primaryTags,
+        String courseTagName,
         String thumbnailUrl
 ) {
 
-    public static CourseFolderDto of(Course course, List<String> primaryTags, String thumbnailUrl) {
+    public static CourseFolderDto of(Course course, String tagName, String thumbnailUrl) {
         return CourseFolderDto.builder()
                 .townId(course.getTown().getId())
                 .townName(course.getTown().getName())
                 .courseName(course.getName())
-                .primaryTags(primaryTags)
+                .courseTagName(tagName)
                 .thumbnailUrl(thumbnailUrl)
                 .build();
     }

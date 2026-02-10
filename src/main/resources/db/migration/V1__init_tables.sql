@@ -90,6 +90,7 @@ CREATE TABLE tags (
                       type VARCHAR(50) NOT NULL,
                       parent_id BIGINT NULL,
                       active BOOLEAN NOT NULL DEFAULT TRUE,
+                      tag_usage VARCHAR(20) NOT NULL DEFAULT 'PLACE',
 
                       CONSTRAINT fk_tags_parent
                           FOREIGN KEY (parent_id) REFERENCES tags(id)
@@ -98,6 +99,7 @@ CREATE TABLE tags (
 CREATE INDEX idx_tag_parent_id ON tags(parent_id);
 CREATE INDEX idx_tag_id_type ON tags(id, type);
 CREATE INDEX idx_tag_type_parent ON tags(type, parent_id);
+CREATE INDEX idx_tag_usage_type_parent ON tags(tag_usage, type, parent_id);
 
 
 -- =========================
@@ -315,6 +317,9 @@ CREATE TABLE courses (
                          is_shared BOOLEAN NOT NULL DEFAULT FALSE,
                          town_id BIGINT NOT NULL,
                          created_by BIGINT NULL,
+
+                         course_tag_id BIGINT NULL,
+
                          active BOOLEAN NOT NULL,
 
                          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -324,12 +329,17 @@ CREATE TABLE courses (
                              FOREIGN KEY (town_id) REFERENCES towns(id),
 
                          CONSTRAINT fk_courses_created_by
-                             FOREIGN KEY (created_by) REFERENCES users(id)
+                             FOREIGN KEY (created_by) REFERENCES users(id),
+
+                         CONSTRAINT fk_courses_course_tag
+                             FOREIGN KEY (course_tag_id) REFERENCES tags(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE INDEX idx_course_town_id ON courses(town_id);
 CREATE INDEX idx_course_is_shared ON courses(is_shared);
 CREATE INDEX idx_course_created_by ON courses(created_by);
+
+CREATE INDEX idx_course_course_tag_id ON courses(course_tag_id);
 
 
 -- =========================

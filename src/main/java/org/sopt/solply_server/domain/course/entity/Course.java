@@ -8,6 +8,7 @@ import java.util.List;
 import lombok.*;
 import org.sopt.solply_server.domain.course.dto.PlaceInCourseInfo;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
@@ -53,14 +54,19 @@ public class Course extends BaseTimeEntity {
     @OrderBy("placeOrder ASC")
     private List<CoursePlace> coursePlaces = new ArrayList<>();
 
-    public static Course create(String name, String introduction, Town town, User createdBy, Boolean active) {
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_tag_id")
+    private Tag tag;
+
+    public static Course create(String name, String introduction, Town town, User createdBy, Boolean active, Tag tag) {
         return Course.builder()
                 .name(name)
                 .introduction(introduction)
-                .isShared(false) // 사용자 생성 코스는 기본 비공개
+                .isShared(false)
                 .town(town)
                 .createdBy(createdBy)
-				.active(active)
+                .active(active)
+                .tag(tag)
                 .coursePlaces(new ArrayList<>())
                 .build();
     }
@@ -105,5 +111,9 @@ public class Course extends BaseTimeEntity {
 
     public int getPlaceCount() {
         return this.coursePlaces.size();
+    }
+
+    public void updateCourseTag(Tag courseTag) {
+        this.tag = courseTag;
     }
 }

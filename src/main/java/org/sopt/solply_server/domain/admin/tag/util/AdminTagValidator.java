@@ -8,6 +8,7 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -16,6 +17,7 @@ public class AdminTagValidator {
 
     private final AdminTagRepository adminTagRepository;
     private final TagValidator tagValidator;
+    private final EntityLoader entityLoader;
 
     public void validateParentForAdmin(
             TagType type,
@@ -46,8 +48,15 @@ public class AdminTagValidator {
         }
     }
 
-    public void validateTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
-        tagValidator.validateTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+    // 장소 태그 검증
+    public void validatePlaceTagConditions(Long mainTagId, List<Long> subTagAIdList, List<Long> subTagBIdList) {
+        tagValidator.validatePlaceTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+    }
+
+    // 코스 태그 검증
+    public void validateCourseTagConditions(Long courseTagId) {
+        Tag tag = entityLoader.getTag(courseTagId);
+        tagValidator.validateCourseTag(tag);
     }
 
 

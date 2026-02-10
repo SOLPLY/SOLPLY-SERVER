@@ -4,6 +4,7 @@ import java.util.List;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagPersonaMapping;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.domain.tag.entity.TagUsage;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
 
 public record AdminTagDetailsResponse(
@@ -13,7 +14,8 @@ public record AdminTagDetailsResponse(
         Long parentId,
         String parentName,
         boolean active,
-        List<PersonaMappingDto> personas
+        List<PersonaMappingDto> personas,
+        String tagUsage
 ) {
     public static AdminTagDetailsResponse from(Tag t) {
         List<PersonaMappingDto> personas = t.getPersonaMappings().stream()
@@ -27,7 +29,8 @@ public record AdminTagDetailsResponse(
                 t.getParent() == null ? null : t.getParent().getId(),
                 t.getParent() == null ? null : t.getParent().getName(),
                 t.isActive(),
-                personas
+                personas,
+                t.getTagUsage().name()
         );
     }
 
