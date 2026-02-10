@@ -5,6 +5,7 @@ import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpsert
 import org.sopt.solply_server.domain.admin.course.repository.AdminCourseRepository;
 import org.sopt.solply_server.domain.admin.course.util.AdminCourseValidator;
 import org.sopt.solply_server.domain.course.entity.Course;
+import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -30,9 +31,10 @@ public class AdminCourseService {
 	public AdminCourseUpsertResponse createCourse(final Long adminId, final AdminCourseUpsertRequest req) {
 		User admin = entityLoader.getUser(adminId);
 		Town town = entityLoader.getTown(req.townId());
+		Tag tag = entityLoader.getTag(req.tagId());
 
 		adminCourseValidator.validateCourseNameUnique(req.name());
-		Course course = Course.create(req.name(), req.intro(), town, admin, town.getActive());
+		Course course = Course.create(req.name(), req.intro(), town, admin, town.getActive(), tag);
 		adminCoursePlaceService.addPlacesToCourse(course, req.placeIds(), req.townId());
 		course = adminCourseRepository.save(course);
 
