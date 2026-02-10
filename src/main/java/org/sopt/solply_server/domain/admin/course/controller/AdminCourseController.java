@@ -6,7 +6,6 @@ import org.sopt.solply_server.domain.admin.course.service.AdminCourseService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,7 +31,7 @@ public class AdminCourseController {
 	) {
 		return CustomApiResponse.success(
 			"어드민 생성 성공",
-			adminCourseService.creatCourse(adminUserId, request)
+			adminCourseService.createCourse(adminUserId, request)
 		);
 	}
 }

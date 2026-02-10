@@ -27,7 +27,7 @@ public class AdminCourseService {
 	private final AdminCourseValidator adminCourseValidator;
 
 	@Transactional
-	public AdminCourseUpsertResponse creatCourse(final Long adminId, final AdminCourseUpsertRequest req) {
+	public AdminCourseUpsertResponse createCourse(final Long adminId, final AdminCourseUpsertRequest req) {
 		User admin = entityLoader.getUser(adminId);
 		Town town = entityLoader.getTown(req.townId());
 
