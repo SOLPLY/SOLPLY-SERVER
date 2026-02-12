@@ -17,5 +17,4 @@ public class AdminCourseValidator {
 			throw new BusinessException(ErrorCode.DUPLICATE_COURSE_NAME);
 		}
 	}
-
 }

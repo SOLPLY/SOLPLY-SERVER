@@ -59,5 +59,4 @@ public class AdminTagValidator {
         tagValidator.validateCourseTag(tag);
     }
 
-
 }

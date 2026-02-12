@@ -1,13 +1,16 @@
 package org.sopt.solply_server.domain.admin.course.controller;
 
+import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpdateRequest;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpsertRequest;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseListResponse;
+import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpdateResponse;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpsertResponse;
 import org.sopt.solply_server.domain.admin.course.service.AdminCourseService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -46,6 +49,18 @@ public class AdminCourseController {
 		return CustomApiResponse.success(
 			"어드민 코스 목록 조회 성공",
 			adminCourseService.getCourseList(townId)
+		);
+	}
+
+	@Operation(summary = "어드민 코스 수정", description = "어드민이 코스를 수정합니다.")
+	@PatchMapping()
+	public ResponseEntity<CustomApiResponse<AdminCourseUpdateResponse>> updateCourse(
+		@RequestParam Long courseId,
+		@Valid @RequestBody AdminCourseUpdateRequest request
+	) {
+		return CustomApiResponse.success(
+			"어드민 코스 수정 성공",
+			adminCourseService.updateCourse(courseId, request)
 		);
 	}
 }

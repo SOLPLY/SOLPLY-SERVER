@@ -1,11 +1,12 @@
 package org.sopt.solply_server.domain.admin.course.service;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.sopt.solply_server.domain.admin.course.dto.AdminCourseSummaryDto;
+import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpdateRequest;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpsertRequest;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseListResponse;
+import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpdateResponse;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpsertResponse;
 import org.sopt.solply_server.domain.admin.course.repository.AdminCourseRepository;
 import org.sopt.solply_server.domain.admin.course.util.AdminCourseValidator;
@@ -70,4 +71,23 @@ public class AdminCourseService {
 		return AdminCourseListResponse.of(dtoList);
 	}
 
+	@Transactional
+	public AdminCourseUpdateResponse updateCourse(Long courseId, AdminCourseUpdateRequest req) {
+		Course course = entityLoader.getCourse(courseId);
+
+		adminCourseValidator.validateCourseNameUnique(req.name());
+		course.updateName(req.name());
+
+		course.updateCourseIntro(req.intro());
+
+		course.getCoursePlaces().clear();
+		adminCoursePlaceService.addPlacesToCourse(course, req.placeIds(), course.getTown().getId());
+
+		adminTagValidator.validateCourseTagConditions(req.tagId());
+		course.updateCourseTag(entityLoader.getTag(req.tagId()));
+
+		log.info("어드민 코스 수정 성공 - courseId: {}", course.getId());
+
+		return AdminCourseUpdateResponse.of(course.getId());
+	}
 }
