@@ -47,7 +47,6 @@ public class AdminCourseService {
 		Tag tag = entityLoader.getTag(req.tagId());
 		adminTagValidator.validateCourseTagConditions(tag);
 
-		adminCourseValidator.validateCourseNameUnique(req.name());
 		Course course = Course.create(req.name(), req.intro(), town, admin, town.getActive(), tag);
 		adminCoursePlaceService.addPlacesToCourse(course, req.placeIds(), req.townId());
 		course = adminCourseRepository.save(course);
@@ -80,7 +79,6 @@ public class AdminCourseService {
 	public AdminCourseUpdateResponse updateCourse(Long courseId, AdminCourseUpdateRequest req) {
 		Course course = entityLoader.getCourse(courseId);
 
-		adminCourseValidator.validateCourseNameUnique(req.name());
 		course.updateName(req.name());
 
 		course.updateCourseIntro(req.intro());
