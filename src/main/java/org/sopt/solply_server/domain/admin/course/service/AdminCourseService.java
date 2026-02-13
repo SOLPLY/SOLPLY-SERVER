@@ -57,16 +57,13 @@ public class AdminCourseService {
 	}
 
 	public AdminCourseListResponse getCourseList(Long townId) {
-		List<Course> courseList;
-		if (townId == null) {
-			courseList = adminCourseRepository.findAllWithTown();
-		} else {
+		if (townId != null) {
 			adminTownValidator.validateTownId(townId);
-			courseList = adminCourseRepository.findAllWithTownByTownId(townId);
 		}
 
-		List<AdminCourseSummaryDto> dtoList = courseList.stream().map(course ->
-				AdminCourseSummaryDto.of(course.getId(), course.getName(), course.getTown().getName(), course.isActive()))
+		List<AdminCourseSummaryDto> dtoList = adminCourseRepository.findAllWithTownByTownId(townId)
+			.stream()
+			.map(AdminCourseSummaryDto::from)
 			.toList();
 
 		log.info("어드민 코스 목록 조회 성공");

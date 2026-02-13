@@ -1,5 +1,7 @@
 package org.sopt.solply_server.domain.admin.course.dto;
 
+import org.sopt.solply_server.domain.course.entity.Course;
+
 public record AdminCourseSummaryDto(
 	Long courseId,
 	String courseName,
@@ -10,4 +12,8 @@ public record AdminCourseSummaryDto(
 		return new AdminCourseSummaryDto(courseId, courseName, townName, active);
 	}
 
+	public static AdminCourseSummaryDto from(Course course) {
+		return new AdminCourseSummaryDto(course.getId(), course.getName(), course.getTown().getName(),
+			course.isActive());
+	}
 }
