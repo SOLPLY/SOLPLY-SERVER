@@ -72,11 +72,6 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
     }
 
-    public Tag getCourseTag(Long id){
-        return tagRepository.findById(id)
-            .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
-    }
-
     public PlaceRequest getPlaceRequest(Long requestId) {
         return placeRequestRepository.findById(requestId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE_REQUEST));
