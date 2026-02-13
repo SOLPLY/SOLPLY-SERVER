@@ -9,8 +9,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface AdminCourseRepository extends JpaRepository<Course,Long> {
 
-	boolean existsByName(String name);
-
 	@Query("""
 		SELECT c
 		FROM Course c
