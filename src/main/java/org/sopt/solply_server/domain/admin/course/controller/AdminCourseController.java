@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.admin.course.controller;
 
+import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseActivationRequest;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpdateRequest;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpsertRequest;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseDetailResponse;
@@ -75,4 +76,17 @@ public class AdminCourseController {
 			adminCourseService.updateCourse(courseId, request)
 		);
 	}
+
+	@Operation(summary = "어드민 코스 상태 수정", description = "어드민이 코스의 활성화 상태를 수정합니다.")
+	@PatchMapping("/{id}/activation")
+	public ResponseEntity<CustomApiResponse<AdminCourseUpsertResponse>> updateCourseStatus(
+		@RequestParam("id") Long courseId,
+		@Valid @RequestBody AdminCourseActivationRequest request
+	) {
+		return CustomApiResponse.success(
+			"어드민 코스 상태 수정 성공",
+			adminCourseService.updateCourseStatus(courseId, request)
+		);
+	}
+
 }

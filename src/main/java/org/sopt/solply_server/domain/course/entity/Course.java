@@ -122,4 +122,8 @@ public class Course extends BaseTimeEntity {
 	public void updateCourseIntro(String intro) {
 		this.introduction = intro;
 	}
+
+	public void updateActivation(boolean active) {
+		this.active = active;
+	}
 }

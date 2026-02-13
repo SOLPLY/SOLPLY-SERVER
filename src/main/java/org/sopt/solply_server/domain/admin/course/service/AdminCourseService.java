@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.admin.course.service;
 import java.util.List;
 
 import org.sopt.solply_server.domain.admin.course.dto.AdminCourseSummaryDto;
+import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseActivationRequest;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpdateRequest;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpsertRequest;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseDetailResponse;
@@ -96,5 +97,14 @@ public class AdminCourseService {
 		log.info("어드민 코스 수정 성공 - courseId: {}", course.getId());
 
 		return AdminCourseUpdateResponse.of(course.getId());
+	}
+
+	@Transactional
+	public AdminCourseUpsertResponse updateCourseStatus(Long courseId, AdminCourseActivationRequest req) {
+		Course course = entityLoader.getCourse(courseId);
+		course.updateActivation(req.active());
+
+		log.info("어드민 코스 상태 수정 성공 - 현재 상태: {}", course.isActive());
+		return AdminCourseUpsertResponse.of(course.getId());
 	}
 }
