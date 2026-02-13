@@ -11,7 +11,6 @@ import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseListRe
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpdateResponse;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpsertResponse;
 import org.sopt.solply_server.domain.admin.course.repository.AdminCourseRepository;
-import org.sopt.solply_server.domain.admin.course.util.AdminCourseValidator;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.admin.town.util.AdminTownValidator;
 import org.sopt.solply_server.domain.course.entity.Course;
@@ -35,7 +34,6 @@ public class AdminCourseService {
 	private final AdminCoursePlaceService adminCoursePlaceService;
 
 	private final EntityLoader entityLoader;
-	private final AdminCourseValidator adminCourseValidator;
 	private final AdminTagValidator adminTagValidator;
 	private final AdminTownValidator adminTownValidator;
 
@@ -48,7 +46,7 @@ public class AdminCourseService {
 		adminTagValidator.validateCourseTagConditions(tag);
 
 		Course course = Course.create(req.name(), req.intro(), town, admin, town.getActive(), tag);
-		adminCoursePlaceService.addPlacesToCourse(course, req.placeIds(), req.townId());
+		adminCoursePlaceService.addPlacesToCourse(course, req.placeList(), req.townId());
 		course = adminCourseRepository.save(course);
 
 		log.info("어드민 코스 생성 성공 - adminId: {}, courseId: {}", course.getId(), adminId);
