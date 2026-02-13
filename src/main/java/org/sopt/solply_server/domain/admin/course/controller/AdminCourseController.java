@@ -56,7 +56,7 @@ public class AdminCourseController {
 	@Operation(summary = "어드민 코스 상세 조회", description = "어드민이 코스 상세 정보를 조회합니다.")
 	@GetMapping
 	public ResponseEntity<CustomApiResponse<AdminCourseDetailResponse>> getCourse(
-		@RequestParam Long courseId
+		@RequestParam(name = "id") Long courseId
 	) {
 		return CustomApiResponse.success(
 			"어드민 코스 상세 조회 성공",
