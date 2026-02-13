@@ -5,6 +5,7 @@ import java.util.List;
 import org.sopt.solply_server.domain.admin.course.dto.AdminCourseSummaryDto;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpdateRequest;
 import org.sopt.solply_server.domain.admin.course.dto.request.AdminCourseUpsertRequest;
+import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseDetailResponse;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseListResponse;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpdateResponse;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpsertResponse;
@@ -71,6 +72,12 @@ public class AdminCourseService {
 		return AdminCourseListResponse.of(dtoList);
 	}
 
+	public AdminCourseDetailResponse getCourse(Long courseId) {
+		Course course = entityLoader.getCourseWithPlacesAndTown(courseId);
+
+		return AdminCourseDetailResponse.from(course);
+	}
+
 	@Transactional
 	public AdminCourseUpdateResponse updateCourse(Long courseId, AdminCourseUpdateRequest req) {
 		Course course = entityLoader.getCourse(courseId);
@@ -81,7 +88,7 @@ public class AdminCourseService {
 		course.updateCourseIntro(req.intro());
 
 		course.getCoursePlaces().clear();
-		adminCoursePlaceService.addPlacesToCourse(course, req.placeIds(), course.getTown().getId());
+		adminCoursePlaceService.addPlacesToCourse(course, req.placeList(), course.getTown().getId());
 
 		adminTagValidator.validateCourseTagConditions(req.tagId());
 		course.updateCourseTag(entityLoader.getTag(req.tagId()));

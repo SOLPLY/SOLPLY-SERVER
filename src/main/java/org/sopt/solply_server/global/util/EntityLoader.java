@@ -47,6 +47,11 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
     }
 
+    public Course getCourseWithPlacesAndTown(Long courseId) {
+        return courseRepository.findByIdWithPlacesAndTown(courseId)
+            .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+    }
+
     public Place getPlace(Long placeId) {
         return placeRepository.findById(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));

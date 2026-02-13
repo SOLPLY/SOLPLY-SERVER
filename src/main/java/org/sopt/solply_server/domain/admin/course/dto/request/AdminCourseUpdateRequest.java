@@ -19,7 +19,7 @@ public record AdminCourseUpdateRequest(
 
 	@NotNull(message = "코스 구성 장소는 필수입니다.")
 	@Size(min = 2, max = 6)
-	List<AdminCoursePlaceInfoDto> placeIds,
+	List<AdminCoursePlaceInfoDto> placeList,
 
 	@NotNull
 	Long tagId
