@@ -14,16 +14,9 @@ public interface AdminCourseRepository extends JpaRepository<Course,Long> {
 	@Query("""
 		SELECT c
 		FROM Course c
-		JOIN FETCH c.town
-		where c.town.id = :townId
+		JOIN FETCH c.town t
+		WHERE (:townId IS NULL OR t.id = :townId)
 	""")
 	List<Course> findAllWithTownByTownId(@Param("townId") Long townId);
-
-	@Query("""
-		SELECT c
-		FROM Course c
-		JOIN FETCH c.town
-	""")
-	List<Course> findAllWithTown();
 
 }
