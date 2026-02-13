@@ -44,8 +44,8 @@ public class AdminCourseService {
 		User admin = entityLoader.getUser(adminId);
 		Town town = entityLoader.getTown(req.townId());
 
-		adminTagValidator.validateCourseTagConditions(req.tagId());
 		Tag tag = entityLoader.getTag(req.tagId());
+		adminTagValidator.validateCourseTagConditions(tag);
 
 		adminCourseValidator.validateCourseNameUnique(req.name());
 		Course course = Course.create(req.name(), req.intro(), town, admin, town.getActive(), tag);
@@ -91,8 +91,9 @@ public class AdminCourseService {
 		course.getCoursePlaces().clear();
 		adminCoursePlaceService.addPlacesToCourse(course, req.placeList(), course.getTown().getId());
 
-		adminTagValidator.validateCourseTagConditions(req.tagId());
-		course.updateCourseTag(entityLoader.getTag(req.tagId()));
+		Tag tag= entityLoader.getTag(req.tagId());
+		adminTagValidator.validateCourseTagConditions(tag);
+		course.updateCourseTag(tag);
 
 		log.info("어드민 코스 수정 성공 - courseId: {}", course.getId());
 

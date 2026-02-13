@@ -1,15 +1,16 @@
 package org.sopt.solply_server.domain.admin.tag.util;
 
 import java.util.List;
-import lombok.RequiredArgsConstructor;
+
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
-import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Component;
+
+import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
@@ -17,7 +18,6 @@ public class AdminTagValidator {
 
     private final AdminTagRepository adminTagRepository;
     private final TagValidator tagValidator;
-    private final EntityLoader entityLoader;
 
     public void validateParentForAdmin(
             TagType type,
@@ -54,8 +54,7 @@ public class AdminTagValidator {
     }
 
     // 코스 태그 검증
-    public void validateCourseTagConditions(Long courseTagId) {
-        Tag tag = entityLoader.getTag(courseTagId);
+    public void validateCourseTagConditions(Tag tag) {
         tagValidator.validateCourseTag(tag);
     }
 
