@@ -1,14 +1,14 @@
 package org.sopt.solply_server.domain.course.repository;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
-import java.util.List;
-import java.util.Optional;
 
 public interface CourseRepository extends JpaRepository<Course, Long> {
 
@@ -87,4 +87,11 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         where c.id in :courseIds
     """)
     List<Course> findFolderPreviewCourses(@Param("courseIds") List<Long> courseIds);
+
+    @Query("SELECT DISTINCT c FROM Course c " +
+        "LEFT JOIN FETCH c.coursePlaces cp " +
+        "LEFT JOIN FETCH cp.place p " +
+        "LEFT JOIN FETCH c.town t " +
+        "WHERE c.id = :courseId")
+    Optional<Course> findByIdWithPlacesAndTown(@Param("courseId") Long courseId);
 }

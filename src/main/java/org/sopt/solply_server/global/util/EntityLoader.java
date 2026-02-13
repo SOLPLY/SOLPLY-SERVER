@@ -1,8 +1,5 @@
 package org.sopt.solply_server.global.util;
 
-import java.util.List;
-import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -14,12 +11,12 @@ import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.repository.TownRepository;
 import org.sopt.solply_server.domain.user.entity.User;
-import org.sopt.solply_server.domain.user.entity.UserInterestTown;
-import org.sopt.solply_server.domain.user.repository.UserInterestTownRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.stereotype.Component;
+
+import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
@@ -47,8 +44,18 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
     }
 
+    public Course getCourseWithPlacesAndTown(Long courseId) {
+        return courseRepository.findByIdWithPlacesAndTown(courseId)
+            .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+    }
+
     public Place getPlace(Long placeId) {
         return placeRepository.findById(placeId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+    }
+
+    public Place getPlaceWithTown(Long placeId) {
+        return placeRepository.findByIdWithTown(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
     }
 
@@ -61,7 +68,6 @@ public class EntityLoader {
         return tagRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
     }
-
 
     public PlaceRequest getPlaceRequest(Long requestId) {
         return placeRequestRepository.findById(requestId)

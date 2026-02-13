@@ -74,6 +74,7 @@ public enum ErrorCode {
     DIFFERENT_TOWN_PLACE(HttpStatus.BAD_REQUEST, "COURSE-005", "코스와 같은 동네의 장소만 추가할 수 있습니다."),
     NOT_SUFFICIENT_PLACE_COUNT(HttpStatus.BAD_REQUEST, "COURSE-006", "코스에 최소 1개 이상의 장소가 필요합니다."),
     INVALID_PLACES_ORDER(HttpStatus.BAD_REQUEST, "COURSE-007", "장소 순서가 올바르지 않습니다."),
+    DUPLICATE_COURSE_NAME(HttpStatus.BAD_REQUEST,"COURSE-008","코스 이름이 중복됩니다."),
 
     // 동네 관련 (TOWN-xxx)
     NOT_FOUND_TOWN(HttpStatus.NOT_FOUND, "TOWN-001" , "존재하지 않는 동네입니다."),
