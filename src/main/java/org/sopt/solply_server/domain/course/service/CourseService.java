@@ -497,8 +497,8 @@ public class CourseService {
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
                     if (hasCandidatePlace) {
-                        CourseValidationResult validation = validationResults.get(course.getId());
-                        return CourseInfoDto.withPlaceCheck(course, thumbnailUrl, courseTagName, validation);
+                        CourseValidationResult validationResult = validationResults.get(course.getId());
+                        return CourseInfoDto.withPlacesInCourseCheck(course, thumbnailUrl, courseTagName, validationResult);
                     }
                     return CourseInfoDto.of(course, thumbnailUrl, courseTagName);
                 })

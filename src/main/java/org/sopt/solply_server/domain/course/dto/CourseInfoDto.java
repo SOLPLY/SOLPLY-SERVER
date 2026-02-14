@@ -5,8 +5,6 @@ import lombok.Builder;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.util.CourseValidationResult;
 
-import java.util.List;
-
 @Builder
 public record CourseInfoDto(
         Long courseId,
@@ -24,7 +22,7 @@ public record CourseInfoDto(
     /**
      * 장소 추가 가능 여부 체크가 필요한 경우 (candidatePlaceId가 있는 경우)
      */
-    public static CourseInfoDto withPlaceCheck(Course course, String thumbnailImage,
+    public static CourseInfoDto withPlacesInCourseCheck(Course course, String thumbnailImage,
             String tagName, CourseValidationResult validation) {
         return CourseInfoDto.builder()
                 .courseId(course.getId())
