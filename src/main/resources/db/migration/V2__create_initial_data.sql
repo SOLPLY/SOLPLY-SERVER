@@ -259,7 +259,7 @@ VALUES
 
 -- courses 데이터 삽입
 INSERT INTO `courses`
-(`id`, `name`, `introduction`, `is_shared`, `town_id`, `tag_id`, `created_by`, `active`)
+(`id`, `name`, `introduction`, `is_shared`, `town_id`, `course_tag_id`, `created_by`, `active`)
 VALUES
     (1, '월요일 오후 반나절 추천 코스', '한적한 망원동의 월요일 추천 루트', TRUE, 2, 33, 1, true),
     (2, '로컬 추천 망원동 이색 코스', '망원동을 색다롭게 즐기는 방법', TRUE, 2, 33, 1, true),
