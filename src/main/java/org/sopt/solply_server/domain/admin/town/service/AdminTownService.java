@@ -127,7 +127,6 @@ public class AdminTownService {
 		return AdminTownUpsertResponse.of(townId);
 	}
 
-	@Transactional
 	private void activateTown(Long townId) {
 		Town town = entityLoader.getTown(townId);
 		List<Long> townIds = new ArrayList<>();
@@ -143,7 +142,6 @@ public class AdminTownService {
 		log.info("어드민 지역/동네 활성화된 동네 갯수: {}", cnt);
 	}
 
-	@Transactional
 	private void deactivateTown(Long townId) {
 		Town town = entityLoader.getTown(townId);
 

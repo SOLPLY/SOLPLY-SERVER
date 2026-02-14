@@ -203,7 +203,7 @@ public class AdminPlaceService {
 
     public AdminPlaceListResponse getPlacesByTown(final Long townId) {
         Town town = entityLoader.getTown(townId); // 존재 검증
-        List<Place> places = adminPlaceRepository.findAdminPlacesByTownId(town.getId());
+        List<Place> places = adminPlaceRepository.findAdminPlacesWithTagsByTownId(town.getId());
 
         List<AdminPlaceSummaryDto> result = places.stream()
                 .map(p -> AdminPlaceSummaryDto.of(

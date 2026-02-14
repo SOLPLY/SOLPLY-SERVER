@@ -20,13 +20,13 @@ import org.sopt.solply_server.domain.course.util.CourseValidationResult;
 import org.sopt.solply_server.domain.course.dto.response.CourseAddPlaceResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
-import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -47,7 +47,6 @@ public class CourseService {
     private final CoursePlaceService coursePlaceService;
     private final CourseBookmarkFacade courseBookmarkFacade;
     private final PlaceBookmarkFacade placeBookmarkFacade;
-    private final PlaceService placeService;
 
     private final ImageUrlProvider imageUrlProvider;
 
@@ -282,17 +281,12 @@ public class CourseService {
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
-        Map<Long, CourseValidationResult> validationResults =
-                prepareValidationResults(filteredCourses, candidatePlace, candidatePlaceId != null);
-
-        List<CourseInfoDto> courseInfoDtos = filteredCourses.stream()
-                .map(course -> createCourseInfoDto(course, validationResults, candidatePlaceId != null))
-                .sorted((dto1, dto2) -> {
-                    LocalDateTime createdAt1 = courseIdCreatedAtMap.getOrDefault(dto1.courseId(), LocalDateTime.MIN);
-                    LocalDateTime createdAt2 = courseIdCreatedAtMap.getOrDefault(dto2.courseId(), LocalDateTime.MIN);
-                    return createdAt2.compareTo(createdAt1);
-                })
-                .toList();
+        final List<CourseInfoDto> courseInfoDtos = createSortedCourseInfoDtoList(
+                filteredCourses,
+                courseIdCreatedAtMap,
+                candidatePlace,
+                candidatePlaceId != null
+        );
 
         log.info("북마크 코스 {}개 조회 완료 (townId: {}, candidatePlaceId: {})",
                 courseInfoDtos.size(), targetTownId, candidatePlaceId);
@@ -324,7 +318,7 @@ public class CourseService {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        return CourseFolderPreviewListGetResponse.from(toSortedFolderDtos(sortedCourseIds, courses));
+        return CourseFolderPreviewListGetResponse.from(createSortedCourseFolderDtoList(sortedCourseIds, courses));
     }
 
     //=== private method ===//
@@ -374,16 +368,37 @@ public class CourseService {
         List<Long> placeIds = placeInfos.stream()
                 .map(PlaceInCourseInfo::placeId)
                 .toList();
-        List<Place> places = placeService.getPlacesWithTownByPlaceIds(placeIds); // 코스에서 다루려는 장소 정보 조회
+        List<Place> places = getPlacesWithTownByPlaceIds(placeIds); // 코스에서 다루려는 장소 정보 조회
         coursePlaceValidator.validatePlacesForCourse(placeInfos, places);
 
         return places;
     }
 
+    private List<Place> getPlacesWithTownByPlaceIds(final List<Long> placeIds) {
+        // Town 정보까지 함께 조회 (N+1 문제 방지)
+        List<Place> places = entityLoader.findPlacesWithTown(placeIds);
 
-    /**
-     * 필터링 여부에 따른 CourseInfoDto 생성
-     */
+        if (places.size() != placeIds.size()) {
+            Set<Long> foundIds = places.stream()
+                    .map(Place::getId)
+                    .collect(Collectors.toSet());
+
+            List<Long> missingIds = placeIds.stream()
+                    .filter(id -> !foundIds.contains(id))
+                    .toList();
+
+            log.warn("존재하지 않는 장소 ID들: {}", missingIds);
+            throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
+        }
+
+        Map<Long, Place> placeMap = places.stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
+
+        return placeIds.stream()
+                .map(placeMap::get)
+                .toList();
+    }
+
     private Map<Long, CourseValidationResult> prepareValidationResults(
             List<Course> courses, Place candidatePlace, boolean checkCanAddPlaceToCourse) {
 
@@ -444,7 +459,7 @@ public class CourseService {
      * DTO 생성
      */
 
-    private List<CourseFolderDto> toSortedFolderDtos(List<Long> sortedCourseIds, List<Course> courses) {
+    private List<CourseFolderDto> createSortedCourseFolderDtoList(List<Long> sortedCourseIds, List<Course> courses) {
         Map<Long, Course> courseMap = courses.stream()
                 .collect(Collectors.toMap(Course::getId, Function.identity()));
 
@@ -464,34 +479,33 @@ public class CourseService {
                 .toList();
     }
 
-    private CourseInfoDto createCourseInfoDto(
-            Course course,
-            Map<Long, CourseValidationResult> validationResults,
-            boolean checkCanAddPlaceToCourse) {
+    private List<CourseInfoDto> createSortedCourseInfoDtoList(
+            final List<Course> filteredCourses,
+            final Map<Long, LocalDateTime> courseIdCreatedAtMap,
+            final Place candidatePlace,
+            final boolean hasCandidatePlace
+    ) {
+        // 코스 별 검증 결과 생성
+        final Map<Long, CourseValidationResult> validationResults =
+                prepareValidationResults(filteredCourses, candidatePlace, hasCandidatePlace);
 
-        Tag courseTag = course.getTag();
-        String courseTagName = null;
-        if (courseTag != null) {
-            courseTagName = courseTag.isActive() ? courseTag.getName() : null;
-        }
+        return filteredCourses.stream()
+                .map(course -> {
+                    Tag courseTag = course.getTag();
+                    String courseTagName = (courseTag != null && courseTag.isActive()) ? courseTag.getName() : null;
 
-        String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
+                    String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
-        if (checkCanAddPlaceToCourse) {
-            CourseValidationResult validation = validationResults.get(course.getId());
-            return CourseInfoDto.withPlaceCheck(
-                    course,
-                    thumbnailUrl,
-                    courseTagName,
-                    validation
-            );
-        } else {
-            return CourseInfoDto.of(
-                    course,
-                    thumbnailUrl,
-                    courseTagName
-            );
-        }
+                    if (hasCandidatePlace) {
+                        CourseValidationResult validation = validationResults.get(course.getId());
+                        return CourseInfoDto.withPlaceCheck(course, thumbnailUrl, courseTagName, validation);
+                    }
+                    return CourseInfoDto.of(course, thumbnailUrl, courseTagName);
+                })
+                .sorted((a, b) -> courseIdCreatedAtMap
+                        .getOrDefault(b.courseId(), LocalDateTime.MIN)
+                        .compareTo(courseIdCreatedAtMap.getOrDefault(a.courseId(), LocalDateTime.MIN)))
+                .toList();
     }
 
 }

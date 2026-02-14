@@ -19,7 +19,7 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, AdminP
         where t.id = :townId
         order by p.createdAt desc
     """)
-    List<Place> findAdminPlacesByTownId(@Param("townId") Long townId);
+    List<Place> findAdminPlacesWithTagsByTownId(@Param("townId") Long townId);
 
     @Query("""
         select distinct p
