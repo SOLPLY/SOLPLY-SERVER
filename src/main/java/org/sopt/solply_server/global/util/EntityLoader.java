@@ -1,5 +1,6 @@
 package org.sopt.solply_server.global.util;
 
+import java.util.List;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -72,6 +73,10 @@ public class EntityLoader {
     public PlaceRequest getPlaceRequest(Long requestId) {
         return placeRequestRepository.findById(requestId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE_REQUEST));
+    }
+
+    public List<Place> findPlacesWithTown(List<Long> placeIds) {
+        return placeRepository.findAllByIdsWithTown(placeIds);
     }
 
 //    public List<UserInterestTown> getInterestTownsWithTownsByIds(Long userId) {

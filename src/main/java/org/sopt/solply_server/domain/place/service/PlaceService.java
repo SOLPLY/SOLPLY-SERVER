@@ -160,32 +160,6 @@ public class PlaceService {
     }
 
 
-    public List<Place> getPlacesWithTownByPlaceIds(final List<Long> placeIds) {
-        // Town 정보까지 함께 조회 (N+1 문제 방지)
-        List<Place> places = placeRepository.findAllByIdsWithTown(placeIds);
-
-        if (places.size() != placeIds.size()) {
-            Set<Long> foundIds = places.stream()
-                    .map(Place::getId)
-                    .collect(Collectors.toSet());
-
-            List<Long> missingIds = placeIds.stream()
-                    .filter(id -> !foundIds.contains(id))
-                    .toList();
-
-            log.warn("존재하지 않는 장소 ID들: {}", missingIds);
-            throw new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE);
-        }
-
-        Map<Long, Place> placeMap = places.stream()
-                .collect(Collectors.toMap(Place::getId, Function.identity()));
-
-        return placeIds.stream()
-                .map(placeMap::get)
-                .toList();
-    }
-
-
     //=== Private Methods ===//
 
     /**
