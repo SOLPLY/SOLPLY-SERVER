@@ -15,7 +15,7 @@ body:
   - type: textarea
     id: solve-steps
     attributes:
-      label: 🔨
+      label: 🔨작업 내용
       description: 작업해야 할 내용을 체크박스 형태로 작성해주세요.
       value: |
         - [ ] 작업
