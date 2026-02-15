@@ -17,7 +17,7 @@ public record CoursePreviewDto(
     public static CoursePreviewDto of(Course course, String tagName, String thumbnailUrl, Map<Long, Boolean> courseBookmarkMap) {
         return CoursePreviewDto.builder()
                 .courseId(course.getId())
-                .courseName(tagName)
+                .courseName(course.getName())
                 .thumbnailImage(thumbnailUrl)
                 .courseTagName(tagName)
                 .isBookmarked(courseBookmarkMap.getOrDefault(course.getId(), false))
