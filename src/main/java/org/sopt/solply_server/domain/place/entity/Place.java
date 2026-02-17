@@ -171,6 +171,7 @@ public class Place extends BaseTimeEntity {
             Town town,
             Map<SnsPlatform, String> snsLinks,
             List<String> imageFileKeys,
+            List<String> checkpoints,
             Tag mainTag,
             List<Tag> option1Tags,
             List<Tag> option2Tags
@@ -188,6 +189,7 @@ public class Place extends BaseTimeEntity {
 
         applySnsLinks(snsLinks);
         replaceImagesByKeys(imageFileKeys);
+        replaceCheckpoints(checkpoints);
         replaceTags(mainTag, option1Tags, option2Tags);
     }
     private void applySnsLinks(Map<SnsPlatform, String> links) {

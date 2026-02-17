@@ -72,6 +72,7 @@ public class AdminPlaceService {
                 req.placeType(),
                 req.snsLinks(),
                 imageKeys,
+                req.placeCheckPoints(),
                 town,
                 admin,
                 town.getActive(),
@@ -117,6 +118,7 @@ public class AdminPlaceService {
                 town,
                 req.snsLinks(),
                 imageKeys,
+                req.placeCheckPoints(),
                 mainTag,
                 opt1,
                 opt2

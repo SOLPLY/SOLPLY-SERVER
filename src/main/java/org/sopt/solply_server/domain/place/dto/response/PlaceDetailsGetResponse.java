@@ -20,6 +20,7 @@ public record PlaceDetailsGetResponse(
         String contactNumber,
         String openingHours,
         List<SnsLinkDto> snsLinks,
+        List<String> placeCheckpoints,
         boolean isBookmarked,
         String placeType,
         long placeDefaultId,
@@ -41,6 +42,7 @@ public record PlaceDetailsGetResponse(
                 .contactNumber(place.getContactNumber())
                 .openingHours(place.getOpeningHours())
                 .snsLinks(SnsLinkDto.toList(place.getSnsLinks()))
+                .placeCheckpoints(place.getCheckpoints())
                 .isBookmarked(isBookmarked)
                 .placeType(place.getPlaceType())
                 .placeDefaultId(place.getPlaceDefaultId())

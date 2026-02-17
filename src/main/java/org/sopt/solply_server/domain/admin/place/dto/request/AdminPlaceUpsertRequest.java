@@ -54,5 +54,7 @@ public record AdminPlaceUpsertRequest(
         @Size(max = 50, message = "placeType은 50자를 초과할 수 없습니다.")
         String placeType,
 
-        Map<SnsPlatform, String> snsLinks
+        Map<SnsPlatform, String> snsLinks,
+
+        List<@NotBlank(message = "placeCheckPoints에는 공백 문자열이 올 수 없습니다.") String> placeCheckPoints
 ) {}
