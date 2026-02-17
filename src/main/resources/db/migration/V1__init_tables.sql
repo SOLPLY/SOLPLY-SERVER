@@ -135,13 +135,10 @@ CREATE TABLE places (
                         opening_hours VARCHAR(255) NULL,
                         latitude DOUBLE NULL,
                         longitude DOUBLE NULL,
-                        place_default_id BIGINT NOT NULL,
-                        place_type VARCHAR(255) NOT NULL,
-                        place_checkpoint VARCHAR(255) NOT NULL,
 
                         town_id BIGINT NOT NULL,
-                        created_by BIGINT NOT NULL,
-                        active BOOLEAN NOT NULL,
+                        created_by BIGINT NOT NULL DEFAULT 1,
+                        active BOOLEAN NOT NULL DEFAULT TRUE,
 
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

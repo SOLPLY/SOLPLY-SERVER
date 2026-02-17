@@ -120,12 +120,10 @@ public class Place extends BaseTimeEntity {
             String name,
             String introduction,
             String address,
-            Long placeDefaultId,
             Double latitude,
             Double longitude,
             String contactNumber,
             String openingHours,
-            String placeType,
             Map<SnsPlatform, String> snsLinks,
             List<String> imageFileKeys,
             List<String> checkpoints,
@@ -140,12 +138,10 @@ public class Place extends BaseTimeEntity {
         p.name = name;
         p.introduction = introduction;
         p.address = address;
-        p.placeDefaultId = placeDefaultId;
         p.latitude = latitude;
         p.longitude = longitude;
         p.contactNumber = contactNumber;
         p.openingHours = openingHours;
-        p.placeType = placeType;
         p.town = town;
         p.createdBy = createdBy;
 		p.active = active;
@@ -162,12 +158,10 @@ public class Place extends BaseTimeEntity {
             String name,
             String introduction,
             String address,
-            Long placeDefaultId,
             Double latitude,
             Double longitude,
             String contactNumber,
             String openingHours,
-            String placeType,
             Town town,
             Map<SnsPlatform, String> snsLinks,
             List<String> imageFileKeys,
@@ -179,12 +173,10 @@ public class Place extends BaseTimeEntity {
         this.name = name;
         this.introduction = introduction;
         this.address = address;
-        this.placeDefaultId = placeDefaultId;
         this.latitude = latitude;
         this.longitude = longitude;
         this.contactNumber = contactNumber;
         this.openingHours = openingHours;
-        this.placeType = placeType;
         this.town = town;
 
         applySnsLinks(snsLinks);
