@@ -159,18 +159,17 @@ public class AdminPlaceService {
                 place.getName(),
                 place.getIntroduction(),
                 place.getAddress(),
-                place.getPlaceDefaultId(),
                 place.getLatitude(),
                 place.getLongitude(),
                 place.getContactNumber(),
                 place.getOpeningHours(),
-                place.getPlaceType(),
                 town.getId(),
                 town.getName(),
                 mainTagId,
                 option1TagIds,
                 option2TagIds,
                 place.getSnsLinks(),
+                place.getCheckpoints(),
                 imageInfos
         );
     }

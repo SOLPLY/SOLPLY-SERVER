@@ -22,8 +22,6 @@ public record PlaceDetailsGetResponse(
         List<SnsLinkDto> snsLinks,
         List<String> placeCheckpoints,
         boolean isBookmarked,
-        String placeType,
-        long placeDefaultId,
         long townId,
         String townName
 ) {
@@ -44,8 +42,6 @@ public record PlaceDetailsGetResponse(
                 .snsLinks(SnsLinkDto.toList(place.getSnsLinks()))
                 .placeCheckpoints(place.getCheckpoints())
                 .isBookmarked(isBookmarked)
-                .placeType(place.getPlaceType())
-                .placeDefaultId(place.getPlaceDefaultId())
                 .townId(town.getId())
                 .townName(town.getName())
                 .build();

@@ -75,11 +75,6 @@ public class Place extends BaseTimeEntity {
     @Column(name = "longitude")
     private Double longitude;
 
-    @Column(nullable = false) private Long placeDefaultId;
-
-    @Column(nullable = false)
-    private String placeType;
-
     /**
      * 아래와 같은 형태로 DB 저장
      * place_id: 1 / platform: INSTAGRAM / url: https://instagram.com/example

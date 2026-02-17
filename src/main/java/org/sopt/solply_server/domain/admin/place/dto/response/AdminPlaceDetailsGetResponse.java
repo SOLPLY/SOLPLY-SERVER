@@ -10,13 +10,10 @@ public record AdminPlaceDetailsGetResponse(
         String name,
         String introduction,
         String address,
-        Long placeDefaultId,
         Double latitude,
         Double longitude,
         String contactNumber,
         String openingHours,
-        String placeType,
-
         Long townId,
         String townName,
 
@@ -27,6 +24,8 @@ public record AdminPlaceDetailsGetResponse(
 
         Map<SnsPlatform, String> snsLinks,
 
+        List<String> placeCheckpoints,
+
         List<PlaceImageInfoDto> imageInfos
 ) {
     public static AdminPlaceDetailsGetResponse of(
@@ -34,26 +33,25 @@ public record AdminPlaceDetailsGetResponse(
             String name,
             String introduction,
             String address,
-            Long placeDefaultId,
             Double latitude,
             Double longitude,
             String contactNumber,
             String openingHours,
-            String placeType,
             Long townId,
             String townName,
             Long mainTagId,
             List<Long> option1TagIds,
             List<Long> option2TagIds,
             Map<SnsPlatform, String> snsLinks,
+            List<String> placeCheckpoints,
             List<PlaceImageInfoDto> imageInfos
     ) {
         return new AdminPlaceDetailsGetResponse(
-                id, name, introduction, address, placeDefaultId,
-                latitude, longitude, contactNumber, openingHours, placeType,
+                id, name, introduction, address,
+                latitude, longitude, contactNumber, openingHours,
                 townId, townName, mainTagId,
                 option1TagIds, option2TagIds,
-                snsLinks, imageInfos
+                snsLinks, placeCheckpoints, imageInfos
         );
     }
 }

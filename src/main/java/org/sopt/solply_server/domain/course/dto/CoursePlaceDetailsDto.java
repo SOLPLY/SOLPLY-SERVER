@@ -16,7 +16,6 @@ public record CoursePlaceDetailsDto(
         int placeOrder,
         String latitude,
         String longitude,
-        String placeType,
         Long placeDefaultId
 ) {
 
@@ -32,8 +31,6 @@ public record CoursePlaceDetailsDto(
                 .placeOrder(placeOrder)
                 .latitude(String.valueOf(place.getLatitude()))
                 .longitude(String.valueOf(place.getLongitude()))
-                .placeType(place.getPlaceType())
-                .placeDefaultId(place.getPlaceDefaultId())
                 .build();
     }
 }
