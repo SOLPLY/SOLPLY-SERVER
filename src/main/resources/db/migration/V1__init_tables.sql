@@ -137,10 +137,11 @@ CREATE TABLE places (
                         longitude DOUBLE NULL,
                         place_default_id BIGINT NOT NULL,
                         place_type VARCHAR(255) NOT NULL,
+                        place_checkpoint VARCHAR(255) NOT NULL,
 
                         town_id BIGINT NOT NULL,
                         created_by BIGINT NOT NULL,
-                        active BOOLEAN NOT NULL ,
+                        active BOOLEAN NOT NULL,
 
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -156,6 +157,20 @@ CREATE INDEX idx_places_town_id ON places(town_id);
 CREATE INDEX idx_places_created_by_created_at ON places(created_by, created_at);
 -- fulltext search (for MATCH(name) AGAINST ...)
 CREATE FULLTEXT INDEX ft_places_name ON places(name);
+
+
+CREATE TABLE place_checkpoints (
+                                   place_id BIGINT NOT NULL,
+                                   display_order INT NOT NULL,
+                                   content VARCHAR(255) NOT NULL,
+
+                                   PRIMARY KEY (place_id, display_order),
+                                   CONSTRAINT fk_place_checkpoints_place
+                                       FOREIGN KEY (place_id) REFERENCES places(id)
+                                           ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_place_checkpoints_place_id ON place_checkpoints(place_id);
 
 
 -- =========================

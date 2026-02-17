@@ -17,6 +17,7 @@ import jakarta.persistence.MapKeyColumn;
 import jakarta.persistence.MapKeyEnumerated;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -90,8 +91,15 @@ public class Place extends BaseTimeEntity {
     @Column(name = "url", columnDefinition = "TEXT")
     private Map<SnsPlatform, String> snsLinks = new HashMap<>();
 
-
     @BatchSize(size = 50)
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "place_checkpoints", joinColumns = @JoinColumn(name = "place_id"))
+    @OrderColumn(name = "display_order") // 순서 컬럼
+    @Column(name = "content", nullable = false)
+    private List<String> checkpoints = new ArrayList<>();
+
+
+    @BatchSize(size = 20)
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "place_images", joinColumns = @JoinColumn(name = "place_id"))
     @OrderBy("displayOrder ASC") // displayOrder가 낮은 순서로 DB 내에서 정렬
@@ -120,6 +128,7 @@ public class Place extends BaseTimeEntity {
             String placeType,
             Map<SnsPlatform, String> snsLinks,
             List<String> imageFileKeys,
+            List<String> checkpoints,
             Town town,
             User createdBy,
 			Boolean active,
@@ -143,6 +152,7 @@ public class Place extends BaseTimeEntity {
 
         p.applySnsLinks(snsLinks);
         p.replaceImagesByKeys(imageFileKeys);
+        p.replaceCheckpoints(checkpoints);
         p.replaceTags(mainTag, option1Tags, option2Tags);
 
         return p;
@@ -270,6 +280,19 @@ public class Place extends BaseTimeEntity {
                 .findFirst()
                 .map(PlaceImageInfo::getImageFileKey)
                 .orElse(null);
+    }
+
+    private void replaceCheckpoints(List<String> checkpoints) {
+        this.checkpoints.clear();
+        if (checkpoints == null || checkpoints.isEmpty()) return;
+
+        // 중복 제거(순서 유지) + null/blank 제거
+        for (String cp : new LinkedHashSet<>(checkpoints)) {
+            if (cp == null) continue;
+            String trimmed = cp.trim();
+            if (trimmed.isBlank()) continue;
+            this.checkpoints.add(trimmed);
+        }
     }
 
 }
