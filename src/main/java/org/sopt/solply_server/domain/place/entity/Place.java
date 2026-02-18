@@ -17,6 +17,7 @@ import jakarta.persistence.MapKeyColumn;
 import jakarta.persistence.MapKeyEnumerated;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -74,11 +75,6 @@ public class Place extends BaseTimeEntity {
     @Column(name = "longitude")
     private Double longitude;
 
-    @Column(nullable = false) private Long placeDefaultId;
-
-    @Column(nullable = false)
-    private String placeType;
-
     /**
      * 아래와 같은 형태로 DB 저장
      * place_id: 1 / platform: INSTAGRAM / url: https://instagram.com/example
@@ -90,8 +86,15 @@ public class Place extends BaseTimeEntity {
     @Column(name = "url", columnDefinition = "TEXT")
     private Map<SnsPlatform, String> snsLinks = new HashMap<>();
 
-
     @BatchSize(size = 50)
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "place_checkpoints", joinColumns = @JoinColumn(name = "place_id"))
+    @OrderColumn(name = "display_order") // 순서 컬럼
+    @Column(name = "content", nullable = false)
+    private List<String> checkpoints = new ArrayList<>();
+
+
+    @BatchSize(size = 20)
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "place_images", joinColumns = @JoinColumn(name = "place_id"))
     @OrderBy("displayOrder ASC") // displayOrder가 낮은 순서로 DB 내에서 정렬
@@ -112,14 +115,13 @@ public class Place extends BaseTimeEntity {
             String name,
             String introduction,
             String address,
-            Long placeDefaultId,
             Double latitude,
             Double longitude,
             String contactNumber,
             String openingHours,
-            String placeType,
             Map<SnsPlatform, String> snsLinks,
             List<String> imageFileKeys,
+            List<String> checkpoints,
             Town town,
             User createdBy,
 			Boolean active,
@@ -131,18 +133,17 @@ public class Place extends BaseTimeEntity {
         p.name = name;
         p.introduction = introduction;
         p.address = address;
-        p.placeDefaultId = placeDefaultId;
         p.latitude = latitude;
         p.longitude = longitude;
         p.contactNumber = contactNumber;
         p.openingHours = openingHours;
-        p.placeType = placeType;
         p.town = town;
         p.createdBy = createdBy;
 		p.active = active;
 
         p.applySnsLinks(snsLinks);
         p.replaceImagesByKeys(imageFileKeys);
+        p.replaceCheckpoints(checkpoints);
         p.replaceTags(mainTag, option1Tags, option2Tags);
 
         return p;
@@ -152,15 +153,14 @@ public class Place extends BaseTimeEntity {
             String name,
             String introduction,
             String address,
-            Long placeDefaultId,
             Double latitude,
             Double longitude,
             String contactNumber,
             String openingHours,
-            String placeType,
             Town town,
             Map<SnsPlatform, String> snsLinks,
             List<String> imageFileKeys,
+            List<String> checkpoints,
             Tag mainTag,
             List<Tag> option1Tags,
             List<Tag> option2Tags
@@ -168,16 +168,15 @@ public class Place extends BaseTimeEntity {
         this.name = name;
         this.introduction = introduction;
         this.address = address;
-        this.placeDefaultId = placeDefaultId;
         this.latitude = latitude;
         this.longitude = longitude;
         this.contactNumber = contactNumber;
         this.openingHours = openingHours;
-        this.placeType = placeType;
         this.town = town;
 
         applySnsLinks(snsLinks);
         replaceImagesByKeys(imageFileKeys);
+        replaceCheckpoints(checkpoints);
         replaceTags(mainTag, option1Tags, option2Tags);
     }
     private void applySnsLinks(Map<SnsPlatform, String> links) {
@@ -270,6 +269,19 @@ public class Place extends BaseTimeEntity {
                 .findFirst()
                 .map(PlaceImageInfo::getImageFileKey)
                 .orElse(null);
+    }
+
+    private void replaceCheckpoints(List<String> checkpoints) {
+        this.checkpoints.clear();
+        if (checkpoints == null || checkpoints.isEmpty()) return;
+
+        // 중복 제거(순서 유지) + null/blank 제거
+        for (String cp : new LinkedHashSet<>(checkpoints)) {
+            if (cp == null) continue;
+            String trimmed = cp.trim();
+            if (trimmed.isBlank()) continue;
+            this.checkpoints.add(trimmed);
+        }
     }
 
 }

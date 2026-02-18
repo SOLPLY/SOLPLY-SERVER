@@ -18,9 +18,6 @@ public record AdminPlaceUpsertRequest(
         @Size(max = 255, message = "주소는 255자를 초과할 수 없습니다.")
         String address,
 
-        @NotNull(message = "placeDefaultId는 필수입니다.")
-        Long placeDefaultId,
-
         @NotNull(message = "위도는 필수입니다.")
         @DecimalMin(value = "-90.0", message = "위도 범위가 올바르지 않습니다.")
         @DecimalMax(value = "90.0", message = "위도 범위가 올바르지 않습니다.")
@@ -50,9 +47,7 @@ public record AdminPlaceUpsertRequest(
         @Size(max = 255, message = "영업시간은 255자를 초과할 수 없습니다.")
         String openingHours,
 
-        @NotBlank(message = "placeType은 필수입니다.")
-        @Size(max = 50, message = "placeType은 50자를 초과할 수 없습니다.")
-        String placeType,
+        Map<SnsPlatform, String> snsLinks,
 
-        Map<SnsPlatform, String> snsLinks
+        List<@NotBlank(message = "placeCheckpoints에는 공백 문자열이 올 수 없습니다.") String> placeCheckpoints
 ) {}
