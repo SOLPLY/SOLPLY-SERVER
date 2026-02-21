@@ -18,6 +18,7 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
@@ -77,7 +78,8 @@ public class AdminCourseService {
 
 	@Transactional
 	public AdminCourseUpdateResponse updateCourse(Long courseId, AdminCourseUpdateRequest req) {
-		Course course = entityLoader.getCourse(courseId);
+		Course course = adminCourseRepository.findById(courseId)
+				.orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
 
 		course.updateName(req.name());
 
@@ -97,7 +99,8 @@ public class AdminCourseService {
 
 	@Transactional
 	public AdminCourseUpsertResponse updateCourseStatus(Long courseId, AdminCourseActivationRequest req) {
-		Course course = entityLoader.getCourse(courseId);
+		Course course = adminCourseRepository.findById(courseId)
+				.orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
 		course.updateActivation(req.active());
 
 		log.info("어드민 코스 상태 수정 성공 - 현재 상태: {}", course.isActive());

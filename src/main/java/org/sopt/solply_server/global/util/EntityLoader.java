@@ -37,11 +37,6 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
     }
 
-    public Course getCourse(Long courseId) {
-        return courseRepository.findById(courseId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
-    }
-
     public Course getActiveCourse(Long courseId) {
         return courseRepository.findByIdAndActiveTrue(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
