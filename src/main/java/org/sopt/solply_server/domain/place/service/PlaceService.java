@@ -22,7 +22,6 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
-import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
@@ -53,7 +52,7 @@ public class PlaceService {
      * 장소 상세 정보 조회
      */
     public PlaceDetailsGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
-        Place place = entityLoader.getPlaceWithTownAndCheckpoints(placeId);
+        Place place = entityLoader.getActivePlaceWithTownAndCheckpoints(placeId);
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(

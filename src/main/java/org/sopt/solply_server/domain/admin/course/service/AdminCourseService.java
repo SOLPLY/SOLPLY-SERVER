@@ -20,7 +20,7 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
-import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,16 +36,16 @@ public class AdminCourseService {
 
 	private final AdminCoursePlaceService adminCoursePlaceService;
 
-	private final EntityLoader entityLoader;
+	private final AdminEntityLoader adminEntityLoader;
 	private final AdminTagValidator adminTagValidator;
 	private final AdminTownValidator adminTownValidator;
 
 	@Transactional
 	public AdminCourseUpsertResponse createCourse(final Long adminId, final AdminCourseUpsertRequest req) {
-		User admin = entityLoader.getUser(adminId);
-		Town town = entityLoader.getTown(req.townId());
+		User admin = adminEntityLoader.getUser(adminId);
+		Town town = adminEntityLoader.getTown(req.townId());
 
-		Tag tag = entityLoader.getTag(req.tagId());
+		Tag tag = adminEntityLoader.getTag(req.tagId());
 		adminTagValidator.validateCourseTagConditions(tag);
 
 		Course course = Course.create(req.name(), req.intro(), town, admin, town.getActive(), tag);
@@ -61,7 +61,7 @@ public class AdminCourseService {
 			adminTownValidator.validateTownId(townId);
 		}
 
-		List<AdminCourseSummaryDto> dtoList = adminCourseRepository.findAllWithTownByTownId(townId)
+		List<AdminCourseSummaryDto> dtoList = adminEntityLoader.getAllWithTownByTownId(townId)
 			.stream()
 			.map(AdminCourseSummaryDto::from)
 			.toList();
@@ -71,15 +71,13 @@ public class AdminCourseService {
 	}
 
 	public AdminCourseDetailResponse getCourse(Long courseId) {
-		Course course = adminCourseRepository.findByIdWithPlacesAndTown(courseId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_COURSE));
+		Course course = adminEntityLoader.getCourseWithPlacesAndTown(courseId);
 		return AdminCourseDetailResponse.from(course);
 	}
 
 	@Transactional
 	public AdminCourseUpdateResponse updateCourse(Long courseId, AdminCourseUpdateRequest req) {
-		Course course = adminCourseRepository.findById(courseId)
-				.orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+		Course course = adminEntityLoader.getCourse(courseId);
 
 		course.updateName(req.name());
 
@@ -88,7 +86,7 @@ public class AdminCourseService {
 		course.getCoursePlaces().clear();
 		adminCoursePlaceService.addPlacesToCourse(course, req.placeList(), course.getTown().getId());
 
-		Tag tag= entityLoader.getTag(req.tagId());
+		Tag tag= adminEntityLoader.getTag(req.tagId());
 		adminTagValidator.validateCourseTagConditions(tag);
 		course.updateCourseTag(tag);
 
@@ -99,8 +97,7 @@ public class AdminCourseService {
 
 	@Transactional
 	public AdminCourseUpsertResponse updateCourseStatus(Long courseId, AdminCourseActivationRequest req) {
-		Course course = adminCourseRepository.findById(courseId)
-				.orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
+		Course course = adminEntityLoader.getCourse(courseId);
 		course.updateActivation(req.active());
 
 		log.info("어드민 코스 상태 수정 성공 - 현재 상태: {}", course.isActive());

@@ -11,6 +11,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResp
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
+import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -37,22 +38,22 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
-    private final EntityLoader entityLoader;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final ImageUrlProvider imageUrlProvider;
     private final AdminTagValidator adminTagValidator;
+    private final AdminEntityLoader adminEntityLoader;
 
     @Transactional
     public AdminPlaceUpsertResponse createPlace(final Long adminUserId, final AdminPlaceUpsertRequest req) {
-        User admin = entityLoader.getUser(adminUserId);
-        Town town = entityLoader.getTown(req.townId());
+        User admin = adminEntityLoader.getUser(adminUserId);
+        Town town = adminEntityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
         adminTagValidator.validatePlaceTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
 
-        Tag mainTag = entityLoader.getTag(req.mainTagId());
+        Tag mainTag = adminEntityLoader.getTag(req.mainTagId());
         List<Tag> opt1 = loadTags(req.option1TagIds());
         List<Tag> opt2 = req.option2TagIds() == null ? List.of() : loadTags(req.option2TagIds());
 
@@ -89,13 +90,13 @@ public class AdminPlaceService {
 
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
-        Place place = entityLoader.getPlaceWithTown(placeId);
-        Town updatedTown = entityLoader.getTown(req.townId());
+        Place place = adminEntityLoader.getPlaceWithTown(placeId);
+        Town updatedTown = adminEntityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
         adminTagValidator.validatePlaceTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
 
-        Tag mainTag = entityLoader.getTag(req.mainTagId());
+        Tag mainTag = adminEntityLoader.getTag(req.mainTagId());
         List<Tag> opt1 = loadTags(req.option1TagIds());
         List<Tag> opt2 = req.option2TagIds() == null ? List.of() : loadTags(req.option2TagIds());
 
@@ -127,7 +128,7 @@ public class AdminPlaceService {
     }
 
     public AdminPlaceDetailsGetResponse getPlaceDetails(final Long placeId) {
-        Place place = entityLoader.getPlaceWithTownAndCheckpoints(placeId);
+        Place place = adminEntityLoader.getPlaceWithTownAndCheckpoints(placeId);
 
         Town town = place.getTown();
 
@@ -199,7 +200,7 @@ public class AdminPlaceService {
     }
 
     public AdminPlaceListResponse getPlacesByTown(final Long townId) {
-        Town town = entityLoader.getTown(townId); // 존재 검증
+        Town town = adminEntityLoader.getTown(townId); // 존재 검증
         List<Place> places = adminPlaceRepository.findAdminPlacesWithTagsByTownId(town.getId());
 
         List<AdminPlaceSummaryDto> result = places.stream()
@@ -241,7 +242,7 @@ public class AdminPlaceService {
         if (tagIds == null || tagIds.isEmpty()) return List.of();
         List<Tag> tags = new ArrayList<>(tagIds.size());
         for (Long id : tagIds) {
-            tags.add(entityLoader.getTag(id));
+            tags.add(adminEntityLoader.getTag(id));
         }
         return tags;
     }

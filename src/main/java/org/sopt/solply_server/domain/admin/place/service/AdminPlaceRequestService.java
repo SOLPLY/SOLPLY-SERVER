@@ -12,6 +12,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertRe
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRequestRepository;
 import org.sopt.solply_server.domain.place.entity.PlaceRequestImageInfo;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -35,7 +36,7 @@ public class AdminPlaceRequestService {
 
     private final AdminPlaceRequestRepository adminPlaceRequestRepository;
     private final AdminPlaceService adminPlaceService;
-    private final EntityLoader entityLoader;
+    private final AdminEntityLoader adminEntityLoader;
 
     private final ImageUrlProvider imageUrlProvider;
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -100,7 +101,7 @@ public class AdminPlaceRequestService {
      */
     @Transactional
     public AdminPlaceUpsertResponse approveAndCreatePlace(final Long adminUserId, final Long requestId, final AdminPlaceUpsertRequest req) {
-        PlaceRequest pr = entityLoader.getPlaceRequest(requestId);
+        PlaceRequest pr = adminEntityLoader.getPlaceRequest(requestId);
 
         if (pr.getStatus() != PlaceRequestStatus.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATE);

@@ -8,7 +8,7 @@ import org.sopt.solply_server.domain.admin.course.util.AdminCoursePlaceValidator
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.entity.CoursePlace;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,11 +23,11 @@ public class AdminCoursePlaceService {
 	private final AdminCoursePlaceRepository adminCoursePlaceRepository;
 	private final AdminCoursePlaceValidator adminCoursePlaceValidator;
 
-	private final EntityLoader entityLoader;
+	private final AdminEntityLoader adminEntityLoader;
 
 	public void addPlacesToCourse(Course course, List<AdminCoursePlaceInfoDto> placeInfoDtoList, Long townId) {
 		for (AdminCoursePlaceInfoDto dto : placeInfoDtoList) {
-			Place place = entityLoader.getPlaceWithTown(dto.placeId());
+			Place place = adminEntityLoader.getPlaceWithTown(dto.placeId());
 			adminCoursePlaceValidator.validateCoursePlaceSameTown(place.getTown().getId(), townId);
 
 			CoursePlace coursePlace = adminCoursePlaceRepository.save(

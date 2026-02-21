@@ -120,7 +120,7 @@ public class RecommendService {
                                 ));
 
         // 5) 동네 장소 조회(+tags)
-        List<Place> townPlaces = placeRepository.findPlacesByTownIdWithTags(townId);
+        List<Place> townPlaces = placeRepository.findActivePlacesByTownIdWithTags(townId);
         if (townPlaces == null || townPlaces.isEmpty()) {
             return new PlaceRecommendationGetResponse(List.of());
         }

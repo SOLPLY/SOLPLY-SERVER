@@ -14,6 +14,15 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, AdminP
     @Query("""
         select distinct p
         from Place p
+        left join fetch p.town t
+        left join fetch p.checkpoints cp
+        where p.id = :placeId
+    """)
+    Optional<Place> findByIdWithTownAndCheckpoints(@Param("placeId") Long placeId);
+
+    @Query("""
+        select distinct p
+        from Place p
         join fetch p.town t
         left join fetch p.placeTags pt
         left join fetch pt.tag tg

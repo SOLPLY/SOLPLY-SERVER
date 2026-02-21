@@ -1,13 +1,10 @@
 package org.sopt.solply_server.global.util;
 
 import java.util.List;
-import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceRequest;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.place.repository.PlaceRequestRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.repository.TagRepository;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -29,8 +26,7 @@ public class EntityLoader {
     private final PlaceRepository placeRepository;
     private final TownRepository townRepository;
     private final TagRepository tagRepository;
-    private final PlaceRequestRepository placeRequestRepository;
-    private final AdminPlaceRepository adminPlaceRepository;
+
 
     public User getUser(Long userId) {
         return userRepository.findById(userId)
@@ -52,25 +48,15 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
     }
 
-    public Place getPlaceWithTownAndCheckpoints(Long placeId) {
-        return placeRepository.findByIdWithTownAndCheckpoints(placeId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
-    }
-
-    public Place getPlaceWithTown(Long placeId) {
-        return adminPlaceRepository.findByIdWithTown(placeId)
+    public Place getActivePlaceWithTownAndCheckpoints(Long placeId) {
+        return placeRepository.findActiveByIdWithTownAndCheckpoints(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
     }
 
     public List<Place> getPlacesWithTown(List<Long> placeIds) {
-        return placeRepository.findAllByIdsWithTown(placeIds);
+        return placeRepository.findActiveAllByIdsWithTown(placeIds);
     }
 
-
-    public Town getTown(Long townId) {
-        return townRepository.findById(townId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));
-    }
 
     public Town getActiveTown(Long townId) {
         return townRepository.findTownByIdAndActiveTrue(townId)
@@ -78,19 +64,11 @@ public class EntityLoader {
     }
 
 
-    public Tag getTag(Long id) {
-        return tagRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
-    }
-
     public Tag getActiveTag(Long id) {
         return tagRepository.findByIdAndActiveTrue(id)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
     }
 
-    public PlaceRequest getPlaceRequest(Long requestId) {
-        return placeRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE_REQUEST));
-    }
+
 
 }

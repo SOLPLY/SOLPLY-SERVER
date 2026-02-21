@@ -20,7 +20,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
         WHERE p.id IN :placeIds
           AND p.active = true
     """)
-    List<Place> findAllByIdsWithTown(@Param("placeIds") List<Long> placeIds);
+    List<Place> findActiveAllByIdsWithTown(@Param("placeIds") List<Long> placeIds);
 
     @Query("""
         SELECT DISTINCT p
@@ -30,7 +30,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
         WHERE p.town.id = :townId
           AND p.active = true
     """)
-    List<Place> findPlacesByTownIdWithTags(@Param("townId") Long townId);
+    List<Place> findActivePlacesByTownIdWithTags(@Param("townId") Long townId);
 
     @EntityGraph(attributePaths = {
             "placeTags",
@@ -64,5 +64,5 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
         where p.id = :placeId
             and p.active = true
     """)
-    Optional<Place> findByIdWithTownAndCheckpoints(@Param("placeId") Long placeId);
+    Optional<Place> findActiveByIdWithTownAndCheckpoints(@Param("placeId") Long placeId);
 }
