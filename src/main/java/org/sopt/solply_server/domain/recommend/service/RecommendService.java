@@ -110,7 +110,8 @@ public class RecommendService {
                 (recentBookmarkedPlaceIds == null || recentBookmarkedPlaceIds.isEmpty())
                         ? Map.of()
                         : placeRepository.findByIdInWithTags(recentBookmarkedPlaceIds).stream()
-                                .flatMap(p -> p.getActiveTags().stream())
+                                .flatMap(p -> p.getTags().stream())
+                                .filter(Tag::isActive)
                                 .map(Tag::getId)
                                 .collect(Collectors.toMap(
                                         tagId -> tagId,
