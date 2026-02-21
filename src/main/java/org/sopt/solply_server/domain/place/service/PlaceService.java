@@ -54,7 +54,7 @@ public class PlaceService {
      * 장소 상세 정보 조회
      */
     public PlaceDetailsGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
-        Place place = entityLoader.getPlace(placeId);
+        Place place = entityLoader.getPlaceWithTownAndCheckpoints(placeId);
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(
@@ -127,7 +127,7 @@ public class PlaceService {
 
         List<Long> sortedPlaceIds = sortIdsByCreatedAtDesc(latestPlaceIds, createdAtMap);
 
-        List<Place> places = placeRepository.findAllByIdsWithTown(sortedPlaceIds);
+        List<Place> places = entityLoader.getPlacesWithTown(sortedPlaceIds);
         if (places.isEmpty()) {
             return PlaceFolderPreviewListGetResponse.from(List.of());
         }

@@ -174,7 +174,7 @@ public class RecommendService {
     public CourseRecommendGetResponse getRecommendCourses(Long userId, Long townId) {
         townValidator.validateTownId(townId);
 
-        List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
+        List<Course> sharedCourses = courseRepository.findActiveSharedCoursesByTownIdWithPlaces(townId);
 
         if (sharedCourses.isEmpty()) {
             log.info("동네 ID {}에 공유된 코스가 없습니다.", townId);

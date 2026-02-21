@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.admin.place.repository;
 
 import java.util.List;
+import java.util.Optional;
 import org.sopt.solply_server.domain.admin.place.repository.querydsl.AdminPlaceRepositoryCustom;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -46,4 +47,12 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, AdminP
 		where p.town.id in :townIds
 	""")
 	boolean existsPlacesByTown_Ids(@Param("townIds") List<Long> townIds);
+
+    @Query("""
+        SELECT p
+        FROM Place p
+        JOIN FETCH p.town
+        WHERE p.id = :id
+    """)
+    Optional<Place> findByIdWithTown(@Param("id") Long placeId);
 }

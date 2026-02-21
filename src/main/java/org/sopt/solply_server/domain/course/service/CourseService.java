@@ -69,7 +69,7 @@ public class CourseService {
         List<PlaceInCourseInfo> placeInfosForOrder = PlaceInCourseInfo.from(request.places());
 
         // 코스 태그 검증
-        Tag courseTag = entityLoader.getTag(request.courseTagId());
+        Tag courseTag = entityLoader.getActiveTag(request.courseTagId());
         tagValidator.validateCourseTag(courseTag);
 
         // 코스에 등록할 장소들
@@ -93,7 +93,7 @@ public class CourseService {
     @Transactional
     public CourseUpdateResponse updateCourse(Long userId, Long courseId, CourseUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Course originCourse = entityLoader.getCourse(courseId);
+        Course originCourse = entityLoader.getActiveCourse(courseId);
 
         // 코스 북마크 검증
         courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
@@ -107,7 +107,7 @@ public class CourseService {
         coursePlaceValidator.validatePlacesForCourse(placeInfosInCourseForOrder, placesToAdd);
 
         // 코스 태그 검증
-        Tag updatedCourseTag = entityLoader.getTag(request.courseTagId());
+        Tag updatedCourseTag = entityLoader.getActiveTag(request.courseTagId());
         tagValidator.validateCourseTag(updatedCourseTag);
 
         if (originCourse.isCreatedBy(userId)) { // 사용자가 소유한 코스인 경우
@@ -147,7 +147,7 @@ public class CourseService {
     public CourseAddPlaceResponse addPlaceToCourse(final Long userId, final Long placeId, final Long courseId) {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
-        Course originCourse = entityLoader.getCourseWithPlaces(courseId);
+        Course originCourse = entityLoader.getActiveCourseWithPlaces(courseId);
 
         // 코스 북마크 검증
         courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
@@ -194,7 +194,7 @@ public class CourseService {
      * 코스 상세 정보 조회
      */
     public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
-        Course course = entityLoader.getCourseWithPlaces(courseId);
+        Course course = entityLoader.getActiveCourseWithPlaces(courseId);
 
         Tag courseTag = course.getTag();
         tagValidator.validateCourseTag(courseTag);
@@ -274,7 +274,7 @@ public class CourseService {
 
         // 북마크된 코스 아이디 추출
         List<Long> courseIds = new ArrayList<>(courseIdCreatedAtMap.keySet());
-        List<Course> filteredCourses = courseRepository.findCoursesFilteredByTownId(courseIds, targetTownId);
+        List<Course> filteredCourses = courseRepository.findActiveCoursesFilteredByTownId(courseIds, targetTownId);
 
         if (filteredCourses.isEmpty()) {
             log.info("동네 {}에 북마크된 코스가 없습니다.", targetTownId);
@@ -313,7 +313,7 @@ public class CourseService {
 
         List<Long> sortedCourseIds = sortIdsByCreatedAtDesc(latestCourseIdsByTown, createdAtMap);
 
-        List<Course> courses = courseRepository.findFolderPreviewCourses(latestCourseIdsByTown);
+        List<Course> courses = courseRepository.findActiveFolderPreviewCourses(latestCourseIdsByTown);
         if (courses.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
@@ -376,7 +376,7 @@ public class CourseService {
 
     private List<Place> getPlacesWithTownByPlaceIds(final List<Long> placeIds) {
         // Town 정보까지 함께 조회 (N+1 문제 방지)
-        List<Place> places = entityLoader.findPlacesWithTown(placeIds);
+        List<Place> places = entityLoader.getPlacesWithTown(placeIds);
 
         if (places.size() != placeIds.size()) {
             Set<Long> foundIds = places.stream()
@@ -440,7 +440,7 @@ public class CourseService {
     }
 
     private Map<Long, Long> loadCourseToTownMap(List<Long> courseIds) {
-        return courseRepository.findCourseIdAndTownIdByCourseIds(courseIds).stream()
+        return courseRepository.findActiveCourseIdAndTownIdByCourseIds(courseIds).stream()
                 .collect(Collectors.toMap(
                         row -> (Long) row[0],   // courseId
                         row -> (Long) row[1]    // townId

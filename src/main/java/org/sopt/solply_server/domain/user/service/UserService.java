@@ -72,7 +72,7 @@ public class UserService {
         if (user.getSelectedTownId() == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_USER_SELECTED_TOWN);
         }
-        Town selectedTown = entityLoader.getTown(user.getSelectedTownId());
+        Town selectedTown = entityLoader.getActiveTown(user.getSelectedTownId());
 
         List<UserPlacePreviewDto> myPlacePreviews = myPageFacade.getMyPlacePreviewsTop3(user);
 
@@ -88,7 +88,7 @@ public class UserService {
 
         // 선택한 동네가 없는 경우 null 처리
         UserTownInfoDto selectedTown = Optional.ofNullable(user.getSelectedTownId())
-                .map(entityLoader::getTown)
+                .map(entityLoader::getActiveTown)
                 .map(town -> UserTownInfoDto.of(town.getId(), town.getName()))
                 .orElse(null);
 
@@ -129,7 +129,7 @@ public class UserService {
     public UserInOnboardingUpdateResponse updateUserInfoInOnboarding(
             final Long userId, UserInOnboardingUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Town selectedTown = entityLoader.getTown((long)INITIAL_TOWN_ID);
+        Town selectedTown = entityLoader.getActiveTown((long)INITIAL_TOWN_ID);
 
         userValidator.validateOnboardingAvailable(user);
         userValidator.validateNickname(user.getNickname(), request.nickname());
@@ -202,7 +202,7 @@ public class UserService {
 //                .map(entityLoader::getTown)
 //                .toList();
 //        userInterestTownService.updateUserInterestTowns(user, towns);
-        Town selectedTown = entityLoader.getTown(request.selectedTownId());
+        Town selectedTown = entityLoader.getActiveTown(request.selectedTownId());
         user.updateSelectedTown(request.selectedTownId());
 
         return UserTownsUpdateResponse.of(
