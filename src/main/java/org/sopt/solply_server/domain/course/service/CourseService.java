@@ -29,6 +29,7 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.TagViewUtils;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -203,7 +204,7 @@ public class CourseService {
 
 
         if (course.getCoursePlaces().isEmpty()) {
-            return CourseDetailGetResponse.of(course, courseTag.getName(), isCourseBookmarked, List.of());
+            return CourseDetailGetResponse.of(course, TagViewUtils.getActiveNameOrNull(courseTag), isCourseBookmarked, List.of());
         }
 
         List<Long> placeIds = course.getCoursePlaces().stream()
@@ -218,9 +219,8 @@ public class CourseService {
                     String thumbnailUrl = place.getThumbnailFileKey() != null
                             ? imageUrlProvider.getImageUrl(place.getThumbnailFileKey())
                             : null;
-                    String mainTagName = place.getActiveMainTag()
-                            .map(Tag::getName)
-                            .orElse(null);
+                    Tag placeTag = place.getMainTag().orElse(null);
+                    String mainTagName = TagViewUtils.getActiveNameOrNull(placeTag);
 
                     return CoursePlaceDetailsDto.of(
                             place,
@@ -234,7 +234,7 @@ public class CourseService {
 
         return CourseDetailGetResponse.of(
                 course,
-                courseTag.isActive() ? courseTag.getName() : null,
+                TagViewUtils.getActiveNameOrNull(courseTag),
                 isCourseBookmarked,
                 coursePlaces
         );
@@ -470,11 +470,7 @@ public class CourseService {
                 .map(course -> {
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
                     Tag courseTag = course.getTag();
-                    String courseTagName = null;
-                    if (courseTag != null) {
-                        courseTagName = courseTag.isActive() ? courseTag.getName() : null;
-                    }
-                    return CourseFolderDto.of(course, courseTagName, thumbnailUrl);
+                    return CourseFolderDto.of(course, TagViewUtils.getActiveNameOrNull(courseTag), thumbnailUrl);
                 })
                 .toList();
     }
@@ -492,7 +488,7 @@ public class CourseService {
         return filteredCourses.stream()
                 .map(course -> {
                     Tag courseTag = course.getTag();
-                    String courseTagName = (courseTag != null && courseTag.isActive()) ? courseTag.getName() : null;
+                    String courseTagName = TagViewUtils.getActiveNameOrNull(courseTag);
 
                     String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
 
@@ -507,5 +503,6 @@ public class CourseService {
                         .compareTo(courseIdCreatedAtMap.getOrDefault(a.courseId(), LocalDateTime.MIN)))
                 .toList();
     }
+
 
 }

@@ -34,6 +34,7 @@ import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.TagViewUtils;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -256,7 +257,7 @@ public class RecommendService {
                 place.getId(),
                 place.getName(),
                 imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                place.getActiveMainTag().map(Tag::getName).orElse(null),
+                TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                 place.getIntroduction()
         );
     }

@@ -244,10 +244,9 @@ public class Place extends BaseTimeEntity {
     }
 
     /** active MAIN만 */
-    public Optional<Tag> getActiveMainTag() {
+    public Optional<Tag> getMainTag() {
         return placeTags.stream()
                 .map(PlaceTag::getTag)
-                .filter(Tag::isActive)
                 .filter(tag -> tag.getType() == TagType.MAIN)
                 .findFirst();
     }
