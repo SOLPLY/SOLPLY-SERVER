@@ -17,6 +17,8 @@ import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,8 +70,8 @@ public class AdminCourseService {
 	}
 
 	public AdminCourseDetailResponse getCourse(Long courseId) {
-		Course course = entityLoader.getCourseWithPlacesAndTown(courseId);
-
+		Course course = adminCourseRepository.findByIdWithPlacesAndTown(courseId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_COURSE));
 		return AdminCourseDetailResponse.from(course);
 	}
 

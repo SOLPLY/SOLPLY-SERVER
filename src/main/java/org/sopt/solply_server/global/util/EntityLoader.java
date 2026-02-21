@@ -1,8 +1,6 @@
 package org.sopt.solply_server.global.util;
 
-import jakarta.validation.constraints.NotNull;
 import java.util.List;
-import java.util.Optional;
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.domain.course.repository.CourseRepository;
@@ -52,11 +50,6 @@ public class EntityLoader {
     public Course getActiveCourseWithPlaces(Long courseId) {
         return courseRepository.findActiveByIdWithPlaces(courseId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
-    }
-
-    public Course getCourseWithPlacesAndTown(Long courseId) {
-        return courseRepository.findActiveByIdWithPlacesAndTown(courseId)
-            .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_COURSE));
     }
 
     public Place getPlace(Long placeId) {

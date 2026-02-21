@@ -66,16 +66,6 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     """)
     List<Course> findActiveFolderPreviewCourses(@Param("courseIds") List<Long> courseIds);
 
-    @Query("""
-        SELECT DISTINCT c FROM Course c
-        LEFT JOIN FETCH c.coursePlaces cp
-        LEFT JOIN FETCH cp.place p
-        LEFT JOIN FETCH c.town t
-        WHERE c.id = :courseId
-          AND c.active = true
-    """)
-    Optional<Course> findActiveByIdWithPlacesAndTown(@Param("courseId") Long courseId);
-
     @Modifying(flushAutomatically = true)
     @Query("DELETE FROM CoursePlace cp WHERE cp.course.id = :courseId")
     void deleteCoursePlacesByCourseId(@Param("courseId") Long courseId);
