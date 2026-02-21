@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.town.entity.Town;
+import org.sopt.solply_server.domain.town.repository.TownRepository;
 import org.sopt.solply_server.domain.user.dto.UserPersonaDto;
 import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.dto.UserTownInfoDto;
@@ -53,7 +54,8 @@ public class UserService {
     private final S3FileService s3FileService;
     private final UserPolicyService userPolicyService;
 
-    private final int INITIAL_TOWN_ID = 2;
+    private static final long INITIAL_TOWN_ID = 2;
+    private final TownRepository townRepository;
 
     public NicknameCheckResponse checkNickname(Long userId, String nickname) {
         User user = entityLoader.getUser(userId);
@@ -72,7 +74,10 @@ public class UserService {
         if (user.getSelectedTownId() == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_USER_SELECTED_TOWN);
         }
-        Town selectedTown = entityLoader.getTown(user.getSelectedTownId());
+        Town selectedTown = townRepository.findById(user.getSelectedTownId()).orElse(null);
+        if (selectedTown == null || selectedTown.getActive() == false) {
+            selectedTown = townRepository.findById(INITIAL_TOWN_ID).orElse(null);
+        }
 
         List<UserPlacePreviewDto> myPlacePreviews = myPageFacade.getMyPlacePreviewsTop3(user);
 
@@ -87,20 +92,18 @@ public class UserService {
         User user = entityLoader.getUser(userId);
 
         // 선택한 동네가 없는 경우 null 처리
-        UserTownInfoDto selectedTown = Optional.ofNullable(user.getSelectedTownId())
-                .map(entityLoader::getTown)
-                .map(town -> UserTownInfoDto.of(town.getId(), town.getName()))
-                .orElse(null);
+        Long selectedTownId = user.getSelectedTownId();
+        if (selectedTownId == null) {
+            return UserTownGetResponse.of(null);
+        }
 
-        // 관심 동네들
-//        List<UserTownInfoDto> interestTowns = entityLoader.getInterestTownsWithTownsByIds(userId)
-//                .stream()
-//                .map(interestTown -> UserTownInfoDto.of(
-//                        interestTown.getTown().getId(),
-//                        interestTown.getTown().getName()))
-//                .toList();
+        Town selectedTown = townRepository.findById(selectedTownId).orElse(null);
+        if (selectedTown == null || selectedTown.getActive() == false) {
+            selectedTown = townRepository.findById(INITIAL_TOWN_ID).orElse(null);
+        }
+        UserTownInfoDto townInfoDto = UserTownInfoDto.of(selectedTown.getId(), selectedTown.getName());
 
-        return UserTownGetResponse.of(selectedTown);
+        return UserTownGetResponse.of(townInfoDto);
     }
 
     public UserRequestedPlaceAllGetResponse getPlacesCreatedBy(final Long userId, final int page, final int size) {
@@ -129,12 +132,12 @@ public class UserService {
     public UserInOnboardingUpdateResponse updateUserInfoInOnboarding(
             final Long userId, UserInOnboardingUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-        Town selectedTown = entityLoader.getTown((long)INITIAL_TOWN_ID);
+        Town selectedTown = entityLoader.getActiveTown(INITIAL_TOWN_ID);
 
         userValidator.validateOnboardingAvailable(user);
         userValidator.validateNickname(user.getNickname(), request.nickname());
 
-        user.updateOnboardingInfo(request.persona(), request.nickname(), (long)INITIAL_TOWN_ID);
+        user.updateOnboardingInfo(request.persona(), request.nickname(), INITIAL_TOWN_ID);
 
         // 약관 동의 여부 저장
         for (var policyInfo : request.policyAgreementInfos()) {
@@ -198,11 +201,8 @@ public class UserService {
     @Transactional
     public UserTownsUpdateResponse updateUserTowns(final Long userId, UserTownsUpdateRequest request) {
         User user = entityLoader.getUser(userId);
-//        List<Town> towns = request.favoriteTownIdList().stream()
-//                .map(entityLoader::getTown)
-//                .toList();
-//        userInterestTownService.updateUserInterestTowns(user, towns);
-        Town selectedTown = entityLoader.getTown(request.selectedTownId());
+
+        Town selectedTown = entityLoader.getActiveTown(request.selectedTownId());
         user.updateSelectedTown(request.selectedTownId());
 
         return UserTownsUpdateResponse.of(

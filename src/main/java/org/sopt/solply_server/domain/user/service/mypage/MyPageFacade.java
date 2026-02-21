@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.user.dto.UserPlacePreviewDto;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.global.util.TagViewUtils;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,7 +37,7 @@ public class MyPageFacade {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getActiveMainTag().map(Tag::getName).orElse(null),
+                        TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                         bookmarkMap.getOrDefault(place.getId(), false)
                 ))
                 .toList();
@@ -53,7 +54,7 @@ public class MyPageFacade {
                 place.getId(),
                 place.getName(),
                 imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                place.getActiveMainTag().map(Tag::getName).orElse(null),
+                TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                 bookmarkMap.getOrDefault(place.getId(), false),
                 place.getTown().getId()
         ));

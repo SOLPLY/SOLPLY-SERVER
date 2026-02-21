@@ -34,6 +34,7 @@ import org.sopt.solply_server.domain.user.entity.UserPersona;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.TagViewUtils;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -109,7 +110,8 @@ public class RecommendService {
                 (recentBookmarkedPlaceIds == null || recentBookmarkedPlaceIds.isEmpty())
                         ? Map.of()
                         : placeRepository.findByIdInWithTags(recentBookmarkedPlaceIds).stream()
-                                .flatMap(p -> p.getActiveTags().stream())
+                                .flatMap(p -> p.getTags().stream())
+                                .filter(Tag::isActive)
                                 .map(Tag::getId)
                                 .collect(Collectors.toMap(
                                         tagId -> tagId,
@@ -118,7 +120,7 @@ public class RecommendService {
                                 ));
 
         // 5) 동네 장소 조회(+tags)
-        List<Place> townPlaces = placeRepository.findPlacesByTownIdWithTags(townId);
+        List<Place> townPlaces = placeRepository.findActivePlacesByTownIdWithTags(townId);
         if (townPlaces == null || townPlaces.isEmpty()) {
             return new PlaceRecommendationGetResponse(List.of());
         }
@@ -174,7 +176,7 @@ public class RecommendService {
     public CourseRecommendGetResponse getRecommendCourses(Long userId, Long townId) {
         townValidator.validateTownId(townId);
 
-        List<Course> sharedCourses = courseRepository.findSharedCoursesByTownIdWithPlaces(townId);
+        List<Course> sharedCourses = courseRepository.findActiveSharedCoursesByTownIdWithPlaces(townId);
 
         if (sharedCourses.isEmpty()) {
             log.info("동네 ID {}에 공유된 코스가 없습니다.", townId);
@@ -256,7 +258,7 @@ public class RecommendService {
                 place.getId(),
                 place.getName(),
                 imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                place.getActiveMainTag().map(Tag::getName).orElse(null),
+                TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                 place.getIntroduction()
         );
     }

@@ -12,7 +12,7 @@ import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResp
 import org.sopt.solply_server.domain.admin.town.repository.AdminTownRepository;
 import org.sopt.solply_server.domain.admin.town.util.AdminTownValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 public class AdminTownService {
 
 	private final AdminTownRepository adminTownRepository;
-	private final EntityLoader entityLoader;
+	private final AdminEntityLoader adminEntityLoader;
 
 	private final AdminTownValidator adminTownValidator;
 	private final AdminPlaceService adminPlaceService;
@@ -36,7 +36,7 @@ public class AdminTownService {
 		Town parent = null;
 		if (req.parentId() != null) {
 			adminTownValidator.validateTownId(req.parentId());
-			parent = entityLoader.getTown(req.parentId());
+			parent = adminEntityLoader.getTown(req.parentId());
 		}
 
 		Town town = Town.create(
@@ -52,7 +52,7 @@ public class AdminTownService {
 
 	@Transactional
 	public AdminTownUpsertResponse updateTown(final Long townId, final AdminTownUpsertRequest req) {
-		Town town = entityLoader.getTown(townId);
+		Town town = adminEntityLoader.getTown(townId);
 
 		// 부모 town, 자식 town 구분
 		Town parent;
@@ -62,7 +62,7 @@ public class AdminTownService {
 		} else {
 			adminTownValidator.validateChildTown(townId);
 			adminTownValidator.validateParentTown(req.parentId());
-			parent = entityLoader.getTown(req.parentId());
+			parent = adminEntityLoader.getTown(req.parentId());
 		}
 
 		town.update(
@@ -91,7 +91,7 @@ public class AdminTownService {
 
 	@Transactional
 	public void deleteTown(final Long townId) {
-		Town town = entityLoader.getTown(townId);
+		Town town = adminEntityLoader.getTown(townId);
 		adminTownValidator.validateDeletableTown(townId);
 		adminTownRepository.delete(town);
 
@@ -128,7 +128,7 @@ public class AdminTownService {
 	}
 
 	private void activateTown(Long townId) {
-		Town town = entityLoader.getTown(townId);
+		Town town = adminEntityLoader.getTown(townId);
 		List<Long> townIds = new ArrayList<>();
 
 		if (town.getParent() == null) {
@@ -143,7 +143,7 @@ public class AdminTownService {
 	}
 
 	private void deactivateTown(Long townId) {
-		Town town = entityLoader.getTown(townId);
+		Town town = adminEntityLoader.getTown(townId);
 
 		if (town.getParent() == null) {
 			adminTownValidator.validateDeactivatableParentTown(townId);

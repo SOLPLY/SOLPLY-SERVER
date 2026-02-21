@@ -12,10 +12,9 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagPersonaMapping;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
-import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminTagService {
 
     private final AdminTagRepository adminTagRepository;
-    private final EntityLoader entityLoader;
+    private final AdminEntityLoader adminEntityLoader;
 
     private final AdminTagValidator adminTagValidator;
 
@@ -35,7 +34,7 @@ public class AdminTagService {
 
         Tag parent = null;
         if (req.parentId() != null) {
-            parent = entityLoader.getTag(req.parentId()); // admin은 active 무시
+            parent = adminEntityLoader.getTag(req.parentId()); // admin은 active 무시
         }
 
         adminTagValidator.validateParentForAdmin(
@@ -78,11 +77,11 @@ public class AdminTagService {
 
     @Transactional
     public Long updateTag(Long id, AdminTagUpsertRequest req) {
-        Tag tag = entityLoader.getTag(id);
+        Tag tag = adminEntityLoader.getTag(id);
 
         Tag parent = null;
         if (req.parentId() != null) {
-            parent = entityLoader.getTag(req.parentId());
+            parent = adminEntityLoader.getTag(req.parentId());
         }
 
         adminTagValidator.validateParentForAdmin(
@@ -106,7 +105,7 @@ public class AdminTagService {
 
     @Transactional
     public AdminTagActivationResponse toggleActive(Long id, AdminTagActivationRequest req) {
-        Tag tag = entityLoader.getTag(id);
+        Tag tag = adminEntityLoader.getTag(id);
 
         // 활성화 요청인데 parent가 비활성이면 에러
         if (req.active() && tag.getParent() != null && !tag.getParent().isActive()) {

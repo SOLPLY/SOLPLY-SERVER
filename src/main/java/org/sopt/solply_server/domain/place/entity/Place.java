@@ -235,19 +235,15 @@ public class Place extends BaseTimeEntity {
 
     // === 편의 메서드 추가 ===
 
-    /** active tag만 */
-    public List<Tag> getActiveTags() {
+    public List<Tag> getTags() {
         return placeTags.stream()
                 .map(PlaceTag::getTag)
-                .filter(Tag::isActive)
                 .toList();
     }
 
-    /** active MAIN만 */
-    public Optional<Tag> getActiveMainTag() {
+    public Optional<Tag> getMainTag() {
         return placeTags.stream()
                 .map(PlaceTag::getTag)
-                .filter(Tag::isActive)
                 .filter(tag -> tag.getType() == TagType.MAIN)
                 .findFirst();
     }

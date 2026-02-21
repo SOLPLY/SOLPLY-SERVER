@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -23,16 +22,15 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
-import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.InputValidator;
+import org.sopt.solply_server.global.util.TagViewUtils;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,7 +52,7 @@ public class PlaceService {
      * 장소 상세 정보 조회
      */
     public PlaceDetailsGetResponse getPlaceDetailsById(final Long userId, final Long placeId) {
-        Place place = entityLoader.getPlace(placeId);
+        Place place = entityLoader.getActivePlaceWithTownAndCheckpoints(placeId);
 
         List<PlaceImageInfoDto> imageInfos = place.getPlaceImageInfos().stream()
                 .map(info -> PlaceImageInfoDto.of(
@@ -69,7 +67,7 @@ public class PlaceService {
 
         return PlaceDetailsGetResponse.of(
                 place,
-                place.getActiveMainTag().map(Tag::getName).orElse(null),
+                TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                 imageInfos,
                 isBookmarked,
                 town
@@ -99,7 +97,7 @@ public class PlaceService {
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                        place.getActiveMainTag().map(Tag::getName).orElse(null),
+                        TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                         placeBookmarkFacade.isBookmarked(userId, place.getId()),
                         townId
                 ))
@@ -127,7 +125,7 @@ public class PlaceService {
 
         List<Long> sortedPlaceIds = sortIdsByCreatedAtDesc(latestPlaceIds, createdAtMap);
 
-        List<Place> places = placeRepository.findAllByIdsWithTown(sortedPlaceIds);
+        List<Place> places = entityLoader.getPlacesWithTown(sortedPlaceIds);
         if (places.isEmpty()) {
             return PlaceFolderPreviewListGetResponse.from(List.of());
         }
@@ -147,7 +145,7 @@ public class PlaceService {
                             place.getId(),
                             place.getName(),
                             imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-                                place.getActiveMainTag().map(Tag::getName).orElse(null),
+                                TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                             place.getAddress(),
                             false, // 검색 결과에서는 북마크 여부를 제공 X,
                             town.getId()

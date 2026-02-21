@@ -37,4 +37,5 @@ public interface TagRepository extends JpaRepository<Tag, Long> {
     """)
     Optional<Tag> findByIdWithParentAndActiveTrue(@Param("id") Long id);
 
+    Optional<Tag> findByIdAndActiveTrue(Long id);
 }
