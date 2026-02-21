@@ -63,7 +63,6 @@ public class EntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TOWN));
     }
 
-
     public Tag getActiveTag(Long id) {
         return tagRepository.findByIdAndActiveTrue(id)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
