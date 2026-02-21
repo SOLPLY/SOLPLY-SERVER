@@ -62,6 +62,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
         left join fetch p.town t
         left join fetch p.checkpoints cp
         where p.id = :placeId
+            and p.active = true
     """)
     Optional<Place> findByIdWithTownAndCheckpoints(@Param("placeId") Long placeId);
 }

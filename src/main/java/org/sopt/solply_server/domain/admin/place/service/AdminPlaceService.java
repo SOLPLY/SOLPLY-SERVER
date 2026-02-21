@@ -90,6 +90,7 @@ public class AdminPlaceService {
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
         Place place = entityLoader.getPlaceWithTown(placeId);
+        Town updatedTown = entityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
         adminTagValidator.validatePlaceTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
@@ -110,7 +111,7 @@ public class AdminPlaceService {
                 req.longitude(),
                 req.contactNumber(),
                 req.openingHours(),
-                place.getTown(),
+                updatedTown,
                 req.snsLinks(),
                 imageKeys,
                 req.placeCheckpoints(),

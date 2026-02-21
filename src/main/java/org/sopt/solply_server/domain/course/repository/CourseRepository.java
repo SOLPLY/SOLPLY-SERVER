@@ -14,12 +14,13 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 
     @Query("""
         SELECT DISTINCT c FROM Course c
+        LEFT JOIN FETCH c.tag t
         LEFT JOIN FETCH c.coursePlaces cp
         LEFT JOIN FETCH cp.place p
         WHERE c.id = :courseId
           AND c.active = true
     """)
-    Optional<Course> findActiveByIdWithPlaces(@Param("courseId") Long courseId);
+    Optional<Course> findActiveByIdWithTagsAndPlaces(@Param("courseId") Long courseId);
 
     @Query("""
         SELECT DISTINCT c FROM Course c

@@ -148,7 +148,7 @@ public class CourseService {
     public CourseAddPlaceResponse addPlaceToCourse(final Long userId, final Long placeId, final Long courseId) {
         User user = entityLoader.getUser(userId);
         Place place = entityLoader.getPlace(placeId);
-        Course originCourse = entityLoader.getActiveCourseWithPlaces(courseId);
+        Course originCourse = entityLoader.getActiveCourseWithTagsAndPlaces(courseId);
 
         // 코스 북마크 검증
         courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
@@ -195,7 +195,7 @@ public class CourseService {
      * 코스 상세 정보 조회
      */
     public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
-        Course course = entityLoader.getActiveCourseWithPlaces(courseId);
+        Course course = entityLoader.getActiveCourseWithTagsAndPlaces(courseId);
 
         Tag courseTag = course.getTag();
         tagValidator.validateCourseTag(courseTag);
