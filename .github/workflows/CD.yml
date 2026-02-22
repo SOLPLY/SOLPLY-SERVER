@@ -42,7 +42,18 @@ jobs:
           python3 - <<'PY'
           import os, pathlib
           p = pathlib.Path("gradle.properties")
-          p.write_text(os.environ["GRADLE_DEV_PROPERTIES"], encoding="utf-8")
+          p.write_text(os.environ["GRADLE_PRD_PROPERTIES"], encoding="utf-8")
+          PY
+
+      - name: Create gradle.properties (release)
+        if: ${{ github.ref_name == 'release' }}
+        env:
+          GRADLE_PROD_PROPERTIES: ${{ secrets.GRADLE_PROD_PROPERTIES }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("gradle.properties")
+          p.write_text(os.environ["GRADLE_PROD_PROPERTIES"], encoding="utf-8")
           PY
 
       - name: Create application-prod.yml (release)
