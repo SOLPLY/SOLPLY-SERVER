@@ -44,16 +44,6 @@ jobs:
           p.write_text(os.environ["GRADLE_DEV_PROPERTIES"], encoding="utf-8")
           PY
 
-      - name: Create gradle.properties (for release PR)
-        if: ${{ github.base_ref == 'release' }}
-        env:
-          GRADLE_PROD_PROPERTIES: ${{ secrets.GRADLE_PROD_PROPERTIES }}
-        run: |
-          python3 - <<'PY'
-          import os, pathlib
-          p = pathlib.Path("gradle.properties")
-          p.write_text(os.environ["GRADLE_PROD_PROPERTIES"], encoding="utf-8")
-          PY
 
       # PR 타겟이 release이면 prod 설정 생성
       - name: Create application-prod.yml (for release PR)
