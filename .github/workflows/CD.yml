@@ -160,7 +160,7 @@ jobs:
           target: /home/ubuntu/solply-server/
 
       - name: Deploy to EC2 (dev)
-        if: ${{ github.ref == 'refs/heads/develop' }}
+        if: ${{ github.ref_name == 'develop' }}
         uses: appleboy/ssh-action@master
         with:
           username: ubuntu
@@ -174,7 +174,7 @@ jobs:
             /home/ubuntu/solply-server/scripts/deploy.sh dev up
 
       - name: Deploy to EC2 (prod)
-        if: ${{ github.ref == 'refs/heads/release' }}
+        if: ${{ github.ref_name == 'release' }}
         uses: appleboy/ssh-action@master
         with:
           username: ubuntu
