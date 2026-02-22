@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - release
 
 jobs:
   deploy-ci:
@@ -21,8 +22,8 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      # ✅ 여기만 수정 (echo -> python으로 안전하게 write)
-      - name: Create application-dev.yml
+      - name: Create application-dev.yml (develop)
+        if: ${{ github.ref_name == 'develop' }}
         env:
           APPLICATION_DEV_YML: ${{ secrets.APPLICATION_DEV_YML }}
         run: |
@@ -32,10 +33,9 @@ jobs:
           p.parent.mkdir(parents=True, exist_ok=True)
           p.write_text(os.environ["APPLICATION_DEV_YML"], encoding="utf-8")
           PY
-        working-directory: ${{ env.working-directory }}
 
-      # ✅ 여기만 수정 (echo -> python으로 안전하게 write)
-      - name: Create gradle.properties
+      - name: Create gradle.properties (develop)
+        if: ${{ github.ref_name == 'develop' }}
         env:
           GRADLE_DEV_PROPERTIES: ${{ secrets.GRADLE_DEV_PROPERTIES }}
         run: |
@@ -44,7 +44,29 @@ jobs:
           p = pathlib.Path("gradle.properties")
           p.write_text(os.environ["GRADLE_DEV_PROPERTIES"], encoding="utf-8")
           PY
-        working-directory: ${{ env.working-directory }}
+
+      - name: Create application-prod.yml (release)
+        if: ${{ github.ref_name == 'release' }}
+        env:
+          APPLICATION_PROD_YML: ${{ secrets.APPLICATION_PROD_YML }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("src/main/resources/application-prod.yml")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text(os.environ["APPLICATION_PROD_YML"], encoding="utf-8")
+          PY
+
+      - name: Create gradle.properties (release)
+        if: ${{ github.ref_name == 'release' }}
+        env:
+          GRADLE_PROD_PROPERTIES: ${{ secrets.GRADLE_PROD_PROPERTIES }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("gradle.properties")
+          p.write_text(os.environ["GRADLE_PROD_PROPERTIES"], encoding="utf-8")
+          PY
 
       - name: Build with Gradle
         run: |
@@ -61,13 +83,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_LOGIN_USERNAME }}
           password: ${{ secrets.DOCKERHUB_LOGIN_ACCESSTOKEN }}
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Docker Image (develop -> dev-latest)
+        if: ${{ github.ref_name == 'develop' }}
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_LOGIN_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:dev-latest
+
+      - name: Build and Push Docker Image (release -> prod-latest)
+        if: ${{ github.ref_name == 'release' }}
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_LOGIN_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:prod-latest
 
   deploy-cd:
     needs: deploy-ci
@@ -86,6 +118,29 @@ jobs:
           source: ./nginx
           target: /home/ubuntu/solply-server/
 
+      - name: Upload edge compose file
+        uses: appleboy/ssh-action@master
+        with:
+          username: ubuntu
+          host: ${{ secrets.SERVER_PUBLIC_IP }}
+          key: ${{ secrets.EC2_ACCESS_KEY }}
+          script: |
+            set -e
+            mkdir -p /home/ubuntu/solply-server/env/edge
+            echo "${{ secrets.DOCKER_COMPOSE_EDGE_YML_BASE64 }}" | base64 -d > /home/ubuntu/solply-server/env/edge/docker-compose.yml
+
+      - name: Bring up edge and reload nginx
+        uses: appleboy/ssh-action@master
+        with:
+          username: ubuntu
+          host: ${{ secrets.SERVER_PUBLIC_IP }}
+          key: ${{ secrets.EC2_ACCESS_KEY }}
+          script: |
+            set -e
+            EDGE_FILE=/home/ubuntu/solply-server/env/edge/docker-compose.yml
+            docker compose -p solply-edge -f $EDGE_FILE up -d
+            docker compose -p solply-edge -f $EDGE_FILE exec -T nginx nginx -s reload || true
+
       - name: Upload deploy.sh to EC2
         uses: appleboy/scp-action@master
         with:
@@ -95,14 +150,30 @@ jobs:
           source: ./scripts/deploy.sh
           target: /home/ubuntu/solply-server/
 
-      - name: Deploy to EC2
+      - name: Deploy to EC2 (develop -> dev)
+        if: ${{ github.ref_name == 'develop' }}
         uses: appleboy/ssh-action@master
         with:
           username: ubuntu
           host: ${{ secrets.SERVER_PUBLIC_IP }}
           key: ${{ secrets.EC2_ACCESS_KEY }}
           script: |
-            cd /home/ubuntu/solply-server
-            echo "${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}" | base64 -d > docker-compose.yml
-            chmod +x ./scripts/deploy.sh
-            ./scripts/deploy.sh
+            set -e
+            mkdir -p /home/ubuntu/solply-server/env/dev
+            echo "${{ secrets.DOCKER_COMPOSE_DEV_YML_BASE64 }}" | base64 -d > /home/ubuntu/solply-server/env/dev/docker-compose.yml
+            chmod +x /home/ubuntu/solply-server/scripts/deploy.sh
+            /home/ubuntu/solply-server/scripts/deploy.sh dev up
+
+      - name: Deploy to EC2 (release -> prod)
+        if: ${{ github.ref_name == 'release' }}
+        uses: appleboy/ssh-action@master
+        with:
+          username: ubuntu
+          host: ${{ secrets.SERVER_PUBLIC_IP }}
+          key: ${{ secrets.EC2_ACCESS_KEY }}
+          script: |
+            set -e
+            mkdir -p /home/ubuntu/solply-server/env/prod
+            echo "${{ secrets.DOCKER_COMPOSE_PROD_YML_BASE64 }}" | base64 -d > /home/ubuntu/solply-server/env/prod/docker-compose.yml
+            chmod +x /home/ubuntu/solply-server/scripts/deploy.sh
+            /home/ubuntu/solply-server/scripts/deploy.sh prod up

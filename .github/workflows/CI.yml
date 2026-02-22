@@ -2,7 +2,7 @@ name: Continuous Integration
 
 on:
   pull_request:
-    branches: [ "develop" ]
+    branches: [ "develop", "release" ]
 
 jobs:
   build:
@@ -20,18 +20,21 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Create application.yml
+      # PR 타겟이 develop이면 dev 설정 생성
+      - name: Create application-dev.yml (for develop PR)
+        if: ${{ github.base_ref == 'develop' }}
         env:
           APPLICATION_DEV_YML: ${{ secrets.APPLICATION_DEV_YML }}
         run: |
-          mkdir -p src/main/resources
           python3 - <<'PY'
           import os, pathlib
-          p = pathlib.Path("src/main/resources/application.yml")
+          p = pathlib.Path("src/main/resources/application-dev.yml")
+          p.parent.mkdir(parents=True, exist_ok=True)
           p.write_text(os.environ["APPLICATION_DEV_YML"], encoding="utf-8")
           PY
 
-      - name: Create gradle.properties
+      - name: Create gradle.properties (for develop PR)
+        if: ${{ github.base_ref == 'develop' }}
         env:
           GRADLE_DEV_PROPERTIES: ${{ secrets.GRADLE_DEV_PROPERTIES }}
         run: |
@@ -39,6 +42,30 @@ jobs:
           import os, pathlib
           p = pathlib.Path("gradle.properties")
           p.write_text(os.environ["GRADLE_DEV_PROPERTIES"], encoding="utf-8")
+          PY
+
+      # PR 타겟이 release이면 prod 설정 생성
+      - name: Create application-prod.yml (for release PR)
+        if: ${{ github.base_ref == 'release' }}
+        env:
+          APPLICATION_PROD_YML: ${{ secrets.APPLICATION_PROD_YML }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("src/main/resources/application-prod.yml")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text(os.environ["APPLICATION_PROD_YML"], encoding="utf-8")
+          PY
+
+      - name: Create gradle.properties (for release PR)
+        if: ${{ github.base_ref == 'release' }}
+        env:
+          GRADLE_PROD_PROPERTIES: ${{ secrets.GRADLE_PROD_PROPERTIES }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("gradle.properties")
+          p.write_text(os.environ["GRADLE_PROD_PROPERTIES"], encoding="utf-8")
           PY
 
       - name: Build with Gradle
