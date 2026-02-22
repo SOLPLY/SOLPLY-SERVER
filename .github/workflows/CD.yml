@@ -124,8 +124,8 @@ jobs:
           host: ${{ secrets.SERVER_PUBLIC_IP }}
           username: ubuntu
           key: ${{ secrets.EC2_ACCESS_KEY }}
-          source: ./docker/observability
-          target: /home/ubuntu/solply-server/
+          source: ./docker/observability/*
+          target: /home/ubuntu/solply-server/observability
 
       - name: Upload edge compose file
         uses: appleboy/ssh-action@master
