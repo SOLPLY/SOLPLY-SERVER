@@ -6,7 +6,7 @@ scrape_configs:
   - job_name: 'solply-dev-app'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['app:8080']
+      - targets: ['dev-app:8080']
 
   - job_name: 'jmeter'
     metrics_path: '/metrics'
