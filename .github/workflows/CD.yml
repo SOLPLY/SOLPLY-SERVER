@@ -118,6 +118,15 @@ jobs:
           source: ./nginx
           target: /home/ubuntu/solply-server/
 
+      - name: Upload observability files
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EC2_ACCESS_KEY }}
+          source: ./docker/observability
+          target: /home/ubuntu/solply-server/
+
       - name: Upload edge compose file
         uses: appleboy/ssh-action@master
         with:
