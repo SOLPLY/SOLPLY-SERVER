@@ -159,7 +159,7 @@ jobs:
           source: ./scripts/deploy.sh
           target: /home/ubuntu/solply-server/
 
-      - name: Deploy to EC2 (develop -> dev)
+      - name: Deploy to EC2 (dev)
         if: ${{ github.ref_name == 'develop' }}
         uses: appleboy/ssh-action@master
         with:
@@ -173,7 +173,7 @@ jobs:
             chmod +x /home/ubuntu/solply-server/scripts/deploy.sh
             /home/ubuntu/solply-server/scripts/deploy.sh dev up
 
-      - name: Deploy to EC2 (release -> prod)
+      - name: Deploy to EC2 (prod)
         if: ${{ github.ref_name == 'release' }}
         uses: appleboy/ssh-action@master
         with:
