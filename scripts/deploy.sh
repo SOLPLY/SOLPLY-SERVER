@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
+# CD.yml에서 실행된 명령어(/home/ubuntu/solply-server/scripts/deploy.sh dev up)에서 가져온 인자
 ENV_NAME="${1:-}"
 ACTION="${2:-up}"
 BASE_DIR="/home/ubuntu/solply-server/env"
