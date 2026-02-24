@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# CD.yml에서 실행된 명령어(/home/ubuntu/solply-server/scripts/deploy.sh dev up)에서 가져온 인자
 ENV_NAME="${1:-}"
-ACTION="${2:-up}"   # up|down|restart|pull|ps|logs
+ACTION="${2:-up}"
 BASE_DIR="/home/ubuntu/solply-server/env"
 
 if [[ "$ENV_NAME" != "dev" && "$ENV_NAME" != "prod" ]]; then
@@ -12,6 +13,7 @@ fi
 
 PROJECT="solply-${ENV_NAME}"
 COMPOSE_FILE="${BASE_DIR}/${ENV_NAME}/docker-compose.yml"
+SERVICE="${ENV_NAME}-app"   # ✅ 핵심: dev-app / prod-app
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
   echo "❌ compose file not found: $COMPOSE_FILE"
@@ -21,24 +23,24 @@ fi
 echo "✅ ENV=$ENV_NAME ACTION=$ACTION"
 echo "✅ PROJECT=$PROJECT"
 echo "✅ COMPOSE=$COMPOSE_FILE"
+echo "✅ SERVICE=$SERVICE"
 
 cd "$(dirname "$COMPOSE_FILE")"
 
 case "$ACTION" in
   pull)
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" pull app || true
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" pull "$SERVICE"
     ;;
   up)
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" pull app || true
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up -d
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" pull "$SERVICE"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up -d --force-recreate --no-deps "$SERVICE"
     ;;
   restart)
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" pull app || true
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" down || true
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up -d
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" pull "$SERVICE"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up -d --force-recreate --no-deps "$SERVICE"
     ;;
   down)
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" down || true
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" down
     ;;
   ps)
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" ps
@@ -51,5 +53,3 @@ case "$ACTION" in
     exit 1
     ;;
 esac
-
-echo "✅ Done."
