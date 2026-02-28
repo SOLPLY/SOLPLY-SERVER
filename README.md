@@ -6,7 +6,7 @@
 
 ## 📌 Swagger API Docs
 
-> http://54.180.170.116:8080/swagger-ui/index.html#/
+> https://dev.api.solply.store/swagger-ui/index.html#/
 
 
 ## 🚀 Tech Stack
@@ -15,14 +15,14 @@
 | **Language**   | Java 21                         |
 | **Framework**  | Spring Boot 3.3.5               |
 | **Build Tool** | Gradle                          |
-| **Database**   | Postgresql (RDS), Redis         |
+| **Database**   | MySQL 8.0, Redis         |
 | **Deployment** | AWS EC2, GitHub Actions, Docker |
 | **Docs**       | Notion, Swagger UI              |
 | **Auth**       | Spring Security + JWT           |
 | **CI/CD**      | GitHub Actions + Docker Compose |
 
 
-## 📂 Project Structure (25.08.05)
+## 📂 Project Structure (26.02.28)
 
 ```bash
 📁 solply-server/
@@ -33,13 +33,21 @@
 │   ├── 📄 docker-compose.dev.yml
 │   ├── 📄 docker-compose.prod.yml
 │   └── 📄 Dockerfile
+├── 📁 nginx
+│   └── 📁 conf.d
+│       ├── dev.conf
+│       └── prod.conf
+│   └── 📁 www
+│       └── .gitkeep
 ├── 📁 scripts
-│   ├── 📄 deploy.sh
+│   └── 📄 deploy.sh
 ├── 📁 src
 │   ├── 📁 main
 │   │   ├── 📁 java/ 📁 org/ 📁 sopt/ 📁 solply_server
 │   │   │   ├── 📁 domain
+│   │   │   │   ├── 📁 admin
 │   │   │   │   ├── 📁 auth
+│   │   │   │   ├── 📁 bookmark
 │   │   │   │   └── 📁 course
 │   │   │   │       ├── 📁 controller
 │   │   │   │       ├── 📁 dto
@@ -56,13 +64,8 @@
 │   │   └── 📁 resources
 │   └── 📁 test
 ├── 📄 build.gradle
+├── 📄 gradle.properties
 ├── 📄 gradle.dev.properties
-├── 📄 radle.prod.properties
+├── 📄 gradle.prod.properties
 └── 📄 README.md
 ```
-
-
-## 👥 Developers
-| ![Image](https://github.com/user-attachments/assets/1d02828d-3ae0-41e9-b6ea-1c7ce6b53f1c) | ![Image](https://github.com/user-attachments/assets/3a80d313-cc09-487a-ba07-1f893e1f5c6d) | ![Image](https://github.com/user-attachments/assets/bf85598e-4951-4640-ad10-fcbf601c50f0) | 
-| :-------------: | :----------: | :----------: |
-| [신민규](https://github.com/uykm) | [배영경](https://github.com/bykbyk0401) | [이지수](https://github.com/leejisoo0617) |
