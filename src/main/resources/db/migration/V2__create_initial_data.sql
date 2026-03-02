@@ -1634,7 +1634,7 @@ VALUES
     (227, 'INSTAGRAM', 'http://www.instagram.com/homeboy_seoul'),
     (228, 'INSTAGRAM', 'https://www.instagram.com/sockstaz'),
     (229, 'INSTAGRAM', 'https://www.instagram.com/allwrite_shop'),
-    (230, 'INSTAGRAM', 'https://www.instagram.com/allwrite_shop'),
+    (230, 'INSTAGRAM', 'https://www.instagram.com/visitor.coffee'),
     (231, 'INSTAGRAM', NULL),
     (232, 'INSTAGRAM', NULL),
     (233, 'INSTAGRAM', 'https://www.instagram.com/ofrseoul'),
