@@ -340,7 +340,7 @@ VALUES
     (282, 37.5791784, 126.9835596, 7, '서울특별시 종로구 삼청로 103-4 삼청동 수제비 옆 골목', '02-732-3004', '시그니처 메뉴가 맛있는 대형 카페', '포스톤즈 삼청점', '월 - 금 07:30 - 22:00'),
     (283, 37.5778436, 126.9858289, 7, '서울특별시 종로구 윤보선길 74', '02-730-7507', '북촌 골목의 따스한 전통 찻집', '티테라피', '매일 10:00 - 21:00'),
     (284, 37.5759096, 126.9834651, 7, '서울특별시 종로구 북촌로 10 1층', '02-6010-6632', '제철과일 전통 찹쌀떡 맛집', '자이소 안국', '매일 10:00 - 19:00'),
-    (285, 37.5812938, 126.9868504, 7, '서울특별시 종로구 율곡로 33 2F', NULL, '통창으로 보이는 안국 핫플 카페', '리와인드 서울', '매일 10:00 - 19:00'),
+    (285, 37.5812938, 126.9868504, 7, '서울특별시 종로구 율곡로 33 2F', NULL, '뷰가 좋은 서촌 디저트 카페', '리와인드 서울', '매일 10:00 - 19:00'),
     (286, 37.5790856, 126.9849026, 7, '서울특별시 종로구 계동길 84-3 1층', '02-741-9147', '햇살이 드는 계동길 카페', '마녹 안국', '매일 11:00 - 20:00'),
     (287, 37.5780527, 126.9798566, 7, '서울특별시 종로구 북촌로 25 1층', '0507-1445-5594', '전문파티셰의 수제 쿠키 맛집', '원더쿠키', '월, 화 / 금, 토, 일 11:00 - 17:00 \n매주 수, 목 정기휴무'),
     (288, 37.5792032, 126.9847146, 7, '서울특별시 종로구 삼청로 24', '1533-7941', '경복궁 뷰 맛집의 엽서 카페', '널담은공간', '매일 10:00 - 21:30'),
@@ -361,7 +361,7 @@ VALUES
     (303, 37.5790291, 126.9846562, 7, '서울특별시 종로구 계동길 50 2층', NULL, '계절 타르트가 맛있는 디저트 카페', '발렁스', '수 - 일 12:00 - 19:00 \n매주 월, 화 정기휴무'),
     (304, 37.5828756, 126.9890268, 7, '서울특별시 종로구 북촌로5길 5-5 유니온빌딩 지하1층', '070-8839-9999', '비건 메뉴 중심의 건강 베이커리', '애쉬빌 베이커리 카페', '매일 10:30 - 18:00'),
     (305, 37.5796617, 126.9846329, 7, '서울특별시 종로구 창덕궁길 121 1층 티엑스티(.txt)', '0507-1461-0129', '창덕궁 돌담길 끝 고즈넉한 커피집', 'TXT Coffee', '월 - 토 11:00 - 18:00 \n매주 일 정기휴무'),
-    (306, null, null, 7, '서울특별시 종로구 북촌로 31-6 1층', NULL, '아담한 바나나 푸딩 맛집', '카타딘', '매일 12:00 - 18:00'),
+    (306, 37.5796617, 126.9846329, 7, '서울특별시 종로구 북촌로 31-6 1층', NULL, '아담한 바나나 푸딩 맛집', '카타딘', '매일 12:00 - 18:00'),
     (307, 37.5739414, 126.9923772, 7, '서울특별시 종로구 서순라길 81 파이키', NULL, '돌담뷰 서순라길 감성 북카페', '파이키', '월 - 목 10:00 - 19:00\n금, 토, 일 10:00 - 22:00'),
     (308, 37.5778085, 126.9839456, 7, '서울특별시 종로구 북촌로1길 30-11 1층', '0507-1413-0908', '감각적인 아트북 중심 독립서점', '이라선', '월 - 토 13:00 - 19:00\n매주 일 정기휴무'),
     (309, 37.5726824, 126.9851681, 7, '서울특별시 종로구 인사동5길 14', '0507-1415-5630', '여행자들을 위한 조용한 여행 서점', '사이에', '월 - 금 10:00 - 20:00\n토 14:00 - 19:00 \n매주 일 정기휴무'),
@@ -1606,7 +1606,125 @@ VALUES
     (199, 'INSTAGRAM', 'https://www.instagram.com/thanksbooks'),
     (200, 'INSTAGRAM', NULL),
     (201, 'INSTAGRAM', 'http://instagram.com/akiya.ramen'),
-    (202, 'INSTAGRAM', 'http://instagram.com/the_magazine_club');
+    (202, 'INSTAGRAM', 'http://instagram.com/the_magazine_club'),
+    (203, 'INSTAGRAM', 'https://www.instagram.com/boanbooks/'),
+    (204, 'INSTAGRAM', 'https://www.instagram.com/youngchive_official'),
+    (205, 'INSTAGRAM', NULL),
+    (206, 'INSTAGRAM', 'http://instagram.com/seochonbooks'),
+    (207, 'INSTAGRAM', 'https://www.instagram.com/booksalon.textbook'),
+    (208, 'INSTAGRAM', 'https://www.instagram.com/ida_peacebooks/'),
+    (209, 'INSTAGRAM', 'https://www.instagram.com/chaegchaeg'),
+    (210, 'INSTAGRAM', 'https://www.instagram.com/sansan_seochon'),
+    (211, 'INSTAGRAM', 'http://instagram.com/apostrophe_nuha'),
+    (212, 'INSTAGRAM', 'https://www.instagram.com/folki_official'),
+    (213, 'INSTAGRAM', 'https://www.instagram.com/daelimmuseum/'),
+    (214, 'INSTAGRAM', 'https://www.instagram.com/takemyyellow'),
+    (215, 'INSTAGRAM', 'https://www.instagram.com/onemorebagkr/'),
+    (216, 'INSTAGRAM', 'https://www.instagram.com/supul.official/'),
+    (217, 'INSTAGRAM', 'https://www.instagram.com/kandasoba_ramen'),
+    (218, 'INSTAGRAM', NULL),
+    (219, 'INSTAGRAM', 'https://www.instagram.com/peacepatisserie_'),
+    (220, 'INSTAGRAM', NULL),
+    (221, 'INSTAGRAM', 'https://instagram.com/limduey_showroom'),
+    (222, 'INSTAGRAM', 'https://www.instagram.com/scooper_gelato/'),
+    (223, 'INSTAGRAM', 'https://www.instagram.com/1p_news'),
+    (224, 'INSTAGRAM', 'https://www.instagram.com/papierprost/'),
+    (225, 'INSTAGRAM', 'https://www.instagram.com/sockstaz'),
+    (226, 'INSTAGRAM', 'https://www.instagram.com/veranda_seoul'),
+    (227, 'INSTAGRAM', 'http://www.instagram.com/homeboy_seoul'),
+    (228, 'INSTAGRAM', 'https://www.instagram.com/sockstaz'),
+    (229, 'INSTAGRAM', 'https://www.instagram.com/allwrite_shop'),
+    (230, 'INSTAGRAM', 'https://www.instagram.com/visitor.coffee'),
+    (231, 'INSTAGRAM', NULL),
+    (232, 'INSTAGRAM', NULL),
+    (233, 'INSTAGRAM', 'https://www.instagram.com/ofrseoul'),
+    (234, 'INSTAGRAM', 'https://www.instagram.com/hotel_827'),
+    (235, 'INSTAGRAM', NULL),
+    (236, 'INSTAGRAM', 'https://www.instagram.com/fillin_focaccia'),
+    (237, 'INSTAGRAM', 'https://www.instagram.com/yeonheun_roasters'),
+    (238, 'INSTAGRAM', 'https://www.instagram.com/thephrase_official/'),
+    (239, 'INSTAGRAM', NULL),
+    (240, 'INSTAGRAM', 'https://www.instagram.com/phal.cafe'),
+    (241, 'INSTAGRAM', 'https://www.instagram.com/itsyourshopvous/'),
+    (242, 'INSTAGRAM', 'https://www.instagram.com/unglamouse'),
+    (243, 'INSTAGRAM', 'https://www.instagram.com/msk_antenna_seoul'),
+    (244, 'INSTAGRAM', 'https://www.instagram.com/11ho1_bookshop'),
+    (245, 'INSTAGRAM', 'https://www.instagram.com/reception.seoul'),
+    (246, 'INSTAGRAM', 'https://www.instagram.com/mychoice.house'),
+    (247, 'INSTAGRAM', 'https://www.instagram.com/dotle.bat'),
+    (248, 'INSTAGRAM', 'https://www.instagram.com/camelcoffee_kor/'),
+    (249, 'INSTAGRAM', 'https://www.instagram.com/bearcafe.new'),
+    (250, 'INSTAGRAM', 'https://www.instagram.com/formula_coffee_co'),
+    (251, 'INSTAGRAM', 'https://www.instagram.com/maison_de_saucisson'),
+    (252, 'INSTAGRAM', 'https://www.instagram.com/earth__us'),
+    (253, 'INSTAGRAM', 'http://www.instagram.com/_hitato_'),
+    (254, 'INSTAGRAM', 'https://www.instagram.com/aubonkatsu'),
+    (255, 'INSTAGRAM', 'http://instagram.com/haru.donburi'),
+    (256, 'INSTAGRAM', 'http://instagram.com/sketch_rs'),
+    (257, 'INSTAGRAM', NULL),
+    (258, 'INSTAGRAM', NULL),
+    (259, 'INSTAGRAM', 'https://www.instagram.com/scoffseochon'),
+    (260, 'INSTAGRAM', 'https://www.instagram.com/vintage_unvs'),
+    (261, 'INSTAGRAM', 'https://www.instagram.com/vintage_unvs'),
+    (262, 'INSTAGRAM', 'https://www.instagram.com/penny_seoul/'),
+    (263, 'INSTAGRAM', 'https://www.instagram.com/menchuru_jongno'),
+    (264, 'INSTAGRAM', 'https://www.instagram.com/onsen_anguk/'),
+    (265, 'INSTAGRAM', NULL),
+    (266, 'INSTAGRAM', NULL),
+    (267, 'INSTAGRAM', 'https://www.instagram.com/usoba.kr'),
+    (268, 'INSTAGRAM', 'https://www.instagram.com/yuzu_ramen2'),
+    (269, 'INSTAGRAM', 'http://instagram.com/yibap_official'),
+    (270, 'INSTAGRAM', 'https://instagram.com/sambangmae'),
+    (271, 'INSTAGRAM', 'https://www.instagram.com/ill_wall_katsu'),
+    (272, 'INSTAGRAM', NULL),
+    (273, 'INSTAGRAM', NULL),
+    (274, 'INSTAGRAM', 'https://www.instagram.com/snackseoul'),
+    (275, 'INSTAGRAM', 'https://www.instagram.com/dotblanket_official'),
+    (276, 'INSTAGRAM', 'https://www.instagram.com/nhahang_anguk'),
+    (277, 'INSTAGRAM', 'https://www.instagram.com/billymason_coffee'),
+    (278, 'INSTAGRAM', 'https://www.instagram.com/etf.bakery_official/'),
+    (279, 'INSTAGRAM', 'https://www.instagram.com/artistbakery/'),
+    (280, 'INSTAGRAM', 'https://www.instagram.com/amornapoliofficial/'),
+    (281, 'INSTAGRAM', 'https://www.instagram.com/onew.lifestyle'),
+    (282, 'INSTAGRAM', 'https://www.instagram.com/fourstones_coffeeroasters/'),
+    (283, 'INSTAGRAM', NULL),
+    (284, 'INSTAGRAM', 'https://www.instagram.com/jaiso__official'),
+    (285, 'INSTAGRAM', 'https://www.instagram.com/rwndseoul'),
+    (286, 'INSTAGRAM', 'https://www.instagram.com/manok.seoul'),
+    (287, 'INSTAGRAM', NULL),
+    (288, 'INSTAGRAM', 'https://www.instagram.com/nuldam_space/'),
+    (289, 'INSTAGRAM', 'https://www.instagram.com/eoeseoul'),
+    (290, 'INSTAGRAM', 'http://instagram.com/incompletetable'),
+    (291, 'INSTAGRAM', 'http://instagram.com/thanksoat'),
+    (292, 'INSTAGRAM', 'https://www.instagram.com/tonti_coffee'),
+    (293, 'INSTAGRAM', 'https://www.instagram.com/cafesinola'),
+    (294, 'INSTAGRAM', 'https://www.instagram.com/tung_seoul'),
+    (295, 'INSTAGRAM', 'https://www.instagram.com/taret.seoul'),
+    (296, 'INSTAGRAM', NULL),
+    (297, 'INSTAGRAM', NULL),
+    (298, 'INSTAGRAM', 'https://www.instagram.com/ooj.coffee.club/'),
+    (299, 'INSTAGRAM', NULL),
+    (300, 'INSTAGRAM', 'https://www.instagram.com/foudethe_seoul/'),
+    (301, 'INSTAGRAM', 'https://www.instagram.com/newmixcoffee.kr'),
+    (302, 'INSTAGRAM', 'https://www.instagram.com/heartyheartyhouse/'),
+    (303, 'INSTAGRAM', 'https://www.instagram.com/balance_patisserie'),
+    (304, 'INSTAGRAM', 'https://www.instagram.com/ashville_bakery/'),
+    (305, 'INSTAGRAM', 'https://www.instagram.com/txtcoffee'),
+    (306, 'INSTAGRAM', NULL),
+    (307, 'INSTAGRAM', 'https://www.instagram.com/fikee.seoul'),
+    (308, 'INSTAGRAM', 'https://www.instagram.com/irasun_official/'),
+    (309, 'INSTAGRAM', 'https://www.instagram.com/saiebook'),
+    (310, 'INSTAGRAM', 'http://instagram.com/bihwarim_bookshop'),
+    (311, 'INSTAGRAM', 'http://instagram.com/collioureshop'),
+    (312, 'INSTAGRAM', 'https://www.instagram.com/insideobject'),
+    (313, 'INSTAGRAM', 'https://www.instagram.com/otyg____'),
+    (314, 'INSTAGRAM', 'https://www.instagram.com/oimu_shop'),
+    (315, 'INSTAGRAM', 'https://www.instagram.com/paperdollmate_atelier_'),
+    (316, 'INSTAGRAM', 'https://www.instagram.com/alloro_gelato'),
+    (317, 'INSTAGRAM', 'https://www.instagram.com/inour.mansion/'),
+    (318, 'INSTAGRAM', 'https://www.instagram.com/hanahzo'),
+    (319, 'INSTAGRAM', 'http://www.instagram.com/goollimm'),
+    (320, 'INSTAGRAM', 'https://www.instagram.com/mmcakorea');
 
 -- place_tag 데이터 삽입
 INSERT INTO `place_tag` (`place_id`, `tag_id`)
@@ -2751,479 +2869,462 @@ VALUES
 
     (202, 'dev/uploads/places/202/place_202_image_1.jpg', 1),
     (202, 'dev/uploads/places/202/place_202_image_2.jpg', 2),
-    (202, 'dev/uploads/places/202/place_202_image_3.jpg', 3);
+    (202, 'dev/uploads/places/202/place_202_image_3.jpg', 3),
 
---     (203, 'dev/uploads/places/203/place_203_image_1.jpg', 1),
---     (203, 'dev/uploads/places/203/place_203_image_2.jpg', 2),
---     (203, 'dev/uploads/places/203/place_203_image_3.jpg', 3),
---
---     (204, 'dev/uploads/places/204/place_204_image_1.jpg', 1),
---     (204, 'dev/uploads/places/204/place_204_image_2.jpg', 2),
---     (204, 'dev/uploads/places/204/place_204_image_3.jpg', 3),
---
---     (205, 'dev/uploads/places/205/place_205_image_1.jpg', 1),
---     (205, 'dev/uploads/places/205/place_205_image_2.jpg', 2),
---     (205, 'dev/uploads/places/205/place_205_image_3.jpg', 3),
---
---     (206, 'dev/uploads/places/206/place_206_image_1.jpg', 1),
---     (206, 'dev/uploads/places/206/place_206_image_2.jpg', 2),
---     (206, 'dev/uploads/places/206/place_206_image_3.jpg', 3),
---
---     (207, 'dev/uploads/places/207/place_207_image_1.jpg', 1),
---     (207, 'dev/uploads/places/207/place_207_image_2.jpg', 2),
---     (207, 'dev/uploads/places/207/place_207_image_3.jpg', 3),
---
---     (208, 'dev/uploads/places/208/place_208_image_1.jpg', 1),
---     (208, 'dev/uploads/places/208/place_208_image_2.jpg', 2),
---     (208, 'dev/uploads/places/208/place_208_image_3.jpg', 3),
---
---     (209, 'dev/uploads/places/209/place_209_image_1.jpg', 1),
---     (209, 'dev/uploads/places/209/place_209_image_2.jpg', 2),
---     (209, 'dev/uploads/places/209/place_209_image_3.jpg', 3),
---
---     (210, 'dev/uploads/places/210/place_210_image_1.jpg', 1),
---     (210, 'dev/uploads/places/210/place_210_image_2.jpg', 2),
---     (210, 'dev/uploads/places/210/place_210_image_3.jpg', 3),
---
---     (211, 'dev/uploads/places/211/place_211_image_1.jpg', 1),
---     (211, 'dev/uploads/places/211/place_211_image_2.jpg', 2),
---     (211, 'dev/uploads/places/211/place_211_image_3.jpg', 3),
---
---     (212, 'dev/uploads/places/212/place_212_image_1.jpg', 1),
---     (212, 'dev/uploads/places/212/place_212_image_2.jpg', 2),
---     (212, 'dev/uploads/places/212/place_212_image_3.jpg', 3),
---
---     (213, 'dev/uploads/places/213/place_213_image_1.jpg', 1),
---     (213, 'dev/uploads/places/213/place_213_image_2.jpg', 2),
---     (213, 'dev/uploads/places/213/place_213_image_3.jpg', 3),
---
---     (214, 'dev/uploads/places/214/place_214_image_1.jpg', 1),
---     (214, 'dev/uploads/places/214/place_214_image_2.jpg', 2),
---     (214, 'dev/uploads/places/214/place_214_image_3.jpg', 3),
---
---     (215, 'dev/uploads/places/215/place_215_image_1.jpg', 1),
---     (215, 'dev/uploads/places/215/place_215_image_2.jpg', 2),
---     (215, 'dev/uploads/places/215/place_215_image_3.jpg', 3),
---
---     (216, 'dev/uploads/places/216/place_216_image_1.jpg', 1),
---     (216, 'dev/uploads/places/216/place_216_image_2.jpg', 2),
---     (216, 'dev/uploads/places/216/place_216_image_3.jpg', 3),
---
---     (217, 'dev/uploads/places/217/place_217_image_1.jpg', 1),
---     (217, 'dev/uploads/places/217/place_217_image_2.jpg', 2),
---     (217, 'dev/uploads/places/217/place_217_image_3.jpg', 3),
---
---     (218, 'dev/uploads/places/218/place_218_image_1.jpg', 1),
---     (218, 'dev/uploads/places/218/place_218_image_2.jpg', 2),
---     (218, 'dev/uploads/places/218/place_218_image_3.jpg', 3),
---
---     (219, 'dev/uploads/places/219/place_219_image_1.jpg', 1),
---     (219, 'dev/uploads/places/219/place_219_image_2.jpg', 2),
---     (219, 'dev/uploads/places/219/place_219_image_3.jpg', 3),
---
---     (220, 'dev/uploads/places/220/place_220_image_1.jpg', 1),
---     (220, 'dev/uploads/places/220/place_220_image_2.jpg', 2),
---     (220, 'dev/uploads/places/220/place_220_image_3.jpg', 3),
---
---     (221, 'dev/uploads/places/221/place_221_image_1.jpg', 1),
---     (221, 'dev/uploads/places/221/place_221_image_2.jpg', 2),
---     (221, 'dev/uploads/places/221/place_221_image_3.jpg', 3),
---
---     (222, 'dev/uploads/places/222/place_222_image_1.jpg', 1),
---     (222, 'dev/uploads/places/222/place_222_image_2.jpg', 2),
---     (222, 'dev/uploads/places/222/place_222_image_3.jpg', 3),
---
---     (223, 'dev/uploads/places/223/place_223_image_1.jpg', 1),
---     (223, 'dev/uploads/places/223/place_223_image_2.jpg', 2),
---     (223, 'dev/uploads/places/223/place_223_image_3.jpg', 3),
---
---     (224, 'dev/uploads/places/224/place_224_image_1.jpg', 1),
---     (224, 'dev/uploads/places/224/place_224_image_2.jpg', 2),
---     (224, 'dev/uploads/places/224/place_224_image_3.jpg', 3),
---
---     (225, 'dev/uploads/places/225/place_225_image_1.jpg', 1),
---     (225, 'dev/uploads/places/225/place_225_image_2.jpg', 2),
---     (225, 'dev/uploads/places/225/place_225_image_3.jpg', 3),
---
---     (226, 'dev/uploads/places/226/place_226_image_1.jpg', 1),
---     (226, 'dev/uploads/places/226/place_226_image_2.jpg', 2),
---     (226, 'dev/uploads/places/226/place_226_image_3.jpg', 3),
---
---     (227, 'dev/uploads/places/227/place_227_image_1.jpg', 1),
---     (227, 'dev/uploads/places/227/place_227_image_2.jpg', 2),
---     (227, 'dev/uploads/places/227/place_227_image_3.jpg', 3),
---
---     (228, 'dev/uploads/places/228/place_228_image_1.jpg', 1),
---     (228, 'dev/uploads/places/228/place_228_image_2.jpg', 2),
---     (228, 'dev/uploads/places/228/place_228_image_3.jpg', 3),
---
---     (229, 'dev/uploads/places/229/place_229_image_1.jpg', 1),
---     (229, 'dev/uploads/places/229/place_229_image_2.jpg', 2),
---     (229, 'dev/uploads/places/229/place_229_image_3.jpg', 3),
---
---     (230, 'dev/uploads/places/230/place_230_image_1.jpg', 1),
---     (230, 'dev/uploads/places/230/place_230_image_2.jpg', 2),
---     (230, 'dev/uploads/places/230/place_230_image_3.jpg', 3),
---
---     (231, 'dev/uploads/places/231/place_231_image_1.jpg', 1),
---     (231, 'dev/uploads/places/231/place_231_image_2.jpg', 2),
---     (231, 'dev/uploads/places/231/place_231_image_3.jpg', 3),
---
---     (232, 'dev/uploads/places/232/place_232_image_1.jpg', 1),
---     (232, 'dev/uploads/places/232/place_232_image_2.jpg', 2),
---     (232, 'dev/uploads/places/232/place_232_image_3.jpg', 3),
---
---     (233, 'dev/uploads/places/233/place_233_image_1.jpg', 1),
---     (233, 'dev/uploads/places/233/place_233_image_2.jpg', 2),
---     (233, 'dev/uploads/places/233/place_233_image_3.jpg', 3),
---
---     (234, 'dev/uploads/places/234/place_234_image_1.jpg', 1),
---     (234, 'dev/uploads/places/234/place_234_image_2.jpg', 2),
---     (234, 'dev/uploads/places/234/place_234_image_3.jpg', 3),
---
---     (235, 'dev/uploads/places/235/place_235_image_1.jpg', 1),
---     (235, 'dev/uploads/places/235/place_235_image_2.jpg', 2),
---     (235, 'dev/uploads/places/235/place_235_image_3.jpg', 3),
---
---     (236, 'dev/uploads/places/236/place_236_image_1.jpg', 1),
---     (236, 'dev/uploads/places/236/place_236_image_2.jpg', 2),
---     (236, 'dev/uploads/places/236/place_236_image_3.jpg', 3),
---
---     (237, 'dev/uploads/places/237/place_237_image_1.jpg', 1),
---     (237, 'dev/uploads/places/237/place_237_image_2.jpg', 2),
---     (237, 'dev/uploads/places/237/place_237_image_3.jpg', 3),
---
---     (238, 'dev/uploads/places/238/place_238_image_1.jpg', 1),
---     (238, 'dev/uploads/places/238/place_238_image_2.jpg', 2),
---     (238, 'dev/uploads/places/238/place_238_image_3.jpg', 3),
---
---     (239, 'dev/uploads/places/239/place_239_image_1.jpg', 1),
---     (239, 'dev/uploads/places/239/place_239_image_2.jpg', 2),
---     (239, 'dev/uploads/places/239/place_239_image_3.jpg', 3),
---
---     (240, 'dev/uploads/places/240/place_240_image_1.jpg', 1),
---     (240, 'dev/uploads/places/240/place_240_image_2.jpg', 2),
---     (240, 'dev/uploads/places/240/place_240_image_3.jpg', 3),
---
---     (241, 'dev/uploads/places/241/place_241_image_1.jpg', 1),
---     (241, 'dev/uploads/places/241/place_241_image_2.jpg', 2),
---     (241, 'dev/uploads/places/241/place_241_image_3.jpg', 3),
---
---     (242, 'dev/uploads/places/242/place_242_image_1.jpg', 1),
---     (242, 'dev/uploads/places/242/place_242_image_2.jpg', 2),
---     (242, 'dev/uploads/places/242/place_242_image_3.jpg', 3),
---
---     (243, 'dev/uploads/places/243/place_243_image_1.jpg', 1),
---     (243, 'dev/uploads/places/243/place_243_image_2.jpg', 2),
---     (243, 'dev/uploads/places/243/place_243_image_3.jpg', 3),
---
---     (244, 'dev/uploads/places/244/place_244_image_1.jpg', 1),
---     (244, 'dev/uploads/places/244/place_244_image_2.jpg', 2),
---     (244, 'dev/uploads/places/244/place_244_image_3.jpg', 3),
---
---     (245, 'dev/uploads/places/245/place_245_image_1.jpg', 1),
---     (245, 'dev/uploads/places/245/place_245_image_2.jpg', 2),
---     (245, 'dev/uploads/places/245/place_245_image_3.jpg', 3),
---
---     (246, 'dev/uploads/places/246/place_246_image_1.jpg', 1),
---     (246, 'dev/uploads/places/246/place_246_image_2.jpg', 2),
---     (246, 'dev/uploads/places/246/place_246_image_3.jpg', 3),
---
---     (247, 'dev/uploads/places/247/place_247_image_1.jpg', 1),
---     (247, 'dev/uploads/places/247/place_247_image_2.jpg', 2),
---     (247, 'dev/uploads/places/247/place_247_image_3.jpg', 3),
---
---     (248, 'dev/uploads/places/248/place_248_image_1.jpg', 1),
---     (248, 'dev/uploads/places/248/place_248_image_2.jpg', 2),
---     (248, 'dev/uploads/places/248/place_248_image_3.jpg', 3),
---
---     (249, 'dev/uploads/places/249/place_249_image_1.jpg', 1),
---     (249, 'dev/uploads/places/249/place_249_image_2.jpg', 2),
---     (249, 'dev/uploads/places/249/place_249_image_3.jpg', 3),
---
---     (250, 'dev/uploads/places/250/place_250_image_1.jpg', 1),
---     (250, 'dev/uploads/places/250/place_250_image_2.jpg', 2),
---     (250, 'dev/uploads/places/250/place_250_image_3.jpg', 3),
---
---     (251, 'dev/uploads/places/251/place_251_image_1.jpg', 1),
---     (251, 'dev/uploads/places/251/place_251_image_2.jpg', 2),
---     (251, 'dev/uploads/places/251/place_251_image_3.jpg', 3),
---
---     (252, 'dev/uploads/places/252/place_252_image_1.jpg', 1),
---     (252, 'dev/uploads/places/252/place_252_image_2.jpg', 2),
---     (252, 'dev/uploads/places/252/place_252_image_3.jpg', 3),
---
---     (253, 'dev/uploads/places/253/place_253_image_1.jpg', 1),
---     (253, 'dev/uploads/places/253/place_253_image_2.jpg', 2),
---     (253, 'dev/uploads/places/253/place_253_image_3.jpg', 3),
---
---     (254, 'dev/uploads/places/254/place_254_image_1.jpg', 1),
---     (254, 'dev/uploads/places/254/place_254_image_2.jpg', 2),
---     (254, 'dev/uploads/places/254/place_254_image_3.jpg', 3),
---
---     (255, 'dev/uploads/places/255/place_255_image_1.jpg', 1),
---     (255, 'dev/uploads/places/255/place_255_image_2.jpg', 2),
---     (255, 'dev/uploads/places/255/place_255_image_3.jpg', 3),
---
---     (256, 'dev/uploads/places/256/place_256_image_1.jpg', 1),
---     (256, 'dev/uploads/places/256/place_256_image_2.jpg', 2),
---     (256, 'dev/uploads/places/256/place_256_image_3.jpg', 3),
---
---     (257, 'dev/uploads/places/257/place_257_image_1.jpg', 1),
---     (257, 'dev/uploads/places/257/place_257_image_2.jpg', 2),
---     (257, 'dev/uploads/places/257/place_257_image_3.jpg', 3),
---
---     (258, 'dev/uploads/places/258/place_258_image_1.jpg', 1),
---     (258, 'dev/uploads/places/258/place_258_image_2.jpg', 2),
---     (258, 'dev/uploads/places/258/place_258_image_3.jpg', 3),
---
---     (259, 'dev/uploads/places/259/place_259_image_1.jpg', 1),
---     (259, 'dev/uploads/places/259/place_259_image_2.jpg', 2),
---     (259, 'dev/uploads/places/259/place_259_image_3.jpg', 3),
---
---     (260, 'dev/uploads/places/260/place_260_image_1.jpg', 1),
---     (260, 'dev/uploads/places/260/place_260_image_2.jpg', 2),
---     (260, 'dev/uploads/places/260/place_260_image_3.jpg', 3),
---
---     (261, 'dev/uploads/places/261/place_261_image_1.jpg', 1),
---     (261, 'dev/uploads/places/261/place_261_image_2.jpg', 2),
---     (261, 'dev/uploads/places/261/place_261_image_3.jpg', 3),
---
---     (262, 'dev/uploads/places/262/place_262_image_1.jpg', 1),
---     (262, 'dev/uploads/places/262/place_262_image_2.jpg', 2),
---     (262, 'dev/uploads/places/262/place_262_image_3.jpg', 3),
---
---     (263, 'dev/uploads/places/263/place_263_image_1.jpg', 1),
---     (263, 'dev/uploads/places/263/place_263_image_2.jpg', 2),
---     (263, 'dev/uploads/places/263/place_263_image_3.jpg', 3),
---
---     (264, 'dev/uploads/places/264/place_264_image_1.jpg', 1),
---     (264, 'dev/uploads/places/264/place_264_image_2.jpg', 2),
---     (264, 'dev/uploads/places/264/place_264_image_3.jpg', 3),
---
---     (265, 'dev/uploads/places/265/place_265_image_1.jpg', 1),
---     (265, 'dev/uploads/places/265/place_265_image_2.jpg', 2),
---     (265, 'dev/uploads/places/265/place_265_image_3.jpg', 3),
---
---     (266, 'dev/uploads/places/266/place_266_image_1.jpg', 1),
---     (266, 'dev/uploads/places/266/place_266_image_2.jpg', 2),
---     (266, 'dev/uploads/places/266/place_266_image_3.jpg', 3),
---
---     (267, 'dev/uploads/places/267/place_267_image_1.jpg', 1),
---     (267, 'dev/uploads/places/267/place_267_image_2.jpg', 2),
---     (267, 'dev/uploads/places/267/place_267_image_3.jpg', 3),
---
---     (268, 'dev/uploads/places/268/place_268_image_1.jpg', 1),
---     (268, 'dev/uploads/places/268/place_268_image_2.jpg', 2),
---     (268, 'dev/uploads/places/268/place_268_image_3.jpg', 3),
---
---     (269, 'dev/uploads/places/269/place_269_image_1.jpg', 1),
---     (269, 'dev/uploads/places/269/place_269_image_2.jpg', 2),
---     (269, 'dev/uploads/places/269/place_269_image_3.jpg', 3),
---
---     (270, 'dev/uploads/places/270/place_270_image_1.jpg', 1),
---     (270, 'dev/uploads/places/270/place_270_image_2.jpg', 2),
---     (270, 'dev/uploads/places/270/place_270_image_3.jpg', 3),
---
---     (271, 'dev/uploads/places/271/place_271_image_1.jpg', 1),
---     (271, 'dev/uploads/places/271/place_271_image_2.jpg', 2),
---     (271, 'dev/uploads/places/271/place_271_image_3.jpg', 3),
---
---     (272, 'dev/uploads/places/272/place_272_image_1.jpg', 1),
---     (272, 'dev/uploads/places/272/place_272_image_2.jpg', 2),
---     (272, 'dev/uploads/places/272/place_272_image_3.jpg', 3),
---
---     (273, 'dev/uploads/places/273/place_273_image_1.jpg', 1),
---     (273, 'dev/uploads/places/273/place_273_image_2.jpg', 2),
---     (273, 'dev/uploads/places/273/place_273_image_3.jpg', 3),
---
---     (274, 'dev/uploads/places/274/place_274_image_1.jpg', 1),
---     (274, 'dev/uploads/places/274/place_274_image_2.jpg', 2),
---     (274, 'dev/uploads/places/274/place_274_image_3.jpg', 3),
---
---     (275, 'dev/uploads/places/275/place_275_image_1.jpg', 1),
---     (275, 'dev/uploads/places/275/place_275_image_2.jpg', 2),
---     (275, 'dev/uploads/places/275/place_275_image_3.jpg', 3),
---
---     (276, 'dev/uploads/places/276/place_276_image_1.jpg', 1),
---     (276, 'dev/uploads/places/276/place_276_image_2.jpg', 2),
---     (276, 'dev/uploads/places/276/place_276_image_3.jpg', 3),
---
---     (277, 'dev/uploads/places/277/place_277_image_1.jpg', 1),
---     (277, 'dev/uploads/places/277/place_277_image_2.jpg', 2),
---     (277, 'dev/uploads/places/277/place_277_image_3.jpg', 3),
---
---     (278, 'dev/uploads/places/278/place_278_image_1.jpg', 1),
---     (278, 'dev/uploads/places/278/place_278_image_2.jpg', 2),
---     (278, 'dev/uploads/places/278/place_278_image_3.jpg', 3),
---
---     (279, 'dev/uploads/places/279/place_279_image_1.jpg', 1),
---     (279, 'dev/uploads/places/279/place_279_image_2.jpg', 2),
---     (279, 'dev/uploads/places/279/place_279_image_3.jpg', 3),
---
---     (280, 'dev/uploads/places/280/place_280_image_1.jpg', 1),
---     (280, 'dev/uploads/places/280/place_280_image_2.jpg', 2),
---     (280, 'dev/uploads/places/280/place_280_image_3.jpg', 3),
---
---     (281, 'dev/uploads/places/281/place_281_image_1.jpg', 1),
---     (281, 'dev/uploads/places/281/place_281_image_2.jpg', 2),
---     (281, 'dev/uploads/places/281/place_281_image_3.jpg', 3),
---
---     (282, 'dev/uploads/places/282/place_282_image_1.jpg', 1),
---     (282, 'dev/uploads/places/282/place_282_image_2.jpg', 2),
---     (282, 'dev/uploads/places/282/place_282_image_3.jpg', 3),
---
---     (283, 'dev/uploads/places/283/place_283_image_1.jpg', 1),
---     (283, 'dev/uploads/places/283/place_283_image_2.jpg', 2),
---     (283, 'dev/uploads/places/283/place_283_image_3.jpg', 3),
---
---     (284, 'dev/uploads/places/284/place_284_image_1.jpg', 1),
---     (284, 'dev/uploads/places/284/place_284_image_2.jpg', 2),
---     (284, 'dev/uploads/places/284/place_284_image_3.jpg', 3),
---
---     (285, 'dev/uploads/places/285/place_285_image_1.jpg', 1),
---     (285, 'dev/uploads/places/285/place_285_image_2.jpg', 2),
---     (285, 'dev/uploads/places/285/place_285_image_3.jpg', 3),
---
---     (286, 'dev/uploads/places/286/place_286_image_1.jpg', 1),
---     (286, 'dev/uploads/places/286/place_286_image_2.jpg', 2),
---     (286, 'dev/uploads/places/286/place_286_image_3.jpg', 3),
---
---     (287, 'dev/uploads/places/287/place_287_image_1.jpg', 1),
---     (287, 'dev/uploads/places/287/place_287_image_2.jpg', 2),
---     (287, 'dev/uploads/places/287/place_287_image_3.jpg', 3),
---
---     (288, 'dev/uploads/places/288/place_288_image_1.jpg', 1),
---     (288, 'dev/uploads/places/288/place_288_image_2.jpg', 2),
---     (288, 'dev/uploads/places/288/place_288_image_3.jpg', 3),
---
---     (289, 'dev/uploads/places/289/place_289_image_1.jpg', 1),
---     (289, 'dev/uploads/places/289/place_289_image_2.jpg', 2),
---     (289, 'dev/uploads/places/289/place_289_image_3.jpg', 3),
---
---     (290, 'dev/uploads/places/290/place_290_image_1.jpg', 1),
---     (290, 'dev/uploads/places/290/place_290_image_2.jpg', 2),
---     (290, 'dev/uploads/places/290/place_290_image_3.jpg', 3),
---
---     (291, 'dev/uploads/places/291/place_291_image_1.jpg', 1),
---     (291, 'dev/uploads/places/291/place_291_image_2.jpg', 2),
---     (291, 'dev/uploads/places/291/place_291_image_3.jpg', 3),
---
---     (292, 'dev/uploads/places/292/place_292_image_1.jpg', 1),
---     (292, 'dev/uploads/places/292/place_292_image_2.jpg', 2),
---     (292, 'dev/uploads/places/292/place_292_image_3.jpg', 3),
---
---     (293, 'dev/uploads/places/293/place_293_image_1.jpg', 1),
---     (293, 'dev/uploads/places/293/place_293_image_2.jpg', 2),
---     (293, 'dev/uploads/places/293/place_293_image_3.jpg', 3),
---
---     (294, 'dev/uploads/places/294/place_294_image_1.jpg', 1),
---     (294, 'dev/uploads/places/294/place_294_image_2.jpg', 2),
---     (294, 'dev/uploads/places/294/place_294_image_3.jpg', 3),
---
---     (295, 'dev/uploads/places/295/place_295_image_1.jpg', 1),
---     (295, 'dev/uploads/places/295/place_295_image_2.jpg', 2),
---     (295, 'dev/uploads/places/295/place_295_image_3.jpg', 3),
---
---     (296, 'dev/uploads/places/296/place_296_image_1.jpg', 1),
---     (296, 'dev/uploads/places/296/place_296_image_2.jpg', 2),
---     (296, 'dev/uploads/places/296/place_296_image_3.jpg', 3),
---
---     (297, 'dev/uploads/places/297/place_297_image_1.jpg', 1),
---     (297, 'dev/uploads/places/297/place_297_image_2.jpg', 2),
---     (297, 'dev/uploads/places/297/place_297_image_3.jpg', 3),
---
---     (298, 'dev/uploads/places/298/place_298_image_1.jpg', 1),
---     (298, 'dev/uploads/places/298/place_298_image_2.jpg', 2),
---     (298, 'dev/uploads/places/298/place_298_image_3.jpg', 3),
---
---     (299, 'dev/uploads/places/299/place_299_image_1.jpg', 1),
---     (299, 'dev/uploads/places/299/place_299_image_2.jpg', 2),
---     (299, 'dev/uploads/places/299/place_299_image_3.jpg', 3),
---
---     (300, 'dev/uploads/places/300/place_300_image_1.jpg', 1),
---     (300, 'dev/uploads/places/300/place_300_image_2.jpg', 2),
---     (300, 'dev/uploads/places/300/place_300_image_3.jpg', 3),
---
---     (301, 'dev/uploads/places/301/place_301_image_1.jpg', 1),
---     (301, 'dev/uploads/places/301/place_301_image_2.jpg', 2),
---     (301, 'dev/uploads/places/301/place_301_image_3.jpg', 3),
---
---     (302, 'dev/uploads/places/302/place_302_image_1.jpg', 1),
---     (302, 'dev/uploads/places/302/place_302_image_2.jpg', 2),
---     (302, 'dev/uploads/places/302/place_302_image_3.jpg', 3),
---
---     (303, 'dev/uploads/places/303/place_303_image_1.jpg', 1),
---     (303, 'dev/uploads/places/303/place_303_image_2.jpg', 2),
---     (303, 'dev/uploads/places/303/place_303_image_3.jpg', 3),
---
---     (304, 'dev/uploads/places/304/place_304_image_1.jpg', 1),
---     (304, 'dev/uploads/places/304/place_304_image_2.jpg', 2),
---     (304, 'dev/uploads/places/304/place_304_image_3.jpg', 3),
---
---     (305, 'dev/uploads/places/305/place_305_image_1.jpg', 1),
---     (305, 'dev/uploads/places/305/place_305_image_2.jpg', 2),
---     (305, 'dev/uploads/places/305/place_305_image_3.jpg', 3),
---
---     (306, 'dev/uploads/places/306/place_306_image_1.jpg', 1),
---     (306, 'dev/uploads/places/306/place_306_image_2.jpg', 2),
---     (306, 'dev/uploads/places/306/place_306_image_3.jpg', 3),
---
---     (307, 'dev/uploads/places/307/place_307_image_1.jpg', 1),
---     (307, 'dev/uploads/places/307/place_307_image_2.jpg', 2),
---     (307, 'dev/uploads/places/307/place_307_image_3.jpg', 3),
---
---     (308, 'dev/uploads/places/308/place_308_image_1.jpg', 1),
---     (308, 'dev/uploads/places/308/place_308_image_2.jpg', 2),
---     (308, 'dev/uploads/places/308/place_308_image_3.jpg', 3),
---
---     (309, 'dev/uploads/places/309/place_309_image_1.jpg', 1),
---     (309, 'dev/uploads/places/309/place_309_image_2.jpg', 2),
---     (309, 'dev/uploads/places/309/place_309_image_3.jpg', 3),
---
---     (310, 'dev/uploads/places/310/place_310_image_1.jpg', 1),
---     (310, 'dev/uploads/places/310/place_310_image_2.jpg', 2),
---     (310, 'dev/uploads/places/310/place_310_image_3.jpg', 3),
---
---     (311, 'dev/uploads/places/311/place_311_image_1.jpg', 1),
---     (311, 'dev/uploads/places/311/place_311_image_2.jpg', 2),
---     (311, 'dev/uploads/places/311/place_311_image_3.jpg', 3),
---
---     (312, 'dev/uploads/places/312/place_312_image_1.jpg', 1),
---     (312, 'dev/uploads/places/312/place_312_image_2.jpg', 2),
---     (312, 'dev/uploads/places/312/place_312_image_3.jpg', 3),
---
---     (313, 'dev/uploads/places/313/place_313_image_1.jpg', 1),
---     (313, 'dev/uploads/places/313/place_313_image_2.jpg', 2),
---     (313, 'dev/uploads/places/313/place_313_image_3.jpg', 3),
---
---     (314, 'dev/uploads/places/314/place_314_image_1.jpg', 1),
---     (314, 'dev/uploads/places/314/place_314_image_2.jpg', 2),
---     (314, 'dev/uploads/places/314/place_314_image_3.jpg', 3),
---
---     (315, 'dev/uploads/places/315/place_315_image_1.jpg', 1),
---     (315, 'dev/uploads/places/315/place_315_image_2.jpg', 2),
---     (315, 'dev/uploads/places/315/place_315_image_3.jpg', 3),
---
---     (316, 'dev/uploads/places/316/place_316_image_1.jpg', 1),
---     (316, 'dev/uploads/places/316/place_316_image_2.jpg', 2),
---     (316, 'dev/uploads/places/316/place_316_image_3.jpg', 3),
---
---     (317, 'dev/uploads/places/317/place_317_image_1.jpg', 1),
---     (317, 'dev/uploads/places/317/place_317_image_2.jpg', 2),
---     (317, 'dev/uploads/places/317/place_317_image_3.jpg', 3),
---
---     (318, 'dev/uploads/places/318/place_318_image_1.jpg', 1),
---     (318, 'dev/uploads/places/318/place_318_image_2.jpg', 2),
---     (318, 'dev/uploads/places/318/place_318_image_3.jpg', 3),
---
---     (319, 'dev/uploads/places/319/place_319_image_1.jpg', 1),
---     (319, 'dev/uploads/places/319/place_319_image_2.jpg', 2),
---     (319, 'dev/uploads/places/319/place_319_image_3.jpg', 3),
---
---     (320, 'dev/uploads/places/320/place_320_image_1.jpg', 1),
---     (320, 'dev/uploads/places/320/place_320_image_2.jpg', 2),
---     (320, 'dev/uploads/places/320/place_320_image_3.jpg', 3);
+    (203, 'dev/uploads/places/203/203_1.jpg', 1),
+    (203, 'dev/uploads/places/203/203_2.jpg', 2),
+
+    (204, 'dev/uploads/places/204/204_1.jpg', 1),
+    (204, 'dev/uploads/places/204/204_2.jpg', 2),
+    (204, 'dev/uploads/places/204/204_3.jpg', 3),
+
+    (205, 'dev/uploads/places/205/205_1.jpg', 1),
+    (205, 'dev/uploads/places/205/205_2.jpg', 2),
+    (205, 'dev/uploads/places/205/205_3.jpg', 3),
+
+    (206, 'dev/uploads/places/206/206_1.jpg', 1),
+    (206, 'dev/uploads/places/206/206_2.jpg', 2),
+    (206, 'dev/uploads/places/206/206_3.jpg', 3),
+
+    (207, 'dev/uploads/places/207/207_1.jpg', 1),
+    (207, 'dev/uploads/places/207/207_2.jpg', 2),
+    (207, 'dev/uploads/places/207/207_3.jpg', 3),
+
+    (208, 'dev/uploads/places/208/208_1.jpg', 1),
+    (208, 'dev/uploads/places/208/208_2.jpg', 2),
+    (208, 'dev/uploads/places/208/208_3.jpg', 3),
+
+    (209, 'dev/uploads/places/209/209_1.jpg', 1),
+    (209, 'dev/uploads/places/209/209_2.jpg', 2),
+    (209, 'dev/uploads/places/209/209_3.jpg', 3),
+
+    (210, 'dev/uploads/places/210/210_1.jpg', 1),
+    (210, 'dev/uploads/places/210/210_2.jpg', 2),
+    (210, 'dev/uploads/places/210/210_3.jpg', 3),
+
+    (211, 'dev/uploads/places/211/211_1.jpg', 1),
+    (211, 'dev/uploads/places/211/211_2.jpg', 2),
+    (211, 'dev/uploads/places/211/211_3.jpg', 3),
+
+    (212, 'dev/uploads/places/212/212_1.jpg', 1),
+    (212, 'dev/uploads/places/212/212_2.jpg', 2),
+    (212, 'dev/uploads/places/212/212_3.jpg', 3),
+
+    (213, 'dev/uploads/places/213/213_1.jpg', 1),
+    (213, 'dev/uploads/places/213/213_2.jpg', 2),
+    (213, 'dev/uploads/places/213/213_3.jpg', 3),
+
+    (214, 'dev/uploads/places/214/214_1.jpg', 1),
+    (214, 'dev/uploads/places/214/214_2.jpg', 2),
+    (214, 'dev/uploads/places/214/214_3.jpg', 3),
+
+    (215, 'dev/uploads/places/215/215_1.jpg', 1),
+    (215, 'dev/uploads/places/215/215_2.jpg', 2),
+    (215, 'dev/uploads/places/215/215_3.jpg', 3),
+
+    (216, 'dev/uploads/places/216/216_1.jpg', 1),
+    (216, 'dev/uploads/places/216/216_2.jpg', 2),
+    (216, 'dev/uploads/places/216/216_3.jpg', 3),
+
+    (217, 'dev/uploads/places/217/217_1.jpg', 1),
+    (217, 'dev/uploads/places/217/217_2.jpg', 2),
+    (217, 'dev/uploads/places/217/217_3.jpg', 3),
+
+    (218, 'dev/uploads/places/218/218_1.jpg', 1),
+    (218, 'dev/uploads/places/218/218_2.jpg', 2),
+    (218, 'dev/uploads/places/218/218_3.jpg', 3),
+
+    (219, 'dev/uploads/places/219/219_1.jpg', 1),
+    (219, 'dev/uploads/places/219/219_2.jpg', 2),
+    (219, 'dev/uploads/places/219/219_3.jpg', 3),
+
+    (220, 'dev/uploads/places/220/220_1.jpg', 1),
+    (220, 'dev/uploads/places/220/220_2.jpg', 2),
+
+    (221, 'dev/uploads/places/221/221_1.jpg', 1),
+    (221, 'dev/uploads/places/221/221_2.jpg', 2),
+    (221, 'dev/uploads/places/221/221_3.jpg', 3),
+
+    (222, 'dev/uploads/places/222/222_1.jpg', 1),
+    (222, 'dev/uploads/places/222/222_2.jpg', 2),
+
+    (223, 'dev/uploads/places/223/223_1.jpg', 1),
+    (223, 'dev/uploads/places/223/223_2.jpg', 2),
+    (223, 'dev/uploads/places/223/223_3.jpg', 3),
+
+    (224, 'dev/uploads/places/224/224_1.jpg', 1),
+    (224, 'dev/uploads/places/224/224_2.jpg', 2),
+    (224, 'dev/uploads/places/224/224_3.jpg', 3),
+
+    (225, 'dev/uploads/places/225/225_1.jpg', 1),
+    (225, 'dev/uploads/places/225/225_2.jpg', 2),
+    (225, 'dev/uploads/places/225/225_3.jpg', 3),
+
+    (226, 'dev/uploads/places/226/226_1.jpg', 1),
+    (226, 'dev/uploads/places/226/226_2.jpg', 2),
+    (226, 'dev/uploads/places/226/226_3.jpg', 3),
+
+    (227, 'dev/uploads/places/227/227_1.jpg', 1),
+    (227, 'dev/uploads/places/227/227_2.jpg', 2),
+    (227, 'dev/uploads/places/227/227_3.jpg', 3),
+
+    (228, 'dev/uploads/places/228/228_1.jpg', 1),
+    (228, 'dev/uploads/places/228/228_2.jpg', 2),
+    (228, 'dev/uploads/places/228/228_3.jpg', 3),
+
+    (229, 'dev/uploads/places/229/229_1.jpg', 1),
+    (230, 'dev/uploads/places/230/230_1.jpg', 1),
+    (230, 'dev/uploads/places/230/230_2.jpg', 2),
+    (230, 'dev/uploads/places/230/230_3.jpg', 3),
+
+    (231, 'dev/uploads/places/231/231_1.jpg', 1),
+    (231, 'dev/uploads/places/231/231_2.jpg', 2),
+    (231, 'dev/uploads/places/231/231_3.jpg', 3),
+
+    (232, 'dev/uploads/places/232/232_1.jpg', 1),
+    (232, 'dev/uploads/places/232/232_2.jpg', 2),
+
+    (233, 'dev/uploads/places/233/233_1.jpg', 1),
+    (233, 'dev/uploads/places/233/233_2.jpg', 2),
+    (233, 'dev/uploads/places/233/233_3.jpg', 3),
+
+    (234, 'dev/uploads/places/234/234_1.jpg', 1),
+    (234, 'dev/uploads/places/234/234_2.jpg', 2),
+    (234, 'dev/uploads/places/234/234_3.jpg', 3),
+
+    (235, 'dev/uploads/places/235/235_1.jpg', 1),
+    (235, 'dev/uploads/places/235/235_2.jpg', 2),
+    (235, 'dev/uploads/places/235/235_3.jpg', 3),
+
+    (236, 'dev/uploads/places/236/236_1.jpg', 1),
+    (236, 'dev/uploads/places/236/236_2.jpg', 2),
+    (236, 'dev/uploads/places/236/236_3.jpg', 3),
+
+    (237, 'dev/uploads/places/237/237_1.jpg', 1),
+    (237, 'dev/uploads/places/237/237_2.jpg', 2),
+    (237, 'dev/uploads/places/237/237_3.jpg', 3),
+
+    (238, 'dev/uploads/places/238/238_1.jpg', 1),
+
+    (239, 'dev/uploads/places/239/239_1.jpg', 1),
+
+    (240, 'dev/uploads/places/240/240_1.jpg', 1),
+    (240, 'dev/uploads/places/240/240_2.jpg', 2),
+    (240, 'dev/uploads/places/240/240_3.jpg', 3),
+
+    (241, 'dev/uploads/places/241/241_1.jpg', 1),
+    (241, 'dev/uploads/places/241/241_2.jpg', 2),
+    (241, 'dev/uploads/places/241/241_3.jpg', 3),
+
+    (242, 'dev/uploads/places/242/242_1.jpg', 1),
+    (242, 'dev/uploads/places/242/242_2.jpg', 2),
+    (242, 'dev/uploads/places/242/242_3.jpg', 3),
+
+    (243, 'dev/uploads/places/243/243_1.jpg', 1),
+    (243, 'dev/uploads/places/243/243_2.jpg', 2),
+    (243, 'dev/uploads/places/243/243_3.jpg', 3),
+
+    (244, 'dev/uploads/places/244/244_1.jpg', 1),
+    (244, 'dev/uploads/places/244/244_2.jpg', 2),
+    (244, 'dev/uploads/places/244/244_3.jpg', 3),
+
+    (245, 'dev/uploads/places/245/245_1.jpg', 1),
+    (245, 'dev/uploads/places/245/245_2.jpg', 2),
+    (245, 'dev/uploads/places/245/245_3.jpg', 3),
+
+    (246, 'dev/uploads/places/246/246_1.jpg', 1),
+    (246, 'dev/uploads/places/246/246_2.jpg', 2),
+    (246, 'dev/uploads/places/246/246_3.jpg', 3),
+
+    (247, 'dev/uploads/places/247/247_1.jpg', 1),
+    (247, 'dev/uploads/places/247/247_2.jpg', 2),
+    (247, 'dev/uploads/places/247/247_3.jpg', 3),
+
+    (248, 'dev/uploads/places/248/248_1.jpg', 1),
+    (248, 'dev/uploads/places/248/248_2.jpg', 2),
+    (248, 'dev/uploads/places/248/248_3.jpg', 3),
+
+    (249, 'dev/uploads/places/249/249_1.jpg', 1),
+    (249, 'dev/uploads/places/249/249_2.jpg', 2),
+    (249, 'dev/uploads/places/249/249_3.jpg', 3),
+
+    (250, 'dev/uploads/places/250/250_1.jpg', 1),
+    (250, 'dev/uploads/places/250/250_2.jpg', 2),
+    (250, 'dev/uploads/places/250/250_3.jpg', 3),
+
+    (251, 'dev/uploads/places/251/251_1.jpg', 1),
+    (251, 'dev/uploads/places/251/251_2.jpg', 2),
+    (251, 'dev/uploads/places/251/251_3.jpg', 3),
+
+    (252, 'dev/uploads/places/252/252_1.jpg', 1),
+    (252, 'dev/uploads/places/252/252_2.jpg', 2),
+    (252, 'dev/uploads/places/252/252_3.jpg', 3),
+
+    (253, 'dev/uploads/places/253/253_1.jpg', 1),
+    (253, 'dev/uploads/places/253/253_2.jpg', 2),
+    (253, 'dev/uploads/places/253/253_3.jpg', 3),
+
+    (254, 'dev/uploads/places/254/254_1.jpg', 1),
+    (254, 'dev/uploads/places/254/254_2.jpg', 2),
+    (254, 'dev/uploads/places/254/254_3.jpg', 3),
+
+    (255, 'dev/uploads/places/255/255_1.jpg', 1),
+    (255, 'dev/uploads/places/255/255_2.jpg', 2),
+    (255, 'dev/uploads/places/255/255_3.jpg', 3),
+
+    (256, 'dev/uploads/places/256/256_1.jpg', 1),
+    (256, 'dev/uploads/places/256/256_2.jpg', 2),
+    (256, 'dev/uploads/places/256/256_3.jpg', 3),
+
+    (257, 'dev/uploads/places/257/257_1.jpg', 1),
+    (257, 'dev/uploads/places/257/257_2.jpg', 2),
+    (257, 'dev/uploads/places/257/257_3.jpg', 3),
+
+    (258, 'dev/uploads/places/258/258_1.jpg', 1),
+    (258, 'dev/uploads/places/258/258_2.jpg', 2),
+    (258, 'dev/uploads/places/258/258_3.jpg', 3),
+
+    (259, 'dev/uploads/places/259/259_1.jpg', 1),
+    (259, 'dev/uploads/places/259/259_2.jpg', 2),
+    (259, 'dev/uploads/places/259/259_3.jpg', 3),
+
+    (260, 'dev/uploads/places/260/260_1.jpg', 1),
+    (260, 'dev/uploads/places/260/260_2.jpg', 2),
+    (260, 'dev/uploads/places/260/260_3.jpg', 3),
+
+    (261, 'dev/uploads/places/261/261_1.jpg', 1),
+    (261, 'dev/uploads/places/261/261_2.jpg', 2),
+    (261, 'dev/uploads/places/261/261_3.jpg', 3),
+
+    (262, 'dev/uploads/places/262/262_1.jpg', 1),
+    (262, 'dev/uploads/places/262/262_2.jpg', 2),
+    (262, 'dev/uploads/places/262/262_3.jpg', 3),
+
+    (263, 'dev/uploads/places/263/263_1.jpg', 1),
+    (263, 'dev/uploads/places/263/263_2.jpg', 2),
+    (263, 'dev/uploads/places/263/263_3.jpg', 3),
+
+    (264, 'dev/uploads/places/264/264_1.jpg', 1),
+    (264, 'dev/uploads/places/264/264_2.jpg', 2),
+    (264, 'dev/uploads/places/264/264_3.jpg', 3),
+
+    (265, 'dev/uploads/places/265/265_1.jpg', 1),
+
+    (266, 'dev/uploads/places/266/266_1.jpg', 1),
+    (266, 'dev/uploads/places/266/266_2.jpg', 2),
+    (266, 'dev/uploads/places/266/266_3.jpg', 3),
+
+    (267, 'dev/uploads/places/267/267_1.jpg', 1),
+    (267, 'dev/uploads/places/267/267_2.jpg', 2),
+    (267, 'dev/uploads/places/267/267_3.jpg', 3),
+
+    (268, 'dev/uploads/places/268/268_1.jpg', 1),
+    (268, 'dev/uploads/places/268/268_2.jpg', 2),
+    (268, 'dev/uploads/places/268/268_3.jpg', 3),
+
+    (269, 'dev/uploads/places/269/269_1.jpg', 1),
+    (269, 'dev/uploads/places/269/269_2.jpg', 2),
+    (269, 'dev/uploads/places/269/269_3.jpg', 3),
+
+    (270, 'dev/uploads/places/270/270_1.jpg', 1),
+    (270, 'dev/uploads/places/270/270_2.jpg', 2),
+    (270, 'dev/uploads/places/270/270_3.jpg', 3),
+
+    (271, 'dev/uploads/places/271/271_1.jpg', 1),
+    (271, 'dev/uploads/places/271/271_2.jpg', 2),
+    (271, 'dev/uploads/places/271/271_3.jpg', 3),
+
+    (272, 'dev/uploads/places/272/272_1.jpg', 1),
+    (272, 'dev/uploads/places/272/272_2.jpg', 2),
+    (272, 'dev/uploads/places/272/272_3.jpg', 3),
+
+    (273, 'dev/uploads/places/273/273_1.jpg', 1),
+
+    (274, 'dev/uploads/places/274/274_1.jpg', 1),
+    (274, 'dev/uploads/places/274/274_2.jpg', 2),
+    (274, 'dev/uploads/places/274/274_3.jpg', 3),
+
+    (275, 'dev/uploads/places/275/275_1.jpg', 1),
+    (275, 'dev/uploads/places/275/275_2.jpg', 2),
+    (275, 'dev/uploads/places/275/275_3.jpg', 3),
+
+    (276, 'dev/uploads/places/276/276_1.jpg', 1),
+    (276, 'dev/uploads/places/276/276_2.jpg', 2),
+    (276, 'dev/uploads/places/276/276_3.jpg', 3),
+
+    (277, 'dev/uploads/places/277/277_1.jpg', 1),
+    (277, 'dev/uploads/places/277/277_2.jpg', 2),
+    (277, 'dev/uploads/places/277/277_3.jpg', 3),
+
+    (278, 'dev/uploads/places/278/278_1.jpg', 1),
+    (278, 'dev/uploads/places/278/278_2.jpg', 2),
+    (278, 'dev/uploads/places/278/278_3.jpg', 3),
+
+    (279, 'dev/uploads/places/279/279_1.jpg', 1),
+    (279, 'dev/uploads/places/279/279_2.jpg', 2),
+    (279, 'dev/uploads/places/279/279_3.jpg', 3),
+
+    (280, 'dev/uploads/places/280/280_1.jpg', 1),
+    (280, 'dev/uploads/places/280/280_2.jpg', 2),
+    (280, 'dev/uploads/places/280/280_3.jpg', 3),
+
+    (281, 'dev/uploads/places/281/281_1.jpg', 1),
+    (281, 'dev/uploads/places/281/281_2.jpg', 2),
+    (281, 'dev/uploads/places/281/281_3.jpg', 3),
+
+    (282, 'dev/uploads/places/282/282_1.jpg', 1),
+    (282, 'dev/uploads/places/282/282_2.jpg', 2),
+    (282, 'dev/uploads/places/282/282_3.jpg', 3),
+
+    (283, 'dev/uploads/places/283/283_1.jpg', 1),
+    (283, 'dev/uploads/places/283/283_2.jpg', 2),
+    (283, 'dev/uploads/places/283/283_3.jpg', 3),
+
+    (284, 'dev/uploads/places/284/284_1.jpg', 1),
+    (284, 'dev/uploads/places/284/284_2.jpg', 2),
+    (284, 'dev/uploads/places/284/284_3.jpg', 3),
+
+    (285, 'dev/uploads/places/285/285_1.jpg', 1),
+    (285, 'dev/uploads/places/285/285_2.jpg', 2),
+    (285, 'dev/uploads/places/285/285_3.jpg', 3),
+
+    (286, 'dev/uploads/places/286/286_1.jpg', 1),
+    (286, 'dev/uploads/places/286/286_2.jpg', 2),
+    (286, 'dev/uploads/places/286/286_3.jpg', 3),
+
+    (287, 'dev/uploads/places/287/287_1.jpg', 1),
+    (287, 'dev/uploads/places/287/287_2.jpg', 2),
+    (287, 'dev/uploads/places/287/287_3.jpg', 3),
+
+    (288, 'dev/uploads/places/288/288_1.jpg', 1),
+    (288, 'dev/uploads/places/288/288_2.jpg', 2),
+    (288, 'dev/uploads/places/288/288_3.jpg', 3),
+
+    (289, 'dev/uploads/places/289/289_1.jpg', 1),
+    (289, 'dev/uploads/places/289/289_2.jpg', 2),
+    (289, 'dev/uploads/places/289/289_3.jpg', 3),
+
+    (290, 'dev/uploads/places/290/290_1.jpg', 1),
+    (290, 'dev/uploads/places/290/290_2.jpg', 2),
+    (290, 'dev/uploads/places/290/290_3.jpg', 3),
+
+    (291, 'dev/uploads/places/291/291_1.jpg', 1),
+    (291, 'dev/uploads/places/291/291_2.jpg', 2),
+    (291, 'dev/uploads/places/291/291_3.jpg', 3),
+
+    (292, 'dev/uploads/places/292/292_1.jpg', 1),
+    (292, 'dev/uploads/places/292/292_2.jpg', 2),
+    (292, 'dev/uploads/places/292/292_3.jpg', 3),
+
+    (293, 'dev/uploads/places/293/293_1.jpg', 1),
+    (293, 'dev/uploads/places/293/293_2.jpg', 2),
+    (293, 'dev/uploads/places/293/293_3.jpg', 3),
+
+    (294, 'dev/uploads/places/294/294_1.jpg', 1),
+    (294, 'dev/uploads/places/294/294_2.jpg', 2),
+    (294, 'dev/uploads/places/294/294_3.jpg', 3),
+
+    (295, 'dev/uploads/places/295/295_1.jpg', 1),
+    (295, 'dev/uploads/places/295/295_2.jpg', 2),
+    (295, 'dev/uploads/places/295/295_3.jpg', 3),
+
+    (296, 'dev/uploads/places/296/296_1.jpg', 1),
+    (296, 'dev/uploads/places/296/296_2.jpg', 2),
+    (296, 'dev/uploads/places/296/296_3.jpg', 3),
+
+    (297, 'dev/uploads/places/297/297_1.jpg', 1),
+    (297, 'dev/uploads/places/297/297_2.jpg', 2),
+    (297, 'dev/uploads/places/297/297_3.jpg', 3),
+
+    (298, 'dev/uploads/places/298/298_1.jpg', 1),
+    (298, 'dev/uploads/places/298/298_2.jpg', 2),
+    (298, 'dev/uploads/places/298/298_3.jpg', 3),
+
+    (299, 'dev/uploads/places/299/299_1.jpg', 1),
+    (299, 'dev/uploads/places/299/299_2.jpg', 2),
+    (299, 'dev/uploads/places/299/299_3.jpg', 3),
+
+    (300, 'dev/uploads/places/300/300_1.jpg', 1),
+    (300, 'dev/uploads/places/300/300_2.jpg', 2),
+    (300, 'dev/uploads/places/300/300_3.jpg', 3),
+
+    (301, 'dev/uploads/places/301/301_1.jpg', 1),
+    (301, 'dev/uploads/places/301/301_2.jpg', 2),
+    (301, 'dev/uploads/places/301/301_3.jpg', 3),
+
+    (302, 'dev/uploads/places/302/302_1.jpg', 1),
+    (302, 'dev/uploads/places/302/302_2.jpg', 2),
+    (302, 'dev/uploads/places/302/302_3.jpg', 3),
+
+    (303, 'dev/uploads/places/303/303_1.jpg', 1),
+    (303, 'dev/uploads/places/303/303_2.jpg', 2),
+    (303, 'dev/uploads/places/303/303_3.jpg', 3),
+
+    (304, 'dev/uploads/places/304/304_1.jpg', 1),
+    (304, 'dev/uploads/places/304/304_2.jpg', 2),
+    (304, 'dev/uploads/places/304/304_3.jpg', 3),
+
+    (305, 'dev/uploads/places/305/305_1.jpg', 1),
+    (305, 'dev/uploads/places/305/305_2.jpg', 2),
+    (305, 'dev/uploads/places/305/305_3.jpg', 3),
+
+    (306, 'dev/uploads/places/306/306_1.jpg', 1),
+    (306, 'dev/uploads/places/306/306_2.jpg', 2),
+
+    (307, 'dev/uploads/places/307/307_1.jpg', 1),
+    (307, 'dev/uploads/places/307/307_2.jpg', 2),
+    (307, 'dev/uploads/places/307/307_3.jpg', 3),
+
+    (308, 'dev/uploads/places/308/308_1.jpg', 1),
+    (308, 'dev/uploads/places/308/308_2.jpg', 2),
+    (308, 'dev/uploads/places/308/308_3.jpg', 3),
+
+    (309, 'dev/uploads/places/309/309_1.jpg', 1),
+    (309, 'dev/uploads/places/309/309_2.jpg', 2),
+    (309, 'dev/uploads/places/309/309_3.jpg', 3),
+
+    (310, 'dev/uploads/places/310/310_1.jpg', 1),
+    (310, 'dev/uploads/places/310/310_2.jpg', 2),
+    (310, 'dev/uploads/places/310/310_3.jpg', 3),
+
+    (311, 'dev/uploads/places/311/311_1.jpg', 1),
+    (311, 'dev/uploads/places/311/311_2.jpg', 2),
+    (311, 'dev/uploads/places/311/311_3.jpg', 3),
+
+    (312, 'dev/uploads/places/312/312_1.jpg', 1),
+    (312, 'dev/uploads/places/312/312_2.jpg', 2),
+    (312, 'dev/uploads/places/312/312_3.jpg', 3),
+
+    (313, 'dev/uploads/places/313/313_1.jpg', 1),
+    (313, 'dev/uploads/places/313/313_2.jpg', 2),
+    (313, 'dev/uploads/places/313/313_3.jpg', 3),
+
+    (314, 'dev/uploads/places/314/314_1.jpg', 1),
+    (314, 'dev/uploads/places/314/314_2.jpg', 2),
+
+    (315, 'dev/uploads/places/315/315_1.jpg', 1),
+    (315, 'dev/uploads/places/315/315_2.jpg', 2),
+    (315, 'dev/uploads/places/315/315_3.jpg', 3),
+
+    (316, 'dev/uploads/places/316/316_1.jpg', 1),
+    (316, 'dev/uploads/places/316/316_2.jpg', 2),
+    (316, 'dev/uploads/places/316/316_3.jpg', 3),
+
+    (317, 'dev/uploads/places/317/317_1.jpg', 1),
+    (317, 'dev/uploads/places/317/317_2.jpg', 2),
+    (317, 'dev/uploads/places/317/317_3.jpg', 3),
+
+    (318, 'dev/uploads/places/318/318_1.jpg', 1),
+    (318, 'dev/uploads/places/318/318_2.jpg', 2),
+    (318, 'dev/uploads/places/318/318_3.jpg', 3),
+
+    (319, 'dev/uploads/places/319/319_1.jpg', 1),
+    (319, 'dev/uploads/places/319/319_2.jpg', 2),
+    (319, 'dev/uploads/places/319/319_3.jpg', 3),
+
+    (320, 'dev/uploads/places/320/320_1.jpg', 1),
+    (320, 'dev/uploads/places/320/320_2.jpg', 2),
+    (320, 'dev/uploads/places/320/320_3.jpg', 3);
 
 
 INSERT INTO user_policies (id, policy_type, version, title, content, required, active)
