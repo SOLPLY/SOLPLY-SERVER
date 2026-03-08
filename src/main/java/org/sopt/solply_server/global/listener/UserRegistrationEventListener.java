@@ -34,13 +34,11 @@ public class UserRegistrationEventListener {
         if (!isDiscordEnabled) return;
 
         try {
-            var user = event.user();
-
             String joinTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
             long totalCount = userRepository.countByActiveTrue();
 
             DiscordMessageDto message = DiscordMessageDto.newUser(
-                    user.getNickname(),
+                    event.user().getId().toString(),
                     joinTime,
                     totalCount
             );
