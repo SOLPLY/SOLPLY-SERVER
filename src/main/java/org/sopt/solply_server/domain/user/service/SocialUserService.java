@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.external.discord.DiscordNotificationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ public class SocialUserService {
 
     private final SocialUserInfoRepository socialUserInfoRepository;
     private final UserRepository userRepository;
+    private final DiscordNotificationService discordNotificationService;
 
     @Transactional
     public User createOrLoginSocialUser(
@@ -46,6 +48,7 @@ public class SocialUserService {
 
         // 2) 해당 소셜 링크가 없으면, email로 기존 유저 연동 시도
         User user = null;
+        boolean isNewUser = false; // 신규 유저 여부 체크 플래그
 
         if (email != null) {
             user = userRepository.findAnyByEmail(email)
@@ -56,11 +59,17 @@ public class SocialUserService {
         // 3) 없으면 신규 생성
         if (user == null) {
             user = userRepository.save(User.create(email)); // email은 null 가능하게
+            isNewUser = true;
         }
 
         // 4) 소셜 링크 생성
         // socialCode는 유니크라서 여기서 동시성 안전하게 처리하는 게 좋음(아래 참고)
         linkSocialAccount(user, platform, socialId);
+
+        if (isNewUser) {
+            discordNotificationService.sendRegistrationMessage(user, platform);
+        }
+
 
         return user;
     }
