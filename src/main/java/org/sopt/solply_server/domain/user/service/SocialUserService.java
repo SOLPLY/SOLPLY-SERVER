@@ -7,9 +7,11 @@ import org.sopt.solply_server.domain.user.entity.SocialUserInfo;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.domain.user.service.event.UserRegistrationEvent;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.external.discord.DiscordNotificationService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,7 @@ public class SocialUserService {
     private final SocialUserInfoRepository socialUserInfoRepository;
     private final UserRepository userRepository;
     private final DiscordNotificationService discordNotificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public User createOrLoginSocialUser(
@@ -67,7 +70,7 @@ public class SocialUserService {
         linkSocialAccount(user, platform, socialId);
 
         if (isNewUser) {
-            discordNotificationService.sendRegistrationMessage(user, platform);
+            eventPublisher.publishEvent(new UserRegistrationEvent(user, platform));
         }
 
 
