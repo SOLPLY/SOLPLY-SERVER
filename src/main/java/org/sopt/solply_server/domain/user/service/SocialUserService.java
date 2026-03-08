@@ -68,7 +68,7 @@ public class SocialUserService {
         linkSocialAccount(user, platform, socialId);
 
         if (isNewUser) {
-            eventPublisher.publishEvent(new UserRegistrationEvent(user, platform));
+            eventPublisher.publishEvent(new UserRegistrationEvent(user));
         }
 
 
