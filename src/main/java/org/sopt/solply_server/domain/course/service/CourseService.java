@@ -197,6 +197,8 @@ public class CourseService {
     public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
         Course course = entityLoader.getActiveCourseWithTagsAndPlaces(courseId);
 
+        if (isNotSharedCourse(course, userId)) throw new BusinessException(ErrorCode.NOT_SHARED_COURSE);
+
         Tag courseTag = course.getTag();
         tagValidator.validateCourseTag(courseTag);
 
@@ -283,6 +285,7 @@ public class CourseService {
 
         final List<CourseInfoDto> courseInfoDtos = createSortedCourseInfoDtoList(
                 filteredCourses,
+                userId,
                 courseIdCreatedAtMap,
                 candidatePlace,
                 candidatePlaceId != null
@@ -477,6 +480,7 @@ public class CourseService {
 
     private List<CourseInfoDto> createSortedCourseInfoDtoList(
             final List<Course> filteredCourses,
+            final Long userId,
             final Map<Long, LocalDateTime> courseIdCreatedAtMap,
             final Place candidatePlace,
             final boolean hasCandidatePlace
@@ -486,6 +490,7 @@ public class CourseService {
                 prepareValidationResults(filteredCourses, candidatePlace, hasCandidatePlace);
 
         return filteredCourses.stream()
+                .filter(course -> isNotSharedCourse(course, userId))
                 .map(course -> {
                     Tag courseTag = course.getTag();
                     String courseTagName = TagViewUtils.getActiveNameOrNull(courseTag);
@@ -502,6 +507,10 @@ public class CourseService {
                         .getOrDefault(b.courseId(), LocalDateTime.MIN)
                         .compareTo(courseIdCreatedAtMap.getOrDefault(a.courseId(), LocalDateTime.MIN)))
                 .toList();
+    }
+
+    private boolean isNotSharedCourse(Course course, Long userId) {
+        return !course.isShared() && !course.isCreatedBy(userId);
     }
 
 
