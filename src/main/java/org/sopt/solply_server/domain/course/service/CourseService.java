@@ -197,7 +197,7 @@ public class CourseService {
     public CourseDetailGetResponse getCourseDetailsById(final Long userId, final Long courseId) {
         Course course = entityLoader.getActiveCourseWithTagsAndPlaces(courseId);
 
-        if (isNotSharedCourse(course, userId)) throw new BusinessException(ErrorCode.NOT_SHARED_COURSE);
+        if (!isSharedCourse(course, userId)) throw new BusinessException(ErrorCode.NOT_SHARED_COURSE);
 
         Tag courseTag = course.getTag();
         tagValidator.validateCourseTag(courseTag);
@@ -490,7 +490,7 @@ public class CourseService {
                 prepareValidationResults(filteredCourses, candidatePlace, hasCandidatePlace);
 
         return filteredCourses.stream()
-                .filter(course -> isNotSharedCourse(course, userId))
+                .filter(course -> isSharedCourse(course, userId))
                 .map(course -> {
                     Tag courseTag = course.getTag();
                     String courseTagName = TagViewUtils.getActiveNameOrNull(courseTag);
@@ -509,8 +509,8 @@ public class CourseService {
                 .toList();
     }
 
-    private boolean isNotSharedCourse(Course course, Long userId) {
-        return !course.isShared() && !course.isCreatedBy(userId);
+    private boolean isSharedCourse(Course course, Long userId) {
+        return course.isShared() || course.isCreatedBy(userId);
     }
 
 
