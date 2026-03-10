@@ -50,12 +50,12 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain appChain(HttpSecurity http) throws Exception {
         return http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+
                 .authorizeHttpRequests(auth -> auth
                         // 기존 화이트리스트
                         .requestMatchers(AUTH_WHITELIST).permitAll()
@@ -80,6 +80,7 @@ public class SecurityConfig {
                         // ❌ 나머지 전부 로그인 필요
                         .anyRequest().authenticated()
                 )
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
@@ -91,7 +92,8 @@ public class SecurityConfig {
                 "https://solply.store",
                 "https://www.solply.store",
                 "https://api.solply.store",
-                "https://dev.api.solply.store"
+                "https://dev.api.solply.store",
+                "https://solplyadmin.netlify.app"
         ));
 
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
