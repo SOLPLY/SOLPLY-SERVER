@@ -6,8 +6,9 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.review.dto.request.CreateRecordRequestDto;
-import org.sopt.solply_server.domain.review.dto.response.CreateRecordResponseDto;
+import org.sopt.solply_server.domain.review.dto.request.CreateRecordRequest;
+import org.sopt.solply_server.domain.review.dto.response.CreateRecordResponse;
+import org.sopt.solply_server.domain.review.entity.Record;
 import org.sopt.solply_server.domain.review.repository.RecordRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
@@ -21,7 +22,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.sopt.solply_server.domain.review.entity.Record;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -36,7 +37,7 @@ public class RecordServiceImpl implements RecordService {
 
   @Override
   @Transactional
-  public CreateRecordResponseDto createRecord(Long userId, CreateRecordRequestDto request) {
+  public CreateRecordResponse createRecord(Long userId, CreateRecordRequest request) {
     User user = userRepository.findById(userId)
         .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
 
@@ -55,7 +56,10 @@ public class RecordServiceImpl implements RecordService {
 
     Record savedRecord = recordRepository.save(record);
 
-    List<String> imageKeys = request.imageKeys() == null ? Collections.emptyList() : request.imageKeys();
+    List<String> imageKeys = request.imageKeys() == null
+        ? Collections.emptyList()
+        : request.imageKeys();
+
     if (!imageKeys.isEmpty()) {
       eventPublisher.publishEvent(
           new ImageFileKeyUpdateEvent(
@@ -68,10 +72,10 @@ public class RecordServiceImpl implements RecordService {
       );
     }
 
-    return CreateRecordResponseDto.from(savedRecord);
+    return CreateRecordResponse.from(savedRecord);
   }
 
-  private void validateRequest(CreateRecordRequestDto request) {
+  private void validateRequest(CreateRecordRequest request) {
     validateVisitedAt(request.visitedAt());
     validateContent(request.content());
     validateImages(request.imageKeys());
@@ -95,7 +99,9 @@ public class RecordServiceImpl implements RecordService {
   }
 
   private void validateImages(List<String> imageKeys) {
-    if (imageKeys == null) return;
+    if (imageKeys == null) {
+      return;
+    }
 
     if (imageKeys.size() > MAX_IMAGE_COUNT) {
       throw new BusinessValidationException(ErrorCode.RECORD_IMAGE_LIMIT_EXCEEDED);
