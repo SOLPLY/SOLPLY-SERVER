@@ -10,7 +10,7 @@ public enum TargetDir {
     PLACE_REQUEST("place-requests"),
     PLACE_REPORT("place-reports"),
     USER_PROFILE("user-profiles"),
-    RECORD("records");
+    RECORD("place-reviews");
 
     private final String dir;
 

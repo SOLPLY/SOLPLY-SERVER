@@ -8,7 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 import org.sopt.solply_server.domain.review.entity.VisitTime;
 
-public record CreateRecordRequestDto(
+public record CreateRecordRequest(
 
     @NotNull(message = "장소 ID는 필수입니다.")
     Long placeId,
