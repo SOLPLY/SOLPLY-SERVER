@@ -113,6 +113,13 @@ public enum ErrorCode {
     // 장소 등록 요청 관련 (PLACE_REQUEST-xxx)
     NOT_FOUND_PLACE_REQUEST(HttpStatus.NOT_FOUND, "PLACE_REQUEST-001", "존재하지 않는 장소 등록 요청입니다." ),
     INVALID_REQUEST_STATE(HttpStatus.BAD_REQUEST, "PLACE_REQUEST-002", "승인할 수 없는 장소 등록 요청입니다." ),
+
+    //장소 리뷰 관련 (RECORD-xxx)
+    RECORD_NOT_FOUND(HttpStatus.NOT_FOUND, "RECORD_404_1", "해당 기록을 찾을 수 없습니다."),
+    RECORD_CONTENT_BLANK(HttpStatus.BAD_REQUEST, "RECORD_400_1", "기록 내용은 공백일 수 없습니다."),
+    INVALID_RECORD_CONTENT_LENGTH(HttpStatus.BAD_REQUEST, "RECORD_400_2", "기록 내용은 10자 이상 500자 이하여야 합니다."),
+    INVALID_VISIT_DATE(HttpStatus.BAD_REQUEST, "RECORD_400_3", "방문 날짜는 오늘 또는 이전 날짜만 선택할 수 있습니다."),
+    RECORD_IMAGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "RECORD_400_4", "사진은 최대 5장까지 업로드할 수 있습니다."),
     ;
 
 
