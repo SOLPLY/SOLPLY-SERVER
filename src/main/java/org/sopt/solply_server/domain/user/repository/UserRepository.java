@@ -28,4 +28,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query(value = "SELECT * FROM users WHERE email = :email LIMIT 1", nativeQuery = true)
     Optional<User> findAnyByEmail(@Param("email") String email);
 
+    @Query("SELECT COUNT(u) FROM User u WHERE u.isDeleted = false ")
+    long countByActiveTrue();
 }
