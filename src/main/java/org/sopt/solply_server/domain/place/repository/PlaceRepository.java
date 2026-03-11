@@ -65,4 +65,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
             and p.active = true
     """)
     Optional<Place> findActiveByIdWithTownAndCheckpoints(@Param("placeId") Long placeId);
+
+  @Query("""
+    select p
+    from Place p
+    where p.id = :placeId
+      and p.active = true
+""")
+  Optional<Place> findActiveById(@Param("placeId") Long placeId);
 }
