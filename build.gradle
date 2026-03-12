@@ -22,7 +22,12 @@ configurations {
 
 repositories {
 	mavenCentral()
-	maven { url 'https://repo.spring.io/milestone' }
+	maven {
+		url 'https://repo.spring.io/milestone'
+		content {
+			includeGroup 'org.springframework.ai'
+		}
+	}
 }
 
 def querydslDir = layout.buildDirectory.dir("generated/querydsl").get().asFile
@@ -42,7 +47,7 @@ clean {
 ext {
 	set('springCloudVersion', "2023.0.3")
 	set('querydslVersion', "6.10.1")
-	set('springAiVersion', "1.0.0-M5")
+	set('springAiVersion', "1.1.2")
 }
 
 flyway {
@@ -123,7 +128,7 @@ dependencies {
 	runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
 	// ✅ Spring AI
-	implementation 'org.springframework.ai:spring-ai-openai-spring-boot-starter'
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 
 	// ✅ 테스트
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'

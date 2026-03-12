@@ -40,7 +40,7 @@ public class ReasonGenerationService {
                 "format", converter.getFormat()
         ));
 
-        String response = chatModel.call(prompt).getResult().getOutput().getContent();
+        String response = chatModel.call(prompt).getResult().getOutput().getText();
         return converter.convert(response);
     }
 
