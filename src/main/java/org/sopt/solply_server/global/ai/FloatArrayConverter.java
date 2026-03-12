@@ -4,7 +4,9 @@ import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Converter
 public class FloatArrayConverter implements AttributeConverter<float[], byte[]> {
 
@@ -19,6 +21,10 @@ public class FloatArrayConverter implements AttributeConverter<float[], byte[]> 
     @Override
     public float[] convertToEntityAttribute(byte[] dbData) {
         if (dbData == null) return null;
+        if (dbData.length % Float.BYTES != 0) {
+            log.warn("임베딩 데이터 손상 감지: byte 길이가 4의 배수가 아닙니다. length={}", dbData.length);
+            return null;
+        }
         ByteBuffer buf = ByteBuffer.wrap(dbData).order(ByteOrder.LITTLE_ENDIAN);
         float[] arr = new float[dbData.length / Float.BYTES];
         for (int i = 0; i < arr.length; i++) arr[i] = buf.getFloat();

@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.recommend.service;
 import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceSearchDocument;
 import org.sopt.solply_server.domain.place.repository.PlaceSearchDocumentRepository;
@@ -19,6 +20,7 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -41,6 +43,13 @@ public class EmbeddingRecommendService {
                 placeSearchDocumentRepository.findActiveByTownIdWithEmbedding(townId);
 
         List<ScoredDoc> topDocs = candidates.stream()
+                .filter(doc -> {
+                    if (doc.getEmbedding() == null) {
+                        log.warn("임베딩 데이터 손상으로 추천 후보에서 제외합니다. placeId={}", doc.getPlace().getId());
+                        return false;
+                    }
+                    return true;
+                })
                 .map(doc -> new ScoredDoc(doc, CosineSimilarityUtil.calculate(queryVector, doc.getEmbedding())))
                 .sorted(Comparator.comparingDouble(ScoredDoc::score).reversed())
                 .limit(TOP_K)
