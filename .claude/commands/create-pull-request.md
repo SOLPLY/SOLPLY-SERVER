@@ -13,7 +13,7 @@ PR contents must be written in **Korean**.
 Examples: `[feat] recommend-place-by-embedding`, `[fix] fix-null-review-summary`
 
 ## PR Body Template
-```
+```md
 ## 🌳이슈 번호
 resolves #<issue-number>
 
