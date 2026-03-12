@@ -1,8 +1,10 @@
 package org.sopt.solply_server.global.config;
 
 import java.util.Arrays;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.global.jwt.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,6 +26,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @Value("${cors.allowed-origins}")
+    private List<String> allowedOrigins;
 
     private static final String[] AUTH_WHITELIST = {
             "/api/auth/**", // 로그인, 회원가입, 토큰 재발급
@@ -88,13 +93,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(Arrays.asList(
-                "https://solply.store",
-                "https://www.solply.store",
-                "https://api.solply.store",
-                "https://dev.api.solply.store",
-                "https://solplyadmin.netlify.app"
-        ));
+        config.setAllowedOrigins(allowedOrigins); // 개발/운영 환경에 따라 주입된 리스트 사용
 
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("*"));
