@@ -13,7 +13,13 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
-@Table(name = "place_review")
+@Table(
+        name = "place_review",
+        indexes = {
+                @Index(name = "idx_place_review_place_id_created_at", columnList = "place_id, created_at DESC"),
+                @Index(name = "idx_place_review_user_id_created_at", columnList = "user_id, created_at DESC")
+        }
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PlaceReview extends BaseTimeEntity {
