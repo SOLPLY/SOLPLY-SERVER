@@ -41,6 +41,7 @@ clean {
 ext {
 	set('springCloudVersion', "2023.0.3")
 	set('querydslVersion', "6.10.1")
+	set('springAiVersion', "1.0.0")
 }
 
 flyway {
@@ -120,6 +121,9 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
+	// ✅ Spring AI
+	implementation 'org.springframework.ai:spring-ai-openai-spring-boot-starter'
+
 	// ✅ 테스트
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
@@ -133,6 +137,7 @@ dependencies {
 dependencyManagement {
 	imports {
 		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
 	}
 }
 
