@@ -1,5 +1,5 @@
 -- 1. place_search_document 테이블
-CREATE TABLE place_search_document (
+CREATE TABLE place_search_documents (
     place_id        BIGINT       NOT NULL,
     retrieval_text  TEXT         NOT NULL,
     embedding       MEDIUMBLOB,
