@@ -7,14 +7,13 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "place_review_image")
+@Table(name = "place_review_images")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PlaceReviewImage {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
-  @Column(name = "place_review_image_id")
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)

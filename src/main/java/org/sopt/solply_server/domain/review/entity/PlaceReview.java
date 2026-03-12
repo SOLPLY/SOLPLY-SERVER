@@ -14,10 +14,10 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
 @Table(
-        name = "place_review",
+        name = "place_reviews",
         indexes = {
-                @Index(name = "idx_place_review_place_id_created_at", columnList = "place_id, created_at DESC"),
-                @Index(name = "idx_place_review_user_id_created_at", columnList = "user_id, created_at DESC")
+                @Index(name = "idx_place_reviews_place_id_created_at", columnList = "place_id, created_at DESC"),
+                @Index(name = "idx_place_reviews_user_id_created_at", columnList = "user_id, created_at DESC")
         }
 )
 @Getter
@@ -26,7 +26,6 @@ public class PlaceReview extends BaseTimeEntity {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
-  @Column(name = "place_review_id")
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -47,7 +46,7 @@ public class PlaceReview extends BaseTimeEntity {
   @Column(name = "content", nullable = false, length = 500)
   private String content;
 
-  @OneToMany(mappedBy = "place_review", cascade = CascadeType.ALL, orphanRemoval = true)
+  @OneToMany(mappedBy = "placeReview", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<PlaceReviewImage> placeReviewImages = new ArrayList<>();
 
   @Builder
