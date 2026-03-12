@@ -5,7 +5,7 @@ PR contents must be written in **Korean**.
 ## Defaults
 - **Assignee**: `uykm` (always set automatically)
 - **Label**: match the issue type (e.g. `💭 FEAT`, `🐞 BUG`, `🛠️ FIX`, `🪄 REFACTOR`, `📖 DOCS`, `⚙️ CHORE`)
-- **Reviewer**: set manually by the user
+- **Reviewer**: `uykm`, `ImHyungsuk`, `88guri` (GitHub auto-excludes the PR author)
 
 ## Title Format
 `[<type>] <feature-name>`
@@ -33,7 +33,7 @@ resolves #<issue-number>
 2. Draft PR title and body.
 3. Show draft and confirm before creating.
 4. Ensure build succeeds before creating PR.
-5. Create with: `gh pr create --title "..." --label "..." --assignee "uykm" --body "..."`
+5. Create with: `gh pr create --title "..." --label "..." --assignee "uykm" --reviewer "uykm,ImHyungsuk,88guri" --body "..."`
 
 ## Rules
 - Always link issue with `resolves #<issue-number>`.
