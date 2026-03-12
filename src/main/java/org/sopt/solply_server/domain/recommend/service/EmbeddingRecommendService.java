@@ -2,13 +2,9 @@ package org.sopt.solply_server.domain.recommend.service;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceReviewSummary;
 import org.sopt.solply_server.domain.place.entity.PlaceSearchDocument;
-import org.sopt.solply_server.domain.place.repository.PlaceReviewSummaryRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceSearchDocumentRepository;
 import org.sopt.solply_server.domain.recommend.dto.RecommendedPlaceDto;
 import org.sopt.solply_server.domain.recommend.dto.response.EmbeddingPlaceRecommendGetResponse;
@@ -31,7 +27,6 @@ public class EmbeddingRecommendService {
     private static final int TOP_K = 3;
 
     private final PlaceSearchDocumentRepository placeSearchDocumentRepository;
-    private final PlaceReviewSummaryRepository placeReviewSummaryRepository;
     private final EmbeddingService embeddingService;
     private final ReasonGenerationService reasonGenerationService;
     private final EntityLoader entityLoader;
@@ -55,15 +50,8 @@ public class EmbeddingRecommendService {
             return new EmbeddingPlaceRecommendGetResponse(List.of());
         }
 
-        List<Long> topPlaceIds = topDocs.stream()
-                .map(sd -> sd.doc().getPlace().getId())
-                .toList();
-
-        Map<Long, String> reviewSummaryByPlaceId = placeReviewSummaryRepository.findAllById(topPlaceIds).stream()
-                .collect(Collectors.toMap(PlaceReviewSummary::getPlaceId, PlaceReviewSummary::getSummaryContent));
-
         List<PlaceContext> placeContexts = topDocs.stream()
-                .map(sd -> toPlaceContext(sd.doc().getPlace(), reviewSummaryByPlaceId))
+                .map(sd -> toPlaceContext(sd.doc()))
                 .toList();
 
         List<String> reasons = reasonGenerationService.generateReasons(query, userName, placeContexts);
@@ -78,13 +66,9 @@ public class EmbeddingRecommendService {
         return new EmbeddingPlaceRecommendGetResponse(result);
     }
 
-    private PlaceContext toPlaceContext(Place place, Map<Long, String> reviewSummaryByPlaceId) {
-        List<String> tagNames = place.getTags().stream()
-                .filter(Tag::isActive)
-                .map(Tag::getName)
-                .toList();
-        String reviewSummary = reviewSummaryByPlaceId.get(place.getId());
-        return new PlaceContext(place.getName(), tagNames, place.getIntroduction(), reviewSummary);
+    private PlaceContext toPlaceContext(PlaceSearchDocument doc) {
+        Place place = doc.getPlace();
+        return new PlaceContext(place.getName(), place.getTown().getName(), doc.getRetrievalText());
     }
 
     private RecommendedPlaceDto toDto(Place place, String reason) {

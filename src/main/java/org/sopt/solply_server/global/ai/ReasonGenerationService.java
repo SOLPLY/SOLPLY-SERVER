@@ -50,11 +50,8 @@ public class ReasonGenerationService {
             PlaceContext p = places.get(i);
             sb.append("장소 ").append(i + 1).append("\n");
             sb.append("- 이름: ").append(p.name()).append("\n");
-            sb.append("- 태그: ").append(String.join(", ", p.tags())).append("\n");
-            sb.append("- 설명: ").append(p.introduction()).append("\n");
-            if (p.reviewSummary() != null && !p.reviewSummary().isBlank()) {
-                sb.append("- 리뷰 요약: ").append(p.reviewSummary()).append("\n");
-            }
+            sb.append("- 동네: ").append(p.townName()).append("\n");
+            sb.append("- 장소 정보: ").append(p.retrievalText()).append("\n");
             sb.append("\n");
         }
         return sb.toString().trim();
@@ -62,8 +59,7 @@ public class ReasonGenerationService {
 
     public record PlaceContext(
             String name,
-            List<String> tags,
-            String introduction,
-            String reviewSummary
+            String townName,
+            String retrievalText
     ) {}
 }
