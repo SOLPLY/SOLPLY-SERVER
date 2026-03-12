@@ -47,6 +47,9 @@ public class Tag {
 
     private String name;
 
+    @Column(columnDefinition = "TEXT")
+    private String sentence;
+
     @Enumerated(EnumType.STRING)
     private TagType type;
 
