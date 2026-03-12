@@ -1,7 +1,7 @@
 name: Feature Template
 description: 기능 개발
 title: "[Feat] Feature Title"
-labels: ["feature"]
+labels: ["💭 FEAT"]
 
 body:
   - type: textarea

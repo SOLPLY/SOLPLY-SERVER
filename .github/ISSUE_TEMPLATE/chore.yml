@@ -1,7 +1,7 @@
 name: Chore Template
 description: 유지보수 작업 (의존성 업데이트, 빌드 설정, CI/CD 등)
 title: "[Chore] Chore Title"
-labels: ["chore"]
+labels: ["⚙️ CHORE"]
 
 body:
   - type: textarea

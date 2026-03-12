@@ -1,7 +1,7 @@
 name: Docs Template
 description: 문서 작업 (README, API 명세, 가이드 등)
 title: "[Docs] Docs Title"
-labels: ["docs"]
+labels: ["📖 DOCS"]
 
 body:
   - type: textarea
