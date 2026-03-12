@@ -1,3 +1,8 @@
+---
+name: create-issue
+description: Create a GitHub issue following the repository issue templates in .github/ISSUE_TEMPLATE.
+---
+
 # Create Pull Request
 
 This skill defines how pull requests should be created in this repository.

@@ -1,3 +1,8 @@
+---
+name: create-issue
+description: Create a GitHub issue following the repository issue templates.
+---
+
 # Create GitHub Issue
 
 Create GitHub issues by following the repository's issue form templates in `.github/ISSUE_TEMPLATE`.

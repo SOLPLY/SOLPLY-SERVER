@@ -1,3 +1,8 @@
+---
+name: create-commit
+description: Create commits following the repository commit message convention.
+---
+
 # Create Commit
 
 ## Commit Format
