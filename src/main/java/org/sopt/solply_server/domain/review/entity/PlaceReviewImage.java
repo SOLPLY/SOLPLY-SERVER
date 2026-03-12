@@ -7,32 +7,32 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "record_image")
+@Table(name = "place_review_image")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class RecordImage {
+public class PlaceReviewImage {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
-  @Column(name = "record_image_id")
+  @Column(name = "place_review_image_id")
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "record_id", nullable = false)
-  private Record record;
+  @JoinColumn(name = "place_review_id", nullable = false)
+  private PlaceReview placeReview;
 
   @Column(name = "image_url", nullable = false, length = 500)
   private String imageUrl;
 
   @Builder
-  private RecordImage(Record record, String imageUrl) {
-    this.record = record;
+  private PlaceReviewImage(PlaceReview placeReview, String imageUrl) {
+    this.placeReview = placeReview;
     this.imageUrl = imageUrl;
   }
 
-  public static RecordImage create(Record record, String imageUrl) {
-    return RecordImage.builder()
-        .record(record)
+  public static PlaceReviewImage create(PlaceReview placeReview, String imageUrl) {
+    return PlaceReviewImage.builder()
+        .placeReview(placeReview)
         .imageUrl(imageUrl)
         .build();
   }

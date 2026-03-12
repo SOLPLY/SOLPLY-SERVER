@@ -13,14 +13,14 @@ import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
-@Table(name = "record")
+@Table(name = "place_review")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Record extends BaseTimeEntity {
+public class PlaceReview extends BaseTimeEntity {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
-  @Column(name = "record_id")
+  @Column(name = "place_review_id")
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -41,11 +41,11 @@ public class Record extends BaseTimeEntity {
   @Column(name = "content", nullable = false, length = 500)
   private String content;
 
-  @OneToMany(mappedBy = "record", cascade = CascadeType.ALL, orphanRemoval = true)
-  private List<RecordImage> recordImages = new ArrayList<>();
+  @OneToMany(mappedBy = "place_review", cascade = CascadeType.ALL, orphanRemoval = true)
+  private List<PlaceReviewImage> placeReviewImages = new ArrayList<>();
 
   @Builder
-  private Record(
+  private PlaceReview(
       User user,
       Place place,
       LocalDate visitedAt,
@@ -59,14 +59,14 @@ public class Record extends BaseTimeEntity {
     this.content = content;
   }
 
-  public static Record create(
+  public static PlaceReview create(
       User user,
       Place place,
       LocalDate visitedAt,
       VisitTime visitTimeSlot,
       String content
   ) {
-    return Record.builder()
+    return PlaceReview.builder()
         .user(user)
         .place(place)
         .visitedAt(visitedAt)
@@ -75,15 +75,15 @@ public class Record extends BaseTimeEntity {
         .build();
   }
 
-  public void addImage(RecordImage recordImage) {
-    this.recordImages.add(recordImage);
+  public void addImage(PlaceReviewImage placeReviewImage) {
+    this.placeReviewImages.add(placeReviewImage);
   }
 
   public void replaceImages(List<String> imageUrls) {
-    this.recordImages.clear();
+    this.placeReviewImages.clear();
 
     for (String imageUrl : imageUrls) {
-      this.recordImages.add(RecordImage.create(this, imageUrl));
+      this.placeReviewImages.add(PlaceReviewImage.create(this, imageUrl));
     }
   }
 }

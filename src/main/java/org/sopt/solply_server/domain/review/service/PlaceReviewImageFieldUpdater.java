@@ -2,8 +2,8 @@ package org.sopt.solply_server.domain.review.service;
 
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.review.entity.Record;
-import org.sopt.solply_server.domain.review.repository.RecordRepository;
+import org.sopt.solply_server.domain.review.entity.PlaceReview;
+import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.listener.ImageFieldUpdater;
@@ -13,9 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
-public class RecordImageFieldUpdater implements ImageFieldUpdater {
+public class PlaceReviewImageFieldUpdater implements ImageFieldUpdater {
 
-  private final RecordRepository recordRepository;
+  private final PlaceReviewRepository placeReviewRepository;
 
   @Override
   public TargetDir supportedDir() {
@@ -25,9 +25,9 @@ public class RecordImageFieldUpdater implements ImageFieldUpdater {
   @Override
   @Transactional
   public void replaceImages(long targetId, List<String> destKeys) {
-    Record record = recordRepository.findById(targetId)
-        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.RECORD_NOT_FOUND));
+    PlaceReview placeReview = placeReviewRepository.findById(targetId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.PLACE_REVIEW_NOT_FOUND));
 
-    record.replaceImages(destKeys);
+    placeReview.replaceImages(destKeys);
   }
 }

@@ -6,10 +6,10 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.review.dto.request.CreateRecordRequest;
-import org.sopt.solply_server.domain.review.dto.response.CreateRecordResponse;
-import org.sopt.solply_server.domain.review.entity.Record;
-import org.sopt.solply_server.domain.review.repository.RecordRepository;
+import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
+import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
+import org.sopt.solply_server.domain.review.entity.PlaceReview;
+import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessValidationException;
@@ -26,18 +26,18 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class RecordServiceImpl implements RecordService {
+public class PlaceReviewServiceImpl implements PlaceReviewService {
 
   private static final int MAX_IMAGE_COUNT = 5;
 
-  private final RecordRepository recordRepository;
+  private final PlaceReviewRepository placeReviewRepository;
   private final UserRepository userRepository;
   private final PlaceRepository placeRepository;
   private final ApplicationEventPublisher eventPublisher;
 
   @Override
   @Transactional
-  public CreateRecordResponse createRecord(Long userId, CreateRecordRequest request) {
+  public CreatePlaceReviewResponse createReview(Long userId, CreatePlaceReviewRequest request) {
     User user = userRepository.findById(userId)
         .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
 
@@ -46,7 +46,7 @@ public class RecordServiceImpl implements RecordService {
 
     validateRequest(request);
 
-    Record record = Record.create(
+    PlaceReview placeReview = PlaceReview.create(
         user,
         place,
         request.visitedAt(),
@@ -54,7 +54,7 @@ public class RecordServiceImpl implements RecordService {
         request.content().trim()
     );
 
-    Record savedRecord = recordRepository.save(record);
+    PlaceReview savedPlaceReview = placeReviewRepository.save(placeReview);
 
     List<String> imageKeys = request.imageKeys() == null
         ? Collections.emptyList()
@@ -64,7 +64,7 @@ public class RecordServiceImpl implements RecordService {
       eventPublisher.publishEvent(
           new ImageFileKeyUpdateEvent(
               userId,
-              savedRecord.getId(),
+              savedPlaceReview.getId(),
               TargetDir.RECORD,
               imageKeys,
               FileTransferMode.MOVE
@@ -72,10 +72,10 @@ public class RecordServiceImpl implements RecordService {
       );
     }
 
-    return CreateRecordResponse.from(savedRecord);
+    return CreatePlaceReviewResponse.from(savedPlaceReview);
   }
 
-  private void validateRequest(CreateRecordRequest request) {
+  private void validateRequest(CreatePlaceReviewRequest request) {
     validateVisitedAt(request.visitedAt());
     validateContent(request.content());
     validateImages(request.imageKeys());
@@ -89,12 +89,12 @@ public class RecordServiceImpl implements RecordService {
 
   private void validateContent(String content) {
     if (!StringUtils.hasText(content)) {
-      throw new BusinessValidationException(ErrorCode.RECORD_CONTENT_BLANK);
+      throw new BusinessValidationException(ErrorCode.PLACE_REVIEW_CONTENT_BLANK);
     }
 
     String trimmed = content.trim();
     if (trimmed.length() < 10 || trimmed.length() > 500) {
-      throw new BusinessValidationException(ErrorCode.INVALID_RECORD_CONTENT_LENGTH);
+      throw new BusinessValidationException(ErrorCode.INVALID_PLACE_REVIEW_CONTENT_LENGTH);
     }
   }
 
@@ -104,7 +104,7 @@ public class RecordServiceImpl implements RecordService {
     }
 
     if (imageKeys.size() > MAX_IMAGE_COUNT) {
-      throw new BusinessValidationException(ErrorCode.RECORD_IMAGE_LIMIT_EXCEEDED);
+      throw new BusinessValidationException(ErrorCode.PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED);
     }
   }
 }
