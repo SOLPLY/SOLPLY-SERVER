@@ -112,3 +112,155 @@ Swagger UI (`/swagger-ui/index.html`) is only enabled on the `dev` profile.
 - **Feign Clients**: External OAuth provider APIs
 
 
+
+# Claude Project Guidelines
+
+When working in this repository, Claude must follow the development workflow and conventions defined below.
+
+---
+
+# Development Workflow
+
+All development tasks should follow this sequence:
+
+1. Create a GitHub Issue
+2. Create a branch for the issue
+3. Implement the changes
+4. Commit the changes
+5. Open a Pull Request
+
+---
+
+# GitHub Issue Rules
+
+This repository uses GitHub Issue Forms located in:
+
+.github/ISSUE_TEMPLATE
+
+Available templates
+
+- bug.yml
+- feature.yml
+- refactor.yml
+
+All issues must follow the structure defined in these templates.
+
+Use the following skill when creating issues
+
+create-issue
+
+All issue contents must be written in Korean.
+
+---
+
+# Branch Naming Convention
+
+Branches must follow this format
+
+<type>/#<issue-number>-<short-description>
+
+Example
+
+feat/#339-recommend-place-by-embedding
+
+Allowed types
+
+feat  
+fix  
+refactor  
+docs  
+test  
+chore  
+perf
+
+Use the following skill when creating branches
+
+create-branch
+
+---
+
+# Commit Message Rules
+
+Commit messages must follow this format
+
+#<issue-number> <type>: <description>
+
+Example
+
+#339 feat: retrieval_text 생성기 구현
+
+Rules
+
+- Commit messages must be written in Korean
+- Always include the issue number
+- Split commits by logical changes
+- Avoid blindly using git add .
+- Review modified files before staging them
+- Do not mix unrelated changes in a single commit
+
+Use the following skill when creating commits
+
+create-commit
+
+---
+
+# Pull Request Rules
+
+Pull requests must follow the repository PR template.
+
+PR title format
+
+[convention] feature-name
+
+Examples
+
+[feat] searchPublicCourse  
+[fix] login-error  
+[refactor] recommendation-service
+
+PR contents must be written in Korean.
+
+Each PR must include
+
+- Issue reference
+- Implementation description
+- Reviewer points
+
+Use the following skill when creating pull requests
+
+create-pr
+
+---
+
+# Issue → Branch Mapping
+
+Branches must be created from the corresponding issue.
+
+Example
+
+Issue
+
+#339
+
+Branch
+
+feat/#339-recommend-place-by-embedding
+
+---
+
+# Development Principles
+
+Follow these principles during development
+
+- Prefer small and focused commits
+- Do not mix feature development with refactoring in a single commit
+- Keep commits easy to review
+- Ensure the project builds successfully before committing
+
+---
+
+# Skills
+
+Claude should always follow the skills defined in `.claude/skills` when performing repository tasks.
+
+When performing repository tasks such as creating issues, branches, commits, or pull requests, follow the corresponding skills.
