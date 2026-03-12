@@ -42,11 +42,12 @@ public class RecommendController {
     @Operation(summary = "자연어 기반 장소 추천", description = "사용자의 자연어 질문과 동네 ID를 기반으로 유사한 장소 상위 3개를 추천합니다.")
     @GetMapping("/places/embedding")
     public ResponseEntity<CustomApiResponse<EmbeddingPlaceRecommendGetResponse>> recommendPlacesByEmbedding(
+            @CurrentUserId Long userId,
             @RequestParam String query,
             @RequestParam Long townId) {
         return CustomApiResponse.success(
                 "자연어 기반 장소 추천 조회 성공",
-                embeddingRecommendService.recommendByQuery(query, townId)
+                embeddingRecommendService.recommendByQuery(query, townId, userId)
         );
     }
 
