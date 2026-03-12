@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication
+
+항상 한국어로 답변한다.
+
 ## Project Overview
 
 SOLPLY (솔플리) is a solo leisure place and course curation service built with Java 21 + Spring Boot 3.3.5. It provides personalized recommendations for solo activities based on user interests.
