@@ -1,0 +1,25 @@
+name: Chore Template
+description: 유지보수 작업 (의존성 업데이트, 빌드 설정, CI/CD 등)
+title: "[Chore] Chore Title"
+labels: ["chore"]
+
+body:
+  - type: textarea
+    id: chore-contents
+    attributes:
+      label: 💬 이슈 설명
+      description: 작업할 유지보수 내용에 대해 설명해 주세요.
+      placeholder: "ex. Spring Boot 버전을 3.3.5에서 3.4.0으로 업그레이드한다."
+    validations:
+      required: true
+  - type: textarea
+    id: solve-steps
+    attributes:
+      label: ✅ 작업할 내용
+      description: 작업할 내용을 체크박스 형태로 작성해 주세요.
+      value: |
+        - [ ] 작업
+        - [ ]
+        - [ ]
+    validations:
+      required: true
