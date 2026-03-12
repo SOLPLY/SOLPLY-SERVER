@@ -13,15 +13,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 🛠 Common Commands
 
 ### Build & Run
-bash
+```bash
 # 빌드 (테스트 제외)
 ./gradlew build -x test
 
 # 로컬 실행
 ./gradlew bootRun
+```
 
 ### Testing
-Bash
+```bash
 # 전체 테스트 실행
 ./gradlew test
 
@@ -30,21 +31,25 @@ Bash
 
 # 상세 로그와 함께 테스트 실행
 ./gradlew test --info
+```
 
 ### Database Migrations (Flyway)
-Bash
+```bash
 # dev 환경 마이그레이션 실행
 ./gradlew flywayMigrate -PflywayUrl=... -PflywayUser=... -PflywayPassword=...
 
 # 마이그레이션 정보 확인
 ./gradlew flywayInfo
+```
 
 ### Architecture
-Package Structure
-Plaintext
+
+#### Package Structure
+```text
 org.sopt.solply_server/
 ├── domain/          # 비즈니스 도메인 (DDD 스타일)
 └── global/          # 공통 인프라 및 기술적 관심사
+```
 
 - Domain Modules (domain/): 계층 구조 준수 
   - controller/, service/, entity/, repository/, dto/, cache/ 
