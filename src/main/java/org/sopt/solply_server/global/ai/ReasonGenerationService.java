@@ -2,6 +2,7 @@ package org.sopt.solply_server.global.ai;
 
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
@@ -9,6 +10,7 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReasonGenerationService {
@@ -40,8 +42,13 @@ public class ReasonGenerationService {
                 "format", converter.getFormat()
         ));
 
-        String response = chatModel.call(prompt).getResult().getOutput().getText();
-        return converter.convert(response);
+        try {
+            String response = chatModel.call(prompt).getResult().getOutput().getText();
+            return converter.convert(response);
+        } catch (Exception e) {
+            log.warn("추천 이유 생성 실패, 빈 문자열로 대체합니다. error={}", e.getMessage());
+            return places.stream().map(p -> "").toList();
+        }
     }
 
     private String buildPlacesInfo(List<PlaceContext> places) {
