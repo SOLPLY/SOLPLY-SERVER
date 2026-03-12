@@ -80,6 +80,7 @@ LLM(OpenAI)을 활용한 이유 생성
 ``
 {place_name}은 {town}에 위치한 {category}다.
 {intro_text}
+{check_points}
 {tag_based_sentences}
 리뷰에서는 {review_summary}라는 평가가 자주 보인다.
 ``

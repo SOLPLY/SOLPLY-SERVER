@@ -110,3 +110,5 @@ Swagger UI (`/swagger-ui/index.html`) is only enabled on the `dev` profile.
 - **Redis**: Sessions, caching, recommendations
 - **Discord Webhook**: Optional notifications
 - **Feign Clients**: External OAuth provider APIs
+
+
