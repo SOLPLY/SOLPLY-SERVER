@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.recommend.service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.OptionalDouble;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.entity.Place;
@@ -50,7 +51,15 @@ public class EmbeddingRecommendService {
                     }
                     return true;
                 })
-                .map(doc -> new ScoredDoc(doc, CosineSimilarityUtil.calculate(queryVector, doc.getEmbedding())))
+                .flatMap(doc -> {
+                    OptionalDouble score = CosineSimilarityUtil.calculate(queryVector, doc.getEmbedding());
+                    if (score.isEmpty()) {
+                        log.warn("임베딩 차원 불일치로 추천 후보에서 제외합니다. placeId={}, queryDim={}, docDim={}",
+                                doc.getPlace().getId(), queryVector.length, doc.getEmbedding().length);
+                        return java.util.stream.Stream.empty();
+                    }
+                    return java.util.stream.Stream.of(new ScoredDoc(doc, score.getAsDouble()));
+                })
                 .sorted(Comparator.comparingDouble(ScoredDoc::score).reversed())
                 .limit(TOP_K)
                 .toList();
