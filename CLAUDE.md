@@ -68,7 +68,7 @@ org.sopt.solply_server/
 
 ### AI & Vector Management
 - Vector Storage: 별도의 벡터 DB 대신 MySQL MEDIUMBLOB 컬럼과 FloatArrayConverter를 사용하여 임베딩을 저장한다. 
-- Spring AI: 버전 1.0.0-M5 사용. EmbeddingModel.embed(text)는 float[]를 반환한다. 
+- Spring AI: 버전 1.1.2 사용. EmbeddingModel.embed(text)는 float[]를 반환한다. BeanOutputConverter는 extra_body 문제로 사용하지 않고, 프롬프트 기반 JSON 파싱(ObjectMapper)을 사용한다.
 - Similarity: CosineSimilarityUtil을 통해 서버 사이드에서 유사도를 계산한다.
 
 ### Environments & Configuration
