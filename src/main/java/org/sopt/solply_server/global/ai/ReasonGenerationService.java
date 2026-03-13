@@ -17,13 +17,18 @@ public class ReasonGenerationService {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
+    private final String chatModel;
+
     public ReasonGenerationService(
             @Value("${spring.ai.openai.api-key}") String apiKey,
+            @Value("${spring.ai.openai.base-url}") String baseUrl,
+            @Value("${spring.ai.openai.chat.options.model}") String chatModel,
             ObjectMapper objectMapper) {
         this.restClient = RestClient.builder()
-                .baseUrl("https://api.openai.com/v1")
+                .baseUrl(baseUrl + "/v1")
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .build();
+        this.chatModel = chatModel;
         this.objectMapper = objectMapper;
     }
 
@@ -31,7 +36,7 @@ public class ReasonGenerationService {
         String prompt = buildPrompt(query, userName, places);
 
         Map<String, Object> requestBody = Map.of(
-                "model", "gpt-4o-mini",
+                "model", chatModel,
                 "messages", List.of(Map.of("role", "user", "content", prompt))
         );
 
