@@ -29,10 +29,10 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
     List<PlaceSearchDocument> findActiveByParentTownIdWithEmbedding(@Param("parentTownId") Long parentTownId);
 
     @Query("""
-            SELECT psd FROM PlaceSearchDocument psd
+            SELECT psd.placeId FROM PlaceSearchDocument psd
             WHERE psd.status IN :statuses
             """)
-    List<PlaceSearchDocument> findAllByStatusIn(@Param("statuses") List<EmbeddingStatus> statuses);
+    List<Long> findPlaceIdsByStatusIn(@Param("statuses") List<EmbeddingStatus> statuses);
 
     @Query("""
             SELECT psd FROM PlaceSearchDocument psd

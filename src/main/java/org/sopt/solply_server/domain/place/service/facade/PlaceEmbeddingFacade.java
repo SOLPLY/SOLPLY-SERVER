@@ -7,7 +7,6 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.entity.EmbeddingStatus;
-import org.sopt.solply_server.domain.place.entity.PlaceSearchDocument;
 import org.sopt.solply_server.domain.place.repository.PlaceSearchDocumentRepository;
 import org.sopt.solply_server.domain.place.service.PlaceEmbeddingBatchProcessor;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewSummaryRepository;
@@ -30,8 +29,7 @@ public class PlaceEmbeddingFacade {
     private final PlaceEmbeddingBatchProcessor batchProcessor;
 
     public void initializePendingDocuments() {
-        List<Long> pendingIds = placeSearchDocumentRepository.findAllByStatusIn(INIT_TARGET_STATUSES)
-                .stream().map(PlaceSearchDocument::getPlaceId).toList();
+        List<Long> pendingIds = placeSearchDocumentRepository.findPlaceIdsByStatusIn(INIT_TARGET_STATUSES);
 
         log.info("신규 임베딩 초기화 시작 - 대상 수: {}", pendingIds.size());
         processInChunks(pendingIds, Map.of());
@@ -40,8 +38,7 @@ public class PlaceEmbeddingFacade {
 
     @Scheduled(cron = "0 0 3 * * *") // 매일 새벽 3시
     public void reembedStaleDocuments() {
-        List<Long> staleIds = placeSearchDocumentRepository.findAllByStatusIn(REEMBEDDING_TARGET_STATUSES)
-                .stream().map(PlaceSearchDocument::getPlaceId).toList();
+        List<Long> staleIds = placeSearchDocumentRepository.findPlaceIdsByStatusIn(REEMBEDDING_TARGET_STATUSES);
 
         log.info("재임베딩 배치 시작 - 대상 수: {}", staleIds.size());
 
