@@ -207,6 +207,10 @@ public class Place extends BaseTimeEntity {
         }
     }
 
+    public void clearTags() {
+        this.placeTags.clear();
+    }
+
     private void replaceTags(Tag mainTag, List<Tag> option1Tags, List<Tag> option2Tags) {
         this.placeTags.clear();
         Set<Tag> notDuplicated = new LinkedHashSet<>();

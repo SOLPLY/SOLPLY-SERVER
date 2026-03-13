@@ -28,6 +28,7 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
+import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
+    private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
@@ -105,6 +107,9 @@ public class AdminPlaceService {
         // 이미지 키 검증
         List<String> imageKeys = normalizeKeys(req.imageFileKeys());
         imageFileKeyValidator.validateFileKeys(imageKeys);
+
+        place.clearTags();
+        entityManager.flush();
 
         place.update(
                 req.name(),
