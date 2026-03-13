@@ -19,6 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PlaceSearchDocumentService {
 
+    private static final List<EmbeddingStatus> REEMBEDDING_TARGET_STATUSES =
+            List.of(EmbeddingStatus.DIRTY, EmbeddingStatus.FAILED);
+
     private final PlaceSearchDocumentRepository placeSearchDocumentRepository;
     private final PlaceReviewSummaryRepository placeReviewSummaryRepository;
     private final PlaceEmbeddingBatchProcessor batchProcessor;
@@ -26,37 +29,37 @@ public class PlaceSearchDocumentService {
     @Transactional
     public void markDirtyByPlaceId(Long placeId) {
         placeSearchDocumentRepository.findById(placeId)
-                .ifPresent(doc -> {
-                    doc.markDirty();
+                .ifPresent(document -> {
+                    document.markDirty();
                     log.info("PlaceSearchDocument DIRTY 전환 - placeId={}", placeId);
                 });
     }
 
     @Transactional
     public void markDirtyByTagId(Long tagId) {
-        List<PlaceSearchDocument> docs = placeSearchDocumentRepository.findAllByTagId(tagId);
-        docs.forEach(doc -> {
-            doc.markDirty();
-            log.info("PlaceSearchDocument DIRTY 전환 (태그 변경) - placeId={}, tagId={}", doc.getPlaceId(), tagId);
+        List<PlaceSearchDocument> affectedDocuments = placeSearchDocumentRepository.findAllByTagId(tagId);
+        affectedDocuments.forEach(document -> {
+            document.markDirty();
+            log.info("PlaceSearchDocument DIRTY 전환 (태그 변경) - placeId={}, tagId={}", document.getPlaceId(), tagId);
         });
     }
 
     @Scheduled(cron = "0 0 3 * * *") // 매일 새벽 3시
-    public void processDirtyDocuments() {
-        List<PlaceSearchDocument> docs = placeSearchDocumentRepository
-                .findAllByStatusIn(List.of(EmbeddingStatus.DIRTY, EmbeddingStatus.FAILED));
+    public void reembedStaleDocuments() {
+        List<PlaceSearchDocument> staleDocuments = placeSearchDocumentRepository
+                .findAllByStatusIn(REEMBEDDING_TARGET_STATUSES);
 
-        log.info("DIRTY/FAILED 문서 재임베딩 배치 시작 - 대상 수: {}", docs.size());
+        log.info("재임베딩 배치 시작 - 대상 수: {}", staleDocuments.size());
 
-        List<Long> placeIds = docs.stream().map(PlaceSearchDocument::getPlaceId).toList();
-        Map<Long, PlaceReviewSummary> summaryMap = placeReviewSummaryRepository.findAllById(placeIds)
+        List<Long> placeIds = staleDocuments.stream().map(PlaceSearchDocument::getPlaceId).toList();
+        Map<Long, PlaceReviewSummary> reviewSummaryByPlaceId = placeReviewSummaryRepository.findAllById(placeIds)
                 .stream()
                 .collect(Collectors.toMap(PlaceReviewSummary::getPlaceId, s -> s));
 
-        for (PlaceSearchDocument doc : docs) {
-            batchProcessor.processOne(doc.getPlaceId(), summaryMap.get(doc.getPlaceId()));
+        for (PlaceSearchDocument document : staleDocuments) {
+            batchProcessor.processOne(document.getPlaceId(), reviewSummaryByPlaceId.get(document.getPlaceId()));
         }
 
-        log.info("DIRTY/FAILED 문서 재임베딩 배치 완료");
+        log.info("재임베딩 배치 완료");
     }
 }
