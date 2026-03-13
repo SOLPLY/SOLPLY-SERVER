@@ -20,22 +20,18 @@ public class PlaceEmbeddingBatchProcessor {
     private final RetrievalTextBuilder retrievalTextBuilder;
     private final EmbeddingService embeddingService;
 
-    @Transactional
-    public void processOne(Long placeId, String reviewSummary) {
-        PlaceSearchDocument doc = placeSearchDocumentRepository.findById(placeId).orElse(null);
-        if (doc == null) {
-            log.warn("재임베딩 대상 문서를 찾을 수 없습니다 - placeId={}", placeId);
-            return;
-        }
-
+    /**
+     * 이미 로딩된 doc을 임베딩합니다. 호출자의 트랜잭션 내에서 동작합니다.
+     */
+    public void embedDocument(PlaceSearchDocument doc, String reviewSummary) {
         try {
             String retrievalText = retrievalTextBuilder.build(doc.getPlace(), reviewSummary);
             float[] embedding = embeddingService.embed(retrievalText);
             doc.updateEmbedding(retrievalText, embedding, embeddingService.getModelName());
-            log.info("재임베딩 완료 - placeId={}", placeId);
+            log.info("임베딩 완료 - placeId={}", doc.getPlaceId());
         } catch (Exception e) {
             doc.markFailed();
-            log.warn("재임베딩 실패 - placeId={}, error={}", placeId, e.getMessage());
+            log.warn("임베딩 실패 - placeId={}, error={}", doc.getPlaceId(), e.getMessage());
         }
     }
 
