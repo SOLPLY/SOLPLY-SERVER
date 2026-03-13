@@ -216,6 +216,13 @@ public class AdminPlaceService {
     }
 
     @Transactional
+    public void deletePlace(final Long placeId) {
+        Place place = adminEntityLoader.getPlace(placeId);
+        adminPlaceRepository.delete(place);
+        log.info("어드민 장소 삭제 - placeId: {}", placeId);
+    }
+
+    @Transactional
     public void activatePlacesByTownIds(final List<Long> townIds) {
         adminPlaceRepository.updateActiveByTownId(townIds, true);
     }
