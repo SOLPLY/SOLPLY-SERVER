@@ -2,11 +2,13 @@ package org.sopt.solply_server.global.ai;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -24,9 +26,14 @@ public class ReasonGenerationService {
             @Value("${spring.ai.openai.base-url}") String baseUrl,
             @Value("${spring.ai.openai.chat.options.model}") String chatModel,
             ObjectMapper objectMapper) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(5));
+        requestFactory.setReadTimeout(Duration.ofSeconds(30));
+
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl + "/v1")
                 .defaultHeader("Authorization", "Bearer " + apiKey)
+                .requestFactory(requestFactory)
                 .build();
         this.chatModel = chatModel;
         this.objectMapper = objectMapper;
