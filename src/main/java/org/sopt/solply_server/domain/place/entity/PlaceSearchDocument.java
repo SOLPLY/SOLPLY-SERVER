@@ -64,6 +64,10 @@ public class PlaceSearchDocument extends BaseTimeEntity {
         this.status = EmbeddingStatus.FAILED;
     }
 
+    public void markObsolete() {
+        this.status = EmbeddingStatus.OBSOLETE;
+    }
+
     public void markDirty() {
         if (this.status != EmbeddingStatus.INIT) {
             this.status = EmbeddingStatus.DIRTY;

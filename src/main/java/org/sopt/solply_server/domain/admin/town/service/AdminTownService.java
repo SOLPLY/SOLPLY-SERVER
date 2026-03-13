@@ -5,7 +5,6 @@ import java.util.List;
 
 import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.admin.town.dto.AdminTownDto;
-import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationRequest;
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
@@ -114,20 +113,7 @@ public class AdminTownService {
 
 	// 활성화: 전파 && 비활성화: 전파X
 	@Transactional
-	public AdminTownUpsertResponse updateTownStatus(final Long townId, final AdminTownActivationRequest req) {
-		adminTownValidator.validateTownId(townId);
-
-		if (req.active()) {
-			activateTown(townId);
-		} else {
-			deactivateTown(townId);
-		}
-
-		log.info("어드민 지역/동네 활성화 수정 - townId: {}", townId);
-		return AdminTownUpsertResponse.of(townId);
-	}
-
-	private void activateTown(Long townId) {
+	public List<Long> activateTown(Long townId) {
 		Town town = adminEntityLoader.getTown(townId);
 		List<Long> townIds = new ArrayList<>();
 
@@ -140,9 +126,11 @@ public class AdminTownService {
 		int cnt = adminTownRepository.updateActiveByTownIds(townIds, true);
 
 		log.info("어드민 지역/동네 활성화된 동네 갯수: {}", cnt);
+		return townIds;
 	}
 
-	private void deactivateTown(Long townId) {
+	@Transactional
+	public void deactivateTown(Long townId) {
 		Town town = adminEntityLoader.getTown(townId);
 
 		if (town.getParent() == null) {

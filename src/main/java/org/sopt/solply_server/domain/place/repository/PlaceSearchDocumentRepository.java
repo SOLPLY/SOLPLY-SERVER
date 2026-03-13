@@ -4,6 +4,7 @@ import java.util.List;
 import org.sopt.solply_server.domain.place.entity.EmbeddingStatus;
 import org.sopt.solply_server.domain.place.entity.PlaceSearchDocument;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -57,4 +58,15 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
               AND psd.status <> 'INIT'
             """)
     List<PlaceSearchDocument> findAllByTagIds(@Param("tagIds") List<Long> tagIds);
+
+    @Modifying
+    @Query("""
+            UPDATE PlaceSearchDocument psd
+            SET psd.status = 'INIT'
+            WHERE psd.status = 'OBSOLETE'
+              AND psd.placeId IN (
+                SELECT p.id FROM Place p WHERE p.town.id IN :townIds
+              )
+            """)
+    int resetObsoleteByTownIds(@Param("townIds") List<Long> townIds);
 }

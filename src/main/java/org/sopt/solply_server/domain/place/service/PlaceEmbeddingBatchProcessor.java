@@ -36,8 +36,8 @@ public class PlaceEmbeddingBatchProcessor {
                 .stream().findFirst().orElse(null);
 
         if (place == null) {
-            log.warn("비활성화 장소 임베딩 건너뜀 - placeId={}", doc.getPlaceId());
-            doc.markFailed();
+            log.warn("비활성/삭제 장소로 임베딩 불필요 - OBSOLETE 처리 placeId={}", doc.getPlaceId());
+            doc.markObsolete();
             return;
         }
 
@@ -66,7 +66,8 @@ public class PlaceEmbeddingBatchProcessor {
         for (PlaceSearchDocument doc : docs) {
             Place place = placeById.get(doc.getPlaceId());
             if (place == null) {
-                log.warn("비활성화 장소 임베딩 건너뜀 - placeId={}", doc.getPlaceId());
+                log.warn("비활성/삭제 장소로 임베딩 불필요 - OBSOLETE 처리 placeId={}", doc.getPlaceId());
+                doc.markObsolete();
                 continue;
             }
             PlaceRetrievalData data = buildRetrievalData(place, reviewSummaryByPlaceId.get(doc.getPlaceId()));
