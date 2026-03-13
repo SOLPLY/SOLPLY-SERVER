@@ -39,15 +39,15 @@ public class RetrievalTextBuilder {
             sb.append(String.join(". ", checkpoints)).append(". ");
         }
 
-        // 4. 태그 기반 문장 (sentence가 있는 active 태그, main 태그 포함)
-        String tagSentences = place.getTags().stream()
+        // 4. 태그 기반 문장 (meaning이 있는 active 태그, main 태그 포함)
+        String tagMeanings = place.getTags().stream()
                 .filter(Tag::isActive)
-                .filter(t -> t.getSentence() != null && !t.getSentence().isBlank())
-                .map(Tag::getSentence)
+                .filter(t -> t.getMeaning() != null && !t.getMeaning().isBlank())
+                .map(Tag::getMeaning)
                 .collect(Collectors.joining(" "));
 
-        if (!tagSentences.isBlank()) {
-            sb.append(tagSentences).append(" ");
+        if (!tagMeanings.isBlank()) {
+            sb.append(tagMeanings).append(" ");
         }
 
         // 5. 리뷰 요약
