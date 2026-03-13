@@ -41,23 +41,27 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
             """)
     List<PlaceSearchDocument> findAllByPlaceIdInWithPlace(@Param("placeIds") List<Long> placeIds);
 
+    @Modifying
     @Query("""
-            SELECT psd FROM PlaceSearchDocument psd
-            JOIN FETCH psd.place p
-            JOIN p.placeTags pt
-            WHERE pt.tag.id = :tagId
-              AND psd.status <> 'INIT'
+            UPDATE PlaceSearchDocument psd
+            SET psd.status = 'DIRTY'
+            WHERE psd.status <> 'INIT'
+              AND psd.placeId IN (
+                SELECT DISTINCT p.id FROM Place p JOIN p.placeTags pt WHERE pt.tag.id = :tagId
+              )
             """)
-    List<PlaceSearchDocument> findAllByTagId(@Param("tagId") Long tagId);
+    int markDirtyByTagId(@Param("tagId") Long tagId);
 
+    @Modifying
     @Query("""
-            SELECT DISTINCT psd FROM PlaceSearchDocument psd
-            JOIN FETCH psd.place p
-            JOIN p.placeTags pt
-            WHERE pt.tag.id IN :tagIds
-              AND psd.status <> 'INIT'
+            UPDATE PlaceSearchDocument psd
+            SET psd.status = 'DIRTY'
+            WHERE psd.status <> 'INIT'
+              AND psd.placeId IN (
+                SELECT DISTINCT p.id FROM Place p JOIN p.placeTags pt WHERE pt.tag.id IN :tagIds
+              )
             """)
-    List<PlaceSearchDocument> findAllByTagIds(@Param("tagIds") List<Long> tagIds);
+    int markDirtyByTagIds(@Param("tagIds") List<Long> tagIds);
 
     @Modifying
     @Query("""

@@ -26,21 +26,15 @@ public class PlaceSearchDocumentService {
 
     @Transactional
     public void markDirtyByTagId(Long tagId) {
-        List<PlaceSearchDocument> affectedDocuments = placeSearchDocumentRepository.findAllByTagId(tagId);
-        affectedDocuments.forEach(document -> {
-            document.markDirty();
-            log.info("PlaceSearchDocument DIRTY 전환 (태그 변경) - placeId={}, tagId={}", document.getPlaceId(), tagId);
-        });
+        int count = placeSearchDocumentRepository.markDirtyByTagId(tagId);
+        log.info("PlaceSearchDocument DIRTY 전환 (태그 변경) - count={}, tagId={}", count, tagId);
     }
 
     @Transactional
     public void markDirtyByTagIds(List<Long> tagIds) {
         if (tagIds == null || tagIds.isEmpty()) return;
-        List<PlaceSearchDocument> affectedDocuments = placeSearchDocumentRepository.findAllByTagIds(tagIds);
-        affectedDocuments.forEach(document -> {
-            document.markDirty();
-            log.info("PlaceSearchDocument DIRTY 전환 (태그 비활성화 cascade) - placeId={}", document.getPlaceId());
-        });
+        int count = placeSearchDocumentRepository.markDirtyByTagIds(tagIds);
+        log.info("PlaceSearchDocument DIRTY 전환 (태그 비활성화 cascade) - count={}", count);
     }
 
     @Transactional
