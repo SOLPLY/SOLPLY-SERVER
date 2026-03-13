@@ -73,6 +73,16 @@ public class AdminPlaceController {
         );
     }
 
+    @Operation(summary = "어드민 장소 삭제", description = "placeId 기준으로 장소를 삭제합니다.")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<CustomApiResponse<Void>> deletePlace(
+            @Parameter(description = "장소 ID", required = true, example = "10")
+            @PathVariable("id") Long placeId
+    ) {
+        adminPlaceService.deletePlace(placeId);
+        return CustomApiResponse.success("장소 삭제 성공", null);
+    }
+
     @Operation(summary = "어드민 장소 리스트 조회", description = "townId 기준으로 장소 리스트를 조회합니다.")
     @GetMapping
     public ResponseEntity<CustomApiResponse<AdminPlaceListResponse>> getPlacesByTown(

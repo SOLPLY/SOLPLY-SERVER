@@ -1,7 +1,7 @@
 name: Refactor Template
 description: 리팩토링
 title: "[Refactor] Refactor Title"
-labels: ["refactor"]
+labels: ["🪄 REFACTOR"]
 
 body:
   - type: textarea

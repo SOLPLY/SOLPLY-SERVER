@@ -41,6 +41,7 @@ application-prod.yml
 !application-test.yml
 !prometheus.dev.yml
 !prometheus.prod.yml
+!.github/ISSUE_TEMPLATE/*.yml
 
 .docker/init/init_role.sql
 

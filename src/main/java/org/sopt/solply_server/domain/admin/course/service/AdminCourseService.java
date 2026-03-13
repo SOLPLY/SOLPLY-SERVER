@@ -103,4 +103,11 @@ public class AdminCourseService {
 		log.info("어드민 코스 상태 수정 성공 - 현재 상태: {}", course.isActive());
 		return AdminCourseUpsertResponse.of(course.getId());
 	}
+
+	@Transactional
+	public void deleteCourse(Long courseId) {
+		Course course = adminEntityLoader.getCourse(courseId);
+		adminCourseRepository.delete(course);
+		log.info("어드민 코스 삭제 성공 - courseId: {}", courseId);
+	}
 }

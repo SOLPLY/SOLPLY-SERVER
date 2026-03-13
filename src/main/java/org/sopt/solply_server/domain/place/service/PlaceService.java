@@ -20,8 +20,12 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.tag.entity.Tag;
+import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
@@ -42,6 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlaceService {
 
     private final PlaceRepository placeRepository;
+    private final PlaceTagRepository placeTagRepository;
     private final ImageUrlProvider imageUrlProvider;
     private final TagValidator tagValidator;
     private final PlaceBookmarkFacade placeBookmarkFacade;
@@ -61,13 +66,29 @@ public class PlaceService {
                 ))
                 .toList();
 
+        List<Tag> tags = placeTagRepository.findAllByPlaceId(placeId).stream()
+                .map(PlaceTag::getTag)
+                .toList();
+
+        String mainTag = tags.stream()
+                .filter(t -> t.getType() == TagType.MAIN)
+                .map(Tag::getName)
+                .findFirst()
+                .orElse(null);
+
+        List<String> optionTags = tags.stream()
+                .filter(t -> t.getType() != TagType.MAIN)
+                .map(Tag::getName)
+                .toList();
+
         boolean isBookmarked = placeBookmarkFacade.isBookmarked(userId, placeId);
 
         Town town = place.getTown();
 
         return PlaceDetailsGetResponse.of(
                 place,
-                TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
+                mainTag,
+                optionTags,
                 imageInfos,
                 isBookmarked,
                 town

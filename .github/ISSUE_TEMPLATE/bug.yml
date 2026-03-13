@@ -1,7 +1,7 @@
 name: Bug Template
 description: 버그 제보
 title: "[Fix] Bug Title"
-labels: ["fix"]
+labels: ["🐞 BUG"]
 
 body:
   - type: textarea
