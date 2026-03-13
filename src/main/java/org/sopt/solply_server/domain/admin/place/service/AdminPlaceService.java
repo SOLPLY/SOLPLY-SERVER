@@ -12,6 +12,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertRe
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
+import org.sopt.solply_server.domain.place.service.event.PlaceCreatedEvent;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -83,6 +84,7 @@ public class AdminPlaceService {
         Place saved = adminPlaceRepository.save(place);
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
+        applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved));
 
         log.info("어드민 장소 생성 - adminId: {}, placeId: {}", adminUserId, saved.getId());
         return AdminPlaceUpsertResponse.of(saved.getId());
