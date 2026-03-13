@@ -26,6 +26,13 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
 
     @Query("""
             SELECT psd FROM PlaceSearchDocument psd
+            JOIN FETCH psd.place
+            WHERE psd.placeId IN :placeIds
+            """)
+    List<PlaceSearchDocument> findAllByPlaceIdInWithPlace(@Param("placeIds") List<Long> placeIds);
+
+    @Query("""
+            SELECT psd FROM PlaceSearchDocument psd
             JOIN FETCH psd.place p
             JOIN p.placeTags pt
             WHERE pt.tag.id = :tagId
