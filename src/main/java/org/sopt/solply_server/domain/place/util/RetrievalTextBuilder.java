@@ -5,7 +5,6 @@ import java.util.stream.Collectors;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceReviewSummary;
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -40,11 +39,10 @@ public class RetrievalTextBuilder {
             sb.append(String.join(". ", checkpoints)).append(". ");
         }
 
-        // 4. 태그 기반 문장 (sentence가 있는 active 태그만)
+        // 4. 태그 기반 문장 (sentence가 있는 active 태그, main 태그 포함)
         String tagSentences = place.getTags().stream()
                 .filter(Tag::isActive)
                 .filter(t -> t.getSentence() != null && !t.getSentence().isBlank())
-                .filter(t -> t.getType() != TagType.MAIN)
                 .map(Tag::getSentence)
                 .collect(Collectors.joining(" "));
 
