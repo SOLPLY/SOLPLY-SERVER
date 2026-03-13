@@ -68,7 +68,6 @@ public class PlaceService {
 
         List<Tag> tags = placeTagRepository.findAllByPlaceId(placeId).stream()
                 .map(PlaceTag::getTag)
-                .filter(Tag::isActive)
                 .toList();
 
         String mainTag = tags.stream()
