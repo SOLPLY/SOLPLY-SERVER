@@ -48,6 +48,7 @@ public class PlaceSearchDocument extends BaseTimeEntity {
     public static PlaceSearchDocument init(Place place) {
         PlaceSearchDocument doc = new PlaceSearchDocument();
         doc.place = place;
+        doc.retrievalText = "";
         doc.status = EmbeddingStatus.INIT;
         return doc;
     }
