@@ -20,6 +20,15 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
 
     @Query("""
             SELECT psd FROM PlaceSearchDocument psd
+            JOIN FETCH psd.place p
+            WHERE p.town.parent.id = :parentTownId
+              AND p.active = true
+              AND psd.embedding IS NOT NULL
+            """)
+    List<PlaceSearchDocument> findActiveByParentTownIdWithEmbedding(@Param("parentTownId") Long parentTownId);
+
+    @Query("""
+            SELECT psd FROM PlaceSearchDocument psd
             WHERE psd.status IN :statuses
             """)
     List<PlaceSearchDocument> findAllByStatusIn(@Param("statuses") List<EmbeddingStatus> statuses);
