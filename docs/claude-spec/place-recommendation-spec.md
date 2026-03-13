@@ -30,4 +30,4 @@
 
 6. 구현 단계
 - Step 1 (완료): 인프라, 임베딩 연동, 추천 API
-- Step 2 (추후): RetrievalTextBuilder, 자동 업데이트 트리거, 리뷰 요약 배치
+- Step 2 (완료): RetrievalTextBuilder, 자동 업데이트 트리거, 리뷰 요약 배치

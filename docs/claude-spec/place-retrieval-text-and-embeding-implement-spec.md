@@ -34,7 +34,7 @@ Action:
 
 전역 태그(Tag) 변경 시: 해당 tagId를 가진 모든 PlaceSearchDocument를 찾아 상태를 DIRTY로 일괄 변경 (Bulk Update).
 
-Process: 정기 배치 스케줄러가 DIRTY 문서를 모아 재임베딩 후 UPDATE (상태: READY).
+Process: 정기 배치 스케줄러가 DIRTY/FAILED 문서를 모아 재임베딩 후 UPDATE (상태: READY).
 
 5. Claude Code 작업 요청 가이드
    [Step 1] 엔티티 리팩토링 및 필드 추가
