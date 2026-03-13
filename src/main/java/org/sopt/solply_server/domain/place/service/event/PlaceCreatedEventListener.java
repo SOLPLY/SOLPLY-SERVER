@@ -31,6 +31,6 @@ public class PlaceCreatedEventListener {
         PlaceSearchDocument doc = placeSearchDocumentRepository.findById(place.getId())
                 .orElseGet(() -> placeSearchDocumentRepository.save(PlaceSearchDocument.init(place)));
 
-        batchProcessor.embedDocument(doc, null);
+        batchProcessor.processOne(doc);
     }
 }
