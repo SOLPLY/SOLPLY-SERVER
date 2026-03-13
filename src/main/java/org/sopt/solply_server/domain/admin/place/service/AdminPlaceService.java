@@ -84,7 +84,7 @@ public class AdminPlaceService {
         Place saved = adminPlaceRepository.save(place);
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
-        applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved));
+        applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
 
         log.info("어드민 장소 생성 - adminId: {}, placeId: {}", adminUserId, saved.getId());
         return AdminPlaceUpsertResponse.of(saved.getId());
