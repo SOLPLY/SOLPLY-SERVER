@@ -32,4 +32,14 @@ public class PlaceSearchDocumentService {
             log.info("PlaceSearchDocument DIRTY 전환 (태그 변경) - placeId={}, tagId={}", document.getPlaceId(), tagId);
         });
     }
+
+    @Transactional
+    public void markDirtyByTagIds(List<Long> tagIds) {
+        if (tagIds == null || tagIds.isEmpty()) return;
+        List<PlaceSearchDocument> affectedDocuments = placeSearchDocumentRepository.findAllByTagIds(tagIds);
+        affectedDocuments.forEach(document -> {
+            document.markDirty();
+            log.info("PlaceSearchDocument DIRTY 전환 (태그 비활성화 cascade) - placeId={}", document.getPlaceId());
+        });
+    }
 }

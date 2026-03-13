@@ -48,4 +48,13 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
               AND psd.status <> 'INIT'
             """)
     List<PlaceSearchDocument> findAllByTagId(@Param("tagId") Long tagId);
+
+    @Query("""
+            SELECT DISTINCT psd FROM PlaceSearchDocument psd
+            JOIN FETCH psd.place p
+            JOIN p.placeTags pt
+            WHERE pt.tag.id IN :tagIds
+              AND psd.status <> 'INIT'
+            """)
+    List<PlaceSearchDocument> findAllByTagIds(@Param("tagIds") List<Long> tagIds);
 }

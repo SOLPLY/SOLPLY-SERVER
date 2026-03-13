@@ -1,7 +1,10 @@
 package org.sopt.solply_server.domain.admin.tag.service;
 
 
+import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagActivationRequest;
@@ -125,6 +128,19 @@ public class AdminTagService {
         return AdminTagActivationResponse.of(id, req.active());
     }
 
+
+    public List<Long> collectSubtreeIds(Long rootId) {
+        List<Long> ids = new ArrayList<>();
+        ids.add(rootId);
+        Queue<Long> queue = new LinkedList<>();
+        queue.add(rootId);
+        while (!queue.isEmpty()) {
+            List<Long> childIds = adminTagRepository.findChildIds(queue.poll());
+            ids.addAll(childIds);
+            queue.addAll(childIds);
+        }
+        return ids;
+    }
 
     private void deactivateCascade(Long parentId) {
         List<Tag> children = adminTagRepository.findChildren(parentId);

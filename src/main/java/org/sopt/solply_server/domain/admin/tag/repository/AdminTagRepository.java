@@ -17,6 +17,12 @@ public interface AdminTagRepository extends JpaRepository<Tag, Long> {
     List<Tag> findChildren(@Param("parentId") Long parentId);
 
     @Query("""
+        select t.id from Tag t
+        where t.parent.id = :parentId
+    """)
+    List<Long> findChildIds(@Param("parentId") Long parentId);
+
+    @Query("""
         select t
         from Tag t
         left join fetch t.parent p

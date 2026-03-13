@@ -33,14 +33,22 @@ public class AdminTagFacade {
     @Transactional
     public Long updateTag(Long id, AdminTagUpsertRequest request) {
         Long result = adminTagService.updateTag(id, request);
-        placeSearchDocumentService.markDirtyByTagId(id);
+        if (!request.active()) {
+            placeSearchDocumentService.markDirtyByTagIds(adminTagService.collectSubtreeIds(id));
+        } else {
+            placeSearchDocumentService.markDirtyByTagId(id);
+        }
         return result;
     }
 
     @Transactional
     public AdminTagActivationResponse toggleActive(Long id, AdminTagActivationRequest request) {
         AdminTagActivationResponse response = adminTagService.toggleActive(id, request);
-        placeSearchDocumentService.markDirtyByTagId(id);
+        if (!request.active()) {
+            placeSearchDocumentService.markDirtyByTagIds(adminTagService.collectSubtreeIds(id));
+        } else {
+            placeSearchDocumentService.markDirtyByTagId(id);
+        }
         return response;
     }
 }
