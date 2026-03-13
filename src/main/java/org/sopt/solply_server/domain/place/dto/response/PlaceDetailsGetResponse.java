@@ -12,6 +12,7 @@ public record PlaceDetailsGetResponse(
         long placeId,
         String placeName,
         String mainTag,
+        List<String> optionTags,
         String introduction,
         List<PlaceImageInfoDto> imageInfos,
         String address,
@@ -26,12 +27,13 @@ public record PlaceDetailsGetResponse(
         String townName
 ) {
 
-    public static PlaceDetailsGetResponse of(Place place, String mainTag, List<PlaceImageInfoDto> placeImageInfos,
-            boolean isBookmarked, Town town) {
+    public static PlaceDetailsGetResponse of(Place place, String mainTag, List<String> optionTags,
+            List<PlaceImageInfoDto> placeImageInfos, boolean isBookmarked, Town town) {
         return PlaceDetailsGetResponse.builder()
                 .placeId(place.getId())
                 .placeName(place.getName())
                 .mainTag(mainTag)
+                .optionTags(optionTags)
                 .introduction(place.getIntroduction())
                 .imageInfos(placeImageInfos)
                 .address(place.getAddress())
