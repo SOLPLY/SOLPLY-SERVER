@@ -10,7 +10,7 @@ import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagActivationResponse;
-import org.sopt.solply_server.domain.admin.tag.service.AdminTagService;
+import org.sopt.solply_server.domain.admin.tag.facade.AdminTagFacade;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/admin/tags")
 public class AdminTagController {
 
-    private final AdminTagService adminTagService;
+    private final AdminTagFacade adminTagFacade;
 
     @Operation(summary = "어드민 태그 생성", description = "태그를 생성합니다.")
     @PostMapping
@@ -30,7 +30,7 @@ public class AdminTagController {
     ) {
         return CustomApiResponse.success(
                 "태그 생성 성공",
-                adminTagService.createTag(request)
+                adminTagFacade.createTag(request)
         );
     }
 
@@ -39,7 +39,7 @@ public class AdminTagController {
     public ResponseEntity<CustomApiResponse<AdminTagListResponse>> getTags() {
         return CustomApiResponse.success(
                 "태그 리스트 조회 성공",
-                adminTagService.getTags()
+                adminTagFacade.getTags()
         );
     }
 
@@ -51,7 +51,7 @@ public class AdminTagController {
     ) {
         return CustomApiResponse.success(
                 "태그 상세 조회 성공",
-                adminTagService.getTagDetails(id)
+                adminTagFacade.getTagDetails(id)
         );
     }
 
@@ -64,7 +64,7 @@ public class AdminTagController {
     ) {
         return CustomApiResponse.success(
                 "태그 수정 성공",
-                adminTagService.updateTag(id, request)
+                adminTagFacade.updateTag(id, request)
         );
     }
 
@@ -77,7 +77,7 @@ public class AdminTagController {
     ) {
         return CustomApiResponse.success(
                 "태그 활성 상태 변경 성공",
-                adminTagService.toggleActive(id, request)
+                adminTagFacade.toggleActive(id, request)
         );
     }
 }

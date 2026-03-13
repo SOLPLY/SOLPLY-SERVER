@@ -9,7 +9,7 @@ import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertReq
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
-import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
+import org.sopt.solply_server.domain.admin.place.facade.AdminPlaceFacade;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/admin/places")
 public class AdminPlaceController {
 
-    private final AdminPlaceService adminPlaceService;
+    private final AdminPlaceFacade adminPlaceFacade;
 
     @Operation(summary = "어드민 장소 생성", description = "어드민이 새 장소를 생성합니다.")
     @PostMapping
@@ -31,7 +31,7 @@ public class AdminPlaceController {
     ) {
         return CustomApiResponse.success(
                 "장소 생성 성공",
-                adminPlaceService.createPlace(adminUserId, request)
+                adminPlaceFacade.createPlace(adminUserId, request)
         );
     }
 
@@ -44,7 +44,7 @@ public class AdminPlaceController {
     ) {
         return CustomApiResponse.success(
                 "장소 수정 성공",
-                adminPlaceService.updatePlace(placeId, request)
+                adminPlaceFacade.updatePlace(placeId, request)
         );
     }
 
@@ -56,10 +56,9 @@ public class AdminPlaceController {
     ) {
         return CustomApiResponse.success(
                 "장소 상세 조회 성공",
-                adminPlaceService.getPlaceDetails(placeId)
+                adminPlaceFacade.getPlaceDetails(placeId)
         );
     }
-
 
     @Operation(summary = "어드민 키워드 기반 장소 검색", description = "키워드를 기반으로 장소를 검색합니다.")
     @GetMapping("/search")
@@ -69,7 +68,7 @@ public class AdminPlaceController {
     ) {
         return CustomApiResponse.success(
                 "장소 검색 성공",
-                adminPlaceService.searchPlaces(keyword)
+                adminPlaceFacade.searchPlaces(keyword)
         );
     }
 
@@ -79,7 +78,7 @@ public class AdminPlaceController {
             @Parameter(description = "장소 ID", required = true, example = "10")
             @PathVariable("id") Long placeId
     ) {
-        adminPlaceService.deletePlace(placeId);
+        adminPlaceFacade.deletePlace(placeId);
         return CustomApiResponse.success("장소 삭제 성공", null);
     }
 
@@ -91,9 +90,7 @@ public class AdminPlaceController {
     ) {
         return CustomApiResponse.success(
                 "장소 리스트 조회 성공",
-                adminPlaceService.getPlacesByTown(townId)
+                adminPlaceFacade.getPlacesByTown(townId)
         );
     }
-
-
 }
