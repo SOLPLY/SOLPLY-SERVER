@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class PlaceEmbeddingFacade {
 
-    private static final int CHUNK_SIZE = 20;
+    private static final int CHUNK_SIZE = 50;
     private static final List<EmbeddingStatus> INIT_TARGET_STATUSES =
             List.of(EmbeddingStatus.INIT, EmbeddingStatus.FAILED);
     private static final List<EmbeddingStatus> REEMBEDDING_TARGET_STATUSES =
