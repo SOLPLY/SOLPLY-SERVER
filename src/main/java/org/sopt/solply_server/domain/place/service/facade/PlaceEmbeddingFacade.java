@@ -23,7 +23,7 @@ public class PlaceEmbeddingFacade {
     private static final List<EmbeddingStatus> INIT_TARGET_STATUSES =
             List.of(EmbeddingStatus.INIT, EmbeddingStatus.FAILED);
     private static final List<EmbeddingStatus> REEMBEDDING_TARGET_STATUSES =
-            List.of(EmbeddingStatus.DIRTY, EmbeddingStatus.FAILED);
+            List.of(EmbeddingStatus.INIT, EmbeddingStatus.DIRTY, EmbeddingStatus.FAILED);
 
     private final PlaceSearchDocumentRepository placeSearchDocumentRepository;
     private final PlaceReviewSummaryRepository placeReviewSummaryRepository;
