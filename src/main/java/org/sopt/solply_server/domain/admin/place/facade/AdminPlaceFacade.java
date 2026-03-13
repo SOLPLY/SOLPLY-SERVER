@@ -7,6 +7,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResp
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.place.service.PlaceSearchDocumentService;
+import org.sopt.solply_server.domain.place.service.facade.PlaceEmbeddingFacade;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -15,6 +16,7 @@ public class AdminPlaceFacade {
 
     private final AdminPlaceService adminPlaceService;
     private final PlaceSearchDocumentService placeSearchDocumentService;
+    private final PlaceEmbeddingFacade placeEmbeddingFacade;
 
     public AdminPlaceUpsertResponse createPlace(Long adminUserId, AdminPlaceUpsertRequest request) {
         return adminPlaceService.createPlace(adminUserId, request);
@@ -43,6 +45,6 @@ public class AdminPlaceFacade {
     }
 
     public void initializePendingEmbeddings() {
-        placeSearchDocumentService.initializePendingDocuments();
+        placeEmbeddingFacade.initializePendingDocuments();
     }
 }

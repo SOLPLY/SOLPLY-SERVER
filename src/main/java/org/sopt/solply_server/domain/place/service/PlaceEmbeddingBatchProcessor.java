@@ -2,7 +2,6 @@ package org.sopt.solply_server.domain.place.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.review.entity.PlaceReviewSummary;
 import org.sopt.solply_server.domain.place.entity.PlaceSearchDocument;
 import org.sopt.solply_server.domain.place.repository.PlaceSearchDocumentRepository;
 import org.sopt.solply_server.domain.place.util.RetrievalTextBuilder;
@@ -20,7 +19,7 @@ public class PlaceEmbeddingBatchProcessor {
     private final EmbeddingService embeddingService;
 
     @Transactional
-    public void processOne(Long placeId, PlaceReviewSummary reviewSummary) {
+    public void processOne(Long placeId, String reviewSummary) {
         PlaceSearchDocument doc = placeSearchDocumentRepository.findById(placeId).orElse(null);
         if (doc == null) {
             log.warn("재임베딩 대상 문서를 찾을 수 없습니다 - placeId={}", placeId);
@@ -29,6 +28,7 @@ public class PlaceEmbeddingBatchProcessor {
 
         try {
             String retrievalText = retrievalTextBuilder.build(doc.getPlace(), reviewSummary);
+
             float[] embedding = embeddingService.embed(retrievalText);
             doc.updateEmbedding(retrievalText, embedding, embeddingService.getModelName());
             log.info("재임베딩 완료 - placeId={}", placeId);

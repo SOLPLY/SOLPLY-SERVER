@@ -3,7 +3,6 @@ package org.sopt.solply_server.domain.place.util;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.review.entity.PlaceReviewSummary;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.springframework.stereotype.Component;
 
@@ -14,7 +13,7 @@ public class RetrievalTextBuilder {
      * retrieval_text 형식:
      * {장소명}은 {동네}에 위치한 {카테고리}다. {소개글}. {체크포인트들}. {태그 기반 문장들} 리뷰에서는 {리뷰 요약}이라는 평가가 자주 보인다.
      */
-    public String build(Place place, PlaceReviewSummary reviewSummary) {
+    public String build(Place place, String reviewSummary) {
         StringBuilder sb = new StringBuilder();
 
         String mainTagName = place.getMainTag()
@@ -51,11 +50,9 @@ public class RetrievalTextBuilder {
         }
 
         // 5. 리뷰 요약
-        if (reviewSummary != null
-                && reviewSummary.getSummaryContent() != null
-                && !reviewSummary.getSummaryContent().isBlank()) {
+        if (reviewSummary != null && !reviewSummary.isBlank()) {
             sb.append("리뷰에서는 ")
-                    .append(reviewSummary.getSummaryContent())
+                    .append(reviewSummary)
                     .append("이라는 평가가 자주 보인다.");
         }
 
