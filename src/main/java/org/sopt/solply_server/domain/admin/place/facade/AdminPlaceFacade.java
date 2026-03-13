@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.place.service.PlaceSearchDocumentService;
 import org.sopt.solply_server.domain.place.service.facade.PlaceEmbeddingFacade;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +23,7 @@ public class AdminPlaceFacade {
         return adminPlaceService.createPlace(adminUserId, request);
     }
 
+    @Transactional
     public AdminPlaceUpsertResponse updatePlace(Long placeId, AdminPlaceUpsertRequest request) {
         AdminPlaceUpsertResponse response = adminPlaceService.updatePlace(placeId, request);
         placeSearchDocumentService.markDirtyByPlaceId(placeId);
