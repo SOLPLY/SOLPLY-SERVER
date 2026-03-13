@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse
 import org.sopt.solply_server.domain.admin.tag.service.AdminTagService;
 import org.sopt.solply_server.domain.place.service.PlaceSearchDocumentService;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -29,12 +30,14 @@ public class AdminTagFacade {
         return adminTagService.getTagDetails(id);
     }
 
+    @Transactional
     public Long updateTag(Long id, AdminTagUpsertRequest request) {
         Long result = adminTagService.updateTag(id, request);
         placeSearchDocumentService.markDirtyByTagId(id);
         return result;
     }
 
+    @Transactional
     public AdminTagActivationResponse toggleActive(Long id, AdminTagActivationRequest request) {
         AdminTagActivationResponse response = adminTagService.toggleActive(id, request);
         placeSearchDocumentService.markDirtyByTagId(id);
