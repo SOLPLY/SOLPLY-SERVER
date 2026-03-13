@@ -3,7 +3,7 @@ package org.sopt.solply_server.domain.place.util;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceReviewSummary;
+import org.sopt.solply_server.domain.review.entity.PlaceReviewSummary;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.springframework.stereotype.Component;
 

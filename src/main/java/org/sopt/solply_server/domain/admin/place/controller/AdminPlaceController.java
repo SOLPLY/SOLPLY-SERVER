@@ -82,6 +82,13 @@ public class AdminPlaceController {
         return CustomApiResponse.success("장소 삭제 성공", null);
     }
 
+    @Operation(summary = "어드민 장소 임베딩 초기화", description = "INIT 상태인 장소 검색 문서를 일괄 임베딩합니다. 최초 데이터 적재 후 1회 호출합니다.")
+    @PostMapping("/search-documents/initialize")
+    public ResponseEntity<CustomApiResponse<Void>> initializePendingEmbeddings() {
+        adminPlaceFacade.initializePendingEmbeddings();
+        return CustomApiResponse.success("장소 임베딩 초기화 완료", null);
+    }
+
     @Operation(summary = "어드민 장소 리스트 조회", description = "townId 기준으로 장소 리스트를 조회합니다.")
     @GetMapping
     public ResponseEntity<CustomApiResponse<AdminPlaceListResponse>> getPlacesByTown(

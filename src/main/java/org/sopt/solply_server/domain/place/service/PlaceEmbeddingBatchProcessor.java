@@ -2,7 +2,7 @@ package org.sopt.solply_server.domain.place.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.place.entity.PlaceReviewSummary;
+import org.sopt.solply_server.domain.review.entity.PlaceReviewSummary;
 import org.sopt.solply_server.domain.place.entity.PlaceSearchDocument;
 import org.sopt.solply_server.domain.place.repository.PlaceSearchDocumentRepository;
 import org.sopt.solply_server.domain.place.util.RetrievalTextBuilder;

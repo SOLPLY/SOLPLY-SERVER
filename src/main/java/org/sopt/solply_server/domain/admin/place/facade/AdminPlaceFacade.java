@@ -41,4 +41,8 @@ public class AdminPlaceFacade {
     public void deletePlace(Long placeId) {
         adminPlaceService.deletePlace(placeId);
     }
+
+    public void initializePendingEmbeddings() {
+        placeSearchDocumentService.initializePendingDocuments();
+    }
 }

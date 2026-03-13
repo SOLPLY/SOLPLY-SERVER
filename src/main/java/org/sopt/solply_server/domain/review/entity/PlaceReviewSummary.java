@@ -1,4 +1,4 @@
-package org.sopt.solply_server.domain.place.entity;
+package org.sopt.solply_server.domain.review.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.global.entity.BaseTimeEntity;
 
 @Entity
