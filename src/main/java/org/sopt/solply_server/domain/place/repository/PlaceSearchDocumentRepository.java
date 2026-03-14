@@ -44,7 +44,7 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
     @Modifying
     @Query("""
             UPDATE PlaceSearchDocument psd
-            SET psd.status = 'DIRTY'
+            SET psd.status = 'DIRTY', psd.updatedAt = CURRENT_TIMESTAMP
             WHERE psd.status <> 'INIT'
               AND psd.placeId IN (
                 SELECT DISTINCT p.id FROM Place p JOIN p.placeTags pt WHERE pt.tag.id = :tagId
@@ -55,7 +55,7 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
     @Modifying
     @Query("""
             UPDATE PlaceSearchDocument psd
-            SET psd.status = 'DIRTY'
+            SET psd.status = 'DIRTY', psd.updatedAt = CURRENT_TIMESTAMP
             WHERE psd.status <> 'INIT'
               AND psd.placeId IN (
                 SELECT DISTINCT p.id FROM Place p JOIN p.placeTags pt WHERE pt.tag.id IN :tagIds
@@ -63,14 +63,4 @@ public interface PlaceSearchDocumentRepository extends JpaRepository<PlaceSearch
             """)
     int markDirtyByTagIds(@Param("tagIds") List<Long> tagIds);
 
-    @Modifying
-    @Query("""
-            UPDATE PlaceSearchDocument psd
-            SET psd.status = 'INIT'
-            WHERE psd.status = 'OBSOLETE'
-              AND psd.placeId IN (
-                SELECT p.id FROM Place p WHERE p.town.id IN :townIds
-              )
-            """)
-    int resetObsoleteByTownIds(@Param("townIds") List<Long> townIds);
 }

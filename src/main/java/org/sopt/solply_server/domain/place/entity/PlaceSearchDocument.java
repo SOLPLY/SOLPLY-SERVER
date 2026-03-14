@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.MapsId;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -53,19 +54,22 @@ public class PlaceSearchDocument extends BaseTimeEntity {
         return doc;
     }
 
-    public void updateEmbedding(String retrievalText, float[] embedding, String embeddingModel) {
+    /**
+     * 임베딩 결과를 반영합니다.
+     * startedAt 이후에 문서가 수정되었다면(updatedAt > startedAt) 임베딩 중 변경이 발생한 것이므로
+     * READY 대신 DIRTY 상태를 유지하여 다음 배치 사이클에 재임베딩되도록 합니다.
+     */
+    public void updateEmbedding(String retrievalText, float[] embedding, String embeddingModel, LocalDateTime startedAt) {
         this.retrievalText = retrievalText;
         this.embedding = embedding;
         this.embeddingModel = embeddingModel;
-        this.status = EmbeddingStatus.READY;
+        this.status = (this.updatedAt != null && this.updatedAt.isAfter(startedAt))
+                ? EmbeddingStatus.DIRTY
+                : EmbeddingStatus.READY;
     }
 
     public void markFailed() {
         this.status = EmbeddingStatus.FAILED;
-    }
-
-    public void markObsolete() {
-        this.status = EmbeddingStatus.OBSOLETE;
     }
 
     public void markDirty() {
