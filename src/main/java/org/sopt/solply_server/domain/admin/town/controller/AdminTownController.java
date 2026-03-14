@@ -4,7 +4,6 @@ import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownActivationR
 import org.sopt.solply_server.domain.admin.town.dto.request.AdminTownUpsertRequest;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListResponse;
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
-import org.sopt.solply_server.domain.admin.town.facade.AdminTownFacade;
 import org.sopt.solply_server.domain.admin.town.service.AdminTownService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -30,7 +29,6 @@ import lombok.RequiredArgsConstructor;
 @RequestMapping("/api/admin/towns")
 public class AdminTownController {
 	private final AdminTownService adminTownService;
-	private final AdminTownFacade adminTownFacade;
 
 	@Operation(summary = "어드민 지역/동네 생성", description = "어드민이 새 지역/동네를 생성합니다.")
 	@PostMapping
@@ -94,7 +92,7 @@ public class AdminTownController {
 	) {
 		return CustomApiResponse.success(
 			"지역/동네 활성화 상태 수정 성공",
-			adminTownFacade.updateTownStatus(townId, request)
+			adminTownService.updateTownStatus(townId, request)
 		);
 	}
 }

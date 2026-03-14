@@ -36,11 +36,4 @@ public class PlaceSearchDocumentService {
         int count = placeSearchDocumentRepository.markDirtyByTagIds(tagIds);
         log.info("PlaceSearchDocument DIRTY 전환 (태그 비활성화 cascade) - count={}", count);
     }
-
-    @Transactional
-    public void resetObsoleteByTownIds(List<Long> townIds) {
-        if (townIds == null || townIds.isEmpty()) return;
-        int count = placeSearchDocumentRepository.resetObsoleteByTownIds(townIds);
-        log.info("PlaceSearchDocument OBSOLETE→INIT 초기화 (동네 활성화) - count={}", count);
-    }
 }

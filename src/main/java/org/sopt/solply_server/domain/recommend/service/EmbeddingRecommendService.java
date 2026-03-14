@@ -41,6 +41,7 @@ public class EmbeddingRecommendService {
 
         float[] queryVector = embeddingService.embed(query);
 
+        // 서울 전체에 대한 처리를 위한 로직
         Town town = entityLoader.getActiveTown(townId);
         List<PlaceSearchDocument> candidates = town.getParent() == null
                 ? placeSearchDocumentRepository.findActiveByParentTownIdWithEmbedding(townId)
