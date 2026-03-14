@@ -1,7 +1,5 @@
 package org.sopt.solply_server.domain.place.service;
 
-import jakarta.persistence.EntityManager;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +27,6 @@ public class PlaceEmbeddingBatchProcessor {
     private final PlaceRepository placeRepository;
     private final RetrievalTextBuilder retrievalTextBuilder;
     private final EmbeddingService embeddingService;
-    private final EntityManager entityManager;
 
     /**
      * 단건 임베딩. 호출자의 트랜잭션 내에서 동작합니다.
@@ -41,12 +38,8 @@ public class PlaceEmbeddingBatchProcessor {
         try {
             PlaceRetrievalData data = buildRetrievalData(place, null);
             String retrievalText = retrievalTextBuilder.build(data);
-            // API 호출 직전 시점을 기록하여, 완료 후 그 사이 수정 여부를 판단합니다.
-            LocalDateTime startedAt = LocalDateTime.now();
             float[] embedding = embeddingService.embed(retrievalText);
-            // 외부 트랜잭션의 변경을 감지하기 위해 DB에서 최신 상태를 재조회합니다.
-            entityManager.refresh(doc);
-            doc.updateEmbedding(retrievalText, embedding, embeddingService.getModelName(), startedAt);
+            doc.updateEmbedding(retrievalText, embedding, embeddingService.getModelName());
             log.info("임베딩 완료 - placeId={}", doc.getPlaceId());
         } catch (Exception e) {
             doc.markFailed();
@@ -73,15 +66,10 @@ public class PlaceEmbeddingBatchProcessor {
 
         if (embeddableDocs.isEmpty()) return;
 
-        // API 호출 직전 시점을 기록하여, 완료 후 그 사이 수정된 문서를 감지합니다.
-        LocalDateTime startedAt = LocalDateTime.now();
         List<float[]> embeddings = embeddingService.embedAll(retrievalTexts);
 
         for (int i = 0; i < embeddableDocs.size(); i++) {
-            PlaceSearchDocument doc = embeddableDocs.get(i);
-            // 외부 트랜잭션의 변경(예: markDirtyByTagId)을 감지하기 위해 DB에서 최신 상태를 재조회합니다.
-            entityManager.refresh(doc);
-            doc.updateEmbedding(retrievalTexts.get(i), embeddings.get(i), embeddingService.getModelName(), startedAt);
+            embeddableDocs.get(i).updateEmbedding(retrievalTexts.get(i), embeddings.get(i), embeddingService.getModelName());
         }
 
         log.info("배치 임베딩 완료 - count={}", embeddableDocs.size());
