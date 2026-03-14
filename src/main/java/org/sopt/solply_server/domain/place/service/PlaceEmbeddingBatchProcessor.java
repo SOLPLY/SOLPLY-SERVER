@@ -44,6 +44,8 @@ public class PlaceEmbeddingBatchProcessor {
             // API 호출 직전 시점을 기록하여, 완료 후 그 사이 수정 여부를 판단합니다.
             LocalDateTime startedAt = LocalDateTime.now();
             float[] embedding = embeddingService.embed(retrievalText);
+            // 외부 트랜잭션의 변경을 감지하기 위해 DB에서 최신 상태를 재조회합니다.
+            entityManager.refresh(doc);
             doc.updateEmbedding(retrievalText, embedding, embeddingService.getModelName(), startedAt);
             log.info("임베딩 완료 - placeId={}", doc.getPlaceId());
         } catch (Exception e) {
