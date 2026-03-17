@@ -21,6 +21,7 @@ import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,12 +34,11 @@ import lombok.extern.slf4j.Slf4j;
 @Transactional(readOnly = true)
 public class AdminCourseService {
 	private final AdminCourseRepository adminCourseRepository;
-
 	private final AdminCoursePlaceService adminCoursePlaceService;
-
 	private final AdminEntityLoader adminEntityLoader;
 	private final AdminTagValidator adminTagValidator;
 	private final AdminTownValidator adminTownValidator;
+	private final EntityManager entityManager;
 
 	@Transactional
 	public AdminCourseUpsertResponse createCourse(final Long adminId, final AdminCourseUpsertRequest req) {
@@ -84,6 +84,7 @@ public class AdminCourseService {
 		course.updateCourseIntro(req.intro());
 
 		course.getCoursePlaces().clear();
+		entityManager.flush();
 		adminCoursePlaceService.addPlacesToCourse(course, req.placeList(), course.getTown().getId());
 
 		Tag tag= adminEntityLoader.getTag(req.tagId());

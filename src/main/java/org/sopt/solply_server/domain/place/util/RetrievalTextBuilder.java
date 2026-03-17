@@ -1,10 +1,7 @@
 package org.sopt.solply_server.domain.place.util;
 
 import java.util.List;
-import java.util.stream.Collectors;
-import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.domain.place.entity.PlaceReviewSummary;
-import org.sopt.solply_server.domain.tag.entity.Tag;
+import org.sopt.solply_server.domain.place.dto.PlaceRetrievalData;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -14,48 +11,36 @@ public class RetrievalTextBuilder {
      * retrieval_text 형식:
      * {장소명}은 {동네}에 위치한 {카테고리}다. {소개글}. {체크포인트들}. {태그 기반 문장들} 리뷰에서는 {리뷰 요약}이라는 평가가 자주 보인다.
      */
-    public String build(Place place, PlaceReviewSummary reviewSummary) {
+    public String build(PlaceRetrievalData data) {
         StringBuilder sb = new StringBuilder();
 
-        String mainTagName = place.getMainTag()
-                .filter(Tag::isActive)
-                .map(Tag::getName)
-                .orElse("장소");
-
         // 1. 기본 문장
-        sb.append(place.getName())
+        sb.append(data.placeName())
                 .append("은 ")
-                .append(place.getTown().getName())
+                .append(data.townName())
                 .append("에 위치한 ")
-                .append(mainTagName)
+                .append(data.mainTagName())
                 .append("다. ");
 
         // 2. 소개글
-        sb.append(place.getIntroduction()).append(". ");
+        sb.append(data.introduction()).append(". ");
 
         // 3. 체크포인트
-        List<String> checkpoints = place.getCheckpoints();
+        List<String> checkpoints = data.checkpoints();
         if (checkpoints != null && !checkpoints.isEmpty()) {
             sb.append(String.join(". ", checkpoints)).append(". ");
         }
 
-        // 4. 태그 기반 문장 (meaning이 있는 active 태그, main 태그 포함)
-        String tagMeanings = place.getTags().stream()
-                .filter(Tag::isActive)
-                .filter(t -> t.getMeaning() != null && !t.getMeaning().isBlank())
-                .map(Tag::getMeaning)
-                .collect(Collectors.joining(" "));
-
+        // 4. 태그 기반 문장
+        String tagMeanings = String.join(" ", data.tagMeanings());
         if (!tagMeanings.isBlank()) {
             sb.append(tagMeanings).append(" ");
         }
 
         // 5. 리뷰 요약
-        if (reviewSummary != null
-                && reviewSummary.getSummaryContent() != null
-                && !reviewSummary.getSummaryContent().isBlank()) {
+        if (data.reviewSummary() != null && !data.reviewSummary().isBlank()) {
             sb.append("리뷰에서는 ")
-                    .append(reviewSummary.getSummaryContent())
+                    .append(data.reviewSummary())
                     .append("이라는 평가가 자주 보인다.");
         }
 

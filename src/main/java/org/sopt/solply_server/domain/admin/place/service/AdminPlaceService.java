@@ -12,6 +12,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertRe
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
+import org.sopt.solply_server.domain.place.service.event.PlaceCreatedEvent;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -27,6 +28,7 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
+import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
+    private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
     private final ApplicationEventPublisher applicationEventPublisher;
@@ -83,6 +86,7 @@ public class AdminPlaceService {
         Place saved = adminPlaceRepository.save(place);
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
+        applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
 
         log.info("어드민 장소 생성 - adminId: {}, placeId: {}", adminUserId, saved.getId());
         return AdminPlaceUpsertResponse.of(saved.getId());
@@ -103,6 +107,9 @@ public class AdminPlaceService {
         // 이미지 키 검증
         List<String> imageKeys = normalizeKeys(req.imageFileKeys());
         imageFileKeyValidator.validateFileKeys(imageKeys);
+
+        place.clearTags();
+        entityManager.flush();
 
         place.update(
                 req.name(),

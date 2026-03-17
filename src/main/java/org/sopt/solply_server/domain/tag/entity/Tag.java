@@ -89,6 +89,10 @@ public class Tag {
         this.active = active;
     }
 
+    public void clearPersonaMappings() {
+        this.personaMappings.clear();
+    }
+
     public void replacePersonaMappings(List<UserPersona> personas, int weight) {
         this.personaMappings.clear();
         if (personas == null || personas.isEmpty()) return;

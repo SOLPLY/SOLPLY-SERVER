@@ -18,6 +18,7 @@ Example: `feat/#339-recommend-place-by-embedding`
 - Always include the issue number with `#` prefix
 - Use lowercase kebab-case for description
 - Keep it concise and readable
+- Always branch off from `develop` (not `main`)
 
 ## Examples
 ```text

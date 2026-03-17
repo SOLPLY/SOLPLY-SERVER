@@ -12,6 +12,7 @@ import org.sopt.solply_server.domain.recommend.dto.RecommendedPlaceDto;
 import org.sopt.solply_server.domain.recommend.dto.response.EmbeddingPlaceRecommendGetResponse;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
+import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.ai.CosineSimilarityUtil;
 import org.sopt.solply_server.global.ai.EmbeddingService;
@@ -40,8 +41,11 @@ public class EmbeddingRecommendService {
 
         float[] queryVector = embeddingService.embed(query);
 
-        List<PlaceSearchDocument> candidates =
-                placeSearchDocumentRepository.findActiveByTownIdWithEmbedding(townId);
+        // 서울 전체에 대한 처리를 위한 로직
+        Town town = entityLoader.getActiveTown(townId);
+        List<PlaceSearchDocument> candidates = town.getParent() == null
+                ? placeSearchDocumentRepository.findActiveByParentTownIdWithEmbedding(townId)
+                : placeSearchDocumentRepository.findActiveByTownIdWithEmbedding(townId);
 
         List<ScoredDoc> topDocs = candidates.stream()
                 .filter(doc -> {

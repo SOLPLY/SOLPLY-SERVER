@@ -1,7 +1,10 @@
 package org.sopt.solply_server.domain.admin.tag.service;
 
 
+import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagActivationRequest;
@@ -15,6 +18,7 @@ import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,8 +30,8 @@ public class AdminTagService {
 
     private final AdminTagRepository adminTagRepository;
     private final AdminEntityLoader adminEntityLoader;
-
     private final AdminTagValidator adminTagValidator;
+    private final EntityManager entityManager;
 
     @Transactional
     public Long createTag(AdminTagUpsertRequest req) {
@@ -93,6 +97,9 @@ public class AdminTagService {
 
         tag.updateBasic(req.type(), parent, req.name(), req.active(), req.usage());
 
+        tag.clearPersonaMappings();
+        entityManager.flush();
+
         // 하드코딩: 가중치
         tag.replacePersonaMappings(req.personas(), 1);
 
@@ -121,6 +128,19 @@ public class AdminTagService {
         return AdminTagActivationResponse.of(id, req.active());
     }
 
+
+    public List<Long> collectSubtreeIds(Long rootId) {
+        List<Long> ids = new ArrayList<>();
+        ids.add(rootId);
+        Queue<Long> queue = new LinkedList<>();
+        queue.add(rootId);
+        while (!queue.isEmpty()) {
+            List<Long> childIds = adminTagRepository.findChildIds(queue.poll());
+            ids.addAll(childIds);
+            queue.addAll(childIds);
+        }
+        return ids;
+    }
 
     private void deactivateCascade(Long parentId) {
         List<Tag> children = adminTagRepository.findChildren(parentId);
