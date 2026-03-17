@@ -33,9 +33,9 @@ Flyway로 관리. 스키마 변경 시 반드시 `V{n}__description.sql` 파일�
 
 ## GitHub 워크플로우
 
-상세 규칙: @docs/github-workflow.md
+상세 규칙: [github-workflow.md](./github-workflow.md)
 
-```
+```text
 이슈 생성 → 브랜치 생성 → 구현 → 커밋 → PR 오픈
 ```
 

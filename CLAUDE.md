@@ -29,12 +29,12 @@
 - `/review-plan` — 현재 플랜을 GPT 추론 모델에 전송하여 리스크·개선점을 검토받고 한국어로 요약 반환
 
 ## 세션 관리
-- **시작 시:** @TODO.md를 읽고 현재 상태를 파악한다.
+- **시작 시:** [TODO.md](./TODO.md)를 읽고 현재 상태를 파악한다.
 - **종료 전:** 완료된 항목을 체크하고, 새로 발견된 작업을 추가한다.
 - **병렬 작업:** TODO.md의 묶음 단위로 독립 태스크를 여러 에이전트에 분배한다.
 
 ## 참조 문서
-- 아키텍처 및 패키지 구조: @docs/architecture.md
-- 코드 컨벤션 및 GitHub 규칙: @docs/conventions.md
-- GitHub 워크플로우 상세: @docs/github-workflow.md
-- 현재 작업 목록: @TODO.md
+- 아키텍처 및 패키지 구조: [docs/architecture.md](docs/architecture.md)
+- 코드 컨벤션 및 GitHub 규칙: [docs/conventions.md](docs/conventions.md)
+- GitHub 워크플로우 상세: [docs/github-workflow.md](docs/github-workflow.md)
+- 현재 작업 목록: [TODO.md](./TODO.md)

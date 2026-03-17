@@ -50,7 +50,7 @@ graph TD
 
 ## 도메인 레이어 구조
 
-```
+```text
 domain/{도메인명}/
 ├── controller/   # API 엔드포인트
 ├── service/      # 비즈니스 로직
