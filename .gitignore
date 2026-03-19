@@ -87,3 +87,8 @@ jacoco.exec
 # ====================
 logs/
 .gitignore
+
+# ====================
+# Claude Code
+# ====================
+TODO.md
