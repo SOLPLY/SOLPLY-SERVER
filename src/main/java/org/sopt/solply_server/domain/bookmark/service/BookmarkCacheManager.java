@@ -78,8 +78,9 @@ public class BookmarkCacheManager {
             cacheService.zRem(key, targetId);
 
             // town ZSET이 비었으면 key 삭제 + towns-set에서도 제거
+            // null: 마지막 member 제거 시 Redis가 key를 자동 삭제한 경우 (cache miss와 동일하게 처리)
             Map<Long, Double> remaining = cacheService.zRevRangeWithScores(key);
-            if (remaining != null && remaining.isEmpty()) {
+            if (remaining == null || remaining.isEmpty()) {
                 cacheService.delete(key);
                 cacheService.sRem(townsSetKey(userId, type), townId);
             }
