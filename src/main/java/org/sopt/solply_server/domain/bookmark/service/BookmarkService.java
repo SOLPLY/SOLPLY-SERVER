@@ -1,7 +1,5 @@
 package org.sopt.solply_server.domain.bookmark.service;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,102 +24,63 @@ import org.springframework.transaction.annotation.Transactional;
 public class BookmarkService {
 
     private final BookmarkRepository bookmarkRepository;
-    private final BookmarkCacheManager bookmarkCacheManager;
     private final BookmarkTargetValidatorRegistry validatorRegistry;
     private final EntityLoader entityLoader;
     private final ApplicationEventPublisher eventPublisher;
 
-    /** 북마크 생성: DB 즉시 반영 + Redis Set(SADD) */
+    /**
+     * 북마크 생성: DB 즉시 반영 + 이벤트 발행 (AFTER_COMMIT 시 ZADD).
+     *
+     * @param townId 대상 장소/코스의 동네 ID
+     */
     @Transactional
-    public void create(Long userId, BookmarkTargetType type, Long targetId) {
+    public void create(Long userId, BookmarkTargetType type, Long targetId, Long townId) {
         User user = entityLoader.getUser(userId);
-        // FK 못거니까 서비스에서 대상 존재 검증
         validatorRegistry.validator(type).validate(targetId);
 
-        bookmarkRepository.save(Bookmark.create(user, type, targetId));
+        Bookmark saved = bookmarkRepository.save(Bookmark.create(user, type, targetId));
 
-        eventPublisher.publishEvent(new BookmarkCreatedEvent(userId, type, targetId));
+        eventPublisher.publishEvent(
+                new BookmarkCreatedEvent(userId, type, targetId, saved.getCreatedAt(), townId));
     }
 
-    /** 북마크 삭제: DB 즉시 반영 + Redis Set(SREM) */
+    /**
+     * 북마크 삭제: DB 즉시 반영 + 이벤트 발행 (AFTER_COMMIT 시 ZREM).
+     *
+     * @param townId 대상 장소/코스의 동네 ID
+     */
     @Transactional
-    public void delete(Long userId, BookmarkTargetType type, Long targetId) {
+    public void delete(Long userId, BookmarkTargetType type, Long targetId, Long townId) {
         boolean existed = bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
         if (existed) {
             bookmarkRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-            eventPublisher.publishEvent(new BookmarkDeletedEvent(userId, type, targetId));
+            eventPublisher.publishEvent(new BookmarkDeletedEvent(userId, type, targetId, townId));
         } else {
             log.debug("삭제할 북마크가 존재하지 않음 - userId={}, type={}, targetId={}", userId, type, targetId);
         }
     }
 
-    /** 단건 체크: Redis set 우선 -> DB fallback -> Redis backfill */
-    public boolean isBookmarked(Long userId, BookmarkTargetType type, Long targetId) {
-        // 1) ttl로 인해 데이터가 없으면: DB에서 전체 backfill
-        if (!bookmarkCacheManager.hasActiveSet(userId, type)) {
-            Set<Long> ids = getBookmarkedTargetIds(userId, type);
-            bookmarkCacheManager.addActiveAll(userId, type, ids);
-            return ids.contains(targetId);
-        }
-
-        // 2) key 있으면: Redis 우선
-        if (bookmarkCacheManager.isActive(userId, type, targetId)) return true;
-
-        // 3) 그래도 없으면 DB 확인 후 단건 보정
-        boolean exists = bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-        if (exists) bookmarkCacheManager.addActive(userId, type, targetId);
-        return exists;
+    /**
+     * DB 기반 북마크 여부 확인. Facade에서 ZSET 캐시 체크 실패 시 fallback으로 사용.
+     */
+    public boolean isBookmarkedFromDb(Long userId, BookmarkTargetType type, Long targetId) {
+        if (userId == null) return false;
+        return bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
     }
 
-    /** 조회: targetIds -> 북마크 여부 */
-    public Map<Long, Boolean> getBookmarkStatusMap(Long userId, BookmarkTargetType type, List<Long> targetIds) {
-        if (targetIds == null || targetIds.isEmpty()) return Map.of();
-
-        Set<Long> activeIds = getBookmarkedTargetIds(userId, type);
-
-        Map<Long, Boolean> result = new HashMap<>();
-        for (Long id : targetIds) {
-            result.put(id, activeIds.contains(id));
+    /**
+     * DB 배치 조회 기반 북마크 여부 맵.
+     * 다중 동네에 걸친 장소/코스 목록에 대한 북마크 여부 확인 시 사용.
+     * (단일 동네 목록은 Facade에서 ZSET 경로 사용)
+     */
+    public Map<Long, Boolean> getBookmarkStatusMap(Long userId, BookmarkTargetType type,
+            List<Long> targetIds) {
+        if (userId == null || targetIds == null || targetIds.isEmpty()) {
+            return targetIds == null ? Map.of()
+                    : targetIds.stream().collect(java.util.stream.Collectors.toMap(id -> id, id -> false));
         }
-        return result;
-    }
-
-    /** “활성 북마크 id들 가져오는 메서드” */
-    public Set<Long> getActiveBookmarkedIds(Long userId, BookmarkTargetType type) {
-        return getBookmarkedTargetIds(userId, type);
-    }
-
-    @Transactional(readOnly = true)
-    public Map<Long, LocalDateTime> getBookmarkCreatedAtMap(
-            Long userId,
-            BookmarkTargetType type
-    ) {
-        Set<Long> activeIds = getBookmarkedTargetIds(userId, type);
-        if (activeIds == null || activeIds.isEmpty()) return Map.of();
-        List<Bookmark> bookmarks = bookmarkRepository.findByUserIdAndTargetTypeAndTargetIdIn(
-                userId, type, activeIds
-        );
-
-        if (bookmarks.isEmpty()) return Map.of();
-
-        Map<Long, LocalDateTime> map = new HashMap<>();
-        for (Bookmark b : bookmarks) {
-            Long targetId = b.getTargetId();
-            LocalDateTime createdAt = b.getCreatedAt();
-            map.put(targetId, createdAt);
-        }
-        return map;
-    }
-
-    /** 북마크한 targetId 조회: 캐시 -> DB fallback (실패시) -> Redis backfill */
-    private Set<Long> getBookmarkedTargetIds(Long userId, BookmarkTargetType type) {
-        Set<Long> activeIds = bookmarkCacheManager.getActiveTargetIds(userId, type);
-        // 캐시 미스
-        if (activeIds == null) {
-            activeIds = bookmarkRepository.findBookmarkedTargetIds(userId, type);
-            bookmarkCacheManager.addActiveAll(userId, type, activeIds); // redis에 적재
-        }
-
-        return activeIds;
+        Set<Long> bookmarkedIds = bookmarkRepository.findBookmarkedTargetIds(userId, type);
+        return targetIds.stream()
+                .collect(java.util.stream.Collectors.toMap(id -> id, bookmarkedIds::contains));
     }
 }
