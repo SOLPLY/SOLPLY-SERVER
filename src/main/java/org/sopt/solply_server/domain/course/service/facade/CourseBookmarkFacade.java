@@ -182,6 +182,6 @@ public class CourseBookmarkFacade {
     private LocalDateTime toLocalDateTime(Object value) {
         if (value instanceof LocalDateTime ldt) return ldt;
         if (value instanceof Timestamp ts) return ts.toLocalDateTime();
-        throw new IllegalArgumentException("Unexpected created_at type: " + value.getClass());
+        throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
     }
 }

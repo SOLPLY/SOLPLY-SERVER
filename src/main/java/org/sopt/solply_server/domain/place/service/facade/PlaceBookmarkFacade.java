@@ -16,6 +16,8 @@ import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkCacheManager;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -181,6 +183,6 @@ public class PlaceBookmarkFacade {
     private LocalDateTime toLocalDateTime(Object value) {
         if (value instanceof LocalDateTime ldt) return ldt;
         if (value instanceof Timestamp ts) return ts.toLocalDateTime();
-        throw new IllegalArgumentException("Unexpected created_at type: " + value.getClass());
+        throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
     }
 }
