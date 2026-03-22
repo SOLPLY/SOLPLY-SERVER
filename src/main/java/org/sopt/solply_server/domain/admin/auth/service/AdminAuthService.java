@@ -65,9 +65,6 @@ public class AdminAuthService {
 
         User user = findAdminUser(profile);
 
-        TokenCollectionDto tokens = jwtTokenProvider.createTokenCollection(user.getId(), SocialPlatform.KAKAO);
-        refreshTokenRepository.save(user.getId(), tokens.refreshToken());
-
         String authCode = UUID.randomUUID().toString();
         adminAuthCodeRepository.save(authCode, user.getId(), SocialPlatform.KAKAO);
 
@@ -84,8 +81,17 @@ public class AdminAuthService {
         }
 
         String[] parts = value.split(":");
-        Long userId = Long.parseLong(parts[0]);
-        SocialPlatform platform = SocialPlatform.valueOf(parts[1]);
+        if (parts.length != 2) {
+            throw new BusinessException(ErrorCode.INVALID_ADMIN_AUTH_CODE);
+        }
+        Long userId;
+        SocialPlatform platform;
+        try {
+            userId = Long.parseLong(parts[0]);
+            platform = SocialPlatform.valueOf(parts[1]);
+        } catch (NumberFormatException | IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_ADMIN_AUTH_CODE);
+        }
 
         TokenCollectionDto tokens = jwtTokenProvider.createTokenCollection(userId, platform);
         refreshTokenRepository.save(userId, tokens.refreshToken());
