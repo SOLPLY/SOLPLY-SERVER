@@ -150,13 +150,7 @@ public class PlaceService {
             return PlaceFolderPreviewListGetResponse.from(List.of());
         }
 
-        // placeId -> Place 맵으로 변환 후 DTO 생성
-        Map<Long, Place> placeMap = places.stream()
-                .collect(Collectors.toMap(Place::getId, Function.identity()));
-
-        List<PlaceFolderPreviewDto> dtos = latestPlaceIdByTown.entrySet().stream()
-                .map(e -> placeMap.get(e.getValue()))
-                .filter(Objects::nonNull)
+        List<PlaceFolderPreviewDto> dtos = places.stream()
                 .map(place -> {
                     Town town = place.getTown();
                     return PlaceFolderPreviewDto.of(
