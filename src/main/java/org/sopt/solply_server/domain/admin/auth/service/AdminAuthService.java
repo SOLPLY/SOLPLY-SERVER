@@ -4,6 +4,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.admin.auth.dto.response.AdminAuthTokenResponse;
+import org.sopt.solply_server.domain.admin.auth.dto.response.KakaoAuthUrlResult;
 import org.sopt.solply_server.domain.admin.auth.repository.AdminAuthCodeRepository;
 import org.sopt.solply_server.domain.admin.auth.repository.AdminOAuthStateRepository;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
@@ -44,21 +45,24 @@ public class AdminAuthService {
     @Value("${admin.redirect-uri}")
     private String adminRedirectUri;
 
-    public String getKakaoAuthUrl() {
+    public KakaoAuthUrlResult generateKakaoAuthUrl() {
         String state = UUID.randomUUID().toString();
-        adminOAuthStateRepository.save(state);
+        String nonce = UUID.randomUUID().toString();
+        adminOAuthStateRepository.save(state, nonce);
 
-        return UriComponentsBuilder.fromHttpUrl(kakaoOAuthProperties.getAuthorizationUrl())
+        String url = UriComponentsBuilder.fromHttpUrl(kakaoOAuthProperties.getAuthorizationUrl())
                 .queryParam("client_id", kakaoOAuthProperties.getClientId())
                 .queryParam("redirect_uri", kakaoOAuthProperties.getRedirectUri())
                 .queryParam("response_type", "code")
                 .queryParam("state", state)
                 .build()
                 .toUriString();
+
+        return new KakaoAuthUrlResult(url, nonce);
     }
 
-    public String processKakaoCallback(String code, String state) {
-        if (!adminOAuthStateRepository.validateAndConsume(state)) {
+    public String processKakaoCallback(String code, String state, String nonce) {
+        if (!adminOAuthStateRepository.validateAndConsume(state, nonce)) {
             throw new BusinessException(ErrorCode.INVALID_OAUTH_STATE);
         }
         KakaoTokenResponse tokenResponse = kakaoAuthClient.getToken(

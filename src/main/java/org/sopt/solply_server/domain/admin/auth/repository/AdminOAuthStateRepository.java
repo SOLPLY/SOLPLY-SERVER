@@ -16,11 +16,14 @@ public class AdminOAuthStateRepository {
 
     private final RedisTemplate<String, String> redisTemplate;
 
-    public void save(String state) {
+    /**
+     * state → nonce 매핑 저장. nonce는 요청을 시작한 클라이언트를 식별하는 HttpOnly 쿠키 값.
+     */
+    public void save(String state, String nonce) {
         try {
             redisTemplate.opsForValue().set(
                     KEY_PREFIX + state,
-                    "valid",
+                    nonce,
                     TTL_MINUTES,
                     TimeUnit.MINUTES
             );
@@ -30,11 +33,13 @@ public class AdminOAuthStateRepository {
     }
 
     /**
-     * 존재 여부 확인 후 즉시 삭제 (일회용 보장, GETDEL로 원자적 처리)
+     * state에 저장된 nonce를 원자적으로 조회·삭제 후, 전달받은 nonce와 일치하는지 검증.
+     * nonce 불일치 또는 state 미존재 시 false 반환.
      */
-    public boolean validateAndConsume(String state) {
+    public boolean validateAndConsume(String state, String nonce) {
         try {
-            return redisTemplate.opsForValue().getAndDelete(KEY_PREFIX + state) != null;
+            String stored = redisTemplate.opsForValue().getAndDelete(KEY_PREFIX + state);
+            return stored != null && stored.equals(nonce);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
         }
