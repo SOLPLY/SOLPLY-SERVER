@@ -33,5 +33,5 @@ scenarios:
     weight: 50
     flow:
       - get:
-          url: "/api/courses/bookmarks/folders/preview"
-          name: "GET /api/courses/bookmarks/folders/preview"
+          url: "/api/courses/bookmarks/folders"
+          name: "GET /api/courses/bookmarks/folders"
