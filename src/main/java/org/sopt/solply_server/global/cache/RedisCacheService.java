@@ -365,15 +365,13 @@ public class RedisCacheService implements CacheService {
     @Override
     public Set<Long> sMembers(String key) {
         try {
-            if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
-                return null; // cache miss
-            }
-
+            // hasKey() 없이 단일 RTT로 조회.
+            // 빈 결과는 키 부재(또는 hasKey-members 사이 만료)를 의미하므로 cache miss로 처리.
+            // "적재됐지만 비어있음"은 sentinel(-1L)로 표현되므로 빈 Set은 항상 miss.
             Set<String> raw = stringRedisTemplate.opsForSet().members(key);
             if (raw == null || raw.isEmpty()) {
-                return Set.of();
+                return null; // cache miss
             }
-
             return raw.stream()
                     .map(Long::parseLong)
                     .collect(Collectors.toUnmodifiableSet());
@@ -440,13 +438,13 @@ public class RedisCacheService implements CacheService {
     @Override
     public Map<Long, Double> zRevRangeWithScores(String key) {
         try {
-            if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
-                return null; // cache miss
-            }
+            // hasKey() 없이 단일 RTT로 조회.
+            // 빈 결과는 키 부재(또는 hasKey-range 사이 만료)를 의미하므로 cache miss로 처리.
+            // "적재됐지만 비어있음"은 sentinel(-1L)로 표현되므로 빈 Set은 항상 miss.
             Set<ZSetOperations.TypedTuple<String>> tuples =
                     stringRedisTemplate.opsForZSet().reverseRangeWithScores(key, 0, -1);
             if (tuples == null || tuples.isEmpty()) {
-                return Map.of();
+                return null; // cache miss
             }
             // LinkedHashMap으로 ZREVRANGE 순서(score 내림차순) 보존
             Map<Long, Double> result = new LinkedHashMap<>();
