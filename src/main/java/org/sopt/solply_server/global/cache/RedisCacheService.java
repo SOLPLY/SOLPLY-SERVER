@@ -364,21 +364,23 @@ public class RedisCacheService implements CacheService {
 
     @Override
     public Set<Long> sMembers(String key) {
-        // key 자체가 없으면 cache miss
-        if (!stringRedisTemplate.hasKey(key)) {
-            return null;
+        try {
+            if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
+                return null; // cache miss
+            }
+
+            Set<String> raw = stringRedisTemplate.opsForSet().members(key);
+            if (raw == null || raw.isEmpty()) {
+                return Set.of();
+            }
+
+            return raw.stream()
+                    .map(Long::parseLong)
+                    .collect(Collectors.toUnmodifiableSet());
+        } catch (DataAccessException e) {
+            log.error("[Redis] sMembers failed. key={}", key, e);
+            return null; // cache miss로 처리
         }
-
-        // key가 있으면 members 조회
-        Set<String> raw = stringRedisTemplate.opsForSet().members(key);
-
-        if (raw == null || raw.isEmpty()) {
-            return Set.of(); // 정상 empty
-        }
-
-        return raw.stream()
-                .map(Long::parseLong)
-                .collect(Collectors.toUnmodifiableSet());
     }
 
     @Override
