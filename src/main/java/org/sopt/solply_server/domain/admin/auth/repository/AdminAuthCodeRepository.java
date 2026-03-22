@@ -31,16 +31,11 @@ public class AdminAuthCodeRepository {
     }
 
     /**
-     * 조회 후 즉시 삭제 (일회용 보장)
+     * 조회 후 즉시 삭제 (일회용 보장, GETDEL로 원자적 처리)
      */
     public String pop(String authCode) {
         try {
-            String key = KEY_PREFIX + authCode;
-            String value = redisTemplate.opsForValue().get(key);
-            if (value != null) {
-                redisTemplate.delete(key);
-            }
-            return value;
+            return redisTemplate.opsForValue().getAndDelete(KEY_PREFIX + authCode);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
         }
