@@ -62,4 +62,18 @@ public interface CacheService {
 
     void expire(String key, long timeout, TimeUnit unit);
     Boolean hasKey(String key);
+
+    // == Sorted Set (ZSET) 연산 == //
+
+    void zAdd(String key, Long member, double score);
+
+    void zAddAll(String key, Map<Long, Double> memberScores);
+
+    void zRem(String key, Long member);
+
+    /** score 내림차순으로 (member → score) 반환. key 없으면 null (cache miss) */
+    Map<Long, Double> zRevRangeWithScores(String key);
+
+    /** member의 score 반환. member 없거나 key 없으면 null */
+    Double zScore(String key, Long member);
 }

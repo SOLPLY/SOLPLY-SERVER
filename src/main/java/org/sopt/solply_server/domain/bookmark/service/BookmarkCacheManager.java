@@ -1,7 +1,13 @@
 package org.sopt.solply_server.domain.bookmark.service;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
@@ -14,45 +20,125 @@ import org.springframework.stereotype.Component;
 public class BookmarkCacheManager {
 
     private final CacheService cacheService;
-    private static final long ACTIVE_SET_TTL_DAYS = 1;
+    private static final long ZSET_TTL_DAYS = 1;
 
-    private String createActiveSetKey(Long userId, BookmarkTargetType type) {
-        return "bookmark:active-set:%d:%s".formatted(userId, type.name());
+    // == Key Patterns == //
+
+    /** bookmark:sorted-set:{userId}:{type}:{townId} */
+    private String zsetKey(Long userId, BookmarkTargetType type, Long townId) {
+        return "bookmark:sorted-set:%d:%s:%d".formatted(userId, type.name(), townId);
     }
 
-    /** 활성 북마크 set에 targetId 추가 (SADD) */
-    public void addActive(Long userId, BookmarkTargetType type, Long targetId) {
-        String key = createActiveSetKey(userId, type);
-        cacheService.sAdd(key, targetId);
-        cacheService.expire(key, ACTIVE_SET_TTL_DAYS, TimeUnit.DAYS);
+    /** bookmark:towns-set:{userId}:{type} — townId들을 추적하는 Set */
+    private String townsSetKey(Long userId, BookmarkTargetType type) {
+        return "bookmark:towns-set:%d:%s".formatted(userId, type.name());
     }
 
-    /** 활성 북마크 set에서 targetId 제거 (SREM) */
+    // == ZSET 연산 == //
 
-    public void removeActive(Long userId, BookmarkTargetType type, Long targetId) {
-        String key = createActiveSetKey(userId, type);
-        cacheService.sRem(key, targetId);
-        cacheService.expire(key, ACTIVE_SET_TTL_DAYS, TimeUnit.DAYS);
+    /** 북마크 추가 (해당 town ZSET이 존재하는 경우에만 갱신) */
+    public void addIfPresent(Long userId, BookmarkTargetType type, Long targetId,
+            LocalDateTime createdAt, Long townId) {
+        String key = zsetKey(userId, type, townId);
+        if (!Boolean.TRUE.equals(cacheService.hasKey(key))) return;
+
+        double score = toScore(createdAt);
+        cacheService.zAdd(key, targetId, score);
+        cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
+
+        // towns-set도 갱신
+        if (Boolean.TRUE.equals(cacheService.hasKey(townsSetKey(userId, type)))) {
+            cacheService.sAdd(townsSetKey(userId, type), townId);
+        }
     }
 
-    /** 활성 북마크 targetId들 반환 (SMEMBERS) */
-    public Set<Long> getActiveTargetIds(Long userId, BookmarkTargetType type) {
-        return cacheService.sMembers(createActiveSetKey(userId, type));
+    /** 북마크 제거 (ZREM; key 없으면 no-op) */
+    public void remove(Long userId, BookmarkTargetType type, Long targetId, Long townId) {
+        String key = zsetKey(userId, type, townId);
+        cacheService.zRem(key, targetId);
+
+        // town ZSET이 비었으면 key 삭제 + towns-set에서도 제거
+        Map<Long, Double> remaining = cacheService.zRevRangeWithScores(key);
+        if (remaining != null && remaining.isEmpty()) {
+            cacheService.delete(key);
+            cacheService.sRem(townsSetKey(userId, type), townId);
+        }
     }
 
-    /** 활성 여부 (SISMEMBER) */
-    public boolean isActive(Long userId, BookmarkTargetType type, Long targetId) {
-        return cacheService.sIsMember(createActiveSetKey(userId, type), targetId);
+    /**
+     * 특정 town의 북마크 전체 적재 (cache miss 시 backfill 용도)
+     * score 내림차순(최신순)으로 저장됨
+     */
+    public void addAll(Long userId, BookmarkTargetType type, Long townId,
+            Map<Long, LocalDateTime> targetCreatedAtMap) {
+        if (targetCreatedAtMap == null || targetCreatedAtMap.isEmpty()) return;
+        String key = zsetKey(userId, type, townId);
+        Map<Long, Double> scores = targetCreatedAtMap.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> toScore(e.getValue())));
+        cacheService.zAddAll(key, scores);
+        cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
     }
 
-    /** 여러 개 한번에 추가 */
-    public void addActiveAll(Long userId, BookmarkTargetType type, Set<Long> targetIds) {
-        String key = createActiveSetKey(userId, type);
-        cacheService.sAddAll(key, targetIds);
-        cacheService.expire(key, ACTIVE_SET_TTL_DAYS, TimeUnit.DAYS);
+    /** 특정 town ZSET 존재 여부 */
+    public boolean hasKey(Long userId, BookmarkTargetType type, Long townId) {
+        return Boolean.TRUE.equals(cacheService.hasKey(zsetKey(userId, type, townId)));
     }
 
-    public boolean hasActiveSet(Long userId, BookmarkTargetType type) {
-        return Boolean.TRUE.equals(cacheService.hasKey(createActiveSetKey(userId, type)));
+    /**
+     * 특정 town의 북마크 targetId들을 최신순(score 내림차순)으로 반환.
+     * key 없으면 null (cache miss).
+     */
+    public List<Long> getActiveOrderedIds(Long userId, BookmarkTargetType type, Long townId) {
+        Map<Long, Double> withScores = cacheService.zRevRangeWithScores(zsetKey(userId, type, townId));
+        if (withScores == null) return null; // cache miss
+        return new ArrayList<>(withScores.keySet()); // LinkedHashMap 순서 유지
+    }
+
+    /**
+     * 특정 town에서 가장 최근에 북마크한 targetId 1개 반환.
+     * key 없거나 비었으면 null.
+     */
+    public Long getLatestId(Long userId, BookmarkTargetType type, Long townId) {
+        List<Long> ordered = getActiveOrderedIds(userId, type, townId);
+        if (ordered == null || ordered.isEmpty()) return null;
+        return ordered.getFirst(); // ZREVRANGE 첫 번째 = score 최대 (최신)
+    }
+
+    /**
+     * 북마크 여부 확인 (ZSCORE != null).
+     * key 없으면 false (backfill은 호출자가 처리).
+     */
+    public boolean isActive(Long userId, BookmarkTargetType type, Long targetId, Long townId) {
+        return cacheService.zScore(zsetKey(userId, type, townId), targetId) != null;
+    }
+
+    // == Towns-Set 연산 == //
+
+    /** 해당 사용자의 북마크 동네 Set 존재 여부 */
+    public boolean hasTownsSet(Long userId, BookmarkTargetType type) {
+        return Boolean.TRUE.equals(cacheService.hasKey(townsSetKey(userId, type)));
+    }
+
+    /**
+     * 북마크가 있는 townId들 반환.
+     * towns-set 없으면 null (cache miss).
+     */
+    public Set<Long> getActiveTownIds(Long userId, BookmarkTargetType type) {
+        if (!hasTownsSet(userId, type)) return null;
+        return cacheService.sMembers(townsSetKey(userId, type));
+    }
+
+    /** 전체 backfill 완료 후 towns-set 초기화 */
+    public void setTownIds(Long userId, BookmarkTargetType type, Set<Long> townIds) {
+        if (townIds == null || townIds.isEmpty()) return;
+        String key = townsSetKey(userId, type);
+        cacheService.sAddAll(key, townIds);
+        cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
+    }
+
+    // == Private == //
+
+    private double toScore(LocalDateTime dt) {
+        return dt.toEpochSecond(ZoneOffset.UTC);
     }
 }
