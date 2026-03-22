@@ -32,6 +32,7 @@ public class SecurityConfig {
 
     private static final String[] AUTH_WHITELIST = {
             "/api/auth/**", // 로그인, 회원가입, 토큰 재발급
+            "/api/admin/auth/**", // 어드민 소셜 로그인
             "/swagger-ui/**",
             "/v3/api-docs/**",
             "/api/test/**", // 테스트용 API
