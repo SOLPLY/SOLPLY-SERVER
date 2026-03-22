@@ -30,6 +30,18 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
         select b.targetId
         from Bookmark b
         where b.user.id = :userId
+          and b.targetType = :targetType
+          and b.targetId in :targetIds
+    """)
+    Set<Long> findBookmarkedTargetIdsByTargetIds(
+            @Param("userId") Long userId,
+            @Param("targetType") BookmarkTargetType targetType,
+            @Param("targetIds") List<Long> targetIds);
+
+    @Query("""
+        select b.targetId
+        from Bookmark b
+        where b.user.id = :userId
           and b.targetType = :type
           and b.createdAt >= :since
     """)

@@ -77,10 +77,12 @@ public class BookmarkService {
             List<Long> targetIds) {
         if (userId == null || targetIds == null || targetIds.isEmpty()) {
             return targetIds == null ? Map.of()
-                    : targetIds.stream().collect(java.util.stream.Collectors.toMap(id -> id, id -> false));
+                    : targetIds.stream().collect(
+                            java.util.stream.Collectors.toMap(id -> id, id -> false, (a, b) -> a));
         }
-        Set<Long> bookmarkedIds = bookmarkRepository.findBookmarkedTargetIds(userId, type);
+        Set<Long> bookmarkedIds = bookmarkRepository.findBookmarkedTargetIdsByTargetIds(userId, type, targetIds);
         return targetIds.stream()
-                .collect(java.util.stream.Collectors.toMap(id -> id, bookmarkedIds::contains));
+                .collect(java.util.stream.Collectors.toMap(
+                        id -> id, bookmarkedIds::contains, (a, b) -> a));
     }
 }
