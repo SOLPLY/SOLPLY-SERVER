@@ -408,7 +408,7 @@ public class RedisCacheService implements CacheService {
             stringRedisTemplate.opsForZSet().add(key, String.valueOf(member), score);
         } catch (DataAccessException e) {
             log.error("[Redis] zAdd failed. key={}, member={}, score={}", key, member, score, e);
-            throw e;
+            throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
         }
     }
 
@@ -431,7 +431,7 @@ public class RedisCacheService implements CacheService {
             stringRedisTemplate.opsForZSet().remove(key, String.valueOf(member));
         } catch (DataAccessException e) {
             log.error("[Redis] zRem failed. key={}, member={}", key, member, e);
-            throw e;
+            throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
         }
     }
 
