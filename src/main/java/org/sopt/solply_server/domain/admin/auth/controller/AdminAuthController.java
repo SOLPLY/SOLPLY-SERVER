@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.admin.auth.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.net.URI;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "어드민(로그인) API", description = "어드민 로그인 Admin용 API")
 @RestController
 @RequestMapping("/api/admin/auth")
 @RequiredArgsConstructor
