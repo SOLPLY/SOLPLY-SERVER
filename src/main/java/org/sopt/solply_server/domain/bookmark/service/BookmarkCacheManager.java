@@ -38,12 +38,21 @@ public class BookmarkCacheManager {
 
     /**
      * 북마크 추가 (해당 town ZSET이 존재하는 경우에만 갱신).
+     * ZSET이 없는 새 동네 첫 북마크인 경우, towns-set이 캐시되어 있으면
+     * stale해지므로 invalidate하여 다음 프리뷰 읽기 시 fullBackfill을 유도한다.
      * ZADD 실패 시 stale 데이터 방지를 위해 키를 invalidate한다.
      */
     public void addIfPresent(Long userId, BookmarkTargetType type, Long targetId,
             LocalDateTime createdAt, Long townId) {
         String key = zsetKey(userId, type, townId);
-        if (!Boolean.TRUE.equals(cacheService.hasKey(key))) return;
+        if (!Boolean.TRUE.equals(cacheService.hasKey(key))) {
+            // 새 동네 첫 북마크: towns-set이 있으면 이 동네가 누락되므로 invalidate
+            String townsKey = townsSetKey(userId, type);
+            if (Boolean.TRUE.equals(cacheService.hasKey(townsKey))) {
+                cacheService.delete(townsKey);
+            }
+            return;
+        }
 
         try {
             cacheService.zAdd(key, targetId, toScore(createdAt));
