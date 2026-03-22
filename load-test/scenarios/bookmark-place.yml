@@ -16,7 +16,7 @@ config:
       headers:
         Authorization: "Bearer {{ $env.TEST_TOKEN }}"
   plugins:
-    artillery-plugin-metrics-by-endpoint:
+    metrics-by-endpoint:
       useOnlyRequestNames: true
 
 scenarios:
