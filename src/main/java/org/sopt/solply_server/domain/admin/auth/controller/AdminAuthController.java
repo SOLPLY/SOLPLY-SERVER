@@ -32,8 +32,8 @@ public class AdminAuthController {
     }
 
     @GetMapping("/kakao/callback")
-    public ResponseEntity<Void> kakaoCallback(@RequestParam String code) {
-        String redirectUrl = adminAuthService.processKakaoCallback(code);
+    public ResponseEntity<Void> kakaoCallback(@RequestParam String code, @RequestParam String state) {
+        String redirectUrl = adminAuthService.processKakaoCallback(code, state);
         return ResponseEntity.status(302)
                 .location(URI.create(redirectUrl))
                 .build();

@@ -39,6 +39,7 @@ public enum ErrorCode {
     INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH-009", "유효하지 않은 토큰입니다."),
     NOT_ADMIN_USER(HttpStatus.FORBIDDEN, "AUTH-010", "어드민 권한이 없는 사용자입니다."),
     INVALID_ADMIN_AUTH_CODE(HttpStatus.UNAUTHORIZED, "AUTH-011", "유효하지 않거나 만료된 인증 코드입니다."),
+    INVALID_OAUTH_STATE(HttpStatus.UNAUTHORIZED, "AUTH-012", "유효하지 않거나 만료된 OAuth state 값입니다."),
 
     // 소셜 로그인 관련 (SOCIAL-xxx)
     UNSUPPORTED_OAUTH_PROVIDER(HttpStatus.BAD_REQUEST, "SOCIAL-001", "지원하지 않는 OAuth 플랫폼입니다."),

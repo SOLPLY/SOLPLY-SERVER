@@ -1,9 +1,11 @@
 package org.sopt.solply_server.domain.admin.auth.service;
 
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.admin.auth.dto.response.AdminAuthTokenResponse;
 import org.sopt.solply_server.domain.admin.auth.repository.AdminAuthCodeRepository;
+import org.sopt.solply_server.domain.admin.auth.repository.AdminOAuthStateRepository;
 import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
 import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -36,21 +38,29 @@ public class AdminAuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenRepository refreshTokenRepository;
     private final AdminAuthCodeRepository adminAuthCodeRepository;
+    private final AdminOAuthStateRepository adminOAuthStateRepository;
     private final KakaoOAuthProperties kakaoOAuthProperties;
 
     @Value("${admin.redirect-uri}")
     private String adminRedirectUri;
 
     public String getKakaoAuthUrl() {
+        String state = UUID.randomUUID().toString();
+        adminOAuthStateRepository.save(state);
+
         return UriComponentsBuilder.fromHttpUrl(kakaoOAuthProperties.getAuthorizationUrl())
                 .queryParam("client_id", kakaoOAuthProperties.getClientId())
                 .queryParam("redirect_uri", kakaoOAuthProperties.getRedirectUri())
                 .queryParam("response_type", "code")
+                .queryParam("state", state)
                 .build()
                 .toUriString();
     }
 
-    public String processKakaoCallback(String code) {
+    public String processKakaoCallback(String code, String state) {
+        if (!adminOAuthStateRepository.validateAndConsume(state)) {
+            throw new BusinessException(ErrorCode.INVALID_OAUTH_STATE);
+        }
         KakaoTokenResponse tokenResponse = kakaoAuthClient.getToken(
                 GRANT_TYPE,
                 kakaoOAuthProperties.getClientId(),
@@ -106,9 +116,12 @@ public class AdminAuthService {
     private User findAdminUser(KakaoSocialUserProfile profile) {
         String socialCode = buildSocialCode(SocialPlatform.KAKAO, String.valueOf(profile.getId()));
 
+        String email = profile.getEmail();
         User user = socialUserInfoRepository.findAnyUserIdBySocialCode(socialCode)
                 .flatMap(userRepository::findById)
-                .or(() -> userRepository.findAnyByEmail(profile.getEmail()))
+                .or(() -> email != null && !email.isBlank()
+                        ? userRepository.findAnyByEmail(email)
+                        : Optional.empty())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
 
         if (user.getRole() != UserRole.ADMIN) {
