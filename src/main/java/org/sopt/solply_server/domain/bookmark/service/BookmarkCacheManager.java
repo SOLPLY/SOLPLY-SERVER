@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 public class BookmarkCacheManager {
 
     private final CacheService cacheService;
-    private static final long ZSET_TTL_DAYS = 1;
+    private static final long ZSET_TTL_HOURS = 1;
 
     // == Key Patterns == //
 
@@ -47,7 +47,7 @@ public class BookmarkCacheManager {
 
         try {
             cacheService.zAdd(key, targetId, toScore(createdAt));
-            cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
+            cacheService.expire(key, ZSET_TTL_HOURS, TimeUnit.HOURS);
 
             if (Boolean.TRUE.equals(cacheService.hasKey(townsSetKey(userId, type)))) {
                 cacheService.sAdd(townsSetKey(userId, type), townId);
@@ -92,7 +92,7 @@ public class BookmarkCacheManager {
         Map<Long, Double> scores = targetCreatedAtMap.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> toScore(e.getValue())));
         cacheService.zAddAll(key, scores);
-        cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
+        cacheService.expire(key, ZSET_TTL_HOURS, TimeUnit.HOURS);
     }
 
     /** 특정 town ZSET 존재 여부 */
@@ -149,7 +149,7 @@ public class BookmarkCacheManager {
         if (townIds == null || townIds.isEmpty()) return;
         String key = townsSetKey(userId, type);
         cacheService.sAddAll(key, townIds);
-        cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
+        cacheService.expire(key, ZSET_TTL_HOURS, TimeUnit.HOURS);
     }
 
     // == Private == //
