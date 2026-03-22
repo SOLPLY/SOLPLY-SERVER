@@ -36,19 +36,25 @@ public class BookmarkCacheManager {
 
     // == ZSET 연산 == //
 
-    /** 북마크 추가 (해당 town ZSET이 존재하는 경우에만 갱신) */
+    /**
+     * 북마크 추가 (해당 town ZSET이 존재하는 경우에만 갱신).
+     * ZADD 실패 시 stale 데이터 방지를 위해 키를 invalidate한다.
+     */
     public void addIfPresent(Long userId, BookmarkTargetType type, Long targetId,
             LocalDateTime createdAt, Long townId) {
         String key = zsetKey(userId, type, townId);
         if (!Boolean.TRUE.equals(cacheService.hasKey(key))) return;
 
-        double score = toScore(createdAt);
-        cacheService.zAdd(key, targetId, score);
-        cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
+        try {
+            cacheService.zAdd(key, targetId, toScore(createdAt));
+            cacheService.expire(key, ZSET_TTL_DAYS, TimeUnit.DAYS);
 
-        // towns-set도 갱신
-        if (Boolean.TRUE.equals(cacheService.hasKey(townsSetKey(userId, type)))) {
-            cacheService.sAdd(townsSetKey(userId, type), townId);
+            if (Boolean.TRUE.equals(cacheService.hasKey(townsSetKey(userId, type)))) {
+                cacheService.sAdd(townsSetKey(userId, type), townId);
+            }
+        } catch (Exception e) {
+            log.warn("[Cache] ZADD 실패, 캐시 키 무효화 - key={}", key, e);
+            cacheService.delete(key);
         }
     }
 

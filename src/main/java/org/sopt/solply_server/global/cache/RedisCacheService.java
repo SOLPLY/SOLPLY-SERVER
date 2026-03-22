@@ -410,6 +410,7 @@ public class RedisCacheService implements CacheService {
             stringRedisTemplate.opsForZSet().add(key, String.valueOf(member), score);
         } catch (DataAccessException e) {
             log.error("[Redis] zAdd failed. key={}, member={}, score={}", key, member, score, e);
+            throw e;
         }
     }
 
