@@ -1,0 +1,37 @@
+config:
+  target: "http://localhost:8082"
+  phases:
+    - name: "Warm up"
+      duration: 30
+      arrivalRate: 5
+    - name: "Ramp up"
+      duration: 60
+      arrivalRate: 10
+      rampTo: 50
+    - name: "Sustained load"
+      duration: 120
+      arrivalRate: 50
+  http:
+    defaults:
+      headers:
+        Authorization: "Bearer {{ $env.TEST_TOKEN }}"
+  plugins:
+    artillery-plugin-metrics-by-endpoint:
+      useOnlyRequestNames: true
+
+scenarios:
+  - name: "북마크 코스 목록 조회"
+    weight: 50
+    flow:
+      - get:
+          url: "/api/courses/bookmarks"
+          qs:
+            townId: 2
+          name: "GET /api/courses/bookmarks"
+
+  - name: "코스 북마크 폴더 프리뷰"
+    weight: 50
+    flow:
+      - get:
+          url: "/api/courses/bookmarks/folders/preview"
+          name: "GET /api/courses/bookmarks/folders/preview"
