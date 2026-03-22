@@ -20,7 +20,7 @@ config:
       useOnlyRequestNames: true
 
 scenarios:
-  - name: "북마크 코스 목록 조회"
+  - name: "course-list-bookmark"
     weight: 50
     flow:
       - get:
@@ -29,7 +29,7 @@ scenarios:
             townId: 2
           name: "GET /api/courses/bookmarks"
 
-  - name: "코스 북마크 폴더 프리뷰"
+  - name: "course-folder-preview"
     weight: 50
     flow:
       - get:

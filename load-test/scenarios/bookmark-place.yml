@@ -20,7 +20,7 @@ config:
       useOnlyRequestNames: true
 
 scenarios:
-  - name: "장소 리스트 조회 (북마크)"
+  - name: "place-list-bookmark"
     weight: 50
     flow:
       - get:
@@ -30,7 +30,7 @@ scenarios:
             isBookmarkSearch: true
           name: "GET /api/places (bookmark)"
 
-  - name: "나만의 장소 썸네일 리스트"
+  - name: "place-folder-preview"
     weight: 50
     flow:
       - get:
