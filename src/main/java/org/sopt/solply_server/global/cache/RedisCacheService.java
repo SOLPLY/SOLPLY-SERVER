@@ -439,20 +439,25 @@ public class RedisCacheService implements CacheService {
 
     @Override
     public Map<Long, Double> zRevRangeWithScores(String key) {
-        if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
-            return null; // cache miss
+        try {
+            if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
+                return null; // cache miss
+            }
+            Set<ZSetOperations.TypedTuple<String>> tuples =
+                    stringRedisTemplate.opsForZSet().reverseRangeWithScores(key, 0, -1);
+            if (tuples == null || tuples.isEmpty()) {
+                return Map.of();
+            }
+            // LinkedHashMap으로 ZREVRANGE 순서(score 내림차순) 보존
+            Map<Long, Double> result = new LinkedHashMap<>();
+            for (ZSetOperations.TypedTuple<String> tuple : tuples) {
+                result.put(Long.parseLong(tuple.getValue()), tuple.getScore());
+            }
+            return result;
+        } catch (DataAccessException e) {
+            log.error("[Redis] zRevRangeWithScores failed. key={}", key, e);
+            return null; // cache miss로 처리 → 호출자가 DB fallback
         }
-        Set<ZSetOperations.TypedTuple<String>> tuples =
-                stringRedisTemplate.opsForZSet().reverseRangeWithScores(key, 0, -1);
-        if (tuples == null || tuples.isEmpty()) {
-            return Map.of();
-        }
-        // LinkedHashMap으로 ZREVRANGE 순서(score 내림차순) 보존
-        Map<Long, Double> result = new LinkedHashMap<>();
-        for (ZSetOperations.TypedTuple<String> tuple : tuples) {
-            result.put(Long.parseLong(tuple.getValue()), tuple.getScore());
-        }
-        return result;
     }
 
     @Override
