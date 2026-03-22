@@ -52,14 +52,24 @@ public class BookmarkCacheManager {
         }
     }
 
-    /** 북마크 제거 (ZREM; key 없으면 no-op) */
+    /**
+     * 북마크 제거 (ZREM).
+     * ZREM 실패 시 stale 데이터 방지를 위해 키 전체를 invalidate해
+     * 다음 읽기 시 DB backfill로 강제 유도한다.
+     */
     public void remove(Long userId, BookmarkTargetType type, Long targetId, Long townId) {
         String key = zsetKey(userId, type, townId);
-        cacheService.zRem(key, targetId);
+        try {
+            cacheService.zRem(key, targetId);
 
-        // town ZSET이 비었으면 key 삭제 + towns-set에서도 제거
-        Map<Long, Double> remaining = cacheService.zRevRangeWithScores(key);
-        if (remaining != null && remaining.isEmpty()) {
+            // town ZSET이 비었으면 key 삭제 + towns-set에서도 제거
+            Map<Long, Double> remaining = cacheService.zRevRangeWithScores(key);
+            if (remaining != null && remaining.isEmpty()) {
+                cacheService.delete(key);
+                cacheService.sRem(townsSetKey(userId, type), townId);
+            }
+        } catch (Exception e) {
+            log.warn("[Cache] ZREM 실패, 캐시 키 무효화 - key={}", key, e);
             cacheService.delete(key);
             cacheService.sRem(townsSetKey(userId, type), townId);
         }

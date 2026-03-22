@@ -432,6 +432,7 @@ public class RedisCacheService implements CacheService {
             stringRedisTemplate.opsForZSet().remove(key, String.valueOf(member));
         } catch (DataAccessException e) {
             log.error("[Redis] zRem failed. key={}, member={}", key, member, e);
+            throw e;
         }
     }
 
