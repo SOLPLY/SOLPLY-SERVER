@@ -89,7 +89,7 @@ public class AdminAuthService {
         try {
             userId = Long.parseLong(parts[0]);
             platform = SocialPlatform.valueOf(parts[1]);
-        } catch (NumberFormatException | IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_ADMIN_AUTH_CODE);
         }
 
