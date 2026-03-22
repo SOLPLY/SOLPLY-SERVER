@@ -4,6 +4,7 @@
 
 ### API 응답
 모든 API 응답은 `CustomApiResponse<T>` 래퍼를 사용한다.
+단, OAuth 리다이렉트 엔드포인트(302 응답)는 브라우저 리다이렉션 프로토콜 특성상 예외로 허용한다.
 
 ### 예외 처리
 `BusinessException(ErrorCode)`를 던지고, `GlobalExceptionHandler`에서 일괄 처리한다.
