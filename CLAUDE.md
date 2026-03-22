@@ -25,6 +25,14 @@
 ## 개발 워크플로우
 이슈 생성 → 브랜치 생성 → 구현 → 커밋 → PR 오픈
 
+**플랜 승인 후 반드시 아래 순서를 따른다:**
+1. [docs/github-workflow.md](docs/github-workflow.md)를 읽는다.
+2. 이슈 초안(제목·본문)을 작성해 사용자에게 보여주고 확인받는다.
+3. 확인 후 `gh issue create` 실행 → 이슈 번호 확보
+4. `develop`에서 브랜치 생성: `feat/#<number>-<short-description>`
+5. TODO.md에 진행 중인 이슈와 태스크 목록을 추가한다.
+6. 구현 → 커밋 → PR 오픈 (PR도 사용자 확인 후 생성)
+
 ## 스킬
 - `/review-plan` — 현재 플랜을 GPT 추론 모델에 전송하여 리스크·개선점을 검토받고 한국어로 요약 반환 (필수: `OPENAI_API_KEY`)
 
