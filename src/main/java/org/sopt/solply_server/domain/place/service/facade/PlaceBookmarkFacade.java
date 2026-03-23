@@ -2,7 +2,6 @@ package org.sopt.solply_server.domain.place.service.facade;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -91,13 +90,12 @@ public class PlaceBookmarkFacade {
         List<Long> cached = bookmarkCacheManager.getActiveOrderedIds(userId, BookmarkTargetType.PLACE, townId);
         if (cached != null) return cached;
 
-        // Cache miss: DB JOIN 쿼리로 해당 동네 북마크 backfill
+        // Cache miss: DB JOIN 쿼리로 해당 동네 북마크 backfill (다음 요청을 위한 캐싱)
         Map<Long, LocalDateTime> entries = loadPlaceBookmarkEntries(userId, townId);
         bookmarkCacheManager.addAll(userId, BookmarkTargetType.PLACE, townId, entries);
 
-        // backfill 후 ZSET에서 순서 보장된 목록 재조회
-        List<Long> ordered = bookmarkCacheManager.getActiveOrderedIds(userId, BookmarkTargetType.PLACE, townId);
-        return ordered != null ? ordered : new ArrayList<>(entries.keySet());
+        // 현재 요청은 이미 메모리에 있는 entries를 정렬해 반환 (Redis 재조회 RTT 제거)
+        return sortedByCreatedAtDesc(entries);
     }
 
     /**
@@ -180,6 +178,13 @@ public class PlaceBookmarkFacade {
         Set<Long> townIds = byTown.keySet();
         bookmarkCacheManager.setTownIds(userId, BookmarkTargetType.PLACE, townIds);
         return townIds;
+    }
+
+    private List<Long> sortedByCreatedAtDesc(Map<Long, LocalDateTime> entries) {
+        return entries.entrySet().stream()
+                .sorted(Map.Entry.<Long, LocalDateTime>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
     }
 
     private LocalDateTime toLocalDateTime(Object value) {

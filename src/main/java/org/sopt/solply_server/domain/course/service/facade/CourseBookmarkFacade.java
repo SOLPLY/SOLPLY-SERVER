@@ -2,12 +2,12 @@ package org.sopt.solply_server.domain.course.service.facade;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
@@ -96,11 +96,12 @@ public class CourseBookmarkFacade {
         List<Long> cached = bookmarkCacheManager.getActiveOrderedIds(userId, BookmarkTargetType.COURSE, townId);
         if (cached != null) return cached;
 
+        // Cache miss: DB JOIN 쿼리로 해당 동네 북마크 backfill (다음 요청을 위한 캐싱)
         Map<Long, LocalDateTime> entries = loadCourseBookmarkEntries(userId, townId);
         bookmarkCacheManager.addAll(userId, BookmarkTargetType.COURSE, townId, entries);
 
-        List<Long> ordered = bookmarkCacheManager.getActiveOrderedIds(userId, BookmarkTargetType.COURSE, townId);
-        return ordered != null ? ordered : new ArrayList<>(entries.keySet());
+        // 현재 요청은 이미 메모리에 있는 entries를 정렬해 반환 (Redis 재조회 RTT 제거)
+        return sortedByCreatedAtDesc(entries);
     }
 
     /**
@@ -179,6 +180,13 @@ public class CourseBookmarkFacade {
         Set<Long> townIds = byTown.keySet();
         bookmarkCacheManager.setTownIds(userId, BookmarkTargetType.COURSE, townIds);
         return townIds;
+    }
+
+    private List<Long> sortedByCreatedAtDesc(Map<Long, LocalDateTime> entries) {
+        return entries.entrySet().stream()
+                .sorted(Map.Entry.<Long, LocalDateTime>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
     }
 
     private LocalDateTime toLocalDateTime(Object value) {
