@@ -114,8 +114,13 @@ public class BookmarkCacheManager {
         String key = zsetKey(userId, type, townId);
         if (targetCreatedAtMap == null || targetCreatedAtMap.isEmpty()) {
             // 빈 결과 캐싱: sentinel으로 "적재됐지만 북마크 없음" 표시
-            cacheService.zAdd(key, EMPTY_SENTINEL, -1.0);
-            cacheService.expire(key, ZSET_TTL_HOURS, TimeUnit.HOURS);
+            // sentinel 저장 실패 시엔 miss 상태로 두고 정상 return (요청 실패 방지)
+            try {
+                cacheService.zAdd(key, EMPTY_SENTINEL, -1.0);
+                cacheService.expire(key, ZSET_TTL_HOURS, TimeUnit.HOURS);
+            } catch (Exception e) {
+                log.warn("[Cache] sentinel ZADD 실패, miss 상태 유지 - key={}", key, e);
+            }
             return;
         }
         Map<Long, Double> scores = targetCreatedAtMap.entrySet().stream()
@@ -187,8 +192,13 @@ public class BookmarkCacheManager {
         String key = townsSetKey(userId, type);
         if (townIds == null || townIds.isEmpty()) {
             // 빈 결과 캐싱: sentinel으로 "적재됐지만 북마크 없음" 표시
-            cacheService.sAdd(key, EMPTY_SENTINEL);
-            cacheService.expire(key, ZSET_TTL_HOURS, TimeUnit.HOURS);
+            // sentinel 저장 실패 시엔 miss 상태로 두고 정상 return (요청 실패 방지)
+            try {
+                cacheService.sAdd(key, EMPTY_SENTINEL);
+                cacheService.expire(key, ZSET_TTL_HOURS, TimeUnit.HOURS);
+            } catch (Exception e) {
+                log.warn("[Cache] sentinel SADD 실패, miss 상태 유지 - key={}", key, e);
+            }
             return;
         }
         cacheService.sAddAll(key, townIds);
