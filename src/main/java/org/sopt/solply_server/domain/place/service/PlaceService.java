@@ -1,11 +1,12 @@
 package org.sopt.solply_server.domain.place.service;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -81,7 +82,8 @@ public class PlaceService {
                 .map(Tag::getName)
                 .toList();
 
-        boolean isBookmarked = placeBookmarkFacade.isBookmarked(userId, placeId);
+        boolean isBookmarked = placeBookmarkFacade.isBookmarked(
+                userId, placeId, place.getTown().getId());
 
         Town town = place.getTown();
 
@@ -106,20 +108,22 @@ public class PlaceService {
             throw new JwtTokenException(ErrorCode.UNAUTHORIZED_USER);
         }
 
-        // 동네 검증
         townValidator.validateTownId(townId);
 
-        // 북마크, 태그 조건에 따른 장소 조회
         List<Place> places = getPlacesByCondition(userId, townId, isBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList);
 
-        // DTO 변환
+        // 북마크 여부: Set.contains()
+        Set<Long> bookmarkedIds = userId != null
+                ? new HashSet<>(placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, townId))
+                : Collections.emptySet();
+
         List<PlacePreviewDto> placePreviewDtoList = places.stream()
                 .map(place -> PlacePreviewDto.of(
                         place.getId(),
                         place.getName(),
                         imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                         TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
-                        placeBookmarkFacade.isBookmarked(userId, place.getId()),
+                        bookmarkedIds.contains(place.getId()),
                         townId
                 ))
                 .toList();
@@ -129,29 +133,35 @@ public class PlaceService {
 
 
     /**
-     * 사용자가 북마크한 장소의 썸네일 리스트 조회
+     * 사용자가 북마크한 장소의 썸네일 리스트 조회 (동네별 최신 1개)
      */
     public PlaceFolderPreviewListGetResponse getBookmarkedPlaceFolderPreviewList(final Long userId) {
-        Map<Long, LocalDateTime> createdAtMap =
-                placeBookmarkFacade.findBookmarkedPlaceCreatedAtMap(userId);
+        // 동네별 최신 placeId 맵 (ZREVRANGE 0 0 per town)
+        Map<Long, Long> latestPlaceIdByTown = placeBookmarkFacade.getLatestBookmarkedPlaceIdPerTown(userId);
 
-        if (createdAtMap.isEmpty()) {
+        if (latestPlaceIdByTown.isEmpty()) {
             return PlaceFolderPreviewListGetResponse.from(List.of());
         }
 
-        List<Long> latestPlaceIds = findLatestBookmarkedPlaceIdsByTown(createdAtMap);
-        if (latestPlaceIds.isEmpty()) {
-            return PlaceFolderPreviewListGetResponse.from(List.of());
-        }
+        List<Long> placeIds = new ArrayList<>(latestPlaceIdByTown.values());
+        List<Place> places = entityLoader.getPlacesWithTown(placeIds);
 
-        List<Long> sortedPlaceIds = sortIdsByCreatedAtDesc(latestPlaceIds, createdAtMap);
-
-        List<Place> places = entityLoader.getPlacesWithTown(sortedPlaceIds);
         if (places.isEmpty()) {
             return PlaceFolderPreviewListGetResponse.from(List.of());
         }
 
-        return PlaceFolderPreviewListGetResponse.from(toFolderPreviewDtos(sortedPlaceIds, places));
+        List<PlaceFolderPreviewDto> dtos = places.stream()
+                .map(place -> {
+                    Town town = place.getTown();
+                    return PlaceFolderPreviewDto.of(
+                            town.getId(),
+                            town.getName(),
+                            imageUrlProvider.getImageUrl(place.getThumbnailFileKey())
+                    );
+                })
+                .toList();
+
+        return PlaceFolderPreviewListGetResponse.from(dtos);
     }
 
     public PlaceSearchResponse searchPlaces(final String keyword) {
@@ -168,7 +178,7 @@ public class PlaceService {
                             imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                                 TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                             place.getAddress(),
-                            false, // 검색 결과에서는 북마크 여부를 제공 X,
+                            false,
                             town.getId()
                         );
                     }
@@ -181,9 +191,6 @@ public class PlaceService {
 
     //=== Private Methods ===//
 
-    /**
-     * 장소 조회 조건에 따라 장소를 조회하는 메서드
-     */
     private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean isOnlyBookmarkSearch,
             final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
         if (mainTagId != null) {
@@ -194,12 +201,15 @@ public class PlaceService {
             return getBookmarkedPlacesByLatest(userId, selectedTownId, mainTagId, subTagAIdList, subTagBIdList);
         }
 
-        // 통합 조회
         return placeRepository.findPlacesByConditions(
                 PlaceSearchConditionDto.of(selectedTownId, false, null, mainTagId, subTagAIdList, subTagBIdList)
         );
     }
 
+    /**
+     * 북마크 장소 최신순 조회.
+     * ZSET에서 최신순 정렬된 placeIds 추출 → DB에서 태그 조건 필터링 → ZSET 순서 복원.
+     */
     private List<Place> getBookmarkedPlacesByLatest(
             final Long userId,
             final Long selectedTownId,
@@ -207,100 +217,27 @@ public class PlaceService {
             final List<Long> subTagAIdList,
             final List<Long> subTagBIdList
     ) {
-        // DB에서 북마크 메타 조회: placeId -> createdAt
-        Map<Long, LocalDateTime> placeIdToCreatedAtMap =
-                placeBookmarkFacade.findBookmarkedPlaceCreatedAtMap(userId);
+        List<Long> orderedIds = placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, selectedTownId);
+        if (orderedIds.isEmpty()) return List.of();
 
-        if (placeIdToCreatedAtMap.isEmpty()) {
-            return List.of();
-        }
-
-        List<Long> bookmarkedPlaceIds = new ArrayList<>(placeIdToCreatedAtMap.keySet());
-
-        // 태그 조건 포함하여 조회 (북마크 목록 + town/tag 조건으로 필터링)
-        List<Place> places = placeRepository.findPlacesByConditions(
+        List<Place> filtered = placeRepository.findPlacesByConditions(
                 PlaceSearchConditionDto.of(
                         selectedTownId,
                         true,
-                        bookmarkedPlaceIds,
+                        orderedIds,
                         mainTagId,
                         subTagAIdList,
                         subTagBIdList
                 )
         );
+        if (filtered.isEmpty()) return List.of();
 
-        if (places.isEmpty()) {
-            return List.of();
-        }
-
-        // 북마크 시간 기준 최신순 정렬
-        return places.stream()
-                .sorted((p1, p2) -> {
-                    LocalDateTime t1 = placeIdToCreatedAtMap.getOrDefault(p1.getId(), LocalDateTime.MIN);
-                    LocalDateTime t2 = placeIdToCreatedAtMap.getOrDefault(p2.getId(), LocalDateTime.MIN);
-                    return t2.compareTo(t1);
-                })
-                .toList();
-    }
-
-
-    /** createdAtMap(placeId->time)을 가지고 "동네별 최신 placeId"만 뽑는다 */
-    private List<Long> findLatestBookmarkedPlaceIdsByTown(Map<Long, LocalDateTime> placeIdCreatedAtMap) {
-        List<Long> placeIds = new ArrayList<>(placeIdCreatedAtMap.keySet());
-
-        Map<Long, Long> placeToTownMap = loadPlaceToTownMap(placeIds);
-
-        Map<Long, Long> latestPlaceIdByTown = new HashMap<>();
-        Map<Long, LocalDateTime> latestTimeByTown = new HashMap<>();
-
-        for (Long placeId : placeIds) {
-            Long townId = placeToTownMap.get(placeId);
-            if (townId == null) continue;
-
-            LocalDateTime t = placeIdCreatedAtMap.get(placeId);
-            if (t == null) continue;
-
-            LocalDateTime prev = latestTimeByTown.get(townId);
-            if (prev == null || t.isAfter(prev)) {
-                latestTimeByTown.put(townId, t);
-                latestPlaceIdByTown.put(townId, placeId);
-            }
-        }
-
-        return new ArrayList<>(latestPlaceIdByTown.values());
-    }
-
-    private Map<Long, Long> loadPlaceToTownMap(List<Long> placeIds) {
-        return placeRepository.findPlaceIdAndTownIdByPlaceIds(placeIds).stream()
-                .collect(Collectors.toMap(
-                        row -> (Long) row[0],   // placeId
-                        row -> (Long) row[1]    // townId
-                ));
-    }
-
-    private List<Long> sortIdsByCreatedAtDesc(List<Long> ids, Map<Long, LocalDateTime> createdAtMap) {
-        return ids.stream()
-                .sorted((a, b) ->
-                        createdAtMap.getOrDefault(b, LocalDateTime.MIN)
-                                .compareTo(createdAtMap.getOrDefault(a, LocalDateTime.MIN)))
-                .toList();
-    }
-
-    private List<PlaceFolderPreviewDto> toFolderPreviewDtos(List<Long> sortedPlaceIds, List<Place> places) {
-        Map<Long, Place> placeMap = places.stream()
+        // DB 결과를 ZSET 순서(최신순)로 재정렬
+        Map<Long, Place> placeMap = filtered.stream()
                 .collect(Collectors.toMap(Place::getId, Function.identity()));
-
-        return sortedPlaceIds.stream()
+        return orderedIds.stream()
                 .map(placeMap::get)
                 .filter(Objects::nonNull)
-                .map(place -> {
-                    Town town = place.getTown();
-                    return PlaceFolderPreviewDto.of(
-                            town.getId(),
-                            town.getName(),
-                            imageUrlProvider.getImageUrl(place.getThumbnailFileKey())
-                    );
-                })
                 .toList();
     }
 }

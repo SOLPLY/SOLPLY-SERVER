@@ -1,0 +1,23 @@
+{
+  "name": "solply-load-test",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test:place": "artillery run scenarios/bookmark-place.yml --output reports/place-baseline.json",
+    "test:course": "artillery run scenarios/bookmark-course.yml --output reports/course-baseline.json",
+    "test:all": "npm run test:place && npm run test:course",
+    "test:place:after": "artillery run scenarios/bookmark-place.yml --output reports/place-after.json",
+    "test:course:after": "artillery run scenarios/bookmark-course.yml --output reports/course-after.json",
+    "test:all:after": "npm run test:place:after && npm run test:course:after",
+    "report:place": "artillery report reports/place-baseline.json --output reports/place-baseline.html",
+    "report:course": "artillery report reports/course-baseline.json --output reports/course-baseline.html",
+    "report:place:after": "artillery report reports/place-after.json --output reports/place-after.html",
+    "report:course:after": "artillery report reports/course-after.json --output reports/course-after.html",
+    "report": "npm run report:place && npm run report:course",
+    "report:after": "npm run report:place:after && npm run report:course:after"
+  },
+  "devDependencies": {
+    "artillery": "^2.0.0",
+    "artillery-plugin-metrics-by-endpoint": "^1.24.0"
+  }
+}

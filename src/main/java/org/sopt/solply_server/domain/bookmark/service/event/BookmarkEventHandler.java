@@ -1,10 +1,7 @@
 package org.sopt.solply_server.domain.bookmark.service.event;
 
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
-import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkCacheManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -16,34 +13,41 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class BookmarkEventHandler {
 
     private final BookmarkCacheManager bookmarkCacheManager;
-    private final BookmarkRepository bookmarkRepository;
 
+    /**
+     * 북마크 생성 시: 해당 town ZSET이 이미 존재하는 경우에만 ZADD.
+     * 존재하지 않으면 skip (다음 조회 시 lazy backfill).
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCreated(BookmarkCreatedEvent event) {
         try {
-            Long userId = event.userId();
-            BookmarkTargetType type = event.type();
-            Long targetId = event.targetId();
-
-            // key 없으면 backfill, 있으면 SADD
-            if (!bookmarkCacheManager.hasActiveSet(userId, type)) {
-                Set<Long> ids = bookmarkRepository.findBookmarkedTargetIds(userId, type);
-                bookmarkCacheManager.addActiveAll(userId, type, ids);
-            } else {
-                bookmarkCacheManager.addActive(userId, type, targetId);
-            }
-
+            bookmarkCacheManager.addIfPresent(
+                    event.userId(),
+                    event.type(),
+                    event.targetId(),
+                    event.createdAt(),
+                    event.townId()
+            );
         } catch (Exception e) {
-            log.warn("[Redis] 커밋 이후 addActive 실패 - {}", event, e);
+            log.warn("[Redis] 커밋 이후 addIfPresent 실패 - {}", event, e);
         }
     }
 
+    /**
+     * 북마크 삭제 시: ZREM 수행.
+     * town ZSET이 비어지면 key 삭제 + towns-set에서도 제거.
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDeleted(BookmarkDeletedEvent event) {
         try {
-            bookmarkCacheManager.removeActive(event.userId(), event.type(), event.targetId());
+            bookmarkCacheManager.remove(
+                    event.userId(),
+                    event.type(),
+                    event.targetId(),
+                    event.townId()
+            );
         } catch (Exception e) {
-            log.warn("[Redis] 커밋 이후 removeActive 실패 - {}", event, e);
+            log.warn("[Redis] 커밋 이후 remove 실패 - {}", event, e);
         }
     }
 }

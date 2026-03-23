@@ -1,6 +1,5 @@
 package org.sopt.solply_server.domain.course.service;
 
-import java.time.LocalDateTime;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -97,7 +96,7 @@ public class CourseService {
         Course originCourse = entityLoader.getActiveCourse(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId, originCourse.getTown().getId());
 
         List<PlaceInCourseInfo> placeInfosInCourseForOrder = PlaceInCourseInfo.from(request.places());
 
@@ -151,7 +150,7 @@ public class CourseService {
         Course originCourse = entityLoader.getActiveCourseWithTagsAndPlaces(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId, originCourse.getTown().getId());
 
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validateCanAddPlace(originCourse, place);
@@ -202,7 +201,7 @@ public class CourseService {
         Tag courseTag = course.getTag();
         tagValidator.validateCourseTag(courseTag);
 
-        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
+        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId, course.getTown().getId());
 
 
         if (course.getCoursePlaces().isEmpty()) {
@@ -213,7 +212,7 @@ public class CourseService {
                 .map(coursePlace -> coursePlace.getPlace().getId())
                 .toList();
 
-        Map<Long, Boolean> placeBookmarkMap = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, placeIds);
+        Map<Long, Boolean> placeBookmarkMap = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, placeIds); // 다중 동네 가능 → DB 배치 조회
 
         List<CoursePlaceDetailsDto> coursePlaces = course.getCoursePlaces().stream()
                 .map(coursePlace -> {
@@ -267,16 +266,14 @@ public class CourseService {
             candidatePlace = null;
         }
 
-        // courseId -> createdAt(북마크 생성 시각)
-        Map<Long, LocalDateTime> courseIdCreatedAtMap = courseBookmarkFacade.findBookmarkedCourseCreatedAtMap(userId);
-        if (courseIdCreatedAtMap.isEmpty()) {
-            log.info("사용자 {}의 북마크된 코스가 없습니다.", userId);
+        // town-scoped ZSET에서 북마크된 courseId 목록 조회 (최신순, backfill 포함)
+        List<Long> orderedCourseIds = courseBookmarkFacade.getBookmarkedCourseIdsForTown(userId, targetTownId);
+        if (orderedCourseIds.isEmpty()) {
+            log.info("사용자 {}의 동네 {}에 북마크된 코스가 없습니다.", userId, targetTownId);
             return CourseBookmarkListGetResponse.from(List.of());
         }
 
-        // 북마크된 코스 아이디 추출
-        List<Long> courseIds = new ArrayList<>(courseIdCreatedAtMap.keySet());
-        List<Course> filteredCourses = courseRepository.findActiveCoursesFilteredByTownId(courseIds, targetTownId);
+        List<Course> filteredCourses = courseRepository.findActiveCoursesFilteredByTownId(orderedCourseIds, targetTownId);
 
         if (filteredCourses.isEmpty()) {
             log.info("동네 {}에 북마크된 코스가 없습니다.", targetTownId);
@@ -286,7 +283,7 @@ public class CourseService {
         final List<CourseInfoDto> courseInfoDtos = createSortedCourseInfoDtoList(
                 filteredCourses,
                 userId,
-                courseIdCreatedAtMap,
+                orderedCourseIds,
                 candidatePlace,
                 candidatePlaceId != null
         );
@@ -302,26 +299,20 @@ public class CourseService {
      * 동네별로 가장 최근에 북마크한 코스를 반환
      */
     public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
-        Map<Long, LocalDateTime> createdAtMap =
-                courseBookmarkFacade.findBookmarkedCourseCreatedAtMap(userId);
+        // 동네별 최신 courseId (towns-set 기반, cache miss 시 전체 backfill)
+        Map<Long, Long> latestCourseIdByTown = courseBookmarkFacade.getLatestBookmarkedCourseIdPerTown(userId);
 
-        if (createdAtMap.isEmpty()) {
+        if (latestCourseIdByTown.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        List<Long> latestCourseIdsByTown = findLatestBookmarkedCourseIdsByTown(createdAtMap);
-        if (latestCourseIdsByTown.isEmpty()) {
-            return CourseFolderPreviewListGetResponse.from(List.of());
-        }
-
-        List<Long> sortedCourseIds = sortIdsByCreatedAtDesc(latestCourseIdsByTown, createdAtMap);
-
-        List<Course> courses = courseRepository.findActiveFolderPreviewCourses(latestCourseIdsByTown);
+        List<Long> courseIds = new ArrayList<>(latestCourseIdByTown.values());
+        List<Course> courses = courseRepository.findActiveFolderPreviewCourses(courseIds);
         if (courses.isEmpty()) {
             return CourseFolderPreviewListGetResponse.from(List.of());
         }
 
-        return CourseFolderPreviewListGetResponse.from(createSortedCourseFolderDtoList(sortedCourseIds, courses));
+        return CourseFolderPreviewListGetResponse.from(toCourseFolderDtos(courses));
     }
 
     //=== private method ===//
@@ -416,96 +407,53 @@ public class CourseService {
                 ));
     }
 
-    /** createdAtMap(courseId->time)을 기반으로 “동네별 최신 courseId”만 뽑는다 */
-    private List<Long> findLatestBookmarkedCourseIdsByTown(Map<Long, LocalDateTime> createdAtMap) {
-        List<Long> courseIds = new ArrayList<>(createdAtMap.keySet());
-
-        Map<Long, Long> courseToTownMap = loadCourseToTownMap(courseIds);
-
-        Map<Long, Long> latestCourseIdByTown = new HashMap<>();
-        Map<Long, LocalDateTime> latestTimeByTown = new HashMap<>();
-
-        for (Long courseId : courseIds) {
-            Long townId = courseToTownMap.get(courseId);
-            if (townId == null) continue;
-
-            LocalDateTime t = createdAtMap.get(courseId);
-            if (t == null) continue;
-
-            LocalDateTime prev = latestTimeByTown.get(townId);
-            if (prev == null || t.isAfter(prev)) {
-                latestTimeByTown.put(townId, t);
-                latestCourseIdByTown.put(townId, courseId);
-            }
-        }
-
-        return new ArrayList<>(latestCourseIdByTown.values());
-    }
-
-    private Map<Long, Long> loadCourseToTownMap(List<Long> courseIds) {
-        return courseRepository.findActiveCourseIdAndTownIdByCourseIds(courseIds).stream()
-                .collect(Collectors.toMap(
-                        row -> (Long) row[0],   // courseId
-                        row -> (Long) row[1]    // townId
-                ));
-    }
-
-    private List<Long> sortIdsByCreatedAtDesc(List<Long> ids, Map<Long, LocalDateTime> createdAtMap) {
-        return ids.stream()
-                .sorted((a, b) ->
-                        createdAtMap.getOrDefault(b, LocalDateTime.MIN)
-                                .compareTo(createdAtMap.getOrDefault(a, LocalDateTime.MIN)))
+    private List<CourseFolderDto> toCourseFolderDtos(List<Course> courses) {
+        return courses.stream()
+                .map(course -> {
+                    String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
+                    return CourseFolderDto.of(
+                            course,
+                            TagViewUtils.getActiveNameOrNull(course.getTag()),
+                            thumbnailUrl
+                    );
+                })
                 .toList();
     }
 
     /**
-     * DTO 생성
+     * ZSET 순서(최신순)를 기준으로 CourseInfoDto 리스트 생성.
+     *
+     * @param orderedCourseIds ZSET에서 최신순으로 정렬된 courseId 목록
      */
-
-    private List<CourseFolderDto> createSortedCourseFolderDtoList(List<Long> sortedCourseIds, List<Course> courses) {
-        Map<Long, Course> courseMap = courses.stream()
-                .collect(Collectors.toMap(Course::getId, Function.identity()));
-
-        // 정렬된 sortedCourseIds 기준으로 courses 정렬
-        return sortedCourseIds.stream()
-                .map(courseMap::get)
-                .filter(Objects::nonNull)
-                .map(course -> {
-                    String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-                    Tag courseTag = course.getTag();
-                    return CourseFolderDto.of(course, TagViewUtils.getActiveNameOrNull(courseTag), thumbnailUrl);
-                })
-                .toList();
-    }
-
     private List<CourseInfoDto> createSortedCourseInfoDtoList(
             final List<Course> filteredCourses,
             final Long userId,
-            final Map<Long, LocalDateTime> courseIdCreatedAtMap,
+            final List<Long> orderedCourseIds,
             final Place candidatePlace,
             final boolean hasCandidatePlace
     ) {
-        // 코스 별 검증 결과 생성
         final Map<Long, CourseValidationResult> validationResults =
                 prepareValidationResults(filteredCourses, candidatePlace, hasCandidatePlace);
 
-        return filteredCourses.stream()
+        Map<Long, CourseInfoDto> dtoMap = filteredCourses.stream()
                 .filter(course -> isSharedCourse(course, userId))
-                .map(course -> {
-                    Tag courseTag = course.getTag();
-                    String courseTagName = TagViewUtils.getActiveNameOrNull(courseTag);
+                .collect(Collectors.toMap(
+                        Course::getId,
+                        course -> {
+                            String courseTagName = TagViewUtils.getActiveNameOrNull(course.getTag());
+                            String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
+                            if (hasCandidatePlace) {
+                                return CourseInfoDto.withPlacesInCourseCheck(
+                                        course, thumbnailUrl, courseTagName, validationResults.get(course.getId()));
+                            }
+                            return CourseInfoDto.of(course, thumbnailUrl, courseTagName);
+                        }
+                ));
 
-                    String thumbnailUrl = courseUtils.getCourseThumbnailUrl(course);
-
-                    if (hasCandidatePlace) {
-                        CourseValidationResult validationResult = validationResults.get(course.getId());
-                        return CourseInfoDto.withPlacesInCourseCheck(course, thumbnailUrl, courseTagName, validationResult);
-                    }
-                    return CourseInfoDto.of(course, thumbnailUrl, courseTagName);
-                })
-                .sorted((a, b) -> courseIdCreatedAtMap
-                        .getOrDefault(b.courseId(), LocalDateTime.MIN)
-                        .compareTo(courseIdCreatedAtMap.getOrDefault(a.courseId(), LocalDateTime.MIN)))
+        // ZSET 순서(최신순) 복원
+        return orderedCourseIds.stream()
+                .map(dtoMap::get)
+                .filter(Objects::nonNull)
                 .toList();
     }
 

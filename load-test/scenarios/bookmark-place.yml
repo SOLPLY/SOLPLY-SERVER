@@ -1,0 +1,38 @@
+config:
+  target: "http://localhost:8082"
+  phases:
+    - name: "Warm up"
+      duration: 30
+      arrivalRate: 5
+    - name: "Ramp up"
+      duration: 60
+      arrivalRate: 10
+      rampTo: 50
+    - name: "Sustained load"
+      duration: 120
+      arrivalRate: 50
+  http:
+    defaults:
+      headers:
+        Authorization: "Bearer {{ $env.TEST_TOKEN }}"
+  plugins:
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+
+scenarios:
+  - name: "place-list-bookmark"
+    weight: 50
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 2
+            isBookmarkSearch: true
+          name: "GET /api/places (bookmark)"
+
+  - name: "place-folder-preview"
+    weight: 50
+    flow:
+      - get:
+          url: "/api/places/bookmarks/folders/preview"
+          name: "GET /api/places/bookmarks/folders/preview"
