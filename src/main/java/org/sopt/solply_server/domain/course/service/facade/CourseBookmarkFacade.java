@@ -71,7 +71,9 @@ public class CourseBookmarkFacade {
         if (userId == null) return false;
 
         if (bookmarkCacheManager.hasKey(userId, BookmarkTargetType.COURSE, townId)) {
-            return bookmarkCacheManager.isActive(userId, BookmarkTargetType.COURSE, courseId, townId);
+            Boolean cached = bookmarkCacheManager.isActive(userId, BookmarkTargetType.COURSE, courseId, townId);
+            if (cached != null) return cached;
+            // Redis 오류(unknown): DB fallback
         }
         return bookmarkService.isBookmarkedFromDb(userId, BookmarkTargetType.COURSE, courseId);
     }

@@ -464,7 +464,7 @@ public class RedisCacheService implements CacheService {
             return stringRedisTemplate.opsForZSet().score(key, String.valueOf(member));
         } catch (DataAccessException e) {
             log.error("[Redis] zScore failed. key={}, member={}", key, member, e);
-            return null;
+            throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
         }
     }
 

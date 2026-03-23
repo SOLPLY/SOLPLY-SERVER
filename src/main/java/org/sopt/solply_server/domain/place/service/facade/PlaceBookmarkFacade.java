@@ -69,9 +69,11 @@ public class PlaceBookmarkFacade {
         if (userId == null) return false;
 
         if (bookmarkCacheManager.hasKey(userId, BookmarkTargetType.PLACE, townId)) {
-            return bookmarkCacheManager.isActive(userId, BookmarkTargetType.PLACE, placeId, townId);
+            Boolean cached = bookmarkCacheManager.isActive(userId, BookmarkTargetType.PLACE, placeId, townId);
+            if (cached != null) return cached;
+            // Redis 오류(unknown): DB fallback
         }
-        // ZSET 캐시 미스: DB fallback (backfill은 lazy로 리스트 조회 시 일어남)
+        // ZSET 캐시 미스 또는 Redis 오류: DB fallback (backfill은 lazy로 리스트 조회 시 일어남)
         return bookmarkService.isBookmarkedFromDb(userId, BookmarkTargetType.PLACE, placeId);
     }
 

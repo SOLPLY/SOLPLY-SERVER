@@ -158,11 +158,20 @@ public class BookmarkCacheManager {
     }
 
     /**
-     * 북마크 여부 확인 (ZSCORE != null).
-     * key 없으면 false (backfill은 호출자가 처리).
+     * 북마크 여부 확인 (ZSCORE).
+     * <ul>
+     *   <li>{@code true}  — ZSET에 멤버 존재 (북마크 있음)</li>
+     *   <li>{@code false} — ZSET에 멤버 없음 (북마크 없음, 캐시 히트)</li>
+     *   <li>{@code null}  — Redis 오류 (unknown → 호출자가 DB fallback 처리)</li>
+     * </ul>
      */
-    public boolean isActive(Long userId, BookmarkTargetType type, Long targetId, Long townId) {
-        return cacheService.zScore(zsetKey(userId, type, townId), targetId) != null;
+    public Boolean isActive(Long userId, BookmarkTargetType type, Long targetId, Long townId) {
+        try {
+            return cacheService.zScore(zsetKey(userId, type, townId), targetId) != null;
+        } catch (Exception e) {
+            log.warn("[Cache] zScore 실패, DB fallback 유도 - key={}", zsetKey(userId, type, townId), e);
+            return null;
+        }
     }
 
     // == Towns-Set 연산 == //
