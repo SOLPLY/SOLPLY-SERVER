@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.bookmark.service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -208,6 +209,7 @@ public class BookmarkCacheManager {
     // == Private == //
 
     private double toScore(LocalDateTime dt) {
-        return dt.toEpochSecond(ZoneOffset.UTC);
+        return ChronoUnit.MICROS.between(
+                LocalDateTime.ofEpochSecond(0, 0, ZoneOffset.UTC), dt);
     }
 }
