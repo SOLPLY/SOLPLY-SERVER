@@ -19,12 +19,12 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
     @Query("""
         select b.targetId
         from Bookmark b
+        join Course c on c.id = b.targetId
         where b.user.id = :userId
-          and b.targetType = :targetType
+          and b.targetType = 'COURSE'
+          and c.active = true
     """)
-    Set<Long> findBookmarkedTargetIds(
-            @Param("userId") Long userId,
-            @Param("targetType") BookmarkTargetType targetType);
+    Set<Long> findBookmarkedActiveCourseIds(@Param("userId") Long userId);
 
     @Query("""
         select b.targetId

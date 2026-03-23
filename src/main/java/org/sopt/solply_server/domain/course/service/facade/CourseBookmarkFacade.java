@@ -116,7 +116,7 @@ public class CourseBookmarkFacade {
      * 사용자의 전체 북마크 courseId 목록 반환 (코스명 중복 검사 등 전체 조회 필요 시).
      */
     public Set<Long> findBookmarkedCourseIds(final Long userId) {
-        return bookmarkRepository.findBookmarkedTargetIds(userId, BookmarkTargetType.COURSE);
+        return bookmarkRepository.findBookmarkedActiveCourseIds(userId);
     }
 
     // == 폴더 프리뷰 (동네별 최신 1개) == //
