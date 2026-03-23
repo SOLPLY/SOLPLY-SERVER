@@ -162,7 +162,10 @@ public class CourseBookmarkFacade {
 
     private Set<Long> fullBackfillCourses(Long userId) {
         List<Object[]> rows = bookmarkRepository.findAllCourseBookmarksWithTownId(userId);
-        if (rows.isEmpty()) return Collections.emptySet();
+        if (rows.isEmpty()) {
+            bookmarkCacheManager.setTownIds(userId, BookmarkTargetType.COURSE, Collections.emptySet());
+            return Collections.emptySet();
+        }
 
         Map<Long, Map<Long, LocalDateTime>> byTown = new HashMap<>();
         for (Object[] row : rows) {

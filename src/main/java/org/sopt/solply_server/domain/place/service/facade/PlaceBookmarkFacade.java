@@ -157,7 +157,10 @@ public class PlaceBookmarkFacade {
      */
     private Set<Long> fullBackfillPlaces(Long userId) {
         List<Object[]> rows = bookmarkRepository.findAllPlaceBookmarksWithTownId(userId);
-        if (rows.isEmpty()) return Collections.emptySet();
+        if (rows.isEmpty()) {
+            bookmarkCacheManager.setTownIds(userId, BookmarkTargetType.PLACE, Collections.emptySet());
+            return Collections.emptySet();
+        }
 
         // townId -> {placeId -> createdAt}
         Map<Long, Map<Long, LocalDateTime>> byTown = new HashMap<>();
