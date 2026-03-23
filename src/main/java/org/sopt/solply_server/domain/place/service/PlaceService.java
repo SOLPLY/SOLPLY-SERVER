@@ -110,12 +110,28 @@ public class PlaceService {
 
         townValidator.validateTownId(townId);
 
-        List<Place> places = getPlacesByCondition(userId, townId, isBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList);
+        boolean isOnlyBookmarkSearch = Boolean.TRUE.equals(isBookmarkSearch);
 
-        // 북마크 여부: Set.contains()
-        Set<Long> bookmarkedIds = userId != null
-                ? new HashSet<>(placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, townId))
-                : Collections.emptySet();
+        // isBookmarkSearch=true 시 orderedIds를 한 번만 조회해서 장소 목록 필터링과 북마크 Set에 재사용
+        // (기존에는 getBookmarkedPlacesByLatest()와 북마크 Set 생성 시 각각 1회씩, 총 2회 호출했음)
+        List<Long> bookmarkedOrderedIds = (isOnlyBookmarkSearch && userId != null)
+                ? placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, townId)
+                : null;
+
+        // 북마크 검색 시 orderedIds를 함께 전달 → 내부에서 북마크 최신순으로 재정렬
+        List<Place> places = getPlacesByCondition(townId, isOnlyBookmarkSearch, mainTagId, subTagAIdList, subTagBIdList, bookmarkedOrderedIds);
+
+        Set<Long> bookmarkedIds;
+        if (bookmarkedOrderedIds != null) {
+            // 북마크 검색: 이미 조회한 orderedIds를 Set으로 변환해서 재사용
+            bookmarkedIds = new HashSet<>(bookmarkedOrderedIds);
+        } else if (userId != null) {
+            // 일반 장소 목록 + 로그인 상태: 각 장소 카드의 북마크 여부(하트) 표시를 위해 조회
+            bookmarkedIds = new HashSet<>(placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, townId));
+        } else {
+            // 비로그인: 북마크 여부 불필요
+            bookmarkedIds = Collections.emptySet();
+        }
 
         List<PlacePreviewDto> placePreviewDtoList = places.stream()
                 .map(place -> PlacePreviewDto.of(
@@ -191,14 +207,15 @@ public class PlaceService {
 
     //=== Private Methods ===//
 
-    private List<Place> getPlacesByCondition(final Long userId, final Long selectedTownId, final boolean isOnlyBookmarkSearch,
-            final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
+    private List<Place> getPlacesByCondition(final Long selectedTownId, final boolean isOnlyBookmarkSearch,
+            final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList,
+            final List<Long> bookmarkedOrderedIds) {
         if (mainTagId != null) {
             tagValidator.validatePlaceTagConditions(mainTagId, subTagAIdList, subTagBIdList);
         }
 
         if (isOnlyBookmarkSearch) {
-            return getBookmarkedPlacesByLatest(userId, selectedTownId, mainTagId, subTagAIdList, subTagBIdList);
+            return getBookmarkedPlacesByLatest(selectedTownId, mainTagId, subTagAIdList, subTagBIdList, bookmarkedOrderedIds);
         }
 
         return placeRepository.findPlacesByConditions(
@@ -208,17 +225,16 @@ public class PlaceService {
 
     /**
      * 북마크 장소 최신순 조회.
-     * ZSET에서 최신순 정렬된 placeIds 추출 → DB에서 태그 조건 필터링 → ZSET 순서 복원.
+     * 상위에서 조회한 orderedIds(ZSET 최신순) → DB에서 태그 조건 필터링 → ZSET 순서 복원.
      */
     private List<Place> getBookmarkedPlacesByLatest(
-            final Long userId,
             final Long selectedTownId,
             final Long mainTagId,
             final List<Long> subTagAIdList,
-            final List<Long> subTagBIdList
+            final List<Long> subTagBIdList,
+            final List<Long> orderedIds
     ) {
-        List<Long> orderedIds = placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, selectedTownId);
-        if (orderedIds.isEmpty()) return List.of();
+        if (orderedIds == null || orderedIds.isEmpty()) return List.of();
 
         List<Place> filtered = placeRepository.findPlacesByConditions(
                 PlaceSearchConditionDto.of(
@@ -232,7 +248,7 @@ public class PlaceService {
         );
         if (filtered.isEmpty()) return List.of();
 
-        // DB 결과를 ZSET 순서(최신순)로 재정렬
+        // DB 결과를 ZSET 순서(북마크 최신순)로 재정렬
         Map<Long, Place> placeMap = filtered.stream()
                 .collect(Collectors.toMap(Place::getId, Function.identity()));
         return orderedIds.stream()
