@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep \"INSERT INTO \\\\`courses\\\\`\" /Users/mkyu/Desktop/SOPT/solply-server/src/main/resources/db/migration/V2__create_initial_data.sql -A 200)"
+    ]
+  }
+}
