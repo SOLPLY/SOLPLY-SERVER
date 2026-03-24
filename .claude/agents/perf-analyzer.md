@@ -73,10 +73,10 @@ Glob으로 아래 경로를 스캔한다.
 
 엔드포인트별 메트릭(`plugins.metrics-by-endpoint.*`)이 있으면 별도 표로 분리한다.
 
-**KPI 임계값:**
+KPI 임계값:
 - 성공률 < 95% → [심각]
 - p95 > 3,000ms → [경고]
-- p95 > 1,000ms → [주의]
+- 1,000ms < p95 ≤ 3,000ms → [주의]
 
 ---
 
@@ -105,7 +105,7 @@ Bash를 사용해 각 파일의 전체 쿼리 수를 집계한다.
 - `place_tag`, `places`, `tags`, `place_images` 테이블을 우선 검사
 
 탐지 시 출력 예시:
-```
+```text
 [심각] N+1 탐지됨 (01-baseline.txt)
   - 테이블: place_tag
   - 패턴: WHERE pt1_0.place_id=? (단건 조회 반복)
@@ -117,7 +117,7 @@ Bash를 사용해 각 파일의 전체 쿼리 수를 집계한다.
 
 실행시간 10ms 초과 쿼리를 파일별로 나열한다.
 
-```
+```text
 [01-baseline.txt] 슬로우 쿼리
   44ms | select u1_0.id,... from users where id=?
   77ms | select p1_0.id,... from places where ...
