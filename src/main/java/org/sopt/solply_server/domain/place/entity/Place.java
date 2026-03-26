@@ -44,7 +44,7 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "places",
         indexes = {
-                @Index(name = "idx_places_town_active_created", columnList = "town_id, active, created_at DESC"),
+                @Index(name = "idx_places_town_active", columnList = "town_id, active"),
                 @Index(name = "idx_places_created_by_created_at", columnList = "created_by, created_at")
         }
 )
