@@ -196,15 +196,17 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
     // 전체 조회
     private List<Place> findPlacesWithoutTags(QPlace place, BooleanBuilder whereCondition) {
-        List<Place> places = queryFactory
-                .selectFrom(place)
+        QPlaceTag placeTag = QPlaceTag.placeTag;
+        QTag tag = QTag.tag;
+
+        return queryFactory
+                .selectDistinct(place)
+                .from(place)
+                .leftJoin(place.placeTags, placeTag).fetchJoin()
+                .leftJoin(placeTag.tag, tag).fetchJoin()
                 .where(whereCondition)
                 .orderBy(place.createdAt.desc())
                 .fetch();
-
-        loadPlaceTagsAndTags(places);
-
-        return places;
     }
 
     // 메인 태그만 있는 경우
@@ -230,6 +232,9 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
     // 메인 태그와 서브 태그가 모두 있는 경우
     private List<Place> findPlacesWithTags(QPlace place, BooleanBuilder whereCondition,
             PlaceSearchConditionDto condition) {
+        QPlaceTag placeTag = QPlaceTag.placeTag;
+        QTag tag = QTag.tag;
+
         // 메인 태그 EXISTS 조건
         whereCondition.and(createMainTagExistsCondition(place, condition.mainTagId()));
 
@@ -246,27 +251,10 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         return queryFactory
                 .selectDistinct(place)
                 .from(place)
+                .leftJoin(place.placeTags, placeTag).fetchJoin()
+                .leftJoin(placeTag.tag, tag).fetchJoin()
                 .where(whereCondition)
                 .orderBy(place.createdAt.desc())
-                .fetch();
-    }
-
-    // 영속성 컨텍스트에 미리 로딩
-    private void loadPlaceTagsAndTags(List<Place> places) {
-        if (places.isEmpty()) return;
-
-        List<Long> placeIds = places.stream().map(Place::getId).toList();
-
-        QPlaceTag pt = QPlaceTag.placeTag;
-        QTag t = QTag.tag;
-
-        queryFactory
-                .selectFrom(pt)
-                .join(pt.tag, t).fetchJoin()
-                .where(
-                        pt.place.id.in(placeIds),
-                        t.active.isTrue()
-                )
                 .fetch();
     }
 

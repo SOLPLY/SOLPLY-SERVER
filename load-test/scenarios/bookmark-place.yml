@@ -1,5 +1,10 @@
 config:
   target: "http://localhost:8082"
+  payload:
+    path: "../data/users.csv"
+    fields:
+      - token
+    order: random
   phases:
     - name: "Warm up"
       duration: 30
@@ -14,7 +19,7 @@ config:
   http:
     defaults:
       headers:
-        Authorization: "Bearer {{ $env.TEST_TOKEN }}"
+        Authorization: "Bearer {{ token }}"
   plugins:
     metrics-by-endpoint:
       useOnlyRequestNames: true

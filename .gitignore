@@ -78,7 +78,9 @@ Thumbs.db
 test-output/
 reports/
 load-test/reports/
+load-test/query-logs/
 load-test/node_modules/
+load-test/data/
 jacoco.exec
 
 # ====================
