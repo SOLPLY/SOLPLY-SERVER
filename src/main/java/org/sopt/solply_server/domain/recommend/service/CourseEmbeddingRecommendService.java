@@ -138,9 +138,9 @@ public class CourseEmbeddingRecommendService {
      * CourseSearchDocument의 retrievalText 대신 현재 로딩된 course 데이터로 즉석 생성한다.
      */
     private String buildRetrievalTextSummary(Course course) {
-        String category = TagViewUtils.getActiveNameOrNull(course.getTag());
+        String tagName = TagViewUtils.getActiveNameOrNull(course.getTag());
         int placeCount = course.getCoursePlaces().size();
-        List<String> mainTagNames = course.getCoursePlaces().stream()
+        List<String> placeMainTagNames = course.getCoursePlaces().stream()
                 .map(CoursePlace::getPlace)
                 .map(p -> p.getMainTag().filter(Tag::isActive).map(Tag::getName).orElse(null))
                 .filter(Objects::nonNull)
@@ -148,9 +148,9 @@ public class CourseEmbeddingRecommendService {
                 .toList();
 
         return String.format("%s 코스, 장소 %d개 (%s)",
-                category != null ? category : "기타",
+                tagName != null ? tagName : "기타",
                 placeCount,
-                mainTagNames.isEmpty() ? "다양한 장소" : String.join(", ", mainTagNames));
+                placeMainTagNames.isEmpty() ? "다양한 장소" : String.join(", ", placeMainTagNames));
     }
 
     private record ScoredDoc(Long courseId, double score) {}
