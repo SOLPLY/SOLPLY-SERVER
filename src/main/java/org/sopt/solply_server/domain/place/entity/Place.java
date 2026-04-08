@@ -61,6 +61,7 @@ public class Place extends BaseTimeEntity {
 
     private String address;
 
+    @BatchSize(size = 50)
     @OneToMany(mappedBy = "place", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PlaceTag> placeTags = new ArrayList<>();
 
