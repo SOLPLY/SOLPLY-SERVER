@@ -18,11 +18,26 @@ public class CourseEmbeddingFacade {
     /** 한 번에 OpenAI API에 전송할 코스 수. Rate limit 대응 및 부분 실패 격리를 위해 분할한다. */
     private static final int EMBEDDING_CHUNK_SIZE = 50;
 
+    private static final List<EmbeddingStatus> INIT_TARGET_STATUSES =
+            List.of(EmbeddingStatus.INIT, EmbeddingStatus.FAILED);
+
     private static final List<EmbeddingStatus> REEMBEDDING_TARGET_STATUSES =
             List.of(EmbeddingStatus.INIT, EmbeddingStatus.DIRTY, EmbeddingStatus.FAILED);
 
     private final CourseSearchDocumentRepository courseSearchDocumentRepository;
     private final CourseEmbeddingBatchProcessor batchProcessor;
+
+    /**
+     * INIT·FAILED 상태의 코스 문서를 즉시 임베딩한다.
+     * 수동 트리거용 (어드민 API, 테스트 등).
+     */
+    public void initializePendingDocuments() {
+        List<Long> pendingIds = courseSearchDocumentRepository.findCourseIdsByStatusIn(INIT_TARGET_STATUSES);
+
+        log.info("코스 임베딩 초기화 시작 - 대상 수: {}", pendingIds.size());
+        embedInChunks(pendingIds);
+        log.info("코스 임베딩 초기화 완료");
+    }
 
     /**
      * 매일 새벽 4시 — INIT·DIRTY·FAILED 상태의 코스 문서를 일괄 재임베딩한다.
