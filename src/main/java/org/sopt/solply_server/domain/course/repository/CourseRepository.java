@@ -82,4 +82,21 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             @Param("namePattern") String namePattern);
 
     Optional<Course> findByIdAndActiveTrue(Long id);
+
+    /**
+     * 추천 응답 조립용 — course + tag + town + coursePlaces + place + placeTags 를 모두 JOIN FETCH.
+     * 임베딩 유사도 Top-K 선정 후 상세 데이터를 한 번에 로딩할 때 사용한다.
+     */
+    @Query("""
+        SELECT DISTINCT c FROM Course c
+        JOIN FETCH c.tag
+        JOIN FETCH c.town
+        LEFT JOIN FETCH c.coursePlaces cp
+        LEFT JOIN FETCH cp.place p
+        LEFT JOIN FETCH p.placeTags pt
+        LEFT JOIN FETCH pt.tag
+        WHERE c.id IN :courseIds
+          AND c.active = true
+    """)
+    List<Course> findByIdInWithAllForRecommendation(@Param("courseIds") List<Long> courseIds);
 }
