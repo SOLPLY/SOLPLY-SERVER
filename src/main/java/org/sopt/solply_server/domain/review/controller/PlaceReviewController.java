@@ -29,6 +29,7 @@ public class PlaceReviewController {
 
   @GetMapping("/{placeId}/reviews")
   public ResponseEntity<CustomApiResponse<GetPlaceReviewListResponse>> getPlaceReviews(
+      @CurrentUserId Long userId,
       @PathVariable Long placeId
   ) {
     GetPlaceReviewListResponse response = placeReviewService.getPlaceReviews(placeId);
