@@ -8,6 +8,8 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
+import org.sopt.solply_server.domain.review.dto.response.PlaceReviewListItem;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -17,6 +19,7 @@ import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
+import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -34,6 +37,7 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
   private final UserRepository userRepository;
   private final PlaceRepository placeRepository;
   private final ApplicationEventPublisher eventPublisher;
+  private final ImageUrlProvider imageUrlProvider;
 
   @Override
   @Transactional
@@ -73,6 +77,20 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     }
 
     return CreatePlaceReviewResponse.from(savedPlaceReview);
+  }
+
+  @Override
+  public GetPlaceReviewListResponse getPlaceReviews(Long placeId) {
+    placeRepository.findActiveById(placeId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+
+    List<PlaceReviewListItem> reviews = placeReviewRepository
+        .findAllByPlaceIdOrderByCreatedAtDesc(placeId)
+        .stream()
+        .map(placeReview -> PlaceReviewListItem.from(placeReview, imageUrlProvider))
+        .toList();
+
+    return GetPlaceReviewListResponse.of(reviews);
   }
 
   private void validateRequest(CreatePlaceReviewRequest request) {
