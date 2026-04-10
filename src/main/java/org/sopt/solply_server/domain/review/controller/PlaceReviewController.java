@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
 import org.sopt.solply_server.domain.review.service.PlaceReviewService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -24,5 +25,14 @@ public class PlaceReviewController {
   ) {
     CreatePlaceReviewResponse response = placeReviewService.createReview(userId, request);
     return CustomApiResponse.success("혼놀 기록 작성이 완료되었습니다.", response);
+  }
+
+  @GetMapping("/{placeId}/reviews")
+  public ResponseEntity<CustomApiResponse<GetPlaceReviewListResponse>> getPlaceReviews(
+      @CurrentUserId Long userId,
+      @PathVariable Long placeId
+  ) {
+    GetPlaceReviewListResponse response = placeReviewService.getPlaceReviews(placeId);
+    return CustomApiResponse.success("장소 리뷰 리스트 조회에 성공했습니다.", response);
   }
 }
