@@ -88,9 +88,8 @@ public class PlaceService {
     boolean isBookmarked = placeBookmarkFacade.isBookmarked(
         userId, placeId, place.getTown().getId());
     List<PlaceLatestReviewDto> latestReviews = placeReviewRepository
-        .findAllByPlaceIdOrderByCreatedAtDesc(placeId)
+        .findTop3ByPlaceIdOrderByCreatedAtDesc(placeId)
         .stream()
-        .limit(3)
         .map(review -> PlaceLatestReviewDto.from(review, imageUrlProvider))
         .toList();
     Town town = place.getTown();
