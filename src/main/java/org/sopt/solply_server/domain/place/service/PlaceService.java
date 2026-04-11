@@ -26,6 +26,7 @@ import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -87,9 +88,13 @@ public class PlaceService {
 
     boolean isBookmarked = placeBookmarkFacade.isBookmarked(
         userId, placeId, place.getTown().getId());
-    List<PlaceLatestReviewDto> latestReviews = placeReviewRepository
-        .findTop3ByPlaceIdOrderByCreatedAtDesc(placeId)
-        .stream()
+    List<PlaceReview> reviews = placeReviewRepository
+        .findTop4ByPlaceIdOrderByCreatedAtDesc(placeId);
+
+    boolean hasMoreReviews = reviews.size() > 3;
+
+    List<PlaceLatestReviewDto> latestReviews = reviews.stream()
+        .limit(3)
         .map(review -> PlaceLatestReviewDto.from(review, imageUrlProvider))
         .toList();
     Town town = place.getTown();
@@ -101,7 +106,8 @@ public class PlaceService {
         imageInfos,
         isBookmarked,
         town,
-        latestReviews
+        latestReviews,
+        hasMoreReviews
     );
   }
 
