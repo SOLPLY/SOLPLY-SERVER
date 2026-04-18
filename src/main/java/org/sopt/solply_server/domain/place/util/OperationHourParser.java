@@ -184,7 +184,7 @@ public class OperationHourParser {
 			String timeStr = m.group(1);
 			// 24:00으로 들어오면 00:00으로 강제 변환
 			if (timeStr.startsWith("24:")) {
-				timeStr = "00:00";
+				timeStr = "00" + timeStr.substring(2);
 			}
 			times.add(LocalTime.parse(timeStr.length() == 4 ? "0" + timeStr : timeStr));
 		}
