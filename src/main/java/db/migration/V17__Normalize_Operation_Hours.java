@@ -70,8 +70,6 @@ public class V17__Normalize_Operation_Hours extends BaseJavaMigration {
 							pstmt.setNull(10, Types.TIME);
 						else
 							pstmt.setTime(10, Time.valueOf(slot.getLastOrderTime()));
-						if (placeId == 59)
-							log.info("[Place {}}] Batch Data:{}", placeId, slot);
 						pstmt.addBatch();
 					}
 				}
