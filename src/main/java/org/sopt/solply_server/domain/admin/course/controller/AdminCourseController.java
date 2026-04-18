@@ -8,6 +8,7 @@ import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseListRe
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpdateResponse;
 import org.sopt.solply_server.domain.admin.course.dto.response.AdminCourseUpsertResponse;
 import org.sopt.solply_server.domain.admin.course.service.AdminCourseService;
+import org.sopt.solply_server.domain.course.service.facade.CourseEmbeddingFacade;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 @RequestMapping("/api/admin/courses")
 public class AdminCourseController {
 	private final AdminCourseService adminCourseService;
+	private final CourseEmbeddingFacade courseEmbeddingFacade;
 
 	@Operation(summary = "어드민 코스 생성", description = "어드민이 새 코스를 생성합니다.")
 	@PostMapping
@@ -86,6 +88,13 @@ public class AdminCourseController {
 	) {
 		adminCourseService.deleteCourse(courseId);
 		return CustomApiResponse.success("코스 삭제 성공", null);
+	}
+
+	@Operation(summary = "코스 검색 문서 일괄 임베딩", description = "INIT·FAILED 상태의 코스 검색 문서를 즉시 임베딩합니다. 테스트 및 초기 데이터 세팅용.")
+	@PostMapping("/search-documents/initialize")
+	public ResponseEntity<CustomApiResponse<Void>> initializeCourseSearchDocuments() {
+		courseEmbeddingFacade.initializePendingDocuments();
+		return CustomApiResponse.success("코스 검색 문서 임베딩 초기화 완료", null);
 	}
 
 	@Operation(summary = "어드민 코스 상태 수정", description = "어드민이 코스의 활성화 상태를 수정합니다.")

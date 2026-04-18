@@ -24,12 +24,15 @@ import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.course.repository.CourseSearchDocumentRepository;
+import org.sopt.solply_server.domain.course.service.event.CourseCreatedEvent;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.TagViewUtils;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +56,9 @@ public class CourseService {
     private final CourseNameGenerator courseNameGenerator;
     private final CourseUtils courseUtils;
     private final EntityLoader entityLoader;
+
+    private final CourseSearchDocumentRepository courseSearchDocumentRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     private final TownValidator townValidator;
     private final CoursePlaceValidator coursePlaceValidator;
@@ -161,6 +167,8 @@ public class CourseService {
         if (originCourse.isCreatedBy(userId)) {
             // 본인 코스에 장소 추가
             coursePlaceService.addPlaceToMyCourse(originCourse, place);
+            // 장소 구성이 바뀌었으므로 임베딩 문서를 DIRTY 상태로 전환
+            courseSearchDocumentRepository.markDirtyByCourseId(originCourse.getId());
         } else {
             // 코스 복제 후 장소 추가
             List<PlaceInCourseInfo> placesInCourse = originCourse.getPlacesInCourseInfo();
@@ -328,6 +336,9 @@ public class CourseService {
 
         courseRepository.deleteCoursePlacesByCourseId(course.getId());
         coursePlaceService.addPlacesToTargetCourse(course, placeInfosInCourseForOrder, placesToAdd);
+
+        // 코스 내용이 바뀌었으므로 임베딩 문서를 DIRTY 상태로 전환
+        courseSearchDocumentRepository.markDirtyByCourseId(course.getId());
     }
 
     /**
@@ -354,6 +365,9 @@ public class CourseService {
 
         // 북마크 등록
         courseBookmarkFacade.createCourseBookmark(user.getId(), newCourse.getId());
+
+        // 임베딩 파이프라인 트리거 (트랜잭션 커밋 후 비동기 실행)
+        applicationEventPublisher.publishEvent(new CourseCreatedEvent(newCourse.getId()));
 
         return newCourse;
     }

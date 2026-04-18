@@ -6,11 +6,14 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import org.sopt.solply_server.domain.recommend.dto.EmbeddingCourseRecommendRequest;
 import org.sopt.solply_server.domain.recommend.dto.EmbeddingPlaceRecommendRequest;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
+import org.sopt.solply_server.domain.recommend.dto.response.EmbeddingCourseRecommendGetResponse;
 import org.sopt.solply_server.domain.recommend.dto.response.EmbeddingPlaceRecommendGetResponse;
 import org.sopt.solply_server.domain.recommend.dto.response.PlaceRecommendationGetResponse;
+import org.sopt.solply_server.domain.recommend.service.CourseEmbeddingRecommendService;
 import org.sopt.solply_server.domain.recommend.service.EmbeddingRecommendService;
 import org.sopt.solply_server.domain.recommend.service.RecommendService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -31,6 +34,7 @@ public class RecommendController {
 
     private final RecommendService recommendService;
     private final EmbeddingRecommendService embeddingRecommendService;
+    private final CourseEmbeddingRecommendService courseEmbeddingRecommendService;
 
     @Operation(summary = "장소 추천 조회", description = "장소 추천을 위한 썸네일 리스트를 조회합니다.")
     @GetMapping("/places")
@@ -51,6 +55,17 @@ public class RecommendController {
         return CustomApiResponse.success(
                 "자연어 기반 장소 추천 조회 성공",
                 embeddingRecommendService.recommendByQuery(request.query(), request.townId(), userId)
+        );
+    }
+
+    @Operation(summary = "자연어 기반 코스 추천", description = "사용자의 자연어 질문과 동네 ID를 기반으로 유사한 공유 코스 상위 3개를 추천합니다.")
+    @PostMapping("/courses/embedding")
+    public ResponseEntity<CustomApiResponse<EmbeddingCourseRecommendGetResponse>> recommendCoursesByEmbedding(
+            @CurrentUserId Long userId,
+            @RequestBody @Valid EmbeddingCourseRecommendRequest request) {
+        return CustomApiResponse.success(
+                "자연어 기반 코스 추천 조회 성공",
+                courseEmbeddingRecommendService.recommendByQuery(request.query(), request.townId(), userId)
         );
     }
 
