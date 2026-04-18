@@ -1,5 +1,8 @@
 package org.sopt.solply_server.global.entity;
 
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
+
 public enum DayOfWeek {
 	MON(1), TUE(2), WED(3), THU(4), FRI(5), SAT(6), SUN(7);
 
@@ -14,7 +17,7 @@ public enum DayOfWeek {
 			if (day.value==value)
 				return day;
 		}
-		throw new IllegalArgumentException("Invalid Day: " + value);
+		throw new BusinessException(ErrorCode.INVALID_DAY_VALUE);
 	}
 
 	public int getValue() {
