@@ -24,7 +24,7 @@ public class V17__Normalize_Operation_Hours extends BaseJavaMigration {
 		Connection connection = context.getConnection();
 		// places 테이블 조회
 		try (Statement select = connection.createStatement();
-			 ResultSet rs = select.executeQuery("SELECT id, opening_hours FROM places")) {
+			 ResultSet rs = select.executeQuery("SELECT id, opening_hours FROM places WHERE id <= 320")) {
 
 			String insertSql = "INSERT INTO operation_time_slots (place_id, day_of_week, start_time, end_time,end_next_day, is_day_off,description,created_at,updated_at,last_order_time) VALUES (?,?,?,?,?,?,?,?,?,?)";
 
