@@ -13,3 +13,7 @@ WHERE id = 40;
 UPDATE places
 SET opening_hours = '수, 목, 금, 일 14:00 - 19:00 \n토 14:00 - 20:00\n매주 월, 화 정기휴무'
 WHERE id = 121;
+
+UPDATE places
+SET opening_hours = '매일 10:30 - 19:30'
+WHERE id = 318;
