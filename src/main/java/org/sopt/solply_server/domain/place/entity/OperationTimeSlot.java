@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.entity;
 
 import java.time.LocalTime;
 
+import org.sopt.solply_server.global.entity.BaseTimeEntity;
 import org.sopt.solply_server.global.entity.DayOfWeek;
 
 import jakarta.persistence.Column;
@@ -26,13 +27,13 @@ import lombok.ToString;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @ToString
 @Table(name = "operation_time_slots")
-public class OperationTimeSlot {
+public class OperationTimeSlot extends BaseTimeEntity {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "place_id")
+	@JoinColumn(name = "place_id", nullable = false)
 	private Place place;
 
 	@Column(nullable = false, columnDefinition = "TINYINT")
@@ -60,23 +61,29 @@ public class OperationTimeSlot {
 	@Column
 	private String description;
 
-	public static OperationTimeSlot createDayOn(DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime) {
+	public static OperationTimeSlot createDayOn(Place place, DayOfWeek dayOfWeek, LocalTime startTime,
+		LocalTime endTime) {
 
 		OperationTimeSlot s = new OperationTimeSlot();
 
+		s.place = place;
 		s.dayOfWeek = dayOfWeek;
 		s.isDayOff = false;
 		s.startTime = startTime;
 		s.endTime = endTime;
+		s.endNextDay = !startTime.isBefore(endTime);
 
 		return s;
 	}
 
-	public static OperationTimeSlot createDayOff(DayOfWeek dayOfWeek) {
+	public static OperationTimeSlot createDayOff(Place place, DayOfWeek dayOfWeek) {
 		OperationTimeSlot s = new OperationTimeSlot();
 
+		s.place = place;
 		s.dayOfWeek = dayOfWeek;
 		s.isDayOff = true;
+		s.endNextDay = false;
+
 		return s;
 	}
 
