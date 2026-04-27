@@ -19,6 +19,7 @@ import org.sopt.solply_server.global.ai.EmbeddingService;
 import org.sopt.solply_server.global.ai.ReasonGenerationService;
 import org.sopt.solply_server.global.ai.ReasonGenerationService.PlaceContext;
 import org.sopt.solply_server.global.util.EntityLoader;
+import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ public class EmbeddingRecommendService {
     private final EmbeddingService embeddingService;
     private final ReasonGenerationService reasonGenerationService;
     private final EntityLoader entityLoader;
+    private final ImageUrlProvider imageUrlProvider;
 
     public EmbeddingPlaceRecommendGetResponse recommendByQuery(String query, Long townId, Long userId) {
         User user = entityLoader.getUser(userId);
@@ -107,6 +109,7 @@ public class EmbeddingRecommendService {
         return new RecommendedPlaceDto(
                 place.getId(),
                 place.getName(),
+                imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                 mainTag,
                 optionTags,
                 place.getTown().getName(),
