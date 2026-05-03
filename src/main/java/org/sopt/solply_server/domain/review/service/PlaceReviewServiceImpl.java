@@ -8,7 +8,9 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetMyReviewListResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
+import org.sopt.solply_server.domain.review.dto.response.MyReviewListItem;
 import org.sopt.solply_server.domain.review.dto.response.PlaceReviewListItem;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
@@ -124,5 +126,19 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     if (imageKeys.size() > MAX_IMAGE_COUNT) {
       throw new BusinessValidationException(ErrorCode.PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED);
     }
+  }
+  @Override
+  public GetMyReviewListResponse getMyReviews(Long userId) {
+
+    userRepository.findById(userId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+
+    List<MyReviewListItem> reviews = placeReviewRepository
+        .findAllByUserIdOrderByCreatedAtDesc(userId)
+        .stream()
+        .map(review -> MyReviewListItem.from(review, imageUrlProvider))
+        .toList();
+
+    return GetMyReviewListResponse.of(reviews);
   }
 }

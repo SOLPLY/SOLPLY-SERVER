@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetMyReviewListResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
 import org.sopt.solply_server.domain.review.service.PlaceReviewService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -49,5 +50,17 @@ public class PlaceReviewController {
   ) {
     GetPlaceReviewListResponse response = placeReviewService.getPlaceReviews(placeId);
     return CustomApiResponse.success("장소 리뷰 리스트 조회에 성공했습니다.", response);
+  }
+
+  @Operation(
+      summary = "내 리뷰 리스트 조회",
+      description = "로그인한 사용자가 작성한 리뷰 목록을 조회합니다."
+  )
+  @GetMapping("/me")
+  public ResponseEntity<CustomApiResponse<GetMyReviewListResponse>> getMyReviews(
+      @CurrentUserId Long userId
+  ) {
+    GetMyReviewListResponse response = placeReviewService.getMyReviews(userId);
+    return CustomApiResponse.success("내 리뷰 리스트 조회에 성공했습니다.", response);
   }
 }

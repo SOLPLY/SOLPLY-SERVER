@@ -18,4 +18,14 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
       """)
   List<PlaceReview> findAllByPlaceIdOrderByCreatedAtDesc(@Param("placeId") Long placeId);
   List<PlaceReview> findTop4ByPlaceIdOrderByCreatedAtDesc(Long placeId);
+
+  @Query("""
+    select distinct pr
+    from PlaceReview pr
+    join fetch pr.place p
+    left join fetch pr.placeReviewImages pri
+    where pr.user.id = :userId
+    order by pr.createdAt desc
+    """)
+  List<PlaceReview> findAllByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
 }
