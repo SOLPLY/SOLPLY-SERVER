@@ -50,4 +50,17 @@ public class PlaceReviewController {
     GetPlaceReviewListResponse response = placeReviewService.getPlaceReviews(placeId);
     return CustomApiResponse.success("장소 리뷰 리스트 조회에 성공했습니다.", response);
   }
+
+  @Operation(
+      summary = "내 장소 리뷰 삭제",
+      description = "로그인한 사용자가 본인이 작성한 장소 리뷰를 삭제합니다."
+  )
+  @DeleteMapping("/{reviewId}")
+  public ResponseEntity<CustomApiResponse<Void>> deleteMyReview(
+      @CurrentUserId Long userId,
+      @PathVariable Long reviewId
+  ) {
+    placeReviewService.deleteMyReview(userId, reviewId);
+    return CustomApiResponse.success("내 리뷰 삭제에 성공했습니다.", null);
+  }
 }

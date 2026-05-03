@@ -125,4 +125,17 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
       throw new BusinessValidationException(ErrorCode.PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED);
     }
   }
+
+  @Override
+  @Transactional
+  public void deleteMyReview(Long userId, Long reviewId) {
+    PlaceReview placeReview = placeReviewRepository.findById(reviewId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.PLACE_REVIEW_NOT_FOUND));
+
+    if (!placeReview.getUser().getId().equals(userId)) {
+      throw new BusinessValidationException(ErrorCode.FORBIDDEN_PLACE_REVIEW_DELETE);
+    }
+
+    placeReviewRepository.delete(placeReview);
+  }
 }
