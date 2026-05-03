@@ -5,6 +5,7 @@ import java.util.List;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.entity.VisitTime;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
+import java.util.Objects;
 
 public record MyReviewListItem(
     Long reviewId,
@@ -28,6 +29,7 @@ public record MyReviewListItem(
         placeReview.getVisitTimeSlot(),
         placeReview.getPlaceReviewImages().stream()
             .map(image -> imageUrlProvider.getImageUrl(image.getImageUrl()))
+            .filter(Objects::nonNull)
             .toList()
     );
   }

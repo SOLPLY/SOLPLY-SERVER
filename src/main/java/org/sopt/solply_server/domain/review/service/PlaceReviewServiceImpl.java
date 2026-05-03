@@ -130,6 +130,7 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
       throw new BusinessValidationException(ErrorCode.PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED);
     }
   }
+
   @Override
   public GetMyReviewListResponse getMyReviews(Long userId) {
 
@@ -151,8 +152,12 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     userRepository.findById(userId)
         .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
 
-    List<PlaceReview> reviews = placeReviewRepository
-        .findMyReviewsWithFetchJoin(userId, PageRequest.of(0, 4));
+    List<Long> reviewIds = placeReviewRepository
+        .findMyReviewIds(userId, PageRequest.of(0, 4));
+
+    List<PlaceReview> reviews = reviewIds.isEmpty()
+        ? List.of()
+        : placeReviewRepository.findAllByIdInWithFetchJoin(reviewIds);
 
     boolean hasMore = reviews.size() > 3;
 
