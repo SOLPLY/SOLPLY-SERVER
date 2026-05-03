@@ -28,4 +28,5 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
     order by pr.createdAt desc
     """)
   List<PlaceReview> findAllByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
+  List<PlaceReview> findTop4ByUserIdOrderByCreatedAtDesc(Long userId);
 }

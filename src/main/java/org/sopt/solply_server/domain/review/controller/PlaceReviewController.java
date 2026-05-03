@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetMyReviewListResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetMyReviewPreviewResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
 import org.sopt.solply_server.domain.review.service.PlaceReviewService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
@@ -62,5 +63,19 @@ public class PlaceReviewController {
   ) {
     GetMyReviewListResponse response = placeReviewService.getMyReviews(userId);
     return CustomApiResponse.success("내 리뷰 리스트 조회에 성공했습니다.", response);
+  }
+
+  @Operation(
+      summary = "내 리뷰 미리보기 조회",
+      description = "마이페이지에서 보여줄 최근 리뷰 3개를 조회합니다."
+  )
+  @GetMapping("/me/preview")
+  public ResponseEntity<CustomApiResponse<GetMyReviewPreviewResponse>> getMyReviewPreview(
+      @CurrentUserId Long userId
+  ) {
+    GetMyReviewPreviewResponse response =
+        placeReviewService.getMyReviewPreview(userId);
+
+    return CustomApiResponse.success("내 리뷰 미리보기 조회 성공", response);
   }
 }

@@ -9,8 +9,10 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetMyReviewListResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetMyReviewPreviewResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
 import org.sopt.solply_server.domain.review.dto.response.MyReviewListItem;
+import org.sopt.solply_server.domain.review.dto.response.MyReviewPreviewItem;
 import org.sopt.solply_server.domain.review.dto.response.PlaceReviewListItem;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
@@ -140,5 +142,24 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
         .toList();
 
     return GetMyReviewListResponse.of(reviews);
+  }
+
+  @Override
+  public GetMyReviewPreviewResponse getMyReviewPreview(Long userId) {
+
+    userRepository.findById(userId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+
+    List<PlaceReview> reviews = placeReviewRepository
+        .findTop4ByUserIdOrderByCreatedAtDesc(userId);
+
+    boolean hasMore = reviews.size() > 3;
+
+    List<MyReviewPreviewItem> result = reviews.stream()
+        .limit(3)
+        .map(review -> MyReviewPreviewItem.from(review, imageUrlProvider))
+        .toList();
+
+    return GetMyReviewPreviewResponse.of(result, hasMore);
   }
 }
