@@ -15,6 +15,7 @@ import org.sopt.solply_server.domain.review.dto.response.MyReviewListItem;
 import org.sopt.solply_server.domain.review.dto.response.MyReviewPreviewItem;
 import org.sopt.solply_server.domain.review.dto.response.PlaceReviewListItem;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
+import org.sopt.solply_server.domain.review.entity.PlaceReviewImage;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
@@ -22,6 +23,7 @@ import org.sopt.solply_server.global.exception.BusinessValidationException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
+import org.sopt.solply_server.global.util.s3.ImageFileDeleteEvent;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
@@ -128,6 +130,27 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
 
     if (imageKeys.size() > MAX_IMAGE_COUNT) {
       throw new BusinessValidationException(ErrorCode.PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED);
+    }
+  }
+
+  @Override
+  @Transactional
+  public void deleteMyReview(Long userId, Long reviewId) {
+    PlaceReview placeReview = placeReviewRepository.findById(reviewId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.PLACE_REVIEW_NOT_FOUND));
+
+    if (!placeReview.getUser().getId().equals(userId)) {
+      throw new BusinessValidationException(ErrorCode.FORBIDDEN_PLACE_REVIEW_DELETE);
+    }
+
+    List<String> imageKeys = placeReview.getPlaceReviewImages().stream()
+        .map(PlaceReviewImage::getImageUrl)
+        .toList();
+
+    placeReviewRepository.delete(placeReview);
+
+    if (!imageKeys.isEmpty()) {
+      eventPublisher.publishEvent(new ImageFileDeleteEvent(imageKeys));
     }
   }
 

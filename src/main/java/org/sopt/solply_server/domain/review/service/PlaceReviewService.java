@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListRespo
 public interface PlaceReviewService {
   CreatePlaceReviewResponse createReview(Long userId, CreatePlaceReviewRequest request);
   GetPlaceReviewListResponse getPlaceReviews(Long placeId);
+  void deleteMyReview(Long userId, Long reviewId);
   GetMyReviewListResponse getMyReviews(Long userId);
   GetMyReviewPreviewResponse getMyReviewPreview(Long userId);
 }

@@ -82,6 +82,17 @@ public class S3FileService {
 
         return destKey;
     }
+
+    public void deleteFile(final String fileKey) {
+      if (fileKey == null || fileKey.isBlank()) {
+        return;
+      }
+
+      s3Client.deleteObject(DeleteObjectRequest.builder()
+        .bucket(bucketName)
+        .key(fileKey)
+        .build());
+  }
 }
 
 

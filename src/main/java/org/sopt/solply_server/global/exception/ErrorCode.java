@@ -118,12 +118,13 @@ public enum ErrorCode {
     NOT_FOUND_PLACE_REQUEST(HttpStatus.NOT_FOUND, "PLACE_REQUEST-001", "존재하지 않는 장소 등록 요청입니다." ),
     INVALID_REQUEST_STATE(HttpStatus.BAD_REQUEST, "PLACE_REQUEST-002", "승인할 수 없는 장소 등록 요청입니다." ),
 
-    //장소 리뷰 관련 (PLACE_REVIEW-xxx)
-    PLACE_REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "PLACE_REVIEW_001", "해당 기록을 찾을 수 없습니다."),
-    PLACE_REVIEW_CONTENT_BLANK(HttpStatus.BAD_REQUEST, "PLACE_REVIEW_002", "기록 내용은 공백일 수 없습니다."),
-    INVALID_PLACE_REVIEW_CONTENT_LENGTH(HttpStatus.BAD_REQUEST, "PLACE_REVIEW_003", "기록 내용은 10자 이상 500자 이하여야 합니다."),
-    INVALID_VISIT_DATE(HttpStatus.BAD_REQUEST, "PLACE_REVIEW_004", "방문 날짜는 오늘 또는 이전 날짜만 선택할 수 있습니다."),
-    PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "PLACE_REVIEW_005", "사진은 최대 5장까지 업로드할 수 있습니다."),
+   // 장소 리뷰 관련 (PLACE_REVIEW-xxx)
+   PLACE_REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "PLACE-REVIEW-001", "해당 기록을 찾을 수 없습니다."),
+   PLACE_REVIEW_CONTENT_BLANK(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-002", "기록 내용은 공백일 수 없습니다."),
+   INVALID_PLACE_REVIEW_CONTENT_LENGTH(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-003", "기록 내용은 10자 이상 500자 이하여야 합니다."),
+   INVALID_VISIT_DATE(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-004", "방문 날짜는 오늘 또는 이전 날짜만 선택할 수 있습니다."),
+   PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-005", "사진은 최대 5장까지 업로드할 수 있습니다."),
+   FORBIDDEN_PLACE_REVIEW_DELETE(HttpStatus.FORBIDDEN, "PLACE-REVIEW-006", "본인이 작성한 리뷰만 삭제할 수 있습니다."),
     ;
 
 
