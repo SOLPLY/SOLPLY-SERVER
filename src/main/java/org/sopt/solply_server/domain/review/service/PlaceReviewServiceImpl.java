@@ -26,6 +26,7 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -151,7 +152,7 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
         .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
 
     List<PlaceReview> reviews = placeReviewRepository
-        .findTop4ByUserIdOrderByCreatedAtDesc(userId);
+        .findMyReviewsWithFetchJoin(userId, PageRequest.of(0, 4));
 
     boolean hasMore = reviews.size() > 3;
 
