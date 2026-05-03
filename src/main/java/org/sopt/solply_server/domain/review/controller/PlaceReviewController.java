@@ -76,6 +76,6 @@ public class PlaceReviewController {
     GetMyReviewPreviewResponse response =
         placeReviewService.getMyReviewPreview(userId);
 
-    return CustomApiResponse.success("내 리뷰 미리보기 조회 성공", response);
+    return CustomApiResponse.success("내 리뷰 미리보기 조회에 성공했습니다.", response);
   }
 }
