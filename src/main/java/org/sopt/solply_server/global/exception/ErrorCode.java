@@ -125,6 +125,8 @@ public enum ErrorCode {
    INVALID_VISIT_DATE(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-004", "방문 날짜는 오늘 또는 이전 날짜만 선택할 수 있습니다."),
    PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-005", "사진은 최대 5장까지 업로드할 수 있습니다."),
    FORBIDDEN_PLACE_REVIEW_DELETE(HttpStatus.FORBIDDEN, "PLACE-REVIEW-006", "본인이 작성한 리뷰만 삭제할 수 있습니다."),
+   FORBIDDEN_SELF_REVIEW_REPORT(HttpStatus.FORBIDDEN, "PLACE-REVIEW-007", "본인이 작성한 리뷰는 신고할 수 없습니다."),
+   ALREADY_REPORTED_REVIEW(HttpStatus.CONFLICT, "PLACE-REVIEW-008", "이미 신고한 리뷰입니다."),
     ;
 
 

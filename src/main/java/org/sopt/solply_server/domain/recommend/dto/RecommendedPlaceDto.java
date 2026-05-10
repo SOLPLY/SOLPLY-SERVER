@@ -8,6 +8,7 @@ public record RecommendedPlaceDto(
         String thumbnailImageUrl,
         String mainTag,
         List<String> optionTags,
+        Long townId,
         String townName,
         String reason
 ) {

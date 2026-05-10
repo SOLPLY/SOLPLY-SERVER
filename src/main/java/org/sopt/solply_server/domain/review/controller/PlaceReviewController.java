@@ -5,11 +5,14 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewReportRequest;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
+import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewReportResponse;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetMyReviewListResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetMyReviewPreviewResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
+import org.sopt.solply_server.domain.review.service.PlaceReviewReportService;
 import org.sopt.solply_server.domain.review.service.PlaceReviewService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 public class PlaceReviewController {
 
   private final PlaceReviewService placeReviewService;
+  private final PlaceReviewReportService placeReviewReportService;
 
   @Operation(
       summary = "장소 리뷰 작성",
@@ -90,5 +94,23 @@ public class PlaceReviewController {
         placeReviewService.getMyReviewPreview(userId);
 
     return CustomApiResponse.success("내 리뷰 미리보기 조회에 성공했습니다.", response);
+  }
+
+  @Operation(
+      summary = "장소 리뷰 신고",
+      description = "특정 장소 리뷰를 신고합니다. 본인이 작성한 리뷰는 신고할 수 없으며, 같은 리뷰를 중복 신고할 수 없습니다.",
+      parameters = {
+          @Parameter(name = "reviewId", description = "신고할 리뷰 ID", required = true, example = "1")
+      }
+  )
+  @PostMapping("/{reviewId}/reports")
+  public ResponseEntity<CustomApiResponse<CreatePlaceReviewReportResponse>> reportReview(
+      @CurrentUserId Long userId,
+      @PathVariable Long reviewId,
+      @Valid @RequestBody CreatePlaceReviewReportRequest request
+  ) {
+    CreatePlaceReviewReportResponse response =
+        placeReviewReportService.createReviewReport(userId, reviewId, request);
+    return CustomApiResponse.success("리뷰 신고가 접수되었습니다.", response);
   }
 }
