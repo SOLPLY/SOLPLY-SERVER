@@ -2,10 +2,10 @@ package org.sopt.solply_server.domain.review.repository;
 
 import java.util.List;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.domain.Pageable;
 
 public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> {
 
@@ -18,37 +18,38 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
       order by pr.createdAt desc
       """)
   List<PlaceReview> findAllByPlaceIdOrderByCreatedAtDesc(@Param("placeId") Long placeId);
+
   List<PlaceReview> findTop4ByPlaceIdOrderByCreatedAtDesc(Long placeId);
 
   @Query("""
-    select distinct pr
-    from PlaceReview pr
-    join fetch pr.place p
-    left join fetch pr.placeReviewImages pri
-    where pr.user.id = :userId
-    order by pr.createdAt desc
-    """)
+      select distinct pr
+      from PlaceReview pr
+      join fetch pr.place p
+      left join fetch pr.placeReviewImages pri
+      where pr.user.id = :userId
+      order by pr.createdAt desc
+      """)
   List<PlaceReview> findAllByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
 
   @Query("""
-    select pr.id
-    from PlaceReview pr
-    where pr.user.id = :userId
-    order by pr.createdAt desc
-    """)
+      select pr.id
+      from PlaceReview pr
+      where pr.user.id = :userId
+      order by pr.createdAt desc
+      """)
   List<Long> findMyReviewIds(
       @Param("userId") Long userId,
       Pageable pageable
   );
 
   @Query("""
-    select distinct pr
-    from PlaceReview pr
-    join fetch pr.place p
-    left join fetch pr.placeReviewImages pri
-    where pr.id in :reviewIds
-    order by pr.createdAt desc
-    """)
+      select distinct pr
+      from PlaceReview pr
+      join fetch pr.place p
+      left join fetch pr.placeReviewImages pri
+      where pr.id in :reviewIds
+      order by pr.createdAt desc
+      """)
   List<PlaceReview> findAllByIdInWithFetchJoin(
       @Param("reviewIds") List<Long> reviewIds
   );
