@@ -112,6 +112,7 @@ public class EmbeddingRecommendService {
                 imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                 mainTag,
                 optionTags,
+                place.getTown().getId(),
                 place.getTown().getName(),
                 reason
         );
