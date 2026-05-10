@@ -35,7 +35,7 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
       select pr.id
       from PlaceReview pr
       where pr.user.id = :userId
-      order by pr.createdAt desc
+      order by pr.createdAt desc, pr.id desc
       """)
   List<Long> findMyReviewIds(
       @Param("userId") Long userId,
@@ -48,7 +48,7 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
       join fetch pr.place p
       left join fetch pr.placeReviewImages pri
       where pr.id in :reviewIds
-      order by pr.createdAt desc
+      order by pr.createdAt desc, pr.id desc
       """)
   List<PlaceReview> findAllByIdInWithFetchJoin(
       @Param("reviewIds") List<Long> reviewIds
