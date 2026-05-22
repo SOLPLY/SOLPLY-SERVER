@@ -7,6 +7,7 @@ public record RecommendedCourseDto(
         String courseName,
         String thumbnailImageUrl,
         String courseTag,
+        Long townId,
         String townName,
         String reason,
         List<String> placeMainTags

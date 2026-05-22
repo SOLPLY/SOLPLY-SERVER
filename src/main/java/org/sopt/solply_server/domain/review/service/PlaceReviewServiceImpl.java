@@ -8,9 +8,14 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.review.dto.request.CreatePlaceReviewRequest;
 import org.sopt.solply_server.domain.review.dto.response.CreatePlaceReviewResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetMyReviewListResponse;
+import org.sopt.solply_server.domain.review.dto.response.GetMyReviewPreviewResponse;
 import org.sopt.solply_server.domain.review.dto.response.GetPlaceReviewListResponse;
+import org.sopt.solply_server.domain.review.dto.response.MyReviewListItem;
+import org.sopt.solply_server.domain.review.dto.response.MyReviewPreviewItem;
 import org.sopt.solply_server.domain.review.dto.response.PlaceReviewListItem;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
+import org.sopt.solply_server.domain.review.entity.PlaceReviewImage;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
@@ -18,10 +23,12 @@ import org.sopt.solply_server.global.exception.BusinessValidationException;
 import org.sopt.solply_server.global.exception.EntityNotFoundException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
+import org.sopt.solply_server.global.util.s3.ImageFileDeleteEvent;
 import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -124,5 +131,64 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     if (imageKeys.size() > MAX_IMAGE_COUNT) {
       throw new BusinessValidationException(ErrorCode.PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED);
     }
+  }
+
+  @Override
+  @Transactional
+  public void deleteMyReview(Long userId, Long reviewId) {
+    PlaceReview placeReview = placeReviewRepository.findById(reviewId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.PLACE_REVIEW_NOT_FOUND));
+
+    if (!placeReview.getUser().getId().equals(userId)) {
+      throw new BusinessValidationException(ErrorCode.FORBIDDEN_PLACE_REVIEW_DELETE);
+    }
+
+    List<String> imageKeys = placeReview.getPlaceReviewImages().stream()
+        .map(PlaceReviewImage::getImageUrl)
+        .toList();
+
+    placeReviewRepository.delete(placeReview);
+
+    if (!imageKeys.isEmpty()) {
+      eventPublisher.publishEvent(new ImageFileDeleteEvent(imageKeys));
+    }
+  }
+
+  @Override
+  public GetMyReviewListResponse getMyReviews(Long userId) {
+
+    userRepository.findById(userId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+
+    List<MyReviewListItem> reviews = placeReviewRepository
+        .findAllByUserIdOrderByCreatedAtDesc(userId)
+        .stream()
+        .map(review -> MyReviewListItem.from(review, imageUrlProvider))
+        .toList();
+
+    return GetMyReviewListResponse.of(reviews);
+  }
+
+  @Override
+  public GetMyReviewPreviewResponse getMyReviewPreview(Long userId) {
+
+    userRepository.findById(userId)
+        .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_USER));
+
+    List<Long> reviewIds = placeReviewRepository
+        .findMyReviewIds(userId, PageRequest.of(0, 4));
+
+    List<PlaceReview> reviews = reviewIds.isEmpty()
+        ? List.of()
+        : placeReviewRepository.findAllByIdInWithFetchJoin(reviewIds);
+
+    boolean hasMore = reviews.size() > 3;
+
+    List<MyReviewPreviewItem> result = reviews.stream()
+        .limit(3)
+        .map(review -> MyReviewPreviewItem.from(review, imageUrlProvider))
+        .toList();
+
+    return GetMyReviewPreviewResponse.of(result, hasMore);
   }
 }

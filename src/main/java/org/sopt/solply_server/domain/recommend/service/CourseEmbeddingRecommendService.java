@@ -113,6 +113,7 @@ public class CourseEmbeddingRecommendService {
 
     private RecommendedCourseDto toDto(Course course, String reason) {
         String courseTag = TagViewUtils.getActiveNameOrNull(course.getTag());
+        Long townId = course.getTown().getId();
         String townName = course.getTown().getName();
         String thumbnailImageUrl = courseUtils.getCourseThumbnailUrl(course);
 
@@ -127,6 +128,7 @@ public class CourseEmbeddingRecommendService {
                 course.getName(),
                 thumbnailImageUrl,
                 courseTag,
+                townId,
                 townName,
                 reason,
                 placeMainTags
