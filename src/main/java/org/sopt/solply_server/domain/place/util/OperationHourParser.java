@@ -28,6 +28,8 @@ public class OperationHourParser {
 		List<Integer> lastActiveDays = new ArrayList<>();
 		Set<Integer> processedDays = new HashSet<>();
 
+		List<String> descriptions = new ArrayList<>();
+
 		if (lines.length == 1 && lines[0].contains("연중무휴")) {
 			for (Integer day : DAY_MAP.values()) {
 				OperationTimeDto dto = OperationTimeDto.createDayOn(day, LocalTime.MIN, LocalTime.MIN);
@@ -54,9 +56,12 @@ public class OperationHourParser {
 
 			// 2. 브레이크 타임 (기존 슬롯 쪼개기)
 			if (line.contains("브레이크타임") || line.contains("브레이크 타임")) {
+				List<Integer> bDays = parseDays(line);
+				List<Integer> targetDays = bDays.isEmpty() ? lastActiveDays : bDays;
+
 				List<LocalTime> bTimes = extractTimes(line);
 				if (bTimes.size() >= 2) {
-					splitExistingSlots(result, lastActiveDays, bTimes.get(0), bTimes.get(1));
+					splitExistingSlots(result, targetDays, bTimes.get(0), bTimes.get(1));
 				}
 				continue;
 			}
@@ -72,7 +77,13 @@ public class OperationHourParser {
 			}
 
 			// 4. 기본 영업시간 파싱
-			parseOperationTime(line, result, lastActiveDays, processedDays);
+			List<LocalTime> times = extractTimes(line);
+			if (times.size() >= 2) {
+				parseOperationTime(line, result, lastActiveDays, processedDays);
+			} else if (!line.contains("연중무휴")) {
+				descriptions.add(line);
+			}
+			// parseOperationTime(line, result, lastActiveDays, processedDays);
 			// List<Integer> days = parseDays(line);
 			// List<LocalTime> times = extractTimes(line);
 			// if (times.size() == 2) {
@@ -85,6 +96,17 @@ public class OperationHourParser {
 			// 	}
 			// 	lastActiveDays = days;
 			// }
+		}
+		// 3️⃣ 추가: 수집된 비정형 텍스트가 있다면 모든 슬롯에 일괄 매핑
+		if (!descriptions.isEmpty()) {
+			String combinedDescription = String.join(", ", descriptions);
+			for (OperationTimeDto slot : result) {
+				if (slot.getDescription() == null || slot.getDescription().isEmpty() || slot.getDescription().equals("연중무휴")) {
+					slot.setDescription(combinedDescription);
+				} else {
+					slot.setDescription(slot.getDescription() + " / " + combinedDescription);
+				}
+			}
 		}
 		return result;
 	}
