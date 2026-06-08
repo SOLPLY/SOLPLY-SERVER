@@ -18,7 +18,7 @@ import org.sopt.solply_server.domain.place.util.OperationHourParser;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class V17__Normalize_Operation_Hours extends BaseJavaMigration {
+public class V20__Normalize_Operation_Hours extends BaseJavaMigration {
 	@Override
 	public void migrate(Context context) throws Exception {
 		Connection connection = context.getConnection();
