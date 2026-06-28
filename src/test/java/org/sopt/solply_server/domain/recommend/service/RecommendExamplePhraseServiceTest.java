@@ -38,9 +38,7 @@ class RecommendExamplePhraseServiceTest {
         ExamplePhrasesGetResponse response =
                 recommendExamplePhraseService.getExamplePhrases(RecommendTargetType.PLACE);
 
-        assertThat(response.phrases()).hasSize(2);
-        assertThat(response.phrases()).extracting("id").containsExactly(1L, 2L);
-        assertThat(response.phrases()).extracting("content")
+        assertThat(response.phrases())
                 .containsExactly("서촌 조용한 독립서점", "망원동 아기자기한 소품샵");
     }
 
