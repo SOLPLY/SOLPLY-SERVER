@@ -8,6 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RecommendExamplePhraseRepository extends JpaRepository<RecommendExamplePhrase, Long> {
 
-    List<RecommendExamplePhrase> findByTown_IdAndTargetTypeAndActiveTrueOrderByDisplayOrderAscIdAsc(
-            Long townId, RecommendTargetType targetType);
+    List<RecommendExamplePhrase> findByTargetTypeOrderByDisplayOrderAscIdAsc(
+            RecommendTargetType targetType);
 }

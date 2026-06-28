@@ -87,20 +87,16 @@ public class RecommendController {
         );
     }
 
-    @Operation(summary = "동네별 추천 예시 문구 조회",
-            description = "자연어 추천 페이지에서 보여줄 동네별·타입별(PLACE/COURSE) 예시 문구를 조회합니다.")
+    @Operation(summary = "추천 예시 문구 조회",
+            description = "자연어 추천 페이지에서 보여줄 타입별(PLACE/COURSE) 예시 문구를 조회합니다.")
     @GetMapping("/example-phrases")
     public ResponseEntity<CustomApiResponse<ExamplePhrasesGetResponse>> getExamplePhrases(
-            @Parameter(description = "동네 ID", required = true)
-            @RequestParam("townId")
-            @NotNull(message = "동네 ID는 필수입니다")
-            Long townId,
             @Parameter(description = "추천 타입 (PLACE / COURSE)", required = true)
             @RequestParam("type")
             RecommendTargetType type) {
         return CustomApiResponse.success(
-                "동네별 추천 예시 문구 조회 성공",
-                recommendExamplePhraseService.getExamplePhrases(townId, type)
+                "추천 예시 문구 조회 성공",
+                recommendExamplePhraseService.getExamplePhrases(type)
         );
     }
 

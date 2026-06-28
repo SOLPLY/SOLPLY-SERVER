@@ -7,7 +7,6 @@ import org.sopt.solply_server.domain.recommend.dto.ExamplePhraseDto;
 import org.sopt.solply_server.domain.recommend.dto.response.ExamplePhrasesGetResponse;
 import org.sopt.solply_server.domain.recommend.entity.RecommendTargetType;
 import org.sopt.solply_server.domain.recommend.repository.RecommendExamplePhraseRepository;
-import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecommendExamplePhraseService {
 
     private final RecommendExamplePhraseRepository recommendExamplePhraseRepository;
-    private final TownValidator townValidator;
 
-    public ExamplePhrasesGetResponse getExamplePhrases(Long townId, RecommendTargetType type) {
-        townValidator.validateTownId(townId);
-
+    public ExamplePhrasesGetResponse getExamplePhrases(RecommendTargetType type) {
         List<ExamplePhraseDto> phrases = recommendExamplePhraseRepository
-                .findByTown_IdAndTargetTypeAndActiveTrueOrderByDisplayOrderAscIdAsc(townId, type)
+                .findByTargetTypeOrderByDisplayOrderAscIdAsc(type)
                 .stream()
                 .map(ExamplePhraseDto::from)
                 .toList();
