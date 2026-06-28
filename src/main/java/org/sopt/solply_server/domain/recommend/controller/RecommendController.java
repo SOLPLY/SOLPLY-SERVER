@@ -12,9 +12,12 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.recommend.dto.response.CourseRecommendGetResponse;
 import org.sopt.solply_server.domain.recommend.dto.response.EmbeddingCourseRecommendGetResponse;
 import org.sopt.solply_server.domain.recommend.dto.response.EmbeddingPlaceRecommendGetResponse;
+import org.sopt.solply_server.domain.recommend.dto.response.ExamplePhrasesGetResponse;
 import org.sopt.solply_server.domain.recommend.dto.response.PlaceRecommendationGetResponse;
+import org.sopt.solply_server.domain.recommend.entity.RecommendTargetType;
 import org.sopt.solply_server.domain.recommend.service.CourseEmbeddingRecommendService;
 import org.sopt.solply_server.domain.recommend.service.EmbeddingRecommendService;
+import org.sopt.solply_server.domain.recommend.service.RecommendExamplePhraseService;
 import org.sopt.solply_server.domain.recommend.service.RecommendService;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
@@ -35,6 +38,7 @@ public class RecommendController {
     private final RecommendService recommendService;
     private final EmbeddingRecommendService embeddingRecommendService;
     private final CourseEmbeddingRecommendService courseEmbeddingRecommendService;
+    private final RecommendExamplePhraseService recommendExamplePhraseService;
 
     @Operation(summary = "장소 추천 조회", description = "장소 추천을 위한 썸네일 리스트를 조회합니다.")
     @GetMapping("/places")
@@ -80,6 +84,23 @@ public class RecommendController {
         return CustomApiResponse.success(
                 "추천 코스 목록 조회에 성공했습니다.",
                 recommendService.getRecommendCourses(userId, townId)
+        );
+    }
+
+    @Operation(summary = "동네별 추천 예시 문구 조회",
+            description = "자연어 추천 페이지에서 보여줄 동네별·타입별(PLACE/COURSE) 예시 문구를 조회합니다.")
+    @GetMapping("/example-phrases")
+    public ResponseEntity<CustomApiResponse<ExamplePhrasesGetResponse>> getExamplePhrases(
+            @Parameter(description = "동네 ID", required = true)
+            @RequestParam("townId")
+            @NotNull(message = "동네 ID는 필수입니다")
+            Long townId,
+            @Parameter(description = "추천 타입 (PLACE / COURSE)", required = true)
+            @RequestParam("type")
+            RecommendTargetType type) {
+        return CustomApiResponse.success(
+                "동네별 추천 예시 문구 조회 성공",
+                recommendExamplePhraseService.getExamplePhrases(townId, type)
         );
     }
 
