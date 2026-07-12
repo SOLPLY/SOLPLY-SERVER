@@ -11,6 +11,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResp
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
+import org.sopt.solply_server.domain.place.cache.TownPlacesCache;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.sopt.solply_server.domain.place.service.event.PlaceCreatedEvent;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
@@ -47,6 +48,7 @@ public class AdminPlaceService {
     private final ImageUrlProvider imageUrlProvider;
     private final AdminTagValidator adminTagValidator;
     private final AdminEntityLoader adminEntityLoader;
+    private final TownPlacesCache townPlacesCache;
 
     @Transactional
     public AdminPlaceUpsertResponse createPlace(final Long adminUserId, final AdminPlaceUpsertRequest req) {
@@ -88,6 +90,9 @@ public class AdminPlaceService {
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
         applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
 
+        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
+        townPlacesCache.invalidate(town.getId());
+
         log.info("어드민 장소 생성 - adminId: {}, placeId: {}", adminUserId, saved.getId());
         return AdminPlaceUpsertResponse.of(saved.getId());
     }
@@ -95,6 +100,7 @@ public class AdminPlaceService {
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
         Place place = adminEntityLoader.getPlaceWithTown(placeId);
+        Long previousTownId = place.getTown().getId();
         Town updatedTown = adminEntityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
@@ -129,6 +135,14 @@ public class AdminPlaceService {
         );
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
+
+        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
+        // 동네 이동 시 이전/새 동네 스냅샷 모두 무효화
+        townPlacesCache.invalidate(previousTownId);
+        if (!previousTownId.equals(updatedTown.getId())) {
+            townPlacesCache.invalidate(updatedTown.getId());
+        }
+
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
         return AdminPlaceUpsertResponse.of(place.getId());
@@ -225,13 +239,21 @@ public class AdminPlaceService {
     @Transactional
     public void deletePlace(final Long placeId) {
         Place place = adminEntityLoader.getPlace(placeId);
+        Long townId = place.getTown().getId();
         adminPlaceRepository.delete(place);
+
+        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
+        townPlacesCache.invalidate(townId);
+
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
 
     @Transactional
     public void activatePlacesByTownIds(final List<Long> townIds) {
         adminPlaceRepository.updateActiveByTownId(townIds, true);
+
+        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
+        townIds.forEach(townPlacesCache::invalidate);
     }
 
 
