@@ -90,8 +90,8 @@ public class AdminPlaceService {
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
         applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
 
-        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
-        townPlacesCache.invalidate(town.getId());
+        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
+        townPlacesCache.invalidateAfterCommit(town.getId());
 
         log.info("어드민 장소 생성 - adminId: {}, placeId: {}", adminUserId, saved.getId());
         return AdminPlaceUpsertResponse.of(saved.getId());
@@ -136,11 +136,11 @@ public class AdminPlaceService {
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
 
-        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
+        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
         // 동네 이동 시 이전/새 동네 스냅샷 모두 무효화
-        townPlacesCache.invalidate(previousTownId);
+        townPlacesCache.invalidateAfterCommit(previousTownId);
         if (!previousTownId.equals(updatedTown.getId())) {
-            townPlacesCache.invalidate(updatedTown.getId());
+            townPlacesCache.invalidateAfterCommit(updatedTown.getId());
         }
 
         log.info("어드민 장소 수정 - placeId: {}", placeId);
@@ -242,8 +242,8 @@ public class AdminPlaceService {
         Long townId = place.getTown().getId();
         adminPlaceRepository.delete(place);
 
-        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
-        townPlacesCache.invalidate(townId);
+        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
+        townPlacesCache.invalidateAfterCommit(townId);
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
@@ -252,8 +252,8 @@ public class AdminPlaceService {
     public void activatePlacesByTownIds(final List<Long> townIds) {
         adminPlaceRepository.updateActiveByTownId(townIds, true);
 
-        // 단일 인스턴스 전제의 로컬 캐시 무효화 — 스케일아웃 시 재검토 (TownPlacesCache Javadoc 참고)
-        townIds.forEach(townPlacesCache::invalidate);
+        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
+        townIds.forEach(townPlacesCache::invalidateAfterCommit);
     }
 
 

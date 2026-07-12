@@ -68,4 +68,33 @@ class TownPlacesCacheTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("db down");
     }
+
+    @Test
+    void 활성_트랜잭션이_없으면_invalidateAfterCommit은_즉시_무효화한다() {
+        cache.getPlaces(2L);
+        cache.invalidateAfterCommit(2L);
+        cache.getPlaces(2L);
+
+        verify(loader, times(2)).loadSnapshot(2L);
+    }
+
+    @Test
+    void 활성_트랜잭션이_있으면_커밋_후에_무효화한다() {
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            cache.getPlaces(2L);
+            cache.invalidateAfterCommit(2L);
+
+            cache.getPlaces(2L);
+            verify(loader, times(1)).loadSnapshot(2L); // 커밋 전이라 아직 유효
+
+            org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations().forEach(s -> s.afterCommit());
+
+            cache.getPlaces(2L);
+            verify(loader, times(2)).loadSnapshot(2L); // 커밋 후 무효화됨
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
 }

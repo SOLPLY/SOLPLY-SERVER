@@ -6,6 +6,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 동네별 장소 스냅샷 로컬 캐시.
@@ -41,5 +43,23 @@ public class TownPlacesCache {
 
     public void invalidate(Long townId) {
         cache.synchronous().invalidate(townId);
+    }
+
+    /**
+     * 트랜잭션 커밋 이후에 무효화한다. 커밋 전에 invalidate하면 커밋 직전 동시 요청의
+     * 캐시 미스가 변경 전 스냅샷을 다시 채우는 레이스가 있어, 쓰기 경로에서는 이 메서드를 쓴다.
+     * 활성 트랜잭션이 없으면 즉시 무효화한다.
+     */
+    public void invalidateAfterCommit(Long townId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    invalidate(townId);
+                }
+            });
+        } else {
+            invalidate(townId);
+        }
     }
 }
