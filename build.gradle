@@ -85,7 +85,7 @@ dependencies {
 	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 
 	// ✅ Caffeine 로컬 캐시
-	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+	implementation 'com.github.ben-manes.caffeine:caffeine'
 
 	// ✅ Validation
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
