@@ -47,67 +47,68 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
     """)
     List<Long> findTargetIdsByUserAndTypeSince(Long userId, BookmarkTargetType type, LocalDateTime since);
 
-    // == Town-scoped backfill 쿼리 == //
+    // == DB 직행 조회 쿼리 (캐시 제거 후 단일 경로) == //
 
-    /**
-     * 특정 동네의 장소 북마크 backfill용.
-     * row: [target_id (Long), created_at (LocalDateTime)]
-     */
+    /** 특정 동네의 북마크 장소 id를 최신순으로 반환 */
     @Query(value = """
-        SELECT b.target_id, b.created_at
+        SELECT b.target_id
         FROM bookmarks b
         INNER JOIN places p ON p.id = b.target_id
         WHERE b.user_id = :userId
           AND b.target_type = 'PLACE'
           AND p.town_id = :townId
           AND p.active = true
+        ORDER BY b.created_at DESC, b.target_id DESC
     """, nativeQuery = true)
-    List<Object[]> findPlaceBookmarksByUserAndTown(
-            @Param("userId") Long userId,
-            @Param("townId") Long townId);
+    List<Long> findBookmarkedPlaceIdsByTownOrdered(
+            @Param("userId") Long userId, @Param("townId") Long townId);
 
-    /**
-     * 특정 동네의 코스 북마크 backfill용.
-     * row: [target_id (Long), created_at (LocalDateTime)]
-     */
+    /** 특정 동네의 북마크 코스 id를 최신순으로 반환 */
     @Query(value = """
-        SELECT b.target_id, b.created_at
+        SELECT b.target_id
         FROM bookmarks b
         INNER JOIN courses c ON c.id = b.target_id
         WHERE b.user_id = :userId
           AND b.target_type = 'COURSE'
           AND c.town_id = :townId
           AND c.active = true
+        ORDER BY b.created_at DESC, b.target_id DESC
     """, nativeQuery = true)
-    List<Object[]> findCourseBookmarksByUserAndTown(
-            @Param("userId") Long userId,
-            @Param("townId") Long townId);
+    List<Long> findBookmarkedCourseIdsByTownOrdered(
+            @Param("userId") Long userId, @Param("townId") Long townId);
 
     /**
-     * 장소 북마크 전체 backfill용 (폴더 프리뷰).
-     * row: [target_id (Long), created_at (LocalDateTime), town_id (Long)]
+     * 동네별 가장 최근 북마크 장소 1개 (폴더 프리뷰).
+     * row: [town_id (Long), target_id (Long)]
      */
     @Query(value = """
-        SELECT b.target_id, b.created_at, p.town_id
-        FROM bookmarks b
-        INNER JOIN places p ON p.id = b.target_id
-        WHERE b.user_id = :userId
-          AND b.target_type = 'PLACE'
-          AND p.active = true
+        SELECT t.town_id, t.target_id FROM (
+            SELECT p.town_id AS town_id, b.target_id AS target_id,
+                   ROW_NUMBER() OVER (PARTITION BY p.town_id ORDER BY b.created_at DESC, b.target_id DESC) AS rn
+            FROM bookmarks b
+            INNER JOIN places p ON p.id = b.target_id
+            WHERE b.user_id = :userId
+              AND b.target_type = 'PLACE'
+              AND p.active = true
+        ) t WHERE t.rn = 1
     """, nativeQuery = true)
-    List<Object[]> findAllPlaceBookmarksWithTownId(@Param("userId") Long userId);
+    List<Object[]> findLatestBookmarkedPlaceIdPerTown(@Param("userId") Long userId);
 
     /**
-     * 코스 북마크 전체 backfill용 (폴더 프리뷰).
-     * row: [target_id (Long), created_at (LocalDateTime), town_id (Long)]
+     * 동네별 가장 최근 북마크 코스 1개 (폴더 프리뷰).
+     * row: [town_id (Long), target_id (Long)]
      */
     @Query(value = """
-        SELECT b.target_id, b.created_at, c.town_id
-        FROM bookmarks b
-        INNER JOIN courses c ON c.id = b.target_id
-        WHERE b.user_id = :userId
-          AND b.target_type = 'COURSE'
-          AND c.active = true
+        SELECT t.town_id, t.target_id FROM (
+            SELECT c.town_id AS town_id, b.target_id AS target_id,
+                   ROW_NUMBER() OVER (PARTITION BY c.town_id ORDER BY b.created_at DESC, b.target_id DESC) AS rn
+            FROM bookmarks b
+            INNER JOIN courses c ON c.id = b.target_id
+            WHERE b.user_id = :userId
+              AND b.target_type = 'COURSE'
+              AND c.active = true
+        ) t WHERE t.rn = 1
     """, nativeQuery = true)
-    List<Object[]> findAllCourseBookmarksWithTownId(@Param("userId") Long userId);
+    List<Object[]> findLatestBookmarkedCourseIdPerTown(@Param("userId") Long userId);
+
 }

@@ -86,8 +86,7 @@ public class PlaceService {
         .map(Tag::getName)
         .toList();
 
-    boolean isBookmarked = placeBookmarkFacade.isBookmarked(
-        userId, placeId, place.getTown().getId());
+    boolean isBookmarked = placeBookmarkFacade.isBookmarked(userId, placeId);
     List<PlaceReview> reviews = placeReviewRepository
         .findTop4ByPlaceIdOrderByCreatedAtDesc(placeId);
 
@@ -243,7 +242,7 @@ public class PlaceService {
   }
 
   /**
-   * 북마크 장소 최신순 조회. 상위에서 조회한 orderedIds(ZSET 최신순) → DB에서 태그 조건 필터링 → ZSET 순서 복원.
+   * 북마크 장소 최신순 조회. 상위에서 DB로 조회한 orderedIds(북마크 최신순) → DB에서 태그 조건 필터링 → 원래 순서 복원.
    */
   private List<Place> getBookmarkedPlacesByLatest(
       final Long selectedTownId,
@@ -270,7 +269,7 @@ public class PlaceService {
       return List.of();
     }
 
-    // DB 결과를 ZSET 순서(북마크 최신순)로 재정렬
+    // DB 결과를 북마크 최신순(orderedIds 기준)으로 재정렬
     Map<Long, Place> placeMap = filtered.stream()
         .collect(Collectors.toMap(Place::getId, Function.identity()));
     return orderedIds.stream()

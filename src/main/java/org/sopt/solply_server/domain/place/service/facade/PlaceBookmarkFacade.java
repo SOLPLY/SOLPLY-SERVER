@@ -1,23 +1,14 @@
 package org.sopt.solply_server.domain.place.service.facade;
 
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
-import org.sopt.solply_server.domain.bookmark.service.BookmarkCacheManager;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
-import org.sopt.solply_server.domain.place.entity.Place;
-import org.sopt.solply_server.global.exception.BusinessException;
-import org.sopt.solply_server.global.exception.ErrorCode;
-import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,23 +19,20 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlaceBookmarkFacade {
 
     private final BookmarkService bookmarkService;
-    private final BookmarkCacheManager bookmarkCacheManager;
     private final BookmarkRepository bookmarkRepository;
-    private final EntityLoader entityLoader;
 
     // == 북마크 생성/삭제 == //
 
     @Transactional
     public void createPlaceBookmark(final Long userId, final Long placeId) {
-        Place place = entityLoader.getPlace(placeId);
-        bookmarkService.create(userId, BookmarkTargetType.PLACE, placeId, place.getTown().getId());
+        // 존재 검증은 BookmarkService의 validatorRegistry가 수행 (NOT_FOUND_PLACE)
+        bookmarkService.create(userId, BookmarkTargetType.PLACE, placeId);
         log.info("장소 북마크 생성 - userId: {}, placeId: {}", userId, placeId);
     }
 
     @Transactional
     public void deletePlaceBookmark(final Long userId, final Long placeId) {
-        Place place = entityLoader.getPlace(placeId);
-        bookmarkService.delete(userId, BookmarkTargetType.PLACE, placeId, place.getTown().getId());
+        bookmarkService.delete(userId, BookmarkTargetType.PLACE, placeId);
         log.info("장소 북마크 삭제 - userId: {}, placeId: {}", userId, placeId);
     }
 
@@ -59,140 +47,34 @@ public class PlaceBookmarkFacade {
 
     // == 북마크 여부 조회 == //
 
-    /**
-     * 단건 북마크 여부. ZSET 캐시 우선 → DB fallback.
-     *
-     * @param townId place가 속한 동네 ID
-     */
-    public boolean isBookmarked(final Long userId, final Long placeId, final Long townId) {
+    /** 단건 북마크 여부 (uk 인덱스 point lookup) */
+    public boolean isBookmarked(final Long userId, final Long placeId) {
         if (userId == null) return false;
-
-        if (bookmarkCacheManager.hasKey(userId, BookmarkTargetType.PLACE, townId)) {
-            Boolean cached = bookmarkCacheManager.isActive(userId, BookmarkTargetType.PLACE, placeId, townId);
-            if (cached != null) return cached;
-            // Redis 오류(unknown): DB fallback
-        }
-        // ZSET 캐시 미스 또는 Redis 오류: DB fallback (backfill은 lazy로 리스트 조회 시 일어남)
-        return bookmarkService.isBookmarkedFromDb(userId, BookmarkTargetType.PLACE, placeId);
+        return bookmarkService.isBookmarked(userId, BookmarkTargetType.PLACE, placeId);
     }
 
-    // == 리스트 조회 (town-scoped ZSET) == //
+    // == 리스트 조회 == //
 
-    /**
-     * 특정 동네에서 사용자가 북마크한 placeId 목록을 최신순으로 반환.
-     * ZSET 캐시 미스 시 DB JOIN 쿼리로 backfill.
-     *
-     * @return 최신순 정렬된 placeId 리스트 (북마크 없으면 empty)
-     */
+    /** 특정 동네에서 사용자가 북마크한 placeId 목록을 최신순으로 반환 */
     public List<Long> getBookmarkedPlaceIdsForTown(final Long userId, final Long townId) {
         if (userId == null) return Collections.emptyList();
-
-        List<Long> cached = bookmarkCacheManager.getActiveOrderedIds(userId, BookmarkTargetType.PLACE, townId);
-        if (cached != null) return cached;
-
-        // Cache miss: DB JOIN 쿼리로 해당 동네 북마크 backfill (다음 요청을 위한 캐싱)
-        Map<Long, LocalDateTime> entries = loadPlaceBookmarkEntries(userId, townId);
-        bookmarkCacheManager.addAll(userId, BookmarkTargetType.PLACE, townId, entries);
-
-        // 현재 요청은 이미 메모리에 있는 entries를 정렬해 반환 (Redis 재조회 RTT 제거)
-        return sortedByCreatedAtDesc(entries);
+        return bookmarkRepository.findBookmarkedPlaceIdsByTownOrdered(userId, townId);
     }
 
-    /**
-     * 코스 내 장소 등 다중 동네에 걸친 placeId 목록의 북마크 여부 배치 조회.
-     * townId가 불확정이므로 DB 배치 쿼리 1회 사용.
-     */
+    /** 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회) */
     public Map<Long, Boolean> getPlaceBookmarkStatusMap(final Long userId, final List<Long> placeIds) {
         return bookmarkService.getBookmarkStatusMap(userId, BookmarkTargetType.PLACE, placeIds);
     }
 
     // == 폴더 프리뷰 (동네별 최신 1개) == //
 
-    /**
-     * 동네별로 가장 최근에 북마크한 placeId를 반환.
-     * towns-set 캐시 미스 시 전체 backfill.
-     *
-     * @return townId -> placeId (북마크 없는 동네는 포함 안 됨)
-     */
+    /** 동네별 가장 최근 북마크 placeId 반환 (윈도우 함수 쿼리 1회) */
     public Map<Long, Long> getLatestBookmarkedPlaceIdPerTown(final Long userId) {
         if (userId == null) return Collections.emptyMap();
-
-        Set<Long> townIds = bookmarkCacheManager.getActiveTownIds(userId, BookmarkTargetType.PLACE);
-        if (townIds == null) {
-            // 전체 backfill
-            townIds = fullBackfillPlaces(userId);
-        }
-
-        if (townIds.isEmpty()) return Collections.emptyMap();
-
         Map<Long, Long> result = new HashMap<>();
-        for (Long townId : townIds) {
-            Long latestId = bookmarkCacheManager.getLatestId(userId, BookmarkTargetType.PLACE, townId);
-            if (latestId != null) {
-                result.put(townId, latestId);
-            }
+        for (Object[] row : bookmarkRepository.findLatestBookmarkedPlaceIdPerTown(userId)) {
+            result.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
         }
         return result;
-    }
-
-    // == Private Helpers == //
-
-    /** 특정 동네 장소 북마크 DB 조회 → Map<placeId, createdAt> */
-    private Map<Long, LocalDateTime> loadPlaceBookmarkEntries(Long userId, Long townId) {
-        List<Object[]> rows = bookmarkRepository.findPlaceBookmarksByUserAndTown(userId, townId);
-        Map<Long, LocalDateTime> map = new HashMap<>();
-        for (Object[] row : rows) {
-            Long targetId = ((Number) row[0]).longValue();
-            LocalDateTime createdAt = toLocalDateTime(row[1]);
-            map.put(targetId, createdAt);
-        }
-        return map;
-    }
-
-    /**
-     * 전체 장소 북마크 backfill (폴더 프리뷰 초기화용).
-     * 모든 동네 ZSET을 채우고 towns-set을 초기화한다.
-     *
-     * @return 북마크가 있는 townId Set
-     */
-    private Set<Long> fullBackfillPlaces(Long userId) {
-        List<Object[]> rows = bookmarkRepository.findAllPlaceBookmarksWithTownId(userId);
-        if (rows.isEmpty()) {
-            bookmarkCacheManager.setTownIds(userId, BookmarkTargetType.PLACE, Collections.emptySet());
-            return Collections.emptySet();
-        }
-
-        // townId -> {placeId -> createdAt}
-        Map<Long, Map<Long, LocalDateTime>> byTown = new HashMap<>();
-        for (Object[] row : rows) {
-            Long targetId = ((Number) row[0]).longValue();
-            LocalDateTime createdAt = toLocalDateTime(row[1]);
-            Long townId = ((Number) row[2]).longValue();
-            byTown.computeIfAbsent(townId, k -> new HashMap<>()).put(targetId, createdAt);
-        }
-
-        // 각 동네별 ZSET 적재
-        for (Map.Entry<Long, Map<Long, LocalDateTime>> entry : byTown.entrySet()) {
-            bookmarkCacheManager.addAll(
-                    userId, BookmarkTargetType.PLACE, entry.getKey(), entry.getValue());
-        }
-
-        // towns-set 초기화
-        Set<Long> townIds = byTown.keySet();
-        bookmarkCacheManager.setTownIds(userId, BookmarkTargetType.PLACE, townIds);
-        return townIds;
-    }
-
-    private List<Long> sortedByCreatedAtDesc(Map<Long, LocalDateTime> entries) {
-        return entries.entrySet().stream()
-                .sorted(Map.Entry.<Long, LocalDateTime>comparingByValue().reversed())
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-    }
-
-    private LocalDateTime toLocalDateTime(Object value) {
-        if (value instanceof LocalDateTime ldt) return ldt;
-        if (value instanceof Timestamp ts) return ts.toLocalDateTime();
-        throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
     }
 }

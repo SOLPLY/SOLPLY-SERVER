@@ -1,6 +1,5 @@
 package org.sopt.solply_server.global.cache;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
@@ -49,31 +48,4 @@ public interface CacheService {
     // == 캐시 워밍업 == //
     <T> void warmUp(String keyPrefix, Map<String, Supplier<T>> dataSuppliers,
             int timeout, TimeUnit timeUnit);
-
-    void sAdd(String key, Long targetId);
-
-    void sRem(String key, Long targetId);
-
-    Set<Long> sMembers(String key);
-
-    Boolean sIsMember(String key, Long targetId);
-
-    void sAddAll(String key, Set<Long> targetIds);
-
-    void expire(String key, long timeout, TimeUnit unit);
-    Boolean hasKey(String key);
-
-    // == Sorted Set (ZSET) 연산 == //
-
-    void zAdd(String key, Long member, double score);
-
-    void zAddAll(String key, Map<Long, Double> memberScores);
-
-    void zRem(String key, Long member);
-
-    /** score 내림차순으로 (member → score) 반환. key 없으면 null (cache miss) */
-    Map<Long, Double> zRevRangeWithScores(String key);
-
-    /** member의 score 반환. member 없거나 key 없으면 null */
-    Double zScore(String key, Long member);
 }
