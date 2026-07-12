@@ -69,12 +69,21 @@ class CachedPlaceFilterTest {
     }
 
     @Test
-    void 메인_태그만_없고_서브_태그만_있어도_필터링된다() {
+    void 메인_태그가_없으면_서브_태그_조건은_무시한다() {
+        // 구 SQL 라우팅(findPlacesByConditions: hasMainTag=false → findPlacesWithoutTags)과 동일한 동작 보존
         List<CachedPlace> places = List.of(
                 place(1, Set.of(10L), Set.of(20L), Set.of()),
                 place(2, Set.of(11L), Set.of(21L), Set.of()));
 
         assertThat(CachedPlaceFilter.filter(places, null, List.of(20L), null))
+                .extracting(CachedPlace::id).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 서브_태그_후보에_null이_섞여도_예외_없이_불일치로_처리한다() {
+        List<CachedPlace> places = List.of(place(1, Set.of(10L), Set.of(20L), Set.of()));
+
+        assertThat(CachedPlaceFilter.filter(places, 10L, java.util.Arrays.asList(null, 20L), null))
                 .extracting(CachedPlace::id).containsExactly(1L);
     }
 }

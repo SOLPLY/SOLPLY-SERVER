@@ -19,11 +19,12 @@ public final class CachedPlaceFilter {
             List<Long> subTagAIds,
             List<Long> subTagBIds
     ) {
-        if (mainTagId == null && isEmpty(subTagAIds) && isEmpty(subTagBIds)) {
+        // 구 SQL 라우팅(findPlacesByConditions)과 동일: 메인 태그 없이 온 서브 태그 조건은 무시한다
+        if (mainTagId == null) {
             return places;
         }
         return places.stream()
-                .filter(p -> mainTagId == null || p.activeMainTagIds().contains(mainTagId))
+                .filter(p -> p.activeMainTagIds().contains(mainTagId))
                 .filter(p -> isEmpty(subTagAIds) || containsAny(p.activeOption1TagIds(), subTagAIds))
                 .filter(p -> isEmpty(subTagBIds) || containsAny(p.activeOption2TagIds(), subTagBIds))
                 .toList();
@@ -35,7 +36,7 @@ public final class CachedPlaceFilter {
 
     private static boolean containsAny(Set<Long> owned, List<Long> candidates) {
         for (Long candidate : candidates) {
-            if (owned.contains(candidate)) {
+            if (candidate != null && owned.contains(candidate)) {
                 return true;
             }
         }
