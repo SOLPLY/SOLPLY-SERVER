@@ -86,8 +86,7 @@ public class PlaceService {
         .map(Tag::getName)
         .toList();
 
-    boolean isBookmarked = placeBookmarkFacade.isBookmarked(
-        userId, placeId, place.getTown().getId());
+    boolean isBookmarked = placeBookmarkFacade.isBookmarked(userId, placeId);
     List<PlaceReview> reviews = placeReviewRepository
         .findTop4ByPlaceIdOrderByCreatedAtDesc(placeId);
 
