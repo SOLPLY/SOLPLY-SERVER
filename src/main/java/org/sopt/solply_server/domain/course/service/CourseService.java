@@ -102,7 +102,7 @@ public class CourseService {
         Course originCourse = entityLoader.getActiveCourse(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId, originCourse.getTown().getId());
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         List<PlaceInCourseInfo> placeInfosInCourseForOrder = PlaceInCourseInfo.from(request.places());
 
@@ -156,7 +156,7 @@ public class CourseService {
         Course originCourse = entityLoader.getActiveCourseWithTagsAndPlaces(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId, originCourse.getTown().getId());
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validateCanAddPlace(originCourse, place);
@@ -209,7 +209,7 @@ public class CourseService {
         Tag courseTag = course.getTag();
         tagValidator.validateCourseTag(courseTag);
 
-        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId, course.getTown().getId());
+        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
 
 
         if (course.getCoursePlaces().isEmpty()) {
