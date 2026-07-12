@@ -14,10 +14,12 @@
     "report:place:after": "artillery report reports/place-after.json --output reports/place-after.html",
     "report:course:after": "artillery report reports/course-after.json --output reports/course-after.html",
     "report": "npm run report:place && npm run report:course",
-    "report:after": "npm run report:place:after && npm run report:course:after"
+    "report:after": "npm run report:place:after && npm run report:course:after",
+    "gen:users": "node scripts/generate-users-csv.mjs"
   },
   "devDependencies": {
     "artillery": "^2.0.0",
-    "artillery-plugin-metrics-by-endpoint": "^1.24.0"
+    "artillery-plugin-metrics-by-endpoint": "^1.24.0",
+    "jsonwebtoken": "^9.0.3"
   }
 }
