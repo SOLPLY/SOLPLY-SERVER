@@ -62,9 +62,16 @@ class BookmarkRepositoryIT {
     private Long otherTownId;
     private Long otherTownPlace;
 
+    private Long courseTownId;
+    private Long otherCourseTownId;
+    private Long courseA;  // 북마크 순서: A(가장 오래됨) → B(중간) → C(최신)
+    private Long courseB;
+    private Long courseC;
+    private Long otherTownCourse;
+
     @BeforeEach
     void setUp() {
-        // Flyway V2가 실데이터(towns/places)를 넣어두므로 이를 픽스처로 사용.
+        // Flyway V2가 실데이터(towns/places/courses)를 넣어두므로 이를 픽스처로 사용.
         // 같은 동네의 active 장소 3개 + 다른 동네의 active 장소 1개를 고른다.
         @SuppressWarnings("unchecked")
         List<Object[]> rows = em.createNativeQuery("""
@@ -89,21 +96,62 @@ class BookmarkRepositoryIT {
                 .filter(t -> !t.equals(townId)).findFirst().orElseThrow();
         otherTownPlace = byTown.get(otherTownId).get(0);
 
+        // 같은 동네의 active 코스 3개 + 다른 동네의 active 코스 1개를 고른다.
+        @SuppressWarnings("unchecked")
+        List<Object[]> courseRows = em.createNativeQuery("""
+                SELECT c.id, c.town_id FROM courses c
+                WHERE c.active = true
+                ORDER BY c.town_id, c.id
+                """).getResultList();
+
+        Map<Long, List<Long>> coursesByTown = courseRows.stream().collect(Collectors.groupingBy(
+                r -> ((Number) r[1]).longValue(),
+                Collectors.mapping(r -> ((Number) r[0]).longValue(), Collectors.toList())));
+
+        courseTownId = coursesByTown.entrySet().stream()
+                .filter(e -> e.getValue().size() >= 3)
+                .findFirst().orElseThrow().getKey();
+        List<Long> courses = coursesByTown.get(courseTownId);
+        courseA = courses.get(0);
+        courseB = courses.get(1);
+        courseC = courses.get(2);
+
+        otherCourseTownId = coursesByTown.keySet().stream()
+                .filter(t -> !t.equals(courseTownId)).findFirst().orElseThrow();
+        otherTownCourse = coursesByTown.get(otherCourseTownId).get(0);
+
         User user = User.create("bookmark-it@test.com");
         em.persist(user);
         em.flush();
         userId = user.getId();
 
-        persistBookmarkAt(placeA, "2026-01-01T10:00:00");
-        persistBookmarkAt(placeB, "2026-02-01T10:00:00");
-        persistBookmarkAt(placeC, "2026-03-01T10:00:00");
-        persistBookmarkAt(otherTownPlace, "2026-01-15T10:00:00");
+        persistPlaceBookmarkAt(placeA, "2026-01-01T10:00:00");
+        persistPlaceBookmarkAt(placeB, "2026-02-01T10:00:00");
+        persistPlaceBookmarkAt(placeC, "2026-03-01T10:00:00");
+        persistPlaceBookmarkAt(otherTownPlace, "2026-01-15T10:00:00");
+
+        persistCourseBookmarkAt(courseA, "2026-01-01T10:00:00");
+        persistCourseBookmarkAt(courseB, "2026-02-01T10:00:00");
+        persistCourseBookmarkAt(courseC, "2026-03-01T10:00:00");
+        persistCourseBookmarkAt(otherTownCourse, "2026-01-15T10:00:00");
     }
 
     /** created_at은 @CreatedDate라 직접 지정 불가 → 저장 후 native UPDATE로 고정 */
-    private void persistBookmarkAt(Long placeId, String createdAt) {
+    private void persistPlaceBookmarkAt(Long placeId, String createdAt) {
         User user = em.find(User.class, userId);
         Bookmark b = Bookmark.create(user, BookmarkTargetType.PLACE, placeId);
+        em.persist(b);
+        em.flush();
+        em.createNativeQuery("UPDATE bookmarks SET created_at = :ts WHERE id = :id")
+                .setParameter("ts", LocalDateTime.parse(createdAt))
+                .setParameter("id", b.getId())
+                .executeUpdate();
+        em.clear();
+    }
+
+    private void persistCourseBookmarkAt(Long courseId, String createdAt) {
+        User user = em.find(User.class, userId);
+        Bookmark b = Bookmark.create(user, BookmarkTargetType.COURSE, courseId);
         em.persist(b);
         em.flush();
         em.createNativeQuery("UPDATE bookmarks SET created_at = :ts WHERE id = :id")
@@ -129,6 +177,25 @@ class BookmarkRepositoryIT {
         assertThat(latestByTown)
                 .containsEntry(townId, placeC)
                 .containsEntry(otherTownId, otherTownPlace)
+                .hasSize(2);
+    }
+
+    @Test
+    void 동네별_북마크_코스_id를_최신순으로_반환한다() {
+        List<Long> ids = bookmarkRepository.findBookmarkedCourseIdsByTownOrdered(userId, courseTownId);
+        assertThat(ids).containsExactly(courseC, courseB, courseA); // 최신순
+    }
+
+    @Test
+    void 동네별_최신_북마크_코스를_윈도우_함수로_반환한다() {
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = bookmarkRepository.findLatestBookmarkedCourseIdPerTown(userId);
+        Map<Long, Long> latestByTown = rows.stream().collect(Collectors.toMap(
+                r -> ((Number) r[0]).longValue(),
+                r -> ((Number) r[1]).longValue()));
+        assertThat(latestByTown)
+                .containsEntry(courseTownId, courseC)
+                .containsEntry(otherCourseTownId, otherTownCourse)
                 .hasSize(2);
     }
 }

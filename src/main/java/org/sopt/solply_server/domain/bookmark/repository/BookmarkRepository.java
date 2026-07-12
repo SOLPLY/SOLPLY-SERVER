@@ -58,7 +58,7 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
           AND b.target_type = 'PLACE'
           AND p.town_id = :townId
           AND p.active = true
-        ORDER BY b.created_at DESC
+        ORDER BY b.created_at DESC, b.target_id DESC
     """, nativeQuery = true)
     List<Long> findBookmarkedPlaceIdsByTownOrdered(
             @Param("userId") Long userId, @Param("townId") Long townId);
@@ -72,7 +72,7 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
           AND b.target_type = 'COURSE'
           AND c.town_id = :townId
           AND c.active = true
-        ORDER BY b.created_at DESC
+        ORDER BY b.created_at DESC, b.target_id DESC
     """, nativeQuery = true)
     List<Long> findBookmarkedCourseIdsByTownOrdered(
             @Param("userId") Long userId, @Param("townId") Long townId);
@@ -84,7 +84,7 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
     @Query(value = """
         SELECT t.town_id, t.target_id FROM (
             SELECT p.town_id AS town_id, b.target_id AS target_id,
-                   ROW_NUMBER() OVER (PARTITION BY p.town_id ORDER BY b.created_at DESC) AS rn
+                   ROW_NUMBER() OVER (PARTITION BY p.town_id ORDER BY b.created_at DESC, b.target_id DESC) AS rn
             FROM bookmarks b
             INNER JOIN places p ON p.id = b.target_id
             WHERE b.user_id = :userId
@@ -101,7 +101,7 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
     @Query(value = """
         SELECT t.town_id, t.target_id FROM (
             SELECT c.town_id AS town_id, b.target_id AS target_id,
-                   ROW_NUMBER() OVER (PARTITION BY c.town_id ORDER BY b.created_at DESC) AS rn
+                   ROW_NUMBER() OVER (PARTITION BY c.town_id ORDER BY b.created_at DESC, b.target_id DESC) AS rn
             FROM bookmarks b
             INNER JOIN courses c ON c.id = b.target_id
             WHERE b.user_id = :userId
