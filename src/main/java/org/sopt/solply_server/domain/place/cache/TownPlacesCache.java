@@ -18,6 +18,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *
  * 공유·저변경 데이터라 인스턴스 간 무효화 없이 TTL 수렴으로 충분 (설계 문서 §2).
  * 장소 쓰기는 AdminPlaceService 한 곳이며 관리자 변경 빈도가 낮다.
+ * 스냅샷에는 태그(active·이름)도 내장되므로 태그 변경(AdminTagService)은 별도 훅 없이
+ * soft TTL(최대 10분) 수렴에 맡긴다 — 즉시 반영이 필요해지면 태그 변경 경로에 invalidateAll 훅 추가.
  * 단일 인스턴스 전제 — 스케일아웃 시 invalidate가 로컬에만 적용되는 한계를 감안해 재검토한다.
  */
 @Component

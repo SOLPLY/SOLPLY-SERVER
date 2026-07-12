@@ -4,7 +4,9 @@
 
 ## 1. 환경
 
-[북마크 인덱스 벤치마크 §1](./2026-07-bookmark-index-benchmark.md)과 동일 (벤치 MySQL 4CPU/4GB/버퍼풀 2G, 호스트 bootRun, Artillery bench 프로파일 55초, 사용자 1,000명 토큰 랜덤). 동일 벤치 DB — bookmarks 100만 행, **V19·V20 적용 완료 상태**(양 측정 공통이라 인덱스 변수 통제됨). 측정 프로토콜: 상태별 1회 (결론을 가르는 차이가 50% 이상).
+[북마크 인덱스 벤치마크 §1](./2026-07-bookmark-index-benchmark.md)과 동일 (벤치 MySQL 4CPU/4GB/버퍼풀 2G, 호스트 bootRun, 사용자 1,000명 토큰 랜덤). 동일 벤치 DB — bookmarks 100만 행, **V19·V20 적용 완료 상태**(양 측정 공통이라 인덱스 변수 통제됨). 측정 프로토콜: 상태별 1회 (결론을 가르는 차이가 50% 이상).
+
+부하 프로파일(실측 기준): **워밍업 10초@20 + 유지 165초@50 = 175초, 8,450 요청.** bench 프로파일의 의도는 55초였으나 Artillery `environments`가 phase 배열을 원소 단위로 병합해 기본 프로파일의 3번째 phase(120초@50)가 잔존한다 — [#379 측정](./2026-07-bookmark-index-benchmark.md)도 동일 프로파일로 실행됐고, 양 상태가 같은 조건이므로 상대 비교는 유효하다.
 
 | 상태 | 코드 | 장소 목록 경로 |
 |---|---|---|
@@ -13,7 +15,7 @@
 
 시나리오: `load-test/scenarios/place-list.yml` — `GET /api/places?townId=2` 무태그/메인태그(id=1) 50:50, 인증 헤더 포함(북마크 decorate 경로 활성).
 
-## 2. 결과 (시나리오당 8,450 요청, 양쪽 성공률 100%·에러 0)
+## 2. 결과 (회당 8,450 요청 — 엔드포인트당 ~4,225, 양쪽 성공률 100%·에러 0)
 
 ### 엔드포인트별
 
@@ -42,7 +44,7 @@
 
 ## 4. 결론
 
-- 공유·저변경·hot key(동네 7개) 데이터인 동네별 장소+태그 목록에 Caffeine `AsyncLoadingCache`(soft TTL 10분 SWR + hard TTL 1시간, cold miss single-flight)를 도입하고 태그 필터링을 SQL EXISTS → 메모리 연산으로 이전한 결과, **p99 63~70% 개선, max 74~77% 억제, DB 왕복 요청당 2~4회 → 1회**.
+- 공유·저변경·hot key(동네 7개) 데이터인 동네별 장소+태그 목록에 Caffeine `AsyncLoadingCache`(soft TTL 10분 SWR + hard TTL 1시간, cold miss single-flight)를 도입하고 태그 필터링을 SQL EXISTS → 메모리 연산으로 이전한 결과, **p99 59~70% 개선(aggregate −63%), max 74~77% 억제, DB 왕복 요청당 2~4회 → 1회**.
 - per-user 데이터(북마크)는 캐시 없이 커버링 인덱스 DB 직행을 유지 — 실측상 잔여 비용이 병목이 아님을 확인.
 
 ## 5. 한계

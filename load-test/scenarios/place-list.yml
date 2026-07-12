@@ -18,7 +18,9 @@ config:
       duration: 120
       arrivalRate: 50
   environments:
-    # 장소 캐시 벤치마크용 (#381): 안정 상태 비교만 필요 — 회당 55초
+    # 장소 캐시 벤치마크용 (#381).
+    # 주의: Artillery는 environments를 phase 배열 원소 단위로 병합하므로
+    # 기본 프로파일 3번째 phase(120초@50)가 잔존 → 실제 실행은 10초@20 + 165초@50 (175초)
     bench:
       phases:
         - name: "Warm up"
