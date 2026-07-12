@@ -44,6 +44,7 @@ application-prod.yml
 !.github/ISSUE_TEMPLATE/*.yml
 !load-test/scenarios/*.yml
 !load-test/.gitignore
+!docker/docker-compose.bench.yml
 
 .docker/init/init_role.sql
 
@@ -100,3 +101,6 @@ logs/
 TODO.md
 docs/superpowers/
 docs/claude-spec/
+
+# 벤치마크 로컬 산출물
+load-test/bench/results/

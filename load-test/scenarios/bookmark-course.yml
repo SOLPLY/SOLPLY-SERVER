@@ -5,6 +5,7 @@ config:
     fields:
       - token
     order: random
+    skipHeader: true
   phases:
     - name: "Warm up"
       duration: 30
@@ -16,10 +17,16 @@ config:
     - name: "Sustained load"
       duration: 120
       arrivalRate: 50
-  http:
-    defaults:
-      headers:
-        Authorization: "Bearer {{ token }}"
+  environments:
+    # 인덱스 벤치마크용 (#379): 안정 상태 비교만 필요 — 회당 55초
+    bench:
+      phases:
+        - name: "Warm up"
+          duration: 10
+          arrivalRate: 20
+        - name: "Sustained load"
+          duration: 45
+          arrivalRate: 50
   plugins:
     metrics-by-endpoint:
       useOnlyRequestNames: true
@@ -33,6 +40,8 @@ scenarios:
           qs:
             townId: 2
           name: "GET /api/courses/bookmarks"
+          headers:
+            Authorization: "Bearer {{ token }}"
 
   - name: "course-folder-preview"
     weight: 50
@@ -40,3 +49,5 @@ scenarios:
       - get:
           url: "/api/courses/bookmarks/folders"
           name: "GET /api/courses/bookmarks/folders"
+          headers:
+            Authorization: "Bearer {{ token }}"
