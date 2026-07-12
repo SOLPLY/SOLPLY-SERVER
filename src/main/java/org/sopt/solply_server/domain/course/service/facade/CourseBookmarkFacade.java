@@ -14,7 +14,6 @@ import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkCacheManager;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
-import org.sopt.solply_server.domain.course.entity.Course;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -36,15 +35,15 @@ public class CourseBookmarkFacade {
 
     @Transactional
     public void createCourseBookmark(final Long userId, final Long courseId) {
-        Course course = entityLoader.getActiveCourse(courseId);
-        bookmarkService.create(userId, BookmarkTargetType.COURSE, courseId, course.getTown().getId());
+        entityLoader.getActiveCourse(courseId); // active 검증 (기존 동작 보존)
+        bookmarkService.create(userId, BookmarkTargetType.COURSE, courseId);
         log.info("코스 북마크 생성 - userId: {}, courseId: {}", userId, courseId);
     }
 
     @Transactional
     public void deleteCourseBookmark(final Long userId, final Long courseId) {
-        Course course = entityLoader.getActiveCourse(courseId);
-        bookmarkService.delete(userId, BookmarkTargetType.COURSE, courseId, course.getTown().getId());
+        entityLoader.getActiveCourse(courseId);
+        bookmarkService.delete(userId, BookmarkTargetType.COURSE, courseId);
         log.info("코스 북마크 삭제 - userId: {}, courseId: {}", userId, courseId);
     }
 

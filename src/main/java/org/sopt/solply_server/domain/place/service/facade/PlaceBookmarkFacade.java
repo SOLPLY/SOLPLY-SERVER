@@ -14,10 +14,8 @@ import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkCacheManager;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
-import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
-import org.sopt.solply_server.global.util.EntityLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,21 +28,19 @@ public class PlaceBookmarkFacade {
     private final BookmarkService bookmarkService;
     private final BookmarkCacheManager bookmarkCacheManager;
     private final BookmarkRepository bookmarkRepository;
-    private final EntityLoader entityLoader;
 
     // == 북마크 생성/삭제 == //
 
     @Transactional
     public void createPlaceBookmark(final Long userId, final Long placeId) {
-        Place place = entityLoader.getPlace(placeId);
-        bookmarkService.create(userId, BookmarkTargetType.PLACE, placeId, place.getTown().getId());
+        // 존재 검증은 BookmarkService의 validatorRegistry가 수행 (NOT_FOUND_PLACE)
+        bookmarkService.create(userId, BookmarkTargetType.PLACE, placeId);
         log.info("장소 북마크 생성 - userId: {}, placeId: {}", userId, placeId);
     }
 
     @Transactional
     public void deletePlaceBookmark(final Long userId, final Long placeId) {
-        Place place = entityLoader.getPlace(placeId);
-        bookmarkService.delete(userId, BookmarkTargetType.PLACE, placeId, place.getTown().getId());
+        bookmarkService.delete(userId, BookmarkTargetType.PLACE, placeId);
         log.info("장소 북마크 삭제 - userId: {}, placeId: {}", userId, placeId);
     }
 
