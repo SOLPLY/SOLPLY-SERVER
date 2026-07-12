@@ -27,10 +27,6 @@ config:
         - name: "Sustained load"
           duration: 45
           arrivalRate: 50
-  http:
-    defaults:
-      headers:
-        Authorization: "Bearer {{ token }}"
   plugins:
     metrics-by-endpoint:
       useOnlyRequestNames: true
@@ -45,6 +41,8 @@ scenarios:
             townId: 2
             isBookmarkSearch: true
           name: "GET /api/places (bookmark)"
+          headers:
+            Authorization: "Bearer {{ token }}"
 
   - name: "place-folder-preview"
     weight: 50
@@ -52,3 +50,5 @@ scenarios:
       - get:
           url: "/api/places/bookmarks/folders/preview"
           name: "GET /api/places/bookmarks/folders/preview"
+          headers:
+            Authorization: "Bearer {{ token }}"

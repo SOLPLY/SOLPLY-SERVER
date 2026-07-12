@@ -27,10 +27,6 @@ config:
         - name: "Sustained load"
           duration: 45
           arrivalRate: 50
-  http:
-    defaults:
-      headers:
-        Authorization: "Bearer {{ token }}"
   plugins:
     metrics-by-endpoint:
       useOnlyRequestNames: true
@@ -44,6 +40,8 @@ scenarios:
           qs:
             townId: 2
           name: "GET /api/courses/bookmarks"
+          headers:
+            Authorization: "Bearer {{ token }}"
 
   - name: "course-folder-preview"
     weight: 50
@@ -51,3 +49,5 @@ scenarios:
       - get:
           url: "/api/courses/bookmarks/folders"
           name: "GET /api/courses/bookmarks/folders"
+          headers:
+            Authorization: "Bearer {{ token }}"
