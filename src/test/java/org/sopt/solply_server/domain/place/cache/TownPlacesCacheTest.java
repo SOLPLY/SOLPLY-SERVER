@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -63,7 +64,7 @@ class TownPlacesCacheTest {
     void 로더가_런타임_예외를_던지면_그대로_전파된다() {
         when(loader.loadSnapshot(9L)).thenThrow(new IllegalStateException("db down"));
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> cache.getPlaces(9L))
+        assertThatThrownBy(() -> cache.getPlaces(9L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("db down");
     }

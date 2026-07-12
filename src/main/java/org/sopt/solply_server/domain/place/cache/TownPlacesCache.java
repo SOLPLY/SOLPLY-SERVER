@@ -5,7 +5,6 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,14 +35,8 @@ public class TownPlacesCache {
     }
 
     public List<CachedPlace> getPlaces(Long townId) {
-        try {
-            return cache.get(townId).join();
-        } catch (CompletionException e) {
-            if (e.getCause() instanceof RuntimeException runtime) {
-                throw runtime;
-            }
-            throw e;
-        }
+        // synchronous() 뷰가 CompletionException을 unwrap해 로더의 원본 예외를 그대로 전파한다
+        return cache.synchronous().get(townId);
     }
 
     public void invalidate(Long townId) {
