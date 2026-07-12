@@ -10,4 +10,5 @@ public interface PlaceRepositoryCustom {
     List<Place> findPlacesByConditions(PlaceSearchConditionDto placeSearchConditionDto);
     List<Place> findPlacesWithTownByKeyword(String keyword);
     Page<Place> findByUserIdWithTown(Long userId, Pageable pageable);
+    List<Place> findActivePlacesWithTagsByTownId(Long townId);
 }

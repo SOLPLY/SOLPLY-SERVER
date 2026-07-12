@@ -188,6 +188,22 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         return PageableExecutionUtils.getPage(results, pageable, countQuery::fetchOne);
     }
 
+    @Override
+    public List<Place> findActivePlacesWithTagsByTownId(Long townId) {
+        QPlaceTag placeTag = QPlaceTag.placeTag;
+        QTag tag = QTag.tag;
+
+        return queryFactory
+                .selectDistinct(place)
+                .from(place)
+                .leftJoin(place.placeTags, placeTag).fetchJoin()
+                .leftJoin(placeTag.tag, tag).fetchJoin()
+                .where(place.active.isTrue()
+                        .and(place.town.id.eq(townId)))
+                .orderBy(place.createdAt.desc(), place.id.desc())
+                .fetch();
+    }
+
     private String sanitizeForBooleanMode(final String token) {
         // BOOLEAN MODE에서 의미 있는 특수문자 제거/공백 치환
         // (+ - @ ~ < > ( ) " * 등의 혼선을 방지)
