@@ -59,7 +59,7 @@ public class CourseBookmarkFacade {
     /** 단건 북마크 여부 (uk 인덱스 point lookup) */
     public boolean isBookmarked(final Long userId, final Long courseId) {
         if (userId == null) return false;
-        return bookmarkService.isBookmarkedFromDb(userId, BookmarkTargetType.COURSE, courseId);
+        return bookmarkService.isBookmarked(userId, BookmarkTargetType.COURSE, courseId);
     }
 
     public void checkCourseIsBookmarked(final Long userId, final Long courseId) {

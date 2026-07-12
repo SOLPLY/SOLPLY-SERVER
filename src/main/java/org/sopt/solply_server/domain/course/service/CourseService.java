@@ -307,7 +307,7 @@ public class CourseService {
      * 동네별로 가장 최근에 북마크한 코스를 반환
      */
     public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
-        // 동네별 최신 courseId (towns-set 기반, cache miss 시 전체 backfill)
+        // 동네별 최신 courseId (DB 직행 윈도우 함수 쿼리)
         Map<Long, Long> latestCourseIdByTown = courseBookmarkFacade.getLatestBookmarkedCourseIdPerTown(userId);
 
         if (latestCourseIdByTown.isEmpty()) {

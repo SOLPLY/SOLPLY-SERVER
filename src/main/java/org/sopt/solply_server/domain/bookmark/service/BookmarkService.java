@@ -43,10 +43,8 @@ public class BookmarkService {
         }
     }
 
-    /**
-     * DB 기반 북마크 여부 확인. Facade에서 ZSET 캐시 체크 실패 시 fallback으로 사용.
-     */
-    public boolean isBookmarkedFromDb(Long userId, BookmarkTargetType type, Long targetId) {
+    /** 북마크 여부 확인 (uk 인덱스 point lookup) */
+    public boolean isBookmarked(Long userId, BookmarkTargetType type, Long targetId) {
         if (userId == null) return false;
         return bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
     }

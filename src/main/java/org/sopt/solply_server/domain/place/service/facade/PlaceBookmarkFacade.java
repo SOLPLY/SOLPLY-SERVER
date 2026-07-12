@@ -50,7 +50,7 @@ public class PlaceBookmarkFacade {
     /** 단건 북마크 여부 (uk 인덱스 point lookup) */
     public boolean isBookmarked(final Long userId, final Long placeId) {
         if (userId == null) return false;
-        return bookmarkService.isBookmarkedFromDb(userId, BookmarkTargetType.PLACE, placeId);
+        return bookmarkService.isBookmarked(userId, BookmarkTargetType.PLACE, placeId);
     }
 
     // == 리스트 조회 == //

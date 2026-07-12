@@ -1,20 +1,15 @@
 package org.sopt.solply_server.global.cache;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.springframework.context.annotation.Profile;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -28,7 +23,6 @@ import java.util.function.Supplier;
 public class RedisCacheService implements CacheService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper; // TypeReference 지원을 위해 유지
 
     // == 기본 CRUD == //
@@ -314,158 +308,6 @@ public class RedisCacheService implements CacheService {
         });
 
         log.info("캐시 워밍업 완료 - prefix: {}", keyPrefix);
-    }
-
-    @Override
-    public void sAdd(String key, Long member) {
-        try {
-            stringRedisTemplate.opsForSet()
-                    .add(key, String.valueOf(member));
-        } catch (DataAccessException e) {
-            log.error("[Redis] sAdd failed. key={}, member={}", key, member, e);
-        }
-    }
-
-    @Override
-    public void sAddAll(String key, Set<Long> members) {
-        if (members == null || members.isEmpty()) return;
-
-        try {
-            String[] arr = members.stream()
-                    .map(String::valueOf)
-                    .toArray(String[]::new);
-
-            stringRedisTemplate.opsForSet().add(key, arr);
-        } catch (DataAccessException e) {
-            log.error("[Redis] sAddAll failed. key={}, size={}", key, members.size(), e);
-        }
-    }
-
-    @Override
-    public void sRem(String key, Long member) {
-        try {
-            stringRedisTemplate.opsForSet()
-                    .remove(key, String.valueOf(member));
-        } catch (DataAccessException e) {
-            log.error("[Redis] sRem failed. key={}, member={}", key, member, e);
-        }
-    }
-
-    @Override
-    public Boolean sIsMember(String key, Long member) {
-        try {
-            return stringRedisTemplate.opsForSet()
-                    .isMember(key, String.valueOf(member));
-        } catch (DataAccessException e) {
-            log.error("[Redis] sIsMember failed. key={}, member={}", key, member, e);
-            return false; // Redis 실패 시 안전하게 false
-        }
-    }
-
-    @Override
-    public Set<Long> sMembers(String key) {
-        try {
-            // hasKey() 없이 단일 RTT로 조회.
-            // 빈 결과는 키 부재(또는 hasKey-members 사이 만료)를 의미하므로 cache miss로 처리.
-            // "적재됐지만 비어있음"은 sentinel(-1L)로 표현되므로 빈 Set은 항상 miss.
-            Set<String> raw = stringRedisTemplate.opsForSet().members(key);
-            if (raw == null || raw.isEmpty()) {
-                return null; // cache miss
-            }
-            return raw.stream()
-                    .map(Long::parseLong)
-                    .collect(Collectors.toUnmodifiableSet());
-        } catch (DataAccessException e) {
-            log.error("[Redis] sMembers failed. key={}", key, e);
-            return null; // cache miss로 처리
-        }
-    }
-
-    @Override
-    public void expire(String key, long timeout, TimeUnit unit) {
-        try {
-            stringRedisTemplate.expire(key, timeout, unit);
-        } catch (DataAccessException e) {
-            log.error("[Redis] expire failed. key={}, timeout={}{}", key, timeout, unit, e);
-        }
-    }
-
-    @Override
-    public Boolean hasKey(String key) {
-        try {
-            return stringRedisTemplate.hasKey(key);
-        } catch (DataAccessException e) {
-            log.error("[Redis] hasKey failed. key={}", key, e);
-            return false;
-        }
-    }
-
-    // == Sorted Set (ZSET) 연산 == //
-
-    @Override
-    public void zAdd(String key, Long member, double score) {
-        try {
-            stringRedisTemplate.opsForZSet().add(key, String.valueOf(member), score);
-        } catch (DataAccessException e) {
-            log.error("[Redis] zAdd failed. key={}, member={}, score={}", key, member, score, e);
-            throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
-        }
-    }
-
-    @Override
-    public void zAddAll(String key, Map<Long, Double> memberScores) {
-        if (memberScores == null || memberScores.isEmpty()) return;
-        try {
-            Set<ZSetOperations.TypedTuple<String>> tuples = memberScores.entrySet().stream()
-                    .map(e -> ZSetOperations.TypedTuple.of(String.valueOf(e.getKey()), e.getValue()))
-                    .collect(Collectors.toSet());
-            stringRedisTemplate.opsForZSet().add(key, tuples);
-        } catch (DataAccessException e) {
-            log.error("[Redis] zAddAll failed. key={}, size={}", key, memberScores.size(), e);
-        }
-    }
-
-    @Override
-    public void zRem(String key, Long member) {
-        try {
-            stringRedisTemplate.opsForZSet().remove(key, String.valueOf(member));
-        } catch (DataAccessException e) {
-            log.error("[Redis] zRem failed. key={}, member={}", key, member, e);
-            throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
-        }
-    }
-
-    @Override
-    public Map<Long, Double> zRevRangeWithScores(String key) {
-        try {
-            // hasKey() 없이 단일 RTT로 조회.
-            // 빈 결과는 키 부재(또는 hasKey-range 사이 만료)를 의미하므로 cache miss로 처리.
-            // "적재됐지만 비어있음"은 sentinel(-1L)로 표현되므로 빈 Set은 항상 miss.
-            Set<ZSetOperations.TypedTuple<String>> tuples =
-                    stringRedisTemplate.opsForZSet().reverseRangeWithScores(key, 0, -1);
-            if (tuples == null || tuples.isEmpty()) {
-                return null; // cache miss
-            }
-            // LinkedHashMap으로 ZREVRANGE 순서(score 내림차순) 보존
-            Map<Long, Double> result = new LinkedHashMap<>();
-            for (ZSetOperations.TypedTuple<String> tuple : tuples) {
-                result.put(Long.parseLong(tuple.getValue()), tuple.getScore());
-            }
-            return result;
-        } catch (DataAccessException e) {
-            log.error("[Redis] zRevRangeWithScores failed. key={}", key, e);
-            return null; // cache miss로 처리 → 호출자가 DB fallback
-        }
-    }
-
-    @Override
-    public Double zScore(String key, Long member) {
-        try {
-            return stringRedisTemplate.opsForZSet().score(key, String.valueOf(member));
-        } catch (DataAccessException e) {
-            log.error("[Redis] zScore failed. key={}, member={}", key, member, e);
-            throw new BusinessException(ErrorCode.REDIS_OPERATION_FAILED);
-        }
     }
 
     // == Private Helper Methods == //
