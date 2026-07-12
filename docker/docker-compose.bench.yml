@@ -1,0 +1,38 @@
+# 북마크 인덱스 벤치마크 전용 환경 (#379)
+# - MySQL: 데이터+인덱스 전부 버퍼풀에 상주하도록 2G (디스크 I/O 노이즈 제거)
+# - 앱은 호스트에서 bootRun으로 실행 (load-test/bench/run-app.sh)
+# 기동: docker compose -f docker/docker-compose.bench.yml up -d
+services:
+  bench-mysql:
+    container_name: solply-bench-mysql
+    image: mysql:8.0
+    ports:
+      - "3310:3306"
+    environment:
+      MYSQL_DATABASE: solply_bench_db
+      MYSQL_USER: solplyuser
+      MYSQL_PASSWORD: solplyuserpwd
+      MYSQL_ROOT_PASSWORD: rootpwd
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=2G
+      - --innodb-redo-log-capacity=1G
+      - --max-connections=200
+    cpus: 4
+    mem_limit: 4g
+    volumes:
+      - solply-bench-mysql-data:/var/lib/mysql
+
+  bench-redis:
+    # 캐시-on baseline(#377 이전 커밋) 측정 전용. 현행 코드 측정에도 앱 기동 의존성으로 필요.
+    container_name: solply-bench-redis
+    image: redis:7
+    ports:
+      - "6382:6379"
+    command: [ "redis-server", "--requirepass", "solplyredispwd" ]
+    cpus: 1
+    mem_limit: 512m
+
+volumes:
+  solply-bench-mysql-data:
