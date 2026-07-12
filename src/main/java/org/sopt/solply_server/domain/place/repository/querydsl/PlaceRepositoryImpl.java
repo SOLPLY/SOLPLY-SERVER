@@ -4,9 +4,7 @@ import static org.sopt.solply_server.domain.place.entity.QPlace.place;
 import static org.sopt.solply_server.domain.town.entity.QTown.town;
 
 import com.querydsl.core.BooleanBuilder;
-import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
-import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import java.util.Arrays;
@@ -14,12 +12,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.QPlace;
 import org.sopt.solply_server.domain.place.entity.QPlaceTag;
 import org.sopt.solply_server.domain.tag.entity.QTag;
-import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.QTown;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -32,64 +28,6 @@ import org.springframework.stereotype.Repository;
 public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
 
     private final JPAQueryFactory queryFactory;
-    public List<Place> findPlacesByConditions(PlaceSearchConditionDto condition) {
-        QPlace place = QPlace.place;
-        BooleanBuilder whereCondition = createBasicConditions(place, condition);
-
-        if (!condition.hasMainTag()) {
-            return findPlacesWithoutTags(place, whereCondition);
-        }
-
-        if (!condition.hasSubTagA() && !condition.hasSubTagB()) {
-            return findPlacesWithMainTag(place, whereCondition, condition);
-        }
-
-        return findPlacesWithTags(place, whereCondition, condition);
-
-    }
-
-//    public List<Place> findPlacesByKeyword(String keyword) {
-//        QPlace p = QPlace.place;
-//
-//        String kw = keyword == null ? "" : keyword.trim();
-//        if (kw.isEmpty()) return List.of();
-//
-//        int length = kw.codePointCount(0, kw.length());
-//        // 단일 글자면 FULLTEXT 효용이 떨어지니 LIKE로 처리
-//        if (length >= 4) {
-//            // 4글자 이상 → Fulltext Index 활용
-//            var match = Expressions.numberTemplate(
-//                    Double.class,
-//                    "MATCH({0}) AGAINST ({1} IN BOOLEAN MODE)",
-//                    p.name, kw + "*"
-//            );
-//            return queryFactory.selectFrom(p)
-//                    .where(match.gt(0))
-//                    .orderBy(match.desc(),  // 유사도 점수 높은 순
-//                            p.name.asc(),
-//                            p.id.asc()
-//                    )
-//                    .limit(3)
-//                    .fetch();
-//        } else {
-//            // 3글자 이하 → LIKE fallback
-//            String pattern = "%" + kw + "%";
-//            var pos = Expressions.numberTemplate(
-//                    Integer.class,
-//                    "LOCATE({0}, {1})", kw, p.name
-//            );
-//
-//            return queryFactory.selectFrom(p)
-//                    .where(p.name.likeIgnoreCase(pattern))
-//                    .orderBy(
-//                            pos.asc().nullsLast(),
-//                            p.name.asc(),
-//                            p.id.asc()
-//                    )
-//                    .limit(10)
-//                    .fetch();
-//        }
-//    }
 
     public List<Place> findPlacesWithTownByKeyword(final String keyword) {
         QPlace qPlace = place;
@@ -208,126 +146,5 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         // BOOLEAN MODE에서 의미 있는 특수문자 제거/공백 치환
         // (+ - @ ~ < > ( ) " * 등의 혼선을 방지)
         return token.replaceAll("[+\\-@~<>\\(\\)\"*]", " ");
-    }
-
-    // 전체 조회
-    private List<Place> findPlacesWithoutTags(QPlace place, BooleanBuilder whereCondition) {
-        QPlaceTag placeTag = QPlaceTag.placeTag;
-        QTag tag = QTag.tag;
-
-        return queryFactory
-                .selectDistinct(place)
-                .from(place)
-                .leftJoin(place.placeTags, placeTag).fetchJoin()
-                .leftJoin(placeTag.tag, tag).fetchJoin()
-                .where(whereCondition)
-                .orderBy(place.createdAt.desc())
-                .fetch();
-    }
-
-    // 메인 태그만 있는 경우
-    private List<Place> findPlacesWithMainTag(QPlace place, BooleanBuilder whereCondition,
-            PlaceSearchConditionDto condition) {
-        QPlaceTag placeTag = QPlaceTag.placeTag;
-        QTag tag = QTag.tag;
-
-        whereCondition.and(tag.id.eq(condition.mainTagId()))
-                .and(tag.type.eq(TagType.MAIN))
-                .and(tag.active.isTrue());
-
-        return queryFactory
-                .selectDistinct(place)
-                .from(place)
-                .leftJoin(place.placeTags, placeTag).fetchJoin()  // PlaceTag fetch join
-                .leftJoin(placeTag.tag, tag).fetchJoin()          // Tag fetch join
-                .where(whereCondition)
-                .orderBy(place.createdAt.desc())
-                .fetch();
-    }
-
-    // 메인 태그와 서브 태그가 모두 있는 경우
-    private List<Place> findPlacesWithTags(QPlace place, BooleanBuilder whereCondition,
-            PlaceSearchConditionDto condition) {
-        QPlaceTag placeTag = QPlaceTag.placeTag;
-        QTag tag = QTag.tag;
-
-        // 메인 태그 EXISTS 조건
-        whereCondition.and(createMainTagExistsCondition(place, condition.mainTagId()));
-
-        // 옵션1 태그 EXISTS 조건
-        if (condition.hasSubTagA()) {
-            whereCondition.and(createSubTagExistsCondition(place, condition.subTagOptionAIds(), TagType.OPTION1));
-        }
-
-        // 옵션2 태그 EXISTS 조건
-        if (condition.hasSubTagB()) {
-            whereCondition.and(createSubTagExistsCondition(place, condition.subTagOptionBIds(), TagType.OPTION2));
-        }
-
-        return queryFactory
-                .selectDistinct(place)
-                .from(place)
-                .leftJoin(place.placeTags, placeTag).fetchJoin()
-                .leftJoin(placeTag.tag, tag).fetchJoin()
-                .where(whereCondition)
-                .orderBy(place.createdAt.desc())
-                .fetch();
-    }
-
-    // 기본 조건(동네, 북마크) 추가 메서드
-    private BooleanBuilder createBasicConditions(QPlace place, PlaceSearchConditionDto condition) {
-        BooleanBuilder basicCondition = new BooleanBuilder();
-
-        basicCondition.and(place.active.isTrue());
-
-        // Town 조건
-        if (condition.townId() != null) {
-            basicCondition.and(place.town.id.eq(condition.townId()));
-        }
-
-        // 북마크 조건 - 올바른 로직
-        if (condition.isBookmarkSearch()) {
-            if (condition.hasBookmarkedPlaces()) {
-                // 북마크된 장소가 있으면 해당 장소들만 조회
-                basicCondition.and(place.id.in(condition.bookmarkedPlaceIds()));
-            } else {
-                // 북마크된 장소가 없으면 빈 결과 반환
-                basicCondition.and(place.id.isNull());
-            }
-        }
-        // 홈 화면 전체 장소 조회 -> 북마크 여부 상관 없이 모든 장소 대상으로 필터링
-
-        return basicCondition;
-    }
-
-    private BooleanExpression createMainTagExistsCondition(QPlace place, Long mainTagId) {
-        QPlaceTag mainPlaceTag = new QPlaceTag("mainPlaceTag"); // 이름을 다르게 지정하여 충돌 방지
-        QTag mainTag = new QTag("mainTag");
-
-        return JPAExpressions
-                .selectOne()
-                .from(mainPlaceTag)
-                .join(mainPlaceTag.tag, mainTag)
-                .where(mainPlaceTag.place.eq(place)
-                        .and(mainTag.id.eq(mainTagId))
-                        .and(mainTag.type.eq(TagType.MAIN))
-                        .and(mainTag.active.isTrue()))
-                .exists();
-    }
-
-
-    private BooleanExpression createSubTagExistsCondition(QPlace place, List<Long> tagIds, TagType tagType) {
-        QPlaceTag subPlaceTag = new QPlaceTag("subPlaceTag" + tagType.name()); // 이름을 다르게 지정하여 충돌 방지
-        QTag subTag = new QTag("subTag" + tagType.name());
-
-        return JPAExpressions
-                .selectOne()
-                .from(subPlaceTag)
-                .join(subPlaceTag.tag, subTag)
-                .where(subPlaceTag.place.eq(place)
-                        .and(subTag.id.in(tagIds))
-                        .and(subTag.type.eq(tagType))
-                        .and(subTag.active.isTrue()))
-                .exists();
     }
 }
