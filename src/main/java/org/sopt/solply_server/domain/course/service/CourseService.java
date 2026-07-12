@@ -274,7 +274,7 @@ public class CourseService {
             candidatePlace = null;
         }
 
-        // town-scoped ZSET에서 북마크된 courseId 목록 조회 (최신순, backfill 포함)
+        // DB에서 북마크된 courseId 목록을 최신순(created_at DESC)으로 조회
         List<Long> orderedCourseIds = courseBookmarkFacade.getBookmarkedCourseIdsForTown(userId, targetTownId);
         if (orderedCourseIds.isEmpty()) {
             log.info("사용자 {}의 동네 {}에 북마크된 코스가 없습니다.", userId, targetTownId);
@@ -435,9 +435,9 @@ public class CourseService {
     }
 
     /**
-     * ZSET 순서(최신순)를 기준으로 CourseInfoDto 리스트 생성.
+     * 북마크 최신순(DB 조회 기준)으로 CourseInfoDto 리스트 생성.
      *
-     * @param orderedCourseIds ZSET에서 최신순으로 정렬된 courseId 목록
+     * @param orderedCourseIds DB에서 최신순으로 정렬된 courseId 목록
      */
     private List<CourseInfoDto> createSortedCourseInfoDtoList(
             final List<Course> filteredCourses,
@@ -464,7 +464,7 @@ public class CourseService {
                         }
                 ));
 
-        // ZSET 순서(최신순) 복원
+        // DB 조회 순서(북마크 최신순) 복원
         return orderedCourseIds.stream()
                 .map(dtoMap::get)
                 .filter(Objects::nonNull)

@@ -52,7 +52,7 @@ public class BookmarkService {
     /**
      * DB 배치 조회 기반 북마크 여부 맵.
      * 다중 동네에 걸친 장소/코스 목록에 대한 북마크 여부 확인 시 사용.
-     * (단일 동네 목록은 Facade에서 ZSET 경로 사용)
+     * (단일 동네 목록 순서 조회는 Facade에서 DB 직행 경로 사용)
      */
     public Map<Long, Boolean> getBookmarkStatusMap(Long userId, BookmarkTargetType type,
             List<Long> targetIds) {
