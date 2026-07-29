@@ -152,11 +152,12 @@ public class PlaceService {
             imageUrlProvider.getImageUrl(cp.thumbnailFileKey()),
             cp.mainTagName(),
             bookmarkedIds.contains(cp.id()),
-            townId
+            townId,
+            cp.bookmarkCount()
         ))
         .toList();
 
-    return PlaceFilterGetResponse.from(placePreviewDtoList);
+    return PlaceFilterGetResponse.of(placePreviewDtoList, null);
   }
 
 

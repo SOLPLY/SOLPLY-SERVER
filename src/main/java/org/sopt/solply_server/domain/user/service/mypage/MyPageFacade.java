@@ -56,7 +56,8 @@ public class MyPageFacade {
                 imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
                 TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
                 bookmarkMap.getOrDefault(place.getId(), false),
-                place.getTown().getId()
+                place.getTown().getId(),
+                0L // 마이페이지(내가 등록한 장소)는 인기순 컨텍스트가 아니라 집계하지 않는다
         ));
     }
 }
