@@ -137,7 +137,7 @@ public class PlaceService {
 
     // 북마크 조회는 캐싱하지 않는다 — 커버링 인덱스 DB 직행 1회 (설계 문서 §2)
     List<Long> bookmarkedOrderedIds = (userId != null)
-        ? placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, townId)
+        ? placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(userId, List.of(townId))
         : List.of();
     Set<Long> bookmarkedIds = new HashSet<>(bookmarkedOrderedIds);
 

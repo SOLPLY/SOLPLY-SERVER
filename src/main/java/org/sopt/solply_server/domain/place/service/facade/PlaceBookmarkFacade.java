@@ -55,10 +55,10 @@ public class PlaceBookmarkFacade {
 
     // == 리스트 조회 == //
 
-    /** 특정 동네에서 사용자가 북마크한 placeId 목록을 최신순으로 반환 */
-    public List<Long> getBookmarkedPlaceIdsForTown(final Long userId, final Long townId) {
+    /** 여러 동네에서 사용자가 북마크한 placeId 목록을 최신순으로 반환 */
+    public List<Long> getBookmarkedPlaceIdsForTowns(final Long userId, final List<Long> townIds) {
         if (userId == null) return Collections.emptyList();
-        return bookmarkRepository.findBookmarkedPlaceIdsByTownOrdered(userId, townId);
+        return bookmarkRepository.findBookmarkedPlaceIdsByTownsOrdered(userId, townIds);
     }
 
     /** 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회) */

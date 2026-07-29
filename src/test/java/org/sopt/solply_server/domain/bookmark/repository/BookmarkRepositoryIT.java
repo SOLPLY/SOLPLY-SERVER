@@ -61,6 +61,7 @@ class BookmarkRepositoryIT {
     private Long placeC;
     private Long otherTownId;
     private Long otherTownPlace;
+    private Long unbookmarkedPlace;
 
     private Long courseTownId;
     private Long otherCourseTownId;
@@ -95,6 +96,13 @@ class BookmarkRepositoryIT {
         otherTownId = byTown.keySet().stream()
                 .filter(t -> !t.equals(townId)).findFirst().orElseThrow();
         otherTownPlace = byTown.get(otherTownId).get(0);
+
+        // 어느 유저도 북마크하지 않는 장소 (카운트 0건 검증용)
+        List<Long> bookmarked = List.of(placeA, placeB, placeC, otherTownPlace);
+        unbookmarkedPlace = rows.stream()
+                .map(r -> ((Number) r[0]).longValue())
+                .filter(id -> !bookmarked.contains(id))
+                .findFirst().orElseThrow();
 
         // 같은 동네의 active 코스 3개 + 다른 동네의 active 코스 1개를 고른다.
         @SuppressWarnings("unchecked")
@@ -163,8 +171,42 @@ class BookmarkRepositoryIT {
 
     @Test
     void 동네별_북마크_장소_id를_최신순으로_반환한다() {
-        List<Long> ids = bookmarkRepository.findBookmarkedPlaceIdsByTownOrdered(userId, townId);
+        List<Long> ids = bookmarkRepository.findBookmarkedPlaceIdsByTownsOrdered(userId, List.of(townId));
         assertThat(ids).containsExactly(placeC, placeB, placeA); // 최신순
+    }
+
+    @Test
+    void 여러_동네의_북마크_장소_id를_최신순으로_반환한다() {
+        // given: townId(placeA 1/1, placeB 2/1, placeC 3/1) + otherTownId(otherTownPlace 1/15)
+
+        // when
+        List<Long> ids = bookmarkRepository.findBookmarkedPlaceIdsByTownsOrdered(
+                userId, List.of(townId, otherTownId));
+
+        // then: 동네 경계 없이 북마크 최신순으로 병합된다
+        assertThat(ids).containsExactly(placeC, placeB, otherTownPlace, placeA);
+    }
+
+    @Test
+    void 장소별_북마크_수를_집계한다() {
+        // given: placeA에 다른 유저의 북마크를 1개 더 추가 → placeA 2개, placeB 1개, unbookmarkedPlace 0개
+        User other = User.create("bookmark-count-it@test.com");
+        em.persist(other);
+        em.persist(Bookmark.create(other, BookmarkTargetType.PLACE, placeA));
+        em.flush();
+        em.clear();
+
+        // when
+        Map<Long, Long> counts = bookmarkRepository
+                .countByPlaceIds(List.of(placeA, placeB, unbookmarkedPlace)).stream()
+                .collect(Collectors.toMap(
+                        r -> ((Number) r[0]).longValue(),
+                        r -> ((Number) r[1]).longValue()));
+
+        // then
+        assertThat(counts.get(placeA)).isEqualTo(2L);
+        assertThat(counts.get(placeB)).isEqualTo(1L);
+        assertThat(counts).doesNotContainKey(unbookmarkedPlace); // 0건은 행 없음
     }
 
     @Test

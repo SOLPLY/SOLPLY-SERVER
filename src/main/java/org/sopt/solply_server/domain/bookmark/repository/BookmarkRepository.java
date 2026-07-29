@@ -49,19 +49,29 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
     // == DB 직행 조회 쿼리 (캐시 제거 후 단일 경로) == //
 
-    /** 특정 동네의 북마크 장소 id를 최신순으로 반환 */
+    /** 장소별 북마크 수 집계 (타겟 축 커버링 인덱스). row: [target_id, cnt]. 0건인 장소는 행 없음 */
+    @Query(value = """
+        SELECT b.target_id, COUNT(*) AS cnt
+        FROM bookmarks b
+        WHERE b.target_type = 'PLACE'
+          AND b.target_id IN (:placeIds)
+        GROUP BY b.target_id
+    """, nativeQuery = true)
+    List<Object[]> countByPlaceIds(@Param("placeIds") List<Long> placeIds);
+
+    /** 여러 동네의 북마크 장소 id를 최신순으로 반환 (시 단위 = leaf 합집합 조회용) */
     @Query(value = """
         SELECT b.target_id
         FROM bookmarks b
         INNER JOIN places p ON p.id = b.target_id
         WHERE b.user_id = :userId
           AND b.target_type = 'PLACE'
-          AND p.town_id = :townId
+          AND p.town_id IN (:townIds)
           AND p.active = true
         ORDER BY b.created_at DESC, b.target_id DESC
     """, nativeQuery = true)
-    List<Long> findBookmarkedPlaceIdsByTownOrdered(
-            @Param("userId") Long userId, @Param("townId") Long townId);
+    List<Long> findBookmarkedPlaceIdsByTownsOrdered(
+            @Param("userId") Long userId, @Param("townIds") List<Long> townIds);
 
     /** 특정 동네의 북마크 코스 id를 최신순으로 반환 */
     @Query(value = """
