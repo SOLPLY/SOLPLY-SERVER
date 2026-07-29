@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class CachedPlaceFilterTest {
 
     private CachedPlace place(long id, Set<Long> main, Set<Long> optA, Set<Long> optB) {
-        return new CachedPlace(id, "p" + id, null, null, main, optA, optB, null);
+        return new CachedPlace(id, "p" + id, null, null, main, optA, optB, null, 1L, 0L);
     }
 
     @Test

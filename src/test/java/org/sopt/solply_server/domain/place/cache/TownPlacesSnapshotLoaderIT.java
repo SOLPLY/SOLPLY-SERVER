@@ -69,6 +69,35 @@ class TownPlacesSnapshotLoaderIT {
     }
 
     @Test
+    void 스냅샷에_소속_동네_id와_북마크_수가_내장된다() {
+        List<CachedPlace> before = loader.loadSnapshot(MANGWON_TOWN_ID);
+        assertThat(before).hasSizeGreaterThanOrEqualTo(2);
+        Long bookmarkedPlaceId = before.get(0).id();
+        Long plainPlaceId = before.get(1).id();
+
+        jdbcTemplate.update(
+                "INSERT INTO users (role, nickname, email, is_new_user, is_deleted) "
+                        + "VALUES ('USER', 'snapshot-it', 'snapshot-it@test.com', false, false)");
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE email = 'snapshot-it@test.com'", Long.class);
+        jdbcTemplate.update(
+                "INSERT INTO bookmarks (user_id, target_type, target_id, created_at, updated_at) "
+                        + "VALUES (?, 'PLACE', ?, NOW(), NOW())", userId, bookmarkedPlaceId);
+
+        List<CachedPlace> snapshot = loader.loadSnapshot(MANGWON_TOWN_ID);
+
+        // 소속 동네 id가 모든 스냅샷 항목에 내장된다
+        assertThat(snapshot).allSatisfy(cp -> assertThat(cp.townId()).isEqualTo(MANGWON_TOWN_ID));
+        // 북마크가 있는 장소는 해당 수, 없는 장소는 0
+        assertThat(findById(snapshot, bookmarkedPlaceId).bookmarkCount()).isEqualTo(1L);
+        assertThat(findById(snapshot, plainPlaceId).bookmarkCount()).isZero();
+    }
+
+    private CachedPlace findById(List<CachedPlace> snapshot, Long id) {
+        return snapshot.stream().filter(cp -> cp.id().equals(id)).findFirst().orElseThrow();
+    }
+
+    @Test
     void inactive_장소는_스냅샷에서_제외된다() {
         List<CachedPlace> before = loader.loadSnapshot(MANGWON_TOWN_ID);
         assertThat(before).isNotEmpty();
