@@ -142,6 +142,23 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                 .fetch();
     }
 
+    @Override
+    public List<Place> findPlacesWithTagsByIds(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        QPlaceTag placeTag = QPlaceTag.placeTag;
+        QTag tag = QTag.tag;
+
+        return queryFactory
+                .selectDistinct(place)
+                .from(place)
+                .leftJoin(place.placeTags, placeTag).fetchJoin()
+                .leftJoin(placeTag.tag, tag).fetchJoin()
+                .where(place.id.in(ids))
+                .fetch();
+    }
+
     private String sanitizeForBooleanMode(final String token) {
         // BOOLEAN MODE에서 의미 있는 특수문자 제거/공백 치환
         // (+ - @ ~ < > ( ) " * 등의 혼선을 방지)

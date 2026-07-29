@@ -27,7 +27,9 @@ import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlacePopularDirectQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.PlaceListPaginator;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
@@ -44,6 +46,7 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.InputValidator;
 import org.sopt.solply_server.global.util.TagViewUtils;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,6 +66,11 @@ public class PlaceService {
   private final PlaceReviewRepository placeReviewRepository;
   private final TownPlacesCache townPlacesCache;
   private final TownHierarchyResolver townHierarchyResolver;
+  private final PlacePopularDirectQueryRepository placePopularDirectQueryRepository;
+
+  /** [벤치 전용] popular 정렬 읽기 경로: cache(기본) | db */
+  @Value("${solply.place-list.popular-read-mode:cache}")
+  private String popularReadMode;
 
   /**
    * 장소 상세 정보 조회
@@ -137,6 +145,12 @@ public class PlaceService {
 
     List<Long> leafTownIds = townHierarchyResolver.resolveLeafTownIds(request.townId());
     PlaceSortType sort = request.sortOrDefault();
+
+    if (sort == PlaceSortType.POPULAR
+        && !Boolean.TRUE.equals(request.isBookmarkSearch())
+        && "db".equals(popularReadMode)) {
+      return popularFromDb(userId, leafTownIds, request);
+    }
 
     // leaf별 스냅샷 병합 (시 단위면 N개, 동네 단위면 1개) 후 태그 필터
     List<CachedPlace> filtered = CachedPlaceFilter.filter(
@@ -221,6 +235,64 @@ public class PlaceService {
   }
 
   //=== Private Methods ===//
+
+  /** [벤치 v0] 캐시 우회 — 요청마다 DB에서 집계·정렬·필터. 프로덕션 기본값은 cache */
+  private PlaceFilterGetResponse popularFromDb(
+      Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request) {
+
+    boolean paging = request.cursor() != null || request.size() != null;
+    int pageSize = !paging ? Integer.MAX_VALUE - 1
+        : (request.size() == null ? PlaceListPaginator.DEFAULT_PAGE_SIZE
+            : Math.min(request.size(), PlaceListPaginator.MAX_PAGE_SIZE));
+
+    Long cursorCount = null;
+    Long cursorPlaceId = null;
+    if (request.cursor() != null) {
+      PlaceListCursor cursor = PlaceListCursor.decode(request.cursor());
+      if (cursor.sort() != PlaceSortType.POPULAR) {
+        throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+      }
+      cursorCount = cursor.sortKey();
+      cursorPlaceId = cursor.placeId();
+    }
+
+    int fetchSize = paging ? pageSize + 1 : pageSize;
+    List<PlacePopularDirectQueryRepository.PopularRow> rows =
+        placePopularDirectQueryRepository.findPopularRows(
+            leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+            cursorCount, cursorPlaceId, fetchSize);
+
+    boolean hasNext = paging && rows.size() > pageSize;
+    if (hasNext) {
+      rows = rows.subList(0, pageSize);
+    }
+
+    List<Long> pageIds = rows.stream().map(PlacePopularDirectQueryRepository.PopularRow::placeId).toList();
+    Map<Long, Place> placesById = placeRepository.findPlacesWithTagsByIds(pageIds).stream()
+        .collect(Collectors.toMap(Place::getId, Function.identity()));
+    Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
+
+    List<PlacePreviewDto> previews = rows.stream()
+        .map(row -> {
+          Place p = placesById.get(row.placeId());
+          return PlacePreviewDto.of(
+              p.getId(),
+              p.getName(),
+              imageUrlProvider.getImageUrl(p.getThumbnailFileKey()),
+              TagViewUtils.getActiveNameOrNull(p.getMainTag().orElse(null)),
+              bookmarkStatus.getOrDefault(p.getId(), false),
+              p.getTown().getId(),
+              row.bookmarkCount());
+        })
+        .toList();
+
+    String nextCursor = hasNext
+        ? new PlaceListCursor(PlaceSortType.POPULAR,
+            rows.get(rows.size() - 1).bookmarkCount(),
+            rows.get(rows.size() - 1).placeId()).encode()
+        : null;
+    return PlaceFilterGetResponse.of(previews, nextCursor);
+  }
 
   /** 북마크 검색: 내 북마크만, latest = 내 북마크 최신순 / popular = 누적 북마크순. 페이징 미적용 */
   private PlaceFilterGetResponse bookmarkSearchResponse(

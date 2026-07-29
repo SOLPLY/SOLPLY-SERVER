@@ -9,4 +9,5 @@ public interface PlaceRepositoryCustom {
     List<Place> findPlacesWithTownByKeyword(String keyword);
     Page<Place> findByUserIdWithTown(Long userId, Pageable pageable);
     List<Place> findActivePlacesWithTagsByTownId(Long townId);
+    List<Place> findPlacesWithTagsByIds(List<Long> ids);
 }
