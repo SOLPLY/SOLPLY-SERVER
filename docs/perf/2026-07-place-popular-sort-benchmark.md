@@ -31,8 +31,25 @@
 | 2 | DERIVED | p | range | idx_places_town_active | NULL | 435 | Using where; Using index |
 | 3 | DEPENDENT SUBQUERY | b | ref | **idx_bookmark_target** | const, p.id | 547 | **Using index** |
 
-→ 기대대로 장소당 인덱스 range scan 1회(커버링). 다만 `DEPENDENT SUBQUERY`가 **행마다** 반복되어
-435개 장소 × 평균 547행 = 요청당 약 24만 인덱스 엔트리를 훑는다. 이것이 §3 붕괴의 직접 원인.
+→ 기대대로 장소당 인덱스 range scan 1회(커버링). 다만 `DEPENDENT SUBQUERY`는 **바깥 행마다 다시 실행**된다.
+
+**실측: 요청 1건이 훑는 인덱스 엔트리 수**
+
+EXPLAIN의 `rows: 547`은 옵티마이저가 인덱스 통계로 뽑은 **1회 실행당 추정치**이지 실제 개수가 아니다.
+`COUNT(*)`는 값별 개수를 저장해두지 않으므로 해당 `(target_type, target_id)` 엔트리를 **하나씩 밟아가며 세야 한다**.
+실제로 세어보면:
+
+| 조회 범위 | 장소 수 | 실제 순회 엔트리 | 장소당 평균 |
+|---|---|---|---|
+| 동네 (102 강남) | 42 | **550,598** | 13,110 |
+| 시 단위 (101 서울 = leaf 10개) | 435 | **3,247,626** | 7,466 |
+
+추정치 기반 계산(435 × 547 ≈ 24만)보다 **13.5배** 많다. 부하 믹스(시 단위 20%)를 반영하면
+목표 100 req/s에서 초당 6천만 건 이상의 엔트리 순회가 필요하고, 4 vCPU로는 불가능하다.
+이것이 §3 붕괴의 직접 원인이다.
+
+`Using index`(커버링)가 없앤 것은 "엔트리마다 PK로 원본 테이블 행까지 찾아가는 랜덤 접근"이며,
+**엔트리를 하나씩 밟는 비용 자체는 남는다**. V21 인덱스는 비용을 크게 낮추지만 0으로 만들지는 못한다.
 
 **스냅샷 로더 집계 쿼리 (IN + GROUP BY)**
 
@@ -126,13 +143,89 @@
 - 즉 v1'은 v0의 병목(상관 서브쿼리 반복)은 확실히 제거하지만, v1이 이미 p99 19ms를 내는 상황에서
   스키마 변경 + 배치 스케줄러 + 신선도 관리 비용을 추가로 지불할 근거는 약하다.
 
-## 6. 판단
+### v1' 채택 시 filesort 회피법 (참고)
 
-<!-- 사용자와 함께 결정 — 수치는 §2~§5에 채워져 있음 -->
+복합 인덱스가 정렬에 쓰이려면 선행 컬럼이 **단일값**이어야 한다. `town_id IN (10개)`는 정렬된 구간을
+10개 주는 것일 뿐, 이들을 가로지르는 전역 내림차순 경로가 없어 filesort로 흐른다.
+
+회피법은 **동네별 top-K를 각각 뽑아 합친 뒤 다시 정렬**하는 것이다:
+
+```sql
+(SELECT id, bookmark_count FROM places WHERE town_id=102 AND active=1
+   ORDER BY bookmark_count DESC, id ASC LIMIT 20)
+UNION ALL
+(SELECT id, bookmark_count FROM places WHERE town_id=103 AND active=1
+   ORDER BY bookmark_count DESC, id ASC LIMIT 20)
+-- ... leaf 10개
+ORDER BY bookmark_count DESC, id ASC LIMIT 20;
+```
+
+각 서브쿼리는 `town_id` 단일값이라 인덱스가 정렬에 그대로 쓰이고 20개에서 멈춘다.
+최종 정렬 대상은 전체 장소가 아니라 `동네 수 × 페이지 크기` = 200행으로 고정된다.
+
+정당성: 전역 top-20에 드는 장소는 반드시 **자기 동네의 top-20 안에** 있으므로 누락이 없다.
+커서 페이징도 각 서브쿼리에 `AND (bookmark_count, id) < 커서` 조건을 더하면 같은 논리로 성립한다.
+
+(대안: `places`에 root town을 `city_id`로 비정규화하고 `(city_id, bookmark_count DESC)` 인덱스를 만들면
+단일값 조회가 되어 더 단순하다. 다만 비정규화 컬럼이 하나 더 늘어난다.)
+
+## 6. 후속 확장 시 주의점 (장소 수가 늘어날 때)
+
+이번 측정은 장소 719개(시 단위 조회 시 435개) 기준이다. 장소가 크게 늘 때 **어디가 먼저 꺾이는지**를
+미리 정리해둔다. 아래는 실측이 아니라 코드·측정 구조에서 도출한 판단이므로, 실제 임계점은 재측정이 필요하다.
+
+**먼저 걸릴 곳은 정렬이 아니라 요청당 리스트 할당이다.**
+정렬 자체는 수백~수만 개 모두 Java 메모리에서 서브 밀리초다. 반면 시 단위 요청은 매번 시 전체 목록을
+새로 만든다 — `PlaceService.getPlaces`에서 leaf 스냅샷 병합(①)과 태그 필터 결과(②), 그리고
+`PlaceListPaginator.paginate`의 방어적 복사(③)로 **요청 1건당 N 크기 리스트를 3번** 생성한다.
+
+```java
+// PlaceService.getPlaces
+List<CachedPlace> filtered = CachedPlaceFilter.filter(
+    leafTownIds.stream()
+        .flatMap(id -> townPlacesCache.getPlaces(id).stream())
+        .toList(),          // ① 시 전체 N개
+    ...);                   // ② 필터 결과
+// PlaceListPaginator.paginate
+List<CachedPlace> ordered = new ArrayList<>(places);  // ③ 복사
+```
+
+N=435에서는 무시할 수준이지만(§4에서 시 단위 p99 18ms), N이 커지면 정렬 비용보다 이 할당·GC 압력이
+먼저 나타난다. v1 라운드에서 앱 CPU가 88%까지 오른 것도 DB가 아니라 앱 쪽 일(병합·필터·정렬·DTO 변환)이
+실제로 돌고 있다는 뜻이다.
+
+**수정 방향**: 스냅샷은 이미 정렬된 상태로 캐시에 있으므로, ①에서 leaf별 **상위 K개만 뽑아 병합**하면
+§5의 UNION ALL과 같은 원리로 비용이 `O(전체 장소 수)` → `O(동네 수 × 페이지 크기)`가 된다.
+단, POPULAR 정렬 기준으로 미리 정렬된 뷰가 스냅샷에 필요하다(현재 스냅샷은 createdAt desc 정렬).
+
+## 7. 판단
+
+<!-- 사용자와 함께 결정 — 수치는 §2~§6에 채워져 있음 -->
 <!-- 검토 포인트:
      (1) v0은 목표 부하(100 req/s)를 견디지 못함이 실측으로 확정 → 캐시(또는 동등한 사전 집계)는 선택이 아니라 필수.
      (2) v1은 목표 부하에서 p99 19ms, 에러 0으로 충분한 여유. 현재 스펙(2vCPU/2G)으로 헤드룸 있음.
      (3) v1' 채택 여부 — 배치 1.08초는 저렴하나 v1 대비 추가 이득이 불명확. 스키마·운영 비용 대비 판단 필요.
-     (4) 신선도 트레이드오프: 인기순 순위가 최대 10분(soft TTL) stale. 서비스 수용 가능한지 확인 필요. -->
+         채택 시 시 단위 filesort 회피는 §5의 UNION ALL 패턴 참고.
+     (4) 신선도 트레이드오프: 인기순 순위가 최대 10분(soft TTL) stale. 서비스 수용 가능한지 확인 필요.
+     (5) §6의 확장 임계점 — 장소 수 증가가 예상되면 leaf별 top-K 병합으로 선제 대응할지. -->
 
 <!-- 후속(별도 플랜): v2 다중 인스턴스 — 순위 불일치·중복 집계·무효화 전파 측정 -->
+
+---
+
+## 부록: 원시 산출물
+
+문서의 수치는 아래 파일에서 추출했다 (재현이 어려운 측정이라 gitignore 예외로 커밋).
+
+| 파일 | 내용 |
+|---|---|
+| `load-test/reports/popular-v0-r1.json` | v0 Artillery 리포트 (§3) |
+| `load-test/reports/popular-v1-r1.json` | v1 Artillery 리포트 (§4) |
+| `load-test/bench/results/metrics/popular-v{0,1}-r1.diff` | MySQL 누적 카운터 구간 diff |
+| `load-test/bench/results/metrics/popular-v{0,1}-r1.samples.csv` | CPU·메모리·커넥션 시계열 샘플 |
+| `load-test/bench/results/metrics/popular-v{0,1}-r1.{start,end}` | `SHOW GLOBAL STATUS` 원본 스냅샷 |
+
+재현 절차: `load-test/seed/run-seed-popular.sh` → `docker compose -f docker/docker-compose.bench.yml up -d --build`
+→ `bench/metrics-snapshot.sh start <라벨>` + `bench/sampler.sh <라벨> 190 &`
+→ `npx artillery run scenarios/place-list-popular.yml -o reports/<라벨>.json`
+→ `bench/metrics-snapshot.sh report <라벨>`

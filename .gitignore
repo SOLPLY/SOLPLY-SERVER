@@ -78,7 +78,11 @@ Thumbs.db
 # ====================
 test-output/
 reports/
-load-test/reports/
+# 예외: 벤치마크 리포트는 문서(docs/perf/*)의 근거라 재현이 어려워 원본을 보존한다.
+# 'reports/'가 디렉터리째 제외하면 git이 내부를 탐색하지 않으므로, 디렉터리 제외를 먼저 푼다.
+!load-test/reports/
+load-test/reports/*
+!load-test/reports/popular-v*.json
 load-test/query-logs/
 load-test/node_modules/
 load-test/data/
@@ -103,4 +107,8 @@ docs/superpowers/
 docs/claude-spec/
 
 # 벤치마크 로컬 산출물
-load-test/bench/results/
+load-test/bench/results/*
+!load-test/bench/results/metrics/
+load-test/bench/results/metrics/*
+# 예외: 인기순 벤치 서버 측 지표 (docs/perf/2026-07-place-popular-sort-benchmark.md §3·§4 근거)
+!load-test/bench/results/metrics/popular-v*
