@@ -1,11 +1,10 @@
 package org.sopt.solply_server.domain.place.service;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +17,8 @@ import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceLatestReviewDto;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchResultDto;
+import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
+import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
@@ -27,12 +28,14 @@ import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.place.util.PlaceListPaginator;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
+import org.sopt.solply_server.domain.town.util.TownHierarchyResolver;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -59,6 +62,7 @@ public class PlaceService {
   private final EntityLoader entityLoader;
   private final PlaceReviewRepository placeReviewRepository;
   private final TownPlacesCache townPlacesCache;
+  private final TownHierarchyResolver townHierarchyResolver;
 
   /**
    * 장소 상세 정보 조회
@@ -113,51 +117,49 @@ public class PlaceService {
   }
 
   /**
-   * 동네와 태그 조건에 따른 장소 조회
+   * 동네(leaf) 또는 시(leaf 합집합) + 태그 + 정렬 조건에 따른 장소 조회.
+   * 정렬·필터는 직교: isBookmarkSearch는 "무엇을"(전체 vs 내 북마크), sort는 "어떤 순서로".
+   * sort=latest 의미 — 일반: 장소 등록 최신순 / 북마크 검색: 내 북마크 최신순 (기존 동작 유지).
+   * 북마크 검색은 유저당 데이터 상한이 작아 페이징을 적용하지 않는다.
    */
-  public PlaceFilterGetResponse getPlacesByTownAndTag(
-      final Long userId, final Long townId, final Boolean isBookmarkSearch, final Long mainTagId,
-      final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
+  public PlaceFilterGetResponse getPlaces(final Long userId, final PlaceFilterGetRequest request) {
 
-    if (userId == null && Boolean.TRUE.equals(isBookmarkSearch)) {
+    if (userId == null && Boolean.TRUE.equals(request.isBookmarkSearch())) {
       throw new JwtTokenException(ErrorCode.UNAUTHORIZED_USER);
     }
 
-    townValidator.validateTownId(townId);
+    townValidator.validateTownId(request.townId());
 
-    if (mainTagId != null) {
-      tagValidator.validatePlaceTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+    if (request.mainTagId() != null) {
+      tagValidator.validatePlaceTagConditions(
+          request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
     }
 
-    boolean isOnlyBookmarkSearch = Boolean.TRUE.equals(isBookmarkSearch);
+    List<Long> leafTownIds = townHierarchyResolver.resolveLeafTownIds(request.townId());
+    PlaceSortType sort = request.sortOrDefault();
 
-    // 캐시된 동네 스냅샷(createdAt desc 정렬) 위에서 태그 필터링 — DB 태그 쿼리 없음
+    // leaf별 스냅샷 병합 (시 단위면 N개, 동네 단위면 1개) 후 태그 필터
     List<CachedPlace> filtered = CachedPlaceFilter.filter(
-        townPlacesCache.getPlaces(townId), mainTagId, subTagAIdList, subTagBIdList);
+        leafTownIds.stream()
+            .flatMap(id -> townPlacesCache.getPlaces(id).stream())
+            .toList(),
+        request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
 
-    // 북마크 조회는 캐싱하지 않는다 — 커버링 인덱스 DB 직행 1회 (설계 문서 §2)
-    List<Long> bookmarkedOrderedIds = (userId != null)
-        ? placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(userId, List.of(townId))
-        : List.of();
-    Set<Long> bookmarkedIds = new HashSet<>(bookmarkedOrderedIds);
+    if (Boolean.TRUE.equals(request.isBookmarkSearch())) {
+      return bookmarkSearchResponse(userId, leafTownIds, filtered, sort);
+    }
 
-    List<CachedPlace> places = isOnlyBookmarkSearch
-        ? sortByBookmarkedOrder(filtered, bookmarkedOrderedIds)
-        : filtered;
+    PlaceListPaginator.PageSlice slice =
+        PlaceListPaginator.paginate(filtered, sort, request.cursor(), request.size());
 
-    List<PlacePreviewDto> placePreviewDtoList = places.stream()
-        .map(cp -> PlacePreviewDto.of(
-            cp.id(),
-            cp.name(),
-            imageUrlProvider.getImageUrl(cp.thumbnailFileKey()),
-            cp.mainTagName(),
-            bookmarkedIds.contains(cp.id()),
-            townId,
-            cp.bookmarkCount()
-        ))
+    Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(
+        userId, slice.items().stream().map(CachedPlace::id).toList());
+
+    List<PlacePreviewDto> previews = slice.items().stream()
+        .map(cp -> toPreview(cp, bookmarkStatus.getOrDefault(cp.id(), false)))
         .toList();
 
-    return PlaceFilterGetResponse.of(placePreviewDtoList, null);
+    return PlaceFilterGetResponse.of(previews, slice.nextCursor());
   }
 
 
@@ -219,6 +221,38 @@ public class PlaceService {
   }
 
   //=== Private Methods ===//
+
+  /** 북마크 검색: 내 북마크만, latest = 내 북마크 최신순 / popular = 누적 북마크순. 페이징 미적용 */
+  private PlaceFilterGetResponse bookmarkSearchResponse(
+      Long userId, List<Long> leafTownIds, List<CachedPlace> filtered, PlaceSortType sort) {
+
+    List<Long> orderedIds = placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(userId, leafTownIds);
+    List<CachedPlace> mine = sortByBookmarkedOrder(filtered, orderedIds);
+
+    if (sort == PlaceSortType.POPULAR) {
+      mine = mine.stream()
+          .sorted(Comparator.comparingLong(CachedPlace::bookmarkCount).reversed()
+              .thenComparing(CachedPlace::id))
+          .toList();
+    }
+
+    List<PlacePreviewDto> previews = mine.stream()
+        .map(cp -> toPreview(cp, true))
+        .toList();
+    return PlaceFilterGetResponse.of(previews, null);
+  }
+
+  private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked) {
+    return PlacePreviewDto.of(
+        cp.id(),
+        cp.name(),
+        imageUrlProvider.getImageUrl(cp.thumbnailFileKey()),
+        cp.mainTagName(),
+        isBookmarked,
+        cp.townId(),
+        cp.bookmarkCount()
+    );
+  }
 
   /** 북마크 검색: 필터링된 장소를 북마크 최신순(orderedIds 순서)으로 재배열 */
   private List<CachedPlace> sortByBookmarkedOrder(
