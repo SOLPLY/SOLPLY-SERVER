@@ -1,7 +1,7 @@
-# 북마크 인덱스 벤치마크 전용 환경 (#379)
+# 벤치마크 전용 환경 (#379 북마크 인덱스 → 인기순 정렬 벤치로 확장)
 # - MySQL: 데이터+인덱스 전부 버퍼풀에 상주하도록 2G (디스크 I/O 노이즈 제거)
-# - 앱은 호스트에서 bootRun으로 실행 (load-test/bench/run-app.sh)
-# 기동: docker compose -f docker/docker-compose.bench.yml up -d
+# - 앱: bench-app 컨테이너가 기본 (부하 모델 기반 리소스 제한). 호스트 bootRun(run-app.sh)은 디버깅용
+# 기동: ./gradlew bootJar && docker compose -f docker/docker-compose.bench.yml up -d --build
 services:
   bench-mysql:
     container_name: solply-bench-mysql
@@ -33,6 +33,34 @@ services:
     command: [ "redis-server", "--requirepass", "solplyredispwd" ]
     cpus: 1
     mem_limit: 512m
+
+  bench-app:
+    # 부하 모델(MAU 10만/DAU 2만, 피크 120 req/s) 기준 실서버 체급 재현 (플랜 Task 10.5)
+    # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. Little's law: 120 req/s × 30ms ≈ 동시 ~4
+    container_name: solply-bench-app
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:mysql://bench-mysql:3306/solply_bench_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8"
+      SPRING_DATASOURCE_USERNAME: solplyuser
+      SPRING_DATASOURCE_PASSWORD: solplyuserpwd
+      SPRING_DATA_REDIS_HOST: bench-redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_PASSWORD: solplyredispwd
+      SERVER_PORT: "8082"
+      SERVER_TOMCAT_THREADS_MAX: "50"
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "10"
+      JAVA_TOOL_OPTIONS: "-Xmx1280m -XX:MaxMetaspaceSize=256m"
+      # v0 벤치 시: BENCH_APP_JSON='{"solply.place-list.popular-read-mode":"db"}' docker compose ... up -d bench-app
+      SPRING_APPLICATION_JSON: ${BENCH_APP_JSON:-{}}
+    cpus: 2
+    mem_limit: 2g
+    depends_on:
+      - bench-mysql
+      - bench-redis
 
 volumes:
   solply-bench-mysql-data:
