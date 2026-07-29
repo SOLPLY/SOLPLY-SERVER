@@ -66,6 +66,7 @@ public enum ErrorCode {
     // 장소 관련 (PLACE-xxx)
     NOT_FOUND_PLACE(HttpStatus.NOT_FOUND, "PlACE-001", "존재하지 않는 장소입니다."),
     PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
+    INVALID_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-003", "유효하지 않은 커서입니다."),
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
 
 
