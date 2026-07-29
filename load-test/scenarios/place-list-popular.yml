@@ -1,0 +1,99 @@
+config:
+  target: "http://localhost:8082"
+  payload:
+    path: "../data/users.csv"
+    fields:
+      - token
+    order: random
+    skipHeader: true
+  phases:
+    - name: "Warm up"
+      duration: 15
+      arrivalRate: 20
+    - name: "Ramp up"
+      duration: 30
+      arrivalRate: 30
+      rampTo: 100
+    - name: "Sustained load"
+      duration: 120
+      arrivalRate: 100
+  plugins:
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+
+scenarios:
+  # 동네 단위 인기순 첫 페이지 (핫 동네 편중을 그대로 반영해 강남/홍대 위주)
+  - name: "popular-town"
+    weight: 40
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: "{{ $randomNumber(102, 111) }}"
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "GET /api/places (popular town)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # 시 단위 (서울 전체 = leaf 10개 합집합)
+  - name: "popular-city"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 101
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "GET /api/places (popular city)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # 태그 필터 조합
+  - name: "popular-tag-filter"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: "{{ $randomNumber(102, 111) }}"
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            mainTagId: "{{ $randomNumber(1, 6) }}"
+            size: 20
+          name: "GET /api/places (popular tag)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # 무한 스크롤: 첫 페이지 → nextCursor 따라 2페이지
+  - name: "popular-scroll"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 101
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "GET /api/places (scroll p1)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          capture:
+            json: "$.data.nextCursor"
+            as: "nextCursor"
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 101
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+            cursor: "{{ nextCursor }}"
+          name: "GET /api/places (scroll p2)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          ifTrue: "nextCursor"
