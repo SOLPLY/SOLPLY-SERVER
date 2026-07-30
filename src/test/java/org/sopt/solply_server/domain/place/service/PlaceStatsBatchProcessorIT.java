@@ -4,10 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.global.config.QueryDslConfig;
@@ -15,13 +21,21 @@ import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
+import org.springframework.orm.jpa.EntityManagerFactoryUtils;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionExecution;
+import org.springframework.transaction.TransactionExecutionListener;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(QueryDslConfig.class)
+@Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class})
 class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     private static final double BOOKMARK_WEIGHT = 1.0;
@@ -40,7 +54,42 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     PlaceStatsRepository placeStatsRepository;
 
     @Autowired
+    PlaceStatsBatchProcessor batchProcessor;
+
+    @Autowired
+    PlaceStatsProperties properties;
+
+    @Autowired
     EntityManager em;
+
+    /** 트랜잭션 <em>안쪽</em>에서 관측한 {@code @@transaction_isolation}. 격리 테스트 직전에 비운다. */
+    private static final List<String> OBSERVED_ISOLATIONS = new ArrayList<>();
+
+    /**
+     * 트랜잭션이 열린 직후의 격리 수준을 서버에 물어 기록한다.
+     *
+     * <p>스프링이 커넥션에 건 격리는 트랜잭션 종료 시 원복되므로 밖에서는 볼 수 없다.
+     * Spring Framework 6.1의 {@code TransactionExecutionListener}만이 "이미 begin됐고 아직
+     * 아무 일도 안 한" 시점에 끼어들 수 있어, 트랜잭션 매니저에 직접 붙인다
+     * (리스너 빈을 자동으로 주워 가지는 않는다).
+     */
+    @TestConfiguration
+    static class IsolationProbeConfig {
+
+        IsolationProbeConfig(PlatformTransactionManager txManager, EntityManagerFactory emf) {
+            ((AbstractPlatformTransactionManager) txManager).addListener(
+                    new TransactionExecutionListener() {
+                        @Override
+                        public void afterBegin(TransactionExecution tx, Throwable beginFailure) {
+                            EntityManager bound =
+                                    EntityManagerFactoryUtils.getTransactionalEntityManager(emf);
+                            OBSERVED_ISOLATIONS.add(bound == null ? "NO-EM" : String.valueOf(
+                                    bound.createNativeQuery("SELECT @@transaction_isolation")
+                                            .getSingleResult()));
+                        }
+                    });
+        }
+    }
 
     private int userSeq;
     private long placeA;
@@ -122,14 +171,31 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 .executeUpdate();
     }
 
+    /**
+     * 리포지토리를 직접 부르지 않고 프로세서를 거친다 — 설정 주입 경로(properties → SQL 파라미터)까지
+     * 함께 검증하기 위해서다. 가중치·반감기를 인자로 받지 않는 것은 프로세서가 그 값을
+     * {@link PlaceStatsProperties}에서 가져오기 때문이고, 기본값이 아래 상수와 같다는 것은
+     * {@code 기본_설정값은_설계에서_정한_가중치와_반감기다}가 못 박는다.
+     */
     private int runBatch() {
-        return runBatch(HALF_LIFE_DAYS);
+        return batchProcessor.recalculateAll(CALCULATED_AT);
     }
 
-    /** 영속성 컨텍스트 정리는 @Modifying(clearAutomatically = true)가 이미 해준다 */
+    /**
+     * 반감기만 다르게 주고 싶을 때 쓴다. 프로세서에는 반감기 파라미터가 없으므로 설정 빈을 잠시
+     * 바꿔 넣고 되돌린다 — 이렇게 해야 "설정값이 실제로 SQL까지 흘러가는가"를 프로세서 경유로 본다.
+     * 컨텍스트가 캐시돼 빈이 공유되므로 finally 복구가 필수다.
+     *
+     * <p>영속성 컨텍스트 정리는 @Modifying(clearAutomatically = true)가 이미 해준다.
+     */
     private int runBatch(double halfLifeDays) {
-        return placeStatsRepository.upsertAll(
-                CALCULATED_AT, BOOKMARK_WEIGHT, REVIEW_WEIGHT, halfLifeDays);
+        double original = properties.getHalfLifeDays();
+        properties.setHalfLifeDays(halfLifeDays);
+        try {
+            return batchProcessor.recalculateAll(CALCULATED_AT);
+        } finally {
+            properties.setHalfLifeDays(original);
+        }
     }
 
     private PlaceStats statsOf(long placeId) {
@@ -290,6 +356,49 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         // 반감기 90일이었다면 0.5^(45/90) = 0.7071이 나온다
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
                 .isCloseTo(0.5, within(0.000001));
+    }
+
+    @Test
+    void 기본_설정값은_설계에서_정한_가중치와_반감기다() {
+        assertThat(properties.getBookmarkWeight()).isEqualTo(BOOKMARK_WEIGHT);
+        assertThat(properties.getReviewWeight()).isEqualTo(REVIEW_WEIGHT);
+        assertThat(properties.getHalfLifeDays()).isEqualTo(HALF_LIFE_DAYS);
+    }
+
+    /**
+     * 배치 트랜잭션이 실제로 READ COMMITTED로 열리는지 서버에 직접 물어 확인한다.
+     *
+     * <p><b>이 테스트만 {@code NOT_SUPPORTED}인 이유 — 반드시 읽을 것.</b> {@code @DataJpaTest}의
+     * 테스트 메서드는 이미 트랜잭션 안에서 돌고, 프로세서의 {@code @Transactional(REQUIRED)}은
+     * 그 트랜잭션에 <em>참여</em>한다. 스프링은 참여 시 격리 수준 지정을 조용히 무시하므로
+     * ({@code validateExistingTransaction} 기본 false) 나머지 테스트에서 프로세서를 불러 격리를
+     * 재보면 전부 {@code REPEATABLE-READ}가 나온다 — 실측으로 확인했다. 즉 <b>일반 슬라이스
+     * 테스트로는 이 계약을 절대 검증할 수 없다.</b> 바깥 트랜잭션을 걷어내야만 프로세서가 자기
+     * 트랜잭션을 열고, 그때 비로소 {@code READ-COMMITTED}가 관측된다 (운영의 스케줄러 경로와 동일).
+     *
+     * <p>격리 수준은 트랜잭션이 끝나면 커넥션에서 원복되므로 사후 관측이 불가능하다.
+     * 그래서 {@link IsolationProbeConfig}가 {@code TransactionExecutionListener.afterBegin}에서
+     * 트랜잭션 안쪽 값을 잡아 둔다.
+     *
+     * <p>비트랜잭션 실행이라 배치 결과가 <b>실제로 커밋된다</b>. place_stats에 전 장소 행이 남으면
+     * {@code PlaceStatsRepositoryIT.통계가_없는_장소는_빈_결과를_반환한다}가 (같은 컨테이너를 공유하므로)
+     * 깨진다 — finally에서 별도 커넥션으로 반드시 지운다.
+     */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void 배치_트랜잭션은_READ_COMMITTED로_열린다() throws Exception {
+        OBSERVED_ISOLATIONS.clear();
+        try {
+            batchProcessor.recalculateAll(CALCULATED_AT);
+
+            assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED");
+        } finally {
+            try (Connection con = DriverManager.getConnection(
+                    MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+                    Statement st = con.createStatement()) {
+                st.executeUpdate("DELETE FROM place_stats");
+            }
+        }
     }
 
     @Test
