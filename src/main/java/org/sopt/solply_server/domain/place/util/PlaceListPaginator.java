@@ -15,6 +15,10 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  * 스냅샷 병합 리스트의 정렬·커서 슬라이싱.
  * cursor·size 모두 미지정이면 페이징 없이 전체 반환 (기존 클라 하위호환).
  * 시 단위 병합 목록도 수백 개 수준이라 메모리 정렬로 충분하다.
+ *
+ * <p>인기순 정렬 키는 place_stats에서 온 복합 점수다. 배치가 하루 1회 갱신하므로
+ * 한 스냅샷 세대 안에서는 값이 고정되고, 그래서 커서 페이징이 세대 내에서는 안정적이다.
+ * 다중 인스턴스가 서로 다른 세대를 들고 있을 때의 정합성은 후속 과제다.
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PlaceListPaginator {
@@ -57,16 +61,16 @@ public final class PlaceListPaginator {
         return new PlaceListCursor(sort, sortKeyOf(place, sort), place.id());
     }
 
-    private static long sortKeyOf(CachedPlace place, PlaceSortType sort) {
+    private static double sortKeyOf(CachedPlace place, PlaceSortType sort) {
         return switch (sort) {
-            case POPULAR -> place.bookmarkCount();
+            case POPULAR -> place.popularScore();
             case LATEST -> place.createdAt().toEpochSecond(ZoneOffset.UTC);
         };
     }
 
     private static Comparator<CachedPlace> comparatorOf(PlaceSortType sort) {
         return switch (sort) {
-            case POPULAR -> Comparator.comparingLong(CachedPlace::bookmarkCount).reversed()
+            case POPULAR -> Comparator.comparingDouble(CachedPlace::popularScore).reversed()
                     .thenComparing(CachedPlace::id);
             case LATEST -> Comparator.comparing(CachedPlace::createdAt).reversed()
                     .thenComparing(Comparator.comparing(CachedPlace::id).reversed());
@@ -84,7 +88,7 @@ public final class PlaceListPaginator {
     }
 
     private static boolean isAfterCursor(CachedPlace place, PlaceListCursor cursor, PlaceSortType sort) {
-        long key = sortKeyOf(place, sort);
+        double key = sortKeyOf(place, sort);
         return switch (sort) {
             case POPULAR -> key < cursor.sortKey()
                     || (key == cursor.sortKey() && place.id() > cursor.placeId());

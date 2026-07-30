@@ -252,7 +252,7 @@ public class PlaceService {
       if (cursor.sort() != PlaceSortType.POPULAR) {
         throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
       }
-      cursorCount = cursor.sortKey();
+      cursorCount = (long) cursor.sortKey();   // v0 벤치 경로는 정렬 키가 원시 북마크 수(정수)다
       cursorPlaceId = cursor.placeId();
     }
 
@@ -303,7 +303,7 @@ public class PlaceService {
 
     if (sort == PlaceSortType.POPULAR) {
       mine = mine.stream()
-          .sorted(Comparator.comparingLong(CachedPlace::bookmarkCount).reversed()
+          .sorted(Comparator.comparingDouble(CachedPlace::popularScore).reversed()
               .thenComparing(CachedPlace::id))
           .toList();
     }
