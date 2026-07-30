@@ -1,8 +1,14 @@
 # 벤치마크 전용 환경 (#379 북마크 인덱스 → 인기순 정렬 벤치로 확장)
-# - MySQL: 데이터+인덱스 전부 버퍼풀에 상주하도록 2G (디스크 I/O 노이즈 제거)
+# - MySQL: 2 CPU / 3G, 버퍼풀 2G. 전체 데이터(2,770M)는 안 들어가지만 Zipf 분포라
+#          hot working set만 상주해 hit rate 99.9999% (실측) — 증설 불필요
 # - 앱: bench-app-1/2 컨테이너 2대 + nginx LB(bench-lb) 구성. 호스트 bootRun(run-app.sh)은 디버깅용
 # - 부하는 항상 LB(localhost:8082)로 보낸다 — 개별 인스턴스 포트는 노출하지 않는다
 # 기동: ./gradlew bootJar && docker compose -f docker/docker-compose.bench.yml up -d --build
+#
+# ⚠️ --remove-orphans 금지: docker/ 안 compose 5개가 프로젝트명을 공유해 무관한 컨테이너까지 지운다
+# ⚠️ 환경변수 변경은 docker restart로 반영되지 않는다 — up -d --force-recreate 사용
+#
+# 컨테이너 배정 총합 7.5G / Docker VM 7.65G (앱 2G×2 + MySQL 3G + Redis 0.5G)
 services:
   bench-mysql:
     container_name: solply-bench-mysql
@@ -20,8 +26,13 @@ services:
       - --innodb-buffer-pool-size=2G
       - --innodb-redo-log-capacity=1G
       - --max-connections=200
-    cpus: 4
-    mem_limit: 4g
+    # 실측 기반 스펙 (2026-07-30). 종전 4 CPU / 4G는 #379 인덱스 벤치 때
+    # "DB가 병목이 되지 않게" 잡은 값인데, 캐시 도입 후 근거가 사라졌다.
+    #   깨끗한 라운드 MySQL CPU 피크 31.5~41.6% (= 0.32~0.42코어) — 400% 배정 대비 활용률 10%
+    #   요청당 MySQL CPU 2.01ms → 2 vCPU의 70%면 약 697 req/s. 병목은 여전히 앱(559 req/s)
+    # 컨테이너 배정 총합도 8.5G → 7.5G가 되어 Docker VM 용량(7.65G) 안에 들어온다.
+    cpus: 2
+    mem_limit: 3g
     volumes:
       - solply-bench-mysql-data:/var/lib/mysql
     networks:
