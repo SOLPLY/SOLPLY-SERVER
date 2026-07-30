@@ -236,7 +236,15 @@ public class PlaceService {
 
   //=== Private Methods ===//
 
-  /** [벤치 v0] 캐시 우회 — 요청마다 DB에서 집계·정렬·필터. 프로덕션 기본값은 cache */
+  /**
+   * [벤치 v0] 캐시 우회 — 요청마다 DB에서 집계·정렬·필터. 프로덕션 기본값은 cache.
+   *
+   * <p><b>이 경로는 캐시 경로와 다른 랭킹을 낸다.</b> 캐시 경로의 정렬 키는 place_stats의
+   * 복합 점수(popular_score)이고, 여기는 COUNT(*)로 센 원시 북마크 수다. 복합 점수 도입 이전에는
+   * 양쪽 다 북마크 수였으므로 결과 집합이 동등했고 A/B 벤치가 "같은 일을 하는 두 구현"의 비교였다.
+   * 이제는 아니다 — 지연·처리량 비교로는 여전히 유효하지만, <b>모드 간 결과 diff 검증은 성립하지
+   * 않는다.</b> 두 모드의 응답 목록이 다른 것은 버그가 아니라 설계상의 귀결이다.
+   */
   private PlaceFilterGetResponse popularFromDb(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request) {
 
@@ -245,14 +253,22 @@ public class PlaceService {
         : (request.size() == null ? PlaceListPaginator.DEFAULT_PAGE_SIZE
             : Math.min(request.size(), PlaceListPaginator.MAX_PAGE_SIZE));
 
-    Long cursorCount = null;
+    Long cursorBookmarkCount = null;
     Long cursorPlaceId = null;
     if (request.cursor() != null) {
       PlaceListCursor cursor = PlaceListCursor.decode(request.cursor());
       if (cursor.sort() != PlaceSortType.POPULAR) {
         throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
       }
-      cursorCount = (long) cursor.sortKey();   // v0 벤치 경로는 정렬 키가 원시 북마크 수(정수)다
+      // 이 경로는 v2 토큰을 쓰되 sortKey를 "원시 북마크 수(정수)"로 재해석한다 — 아래 nextCursor
+      // 발급도 마찬가지다. 즉 캐시 경로가 발급한 v2 토큰(sortKey=복합 점수)과 호환되지 않는다.
+      // 버전 문자열이 같아 코덱만으로는 구분되지 않으므로, 소수부가 있으면 캐시 경로 토큰으로 보고
+      // 거부한다. 벤치는 모드를 바꿔가며 재측정하는 워크플로라 잘못된 커서가 조용히 통과하면
+      // 페이지 행 수가 달라져 지연 수치를 오염시킨다 — 조용한 오염보다 400이 낫다.
+      if (cursor.sortKey() != Math.rint(cursor.sortKey())) {
+        throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+      }
+      cursorBookmarkCount = (long) cursor.sortKey();
       cursorPlaceId = cursor.placeId();
     }
 
@@ -260,7 +276,7 @@ public class PlaceService {
     List<PlacePopularDirectQueryRepository.PopularRow> rows =
         placePopularDirectQueryRepository.findPopularRows(
             leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-            cursorCount, cursorPlaceId, fetchSize);
+            cursorBookmarkCount, cursorPlaceId, fetchSize);
 
     boolean hasNext = paging && rows.size() > pageSize;
     if (hasNext) {

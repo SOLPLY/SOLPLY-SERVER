@@ -49,14 +49,20 @@ class PlaceListCursorTest {
     }
 
     @Test
-    void 지수_표기가_나오는_값도_왕복한다() {
+    void 지수_표기가_나오는_값도_비트까지_왕복한다() {
         // Double.toString은 1e7 이상/1e-3 미만에서 지수 표기(1.0E10)를 낸다 — ':'가 없어 구분자와 무충돌
         double[] values = {1.0E10, 1.0E-9, 0.0, -0.0, Double.MAX_VALUE, Double.MIN_VALUE};
 
         for (double value : values) {
             PlaceListCursor cursor = new PlaceListCursor(PlaceSortType.POPULAR, value, 1L);
             PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
-            assertThat(decoded.sortKey()).isEqualTo(value);
+
+            // isEqualTo는 == 의미라 -0.0 == 0.0이 참이다. 그래서 부호를 죽이는 변이를 심어도
+            // 값 비교로는 통과해버린다. 코덱이 실제로 약속하는 계약은 "toString 왕복은 비트 보존"이니
+            // 테스트도 비트로 말한다 — 나머지 값은 ==가 이미 비트 정확이라, 이 단언이 더 세지는
+            // 지점은 정확히 ±0 케이스다.
+            assertThat(Double.doubleToRawLongBits(decoded.sortKey()))
+                    .isEqualTo(Double.doubleToRawLongBits(value));
         }
     }
 
