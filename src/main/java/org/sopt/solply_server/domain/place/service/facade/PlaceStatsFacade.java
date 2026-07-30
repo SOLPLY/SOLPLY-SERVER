@@ -96,7 +96,8 @@ public class PlaceStatsFacade {
         try {
             OptionalInt affected = batchProcessor.recalculateIfEmpty(calculatedAt);
             if (affected.isEmpty()) {
-                log.info("인기순 점수 최초 적재 생략 - place_stats에 이미 데이터가 있다");
+                // 생략 로그는 프로세서가 찍는다 — 기존 행 수를 아는 지점이 거기뿐이고,
+                // 여기서 한 줄 더 남기면 같은 사건이 숫자 없는 줄과 겹쳐 두 번 찍힌다.
                 return;
             }
             log.info("인기순 점수 최초 적재 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms",

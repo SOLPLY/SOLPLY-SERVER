@@ -120,17 +120,22 @@ class PlaceStatsFacadeTest {
         verify(batchProcessor, never()).recalculateAll(any(LocalDateTime.class));
     }
 
+    /**
+     * 생략 분기에서 파사드는 "완료"를 주장하면 안 된다. 생략 로그 본문(기존 행 수 포함)은
+     * 그 수치를 아는 {@code PlaceStatsBatchProcessor}가 찍고,
+     * {@code PlaceStatsBatchProcessorIT.이미_채워져_있으면_최초_적재는_다시_돌지_않는다}가 검증한다.
+     * 여기서는 파사드가 그 위에 잘못된 완료 로그를 덧씌우지 않는다는 것만 못 박는다.
+     */
     @Test
-    void 부팅_적재를_건너뛰면_생략_로그를_남긴다() {
+    void 부팅_적재를_건너뛰면_완료_로그를_남기지_않는다() {
         given(batchProcessor.recalculateIfEmpty(any(LocalDateTime.class)))
                 .willReturn(OptionalInt.empty());
 
         placeStatsFacade.backfillPlaceStatsOnStartup();
 
         assertThat(logAppender.list)
-                .filteredOn(event -> event.getLevel() == Level.INFO)
                 .extracting(ILoggingEvent::getFormattedMessage)
-                .anyMatch(message -> message.contains("생략"));
+                .noneMatch(message -> message.contains("완료"));
     }
 
     /**

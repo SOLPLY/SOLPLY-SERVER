@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.place.service;
 import java.time.LocalDateTime;
 import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.springframework.stereotype.Component;
@@ -39,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 모양이 된다. 격리 수준 때문이 아니다 —
  * {@link org.sopt.solply_server.domain.place.service.facade.PlaceStatsFacade} javadoc 참조.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PlaceStatsBatchProcessor {
@@ -69,22 +71,52 @@ public class PlaceStatsBatchProcessor {
      * 비활성화가 배치 시간만큼 막힌다({@link PlaceStatsRepository#upsertAll} javadoc의 실측 참조).
      * 정기 갱신은 스케줄의 몫이고 이 경로는 "빈 테이블을 메우는 것"까지만 책임진다.
      *
-     * <p><b>다중 인스턴스가 동시에 부팅해도 락이 필요 없다.</b> 각 회차가 완결된 스냅샷을 단일
-     * 트랜잭션으로 원자 교체하므로 마지막 커밋이 이기고 반쯤 섞인 상태가 존재하지 않는다
-     * (근거는 {@code PlaceStatsFacade} javadoc의 4세션 × 60회 동시 UPSERT 실측).
+     * <p><b>가드가 {@code count() > 0}인 이유 — 더 "정확한" 조건으로 바꾸지 말 것.</b>
+     * <ul>
+     *   <li>"이전 배치가 중간에 죽어 일부만 채워진" 상태는 원리적으로 생길 수 없다.
+     *       {@code upsertAll}이 단일 문장·단일 트랜잭션이라 실패하면 전부 롤백돼 0행이 된다
+     *       (롤백 후 잔여 행 0 실측). 즉 이 테이블은 "비었거나 한 세대가 완결돼 있거나" 둘뿐이라
+     *       행이 하나라도 있으면 그것은 곧 완결된 세대다.</li>
+     *   <li>마지막 배치 이후 추가된 장소는 <b>의도적으로</b> 스케줄에 맡긴다. 그 장소만 최대 24시간
+     *       0점으로 노출되지만, {@code count() < places.count()}로 바꾸면 02:00 이후 장소가 하나만
+     *       추가돼도 <em>모든 부팅</em>이 전량 재계산을 돌려 위의 어드민 쓰기 차단을 매 배포마다
+     *       유발한다. 신규 장소 하나의 하루치 0점보다 그 대가가 크다.</li>
+     * </ul>
+     *
+     * <p><b>다중 인스턴스가 동시에 부팅해도 락이 필요 없다.</b> 두 인스턴스가 동시에 가드를
+     * 통과해 둘 다 도는 것은 무해하다 — 뒤에 온 쪽이 앞의 커밋을 기다렸다가 자기 세대로 전량을
+     * 덮어써, 최종 상태는 언제나 <b>단일 세대의 완결 스냅샷</b>이다. 빈 테이블 동시 부팅 실측
+     * (장소 320개, 2세션):
+     * <pre>
+     * guardS1=0  guardS2=0                  ← 둘 다 count()==0을 보고 가드 통과
+     * S1 upsert affected=320 (커밋 전)
+     * S1 미커밋 중 S2가 본 count=0            ← RC 일관된 읽기
+     * S1 commit → S2 완료 affected=640 waited=2023ms   ← 전부 UPDATE 경로로 전환
+     * 최종 count=320, calculated_at 세대 분포 = 단일 세대
+     * Innodb_deadlocks = 0
+     * </pre>
+     * S2의 대기는 {@code innodb_lock_wait_timeout}(기본 50초)에 묶이고 초과하면
+     * {@code ERROR 1205}로 죽지만, 그때도 데이터는 S1의 완결 세대라 무해하다.
      * <b>여기에 리더 선출이나 비관 락을 추가하지 말 것</b> — 막을 문제가 없다.
-     * 가드는 최적화이지 정합성 장치가 아니므로, 두 인스턴스가 동시에 통과해 둘 다 도는 것도 무해하다.
+     * 가드는 최적화이지 정합성 장치가 아니다.
+     * (이미 채워진 테이블의 순수 UPDATE 동시성은 락 메커니즘이 달라 별개다 —
+     * 그쪽 실측은 {@code PlaceStatsFacade} javadoc의 4세션 × 60회를 볼 것.)
      *
      * <p><b>{@code recalculateAll}을 직접 부르지 않고 {@link #upsert}를 공유하는 이유:</b>
      * 자기 호출은 프록시를 우회해 대상 메서드의 트랜잭션 속성이 적용되지 않는다. 지금은 두 진입점의
      * 속성이 같아 결과가 같지만, 한쪽만 바뀌는 순간 조용히 깨진다.
      *
      * @return 재계산했다면 영향받은 행 수, 이미 채워져 있어 건너뛰었다면 {@link OptionalInt#empty()}.
-     *         행 수 0과 "건너뜀"은 다른 사실이라 {@code int} 하나로 뭉개지 않는다
+     *         행 수 0과 "건너뜀"은 다른 사실이라 {@code int} 하나로 뭉개지 않는다 —
+     *         {@code places}가 빈 신규 환경에서는 실제로 "재계산했고 영향 행 0"이 나온다
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public OptionalInt recalculateIfEmpty(LocalDateTime calculatedAt) {
-        if (placeStatsRepository.count() > 0) {
+        long existingRows = placeStatsRepository.count();
+        if (existingRows > 0) {
+            // 행 수를 아는 지점이 여기뿐이라 생략 로그도 여기서 찍는다. 운영자는 이 수치로
+            // "생략, 320행"(정상)과 "생략, 1행"(세대가 깨진 이상 상태)을 구분한다.
+            log.info("인기순 점수 최초 적재 생략 - 기존 place_stats 행 수={}", existingRows);
             return OptionalInt.empty();
         }
         return OptionalInt.of(upsert(calculatedAt));
