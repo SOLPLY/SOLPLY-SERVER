@@ -65,6 +65,17 @@ public final class PlaceListPaginator {
         return new PlaceListCursor(sort, sortKeyOf(place, sort), place.id());
     }
 
+    /**
+     * 정렬 축의 <b>유일한</b> 출처. comparatorOf도 이 값을 쓰므로 정렬 순서와 커서 키가
+     * 구조적으로 어긋날 수 없다 — 둘을 따로 쓰는 실수는 테스트가 아니라 타입이 막는다.
+     *
+     * <p>LATEST가 초 단위인 것은 커서가 담을 수 있는 한계에 맞춘 것이다. 커서에 초만 실리는데
+     * 정렬만 나노초로 하면 커서가 복원한 위치와 실제 정렬 위치가 어긋나 항목이 조용히 누락된다.
+     * sortKey가 double이라 LATEST 정밀도의 상한은 마이크로초다
+     * (epochMicro 1.78e15 &lt; 2^53 ≈ 9.0e15, epochNano 1.78e18은 초과).
+     * places.created_at이 DATETIME(6)으로 올라가 그 충실도가 필요해지면
+     * toEpochSecond → epochMicro 한 번의 교체로 끝난다.
+     */
     private static double sortKeyOf(CachedPlace place, PlaceSortType sort) {
         return switch (sort) {
             case POPULAR -> place.popularScore();
@@ -73,11 +84,11 @@ public final class PlaceListPaginator {
     }
 
     private static Comparator<CachedPlace> comparatorOf(PlaceSortType sort) {
+        Comparator<CachedPlace> byKey =
+                Comparator.comparingDouble((CachedPlace p) -> sortKeyOf(p, sort)).reversed();
         return switch (sort) {
-            case POPULAR -> Comparator.comparingDouble(CachedPlace::popularScore).reversed()
-                    .thenComparing(CachedPlace::id);
-            case LATEST -> Comparator.comparing(CachedPlace::createdAt).reversed()
-                    .thenComparing(Comparator.comparing(CachedPlace::id).reversed());
+            case POPULAR -> byKey.thenComparing(CachedPlace::id);
+            case LATEST -> byKey.thenComparing(Comparator.comparing(CachedPlace::id).reversed());
         };
     }
 

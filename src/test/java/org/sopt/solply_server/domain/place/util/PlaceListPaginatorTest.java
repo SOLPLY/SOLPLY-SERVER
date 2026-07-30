@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.IntStream;
@@ -42,6 +43,34 @@ class PlaceListPaginatorTest {
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(input, PlaceSortType.LATEST, null, null);
         assertThat(slice.items()).extracting(CachedPlace::id).containsExactly(3L, 2L, 1L);
+    }
+
+    @Test
+    void LATEST_페이징은_나노초만_다른_항목도_빠뜨리지_않는다() {
+        // 커서 키(sortKeyOf)는 초 단위 절삭인데 정렬(comparatorOf)이 나노초를 보면 위치 복원이
+        // 어긋나 항목이 조용히 사라진다. places.created_at이 DATETIME(소수부 0)이라 지금은
+        // 도달 불가지만, 같은 스키마의 다른 테이블은 전부 DATETIME(6)이라(V12/V17/V18,
+        // place_stats.calculated_at 포함) 정밀도를 맞추는 마이그레이션 한 건이면 실재하게 된다.
+        LocalDateTime base = LocalDateTime.of(2026, 7, 30, 12, 0, 0);
+        List<CachedPlace> input = List.of(
+                place(5, 0, 0, base.withNano(500_000_000)),
+                place(9, 0, 0, base.withNano(100_000_000)),
+                place(1, 0, 0, base.minusSeconds(10)));
+
+        List<Long> whole = PlaceListPaginator.paginate(input, PlaceSortType.LATEST, null, null)
+                .items().stream().map(CachedPlace::id).toList();
+
+        List<Long> paged = new ArrayList<>();
+        String cursor = null;
+        do {
+            PlaceListPaginator.PageSlice slice =
+                    PlaceListPaginator.paginate(input, PlaceSortType.LATEST, cursor, 1);
+            slice.items().forEach(p -> paged.add(p.id()));
+            cursor = slice.nextCursor();
+        } while (cursor != null);
+
+        // 한 장씩 넘긴 결과는 전체 조회 결과와 정확히 같아야 한다 (누락도 중복도 없이)
+        assertThat(paged).containsExactlyElementsOf(whole);
     }
 
     @Test
