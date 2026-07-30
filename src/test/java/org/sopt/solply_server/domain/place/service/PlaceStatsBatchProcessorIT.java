@@ -177,6 +177,39 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
+     * 북마크 1건을 <b>기준 시각 이후</b>에 만든다 — 배치가 커밋된 뒤 사용자가 누른 상황의 재현이다.
+     * {@link #insertBookmark}에 음수를 넘겨도 같은 행이 만들어지지만, 이 시나리오는 "며칠 전"이라는
+     * 축과 성질이 달라(감쇠가 아니라 집계 대상 여부의 문제) 별도 이름을 준다.
+     */
+    private void insertBookmarkAfterCalculatedAt(long placeId, int minutesAfter) {
+        em.createNativeQuery("""
+                INSERT INTO bookmarks (user_id, target_type, target_id, created_at, updated_at)
+                VALUES (:userId, 'PLACE', :placeId, :createdAt, :createdAt)
+                """)
+                .setParameter("userId", createUser())
+                .setParameter("placeId", placeId)
+                .setParameter("createdAt", CALCULATED_AT.plusMinutes(minutesAfter))
+                .executeUpdate();
+    }
+
+    /** 위의 리뷰판. 리뷰 축에도 같은 상한이 걸려 있는지 보기 위한 것이다. */
+    private void insertReviewAfterCalculatedAt(long placeId, int rating, int minutesAfter) {
+        em.createNativeQuery("""
+                INSERT INTO place_reviews
+                    (user_id, place_id, visited_at, visit_time_slot, content, rating,
+                     created_at, updated_at)
+                VALUES (:userId, :placeId, :visitedAt, 'EVENING',
+                        '배치 검증용 리뷰 본문입니다.', :rating, :createdAt, :createdAt)
+                """)
+                .setParameter("userId", createUser())
+                .setParameter("placeId", placeId)
+                .setParameter("visitedAt", CALCULATED_AT.toLocalDate())
+                .setParameter("rating", rating)
+                .setParameter("createdAt", CALCULATED_AT.plusMinutes(minutesAfter))
+                .executeUpdate();
+    }
+
+    /**
      * 코스 북마크 1건. bookmarks.target_id는 PLACE와 COURSE가 숫자 공간을 공유하므로
      * placeId와 같은 값을 target_id로 넣어도 유효한 행이 된다 — 집계가 target_type으로
      * 걸러내지 않으면 코스 북마크가 같은 id의 장소 점수를 부풀린다.
@@ -313,6 +346,87 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         String secondRun = snapshotOfAllStats();
 
         assertThat(secondRun).isEqualTo(firstRun);
+    }
+
+    /**
+     * <b>위 테스트만으로는 멱등성이 검증되지 않는다.</b> 두 실행 사이에 소스가 그대로면 상한이
+     * 없어도 결과가 같아, "같은 {@code calculatedAt}이면 결과가 같다"는 주장의 유효 범위가
+     * "그 사이 아무도 북마크를 누르지 않았다면"으로 조용히 좁혀진다. 실제 배치는 6초대 동안 돌고
+     * 재실행은 며칠 뒤일 수도 있으므로 그 전제는 성립하지 않는다.
+     *
+     * <p>그래서 두 실행 <em>사이에</em> 기준 시각 이후의 활동을 넣고도 결과가 같은지 본다.
+     * 상한 조건({@code created_at <= :calculatedAt})을 지우면 여기서만 깨진다.
+     */
+    @Test
+    void 두_실행_사이에_기준시각_이후_활동이_들어와도_결과가_같다() {
+        insertBookmark(placeA, 0);
+        insertBookmark(placeA, 37);
+        insertReview(placeB, 2, 12);
+
+        runBatch();
+        String firstRun = snapshotOfAllStats();
+
+        insertBookmarkAfterCalculatedAt(placeA, 30);
+        insertReviewAfterCalculatedAt(placeB, 5, 30);
+
+        runBatch();
+        String secondRun = snapshotOfAllStats();
+
+        assertThat(secondRun).isEqualTo(firstRun);
+    }
+
+    /**
+     * 배치 기준 시각 이후에 생긴 북마크는 이번 세대의 집계 대상이 아니다.
+     *
+     * <p>이 상한이 없으면 두 가지가 동시에 틀어진다.
+     * <ul>
+     *   <li>{@code bookmark_count}에 이미 포함돼, {@code PlaceDisplayCount.correct}가
+     *       {@code myBookmarkedAt > calculatedAt}으로 더하는 +1과 겹쳐 <b>같은 1건이 두 번</b> 반영된다.</li>
+     *   <li>{@code TIMESTAMPDIFF}가 음수가 되어 {@code POW(0.5, 음수) > 1} — 감쇠가 아니라 증폭이다.
+     *       상한이 없을 때 아래 시나리오는 {@code 1.0}이 아니라 {@code 2.0002...}가 나온다.</li>
+     * </ul>
+     */
+    @Test
+    void 기준시각_이후에_생긴_북마크는_집계에_들어가지_않는다() {
+        insertBookmark(placeA, 0);                        // 기준 시각 정각 → +1.0, 카운트 1
+        insertBookmarkAfterCalculatedAt(placeA, 30);      // 30분 뒤 → 무시돼야 한다
+
+        runBatch();
+
+        PlaceStats stats = statsOf(placeA);
+        assertThat(stats.getBookmarkCount()).isEqualTo(1);
+        // 증폭까지 잡으려면 점수를 정확히 봐야 한다 — 카운트만 보면 POW 쪽 회귀를 놓친다
+        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(1.0, within(0.000001));
+    }
+
+    /** 리뷰 축에도 같은 상한이 걸려 있어야 한다 — 점수·건수·평균 평점 셋 모두 영향을 받는다. */
+    @Test
+    void 기준시각_이후에_생긴_리뷰는_집계에_들어가지_않는다() {
+        insertReview(placeA, 5, 0);                       // +3.0 * (5-3) * 1.0 = +6.0
+        insertReviewAfterCalculatedAt(placeA, 1, 30);     // 무시돼야 한다 (반영되면 −6점대로 끌려간다)
+
+        runBatch();
+
+        PlaceStats stats = statsOf(placeA);
+        assertThat(stats.getReviewCount()).isEqualTo(1);
+        assertThat(stats.getAvgRating().doubleValue()).isCloseTo(5.0, within(0.005));
+        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(6.0, within(0.000001));
+    }
+
+    /**
+     * 상한이 {@code <}가 아니라 {@code <=}인 것을 못 박는다. {@code calculatedAt}과 정확히 같은
+     * 시각의 활동은 포함돼야 한다 — {@code PlaceDisplayCount.correct}가 {@code isAfter}(엄격 초과)로
+     * 판정하므로, 여기가 {@code <}가 되면 경계값 1건이 <b>양쪽 어디에도 세어지지 않아</b> 사라진다.
+     */
+    @Test
+    void 기준시각과_정확히_같은_시각의_북마크는_포함된다() {
+        insertBookmark(placeA, 0);   // created_at == CALCULATED_AT
+
+        runBatch();
+
+        assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(1);
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(1.0, within(0.000001));
     }
 
     /**
