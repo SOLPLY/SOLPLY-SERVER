@@ -3,10 +3,13 @@ package org.sopt.solply_server.domain.bookmark.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
@@ -29,6 +32,8 @@ class BookmarkRepositoryIT extends MySqlContainerSupport {
     @DynamicPropertySource
     static void ddlAuto(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
+        // 표시 카운트 보정의 핵심 주장이 "추가 쿼리 0"이라 발행 statement 수를 실측한다
+        registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
     }
 
     @Autowired
@@ -36,6 +41,9 @@ class BookmarkRepositoryIT extends MySqlContainerSupport {
 
     @Autowired
     EntityManager em;
+
+    @Autowired
+    EntityManagerFactory emf;
 
     private Long userId;
     private Long townId;
@@ -203,6 +211,75 @@ class BookmarkRepositoryIT extends MySqlContainerSupport {
                 .containsEntry(townId, placeC)
                 .containsEntry(otherTownId, otherTownPlace)
                 .hasSize(2);
+    }
+
+    @Test
+    void 내_북마크_시각_조회는_targetId를_Long_createdAt을_LocalDateTime으로_반환한다() {
+        // 네이티브 쿼리에서 TINYINT(1)이 Boolean으로 와 ClassCastException이 난 전례가 있어
+        // JPQL 프로젝션의 실제 런타임 타입을 못 박아둔다. 호출측 캐스팅이 이 검증에 기댄다.
+        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
+                userId, BookmarkTargetType.PLACE, List.of(placeA));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0)[0]).isInstanceOf(Long.class);
+        assertThat(rows.get(0)[1]).isInstanceOf(LocalDateTime.class);
+    }
+
+    @Test
+    void 내_북마크_시각을_대상별로_반환하고_북마크하지_않은_대상은_행이_없다() {
+        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
+                userId, BookmarkTargetType.PLACE, List.of(placeA, placeC, unbookmarkedPlace));
+
+        Map<Long, LocalDateTime> times = rows.stream()
+                .collect(Collectors.toMap(r -> (Long) r[0], r -> (LocalDateTime) r[1]));
+
+        assertThat(times).containsOnlyKeys(placeA, placeC);
+        assertThat(times.get(placeA)).isEqualTo(LocalDateTime.parse("2026-01-01T10:00:00"));
+        assertThat(times.get(placeC)).isEqualTo(LocalDateTime.parse("2026-03-01T10:00:00"));
+        assertThat(times).doesNotContainKey(unbookmarkedPlace); // 미북마크는 행 없음 = 여부 판정 겸용
+    }
+
+    @Test
+    void 내_북마크_시각_조회는_다른_유저의_북마크를_섞지_않는다() {
+        User other = User.create("bookmark-times-other-it@test.com");
+        em.persist(other);
+        em.persist(Bookmark.create(other, BookmarkTargetType.PLACE, unbookmarkedPlace));
+        em.flush();
+        em.clear();
+
+        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
+                userId, BookmarkTargetType.PLACE, List.of(placeA, unbookmarkedPlace));
+
+        assertThat(rows.stream().map(r -> (Long) r[0]))
+                .containsExactly(placeA); // 남이 누른 unbookmarkedPlace는 내 보정 대상이 아니다
+    }
+
+    @Test
+    void 내_북마크_시각_조회는_타입_경계를_지킨다() {
+        // 같은 id 값을 갖는 COURSE 북마크가 있어도 PLACE 조회에 섞이면 안 된다
+        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
+                userId, BookmarkTargetType.COURSE, List.of(courseA, placeA));
+
+        assertThat(rows.stream().map(r -> (Long) r[0])).containsExactly(courseA);
+    }
+
+    @Test
+    void 내_북마크_시각_조회는_statement를_1회만_발행한다() {
+        // "추가 쿼리 0"의 근거 — 여부 조회(findBookmarkedTargetIdsByTargetIds)와 동일하게 1회다.
+        Statistics stats = emf.unwrap(SessionFactory.class).getStatistics();
+
+        stats.clear();
+        bookmarkRepository.findBookmarkedTargetIdsByTargetIds(
+                userId, BookmarkTargetType.PLACE, List.of(placeA, placeB, placeC));
+        long statusOnly = stats.getPrepareStatementCount();
+
+        stats.clear();
+        bookmarkRepository.findMyBookmarkTimesByTargetIds(
+                userId, BookmarkTargetType.PLACE, List.of(placeA, placeB, placeC));
+        long withTimes = stats.getPrepareStatementCount();
+
+        assertThat(statusOnly).isEqualTo(1L);
+        assertThat(withTimes).isEqualTo(1L); // createdAt을 더 실어도 쿼리 수는 그대로
     }
 
     @Test

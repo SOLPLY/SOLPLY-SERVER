@@ -1,5 +1,7 @@
 package org.sopt.solply_server.domain.bookmark.service;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -65,5 +67,29 @@ public class BookmarkService {
         return targetIds.stream()
                 .collect(java.util.stream.Collectors.toMap(
                         id -> id, bookmarkedIds::contains, (a, b) -> a));
+    }
+
+    /**
+     * 내 북마크의 생성 시각 맵. <b>키가 존재하면 곧 "북마크한 상태"이므로 여부 판정도 겸한다</b> —
+     * getBookmarkStatusMap 대신 이것을 호출하면 쿼리 수가 늘지 않는다.
+     * 표시 카운트 보정이 이 시각을 place_stats.calculated_at과 비교한다.
+     *
+     * <p>미북마크 대상을 false로 채우던 getBookmarkStatusMap과 달리 <b>키 자체를 넣지 않는다.</b>
+     * 호출측이 {@code map.get(id) != null}로 여부를 읽고, 같은 값을 보정 입력으로 그대로 넘긴다.
+     *
+     * <p>row 타입([Long, LocalDateTime])은 BookmarkRepositoryIT가 못 박아둔다 — 네이티브 쿼리에서
+     * TINYINT(1)이 Boolean으로 와 ClassCastException이 난 전례가 있어 캐스팅을 추측으로 두지 않는다.
+     */
+    public Map<Long, LocalDateTime> getMyBookmarkTimesMap(Long userId, BookmarkTargetType type,
+            List<Long> targetIds) {
+        if (userId == null || targetIds == null || targetIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, LocalDateTime> times = new HashMap<>();
+        for (Object[] row : bookmarkRepository.findMyBookmarkTimesByTargetIds(
+                userId, type, targetIds)) {
+            times.put((Long) row[0], (LocalDateTime) row[1]);
+        }
+        return times;
     }
 }

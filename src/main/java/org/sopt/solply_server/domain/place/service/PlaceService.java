@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -29,6 +30,7 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlacePopularDirectQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.place.util.PlaceDisplayCount;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.PlaceListPaginator;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
@@ -166,11 +168,12 @@ public class PlaceService {
     PlaceListPaginator.PageSlice slice =
         PlaceListPaginator.paginate(filtered, sort, request.cursor(), request.size());
 
-    Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(
+    // 여부 판정과 표시 카운트 보정을 이 한 번의 조회로 함께 처리한다 (기존 여부 조회를 대체 — 쿼리 증가 없음)
+    Map<Long, LocalDateTime> myBookmarkTimes = placeBookmarkFacade.getMyPlaceBookmarkTimesMap(
         userId, slice.items().stream().map(CachedPlace::id).toList());
 
     List<PlacePreviewDto> previews = slice.items().stream()
-        .map(cp -> toPreview(cp, bookmarkStatus.getOrDefault(cp.id(), false)))
+        .map(cp -> toPreview(cp, myBookmarkTimes.get(cp.id())))
         .toList();
 
     return PlaceFilterGetResponse.of(previews, slice.nextCursor());
@@ -324,13 +327,35 @@ public class PlaceService {
           .toList();
     }
 
+    // 여기 목록은 전부 내 북마크라 여부는 이미 확정이고, 시각은 표시 카운트 보정에만 쓴다.
+    // 이 경로는 여부 조회를 하지 않았으므로 이 조회가 쿼리 1회 추가다 — 페이징 없는 대신
+    // 유저당 상한이 작은 목록이고, 조건절은 위 여부 조회와 같은 uk 인덱스를 탄다.
+    Map<Long, LocalDateTime> myBookmarkTimes = placeBookmarkFacade.getMyPlaceBookmarkTimesMap(
+        userId, mine.stream().map(CachedPlace::id).toList());
+
     List<PlacePreviewDto> previews = mine.stream()
-        .map(cp -> toPreview(cp, true))
+        .map(cp -> toPreview(cp, true, myBookmarkTimes.get(cp.id())))
         .toList();
     return PlaceFilterGetResponse.of(previews, null);
   }
 
-  private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked) {
+  /**
+   * 표시 카운트 = place_stats 값 + 내 액션 보정.
+   * myBookmarkedAt이 null이 아니라는 것이 곧 "내가 북마크한 상태"다 — 추가 조회가 없다.
+   */
+  private PlacePreviewDto toPreview(CachedPlace cp, LocalDateTime myBookmarkedAt) {
+    return toPreview(cp, myBookmarkedAt != null, myBookmarkedAt);
+  }
+
+  /**
+   * 북마크 검색처럼 <b>여부가 구조적으로 확정된</b> 경로용 — 시각은 카운트 보정에만 쓴다.
+   * 그 경로에서 여부를 시각 유무로 재유도하지 않는 이유: 목록은 북마크 조회로 만들었는데 시각 조회가
+   * 그 사이 삭제를 봐서 비면 "내 북마크 목록인데 isBookmarked=false"라는 모순이 나온다.
+   * 현재 격리 수준(MySQL 기본 REPEATABLE READ)에서는 같은 트랜잭션의 두 조회가 같은 스냅샷을 보므로
+   * 발생하지 않지만, 여부를 격리 수준에 의존시키지 않는 편이 낫다.
+   */
+  private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked,
+      LocalDateTime myBookmarkedAt) {
     return PlacePreviewDto.of(
         cp.id(),
         cp.name(),
@@ -338,7 +363,7 @@ public class PlaceService {
         cp.mainTagName(),
         isBookmarked,
         cp.townId(),
-        cp.bookmarkCount()
+        PlaceDisplayCount.correct(cp.bookmarkCount(), cp.calculatedAt(), myBookmarkedAt)
     );
   }
 

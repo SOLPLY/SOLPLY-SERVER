@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.service.facade;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -61,9 +62,21 @@ public class PlaceBookmarkFacade {
         return bookmarkRepository.findBookmarkedPlaceIdsByTownsOrdered(userId, townIds);
     }
 
-    /** 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회) */
+    /**
+     * 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회).
+     * 캐시 경로는 getMyPlaceBookmarkTimesMap으로 전환했고, 여기는 벤치 전용 popularFromDb가 쓴다 —
+     * 그 경로는 실시간 COUNT(*)를 세므로 표시 카운트 보정이 필요 없다.
+     */
     public Map<Long, Boolean> getPlaceBookmarkStatusMap(final Long userId, final List<Long> placeIds) {
         return bookmarkService.getBookmarkStatusMap(userId, BookmarkTargetType.PLACE, placeIds);
+    }
+
+    /**
+     * 내 장소 북마크 생성 시각 맵 — 여부 판정 + 표시 카운트 보정을 한 번의 조회로 처리한다.
+     * 값이 있으면 북마크한 것이고, 그 시각이 곧 보정 기준이다 (DB 1회, 위 여부 조회와 동수).
+     */
+    public Map<Long, LocalDateTime> getMyPlaceBookmarkTimesMap(final Long userId, final List<Long> placeIds) {
+        return bookmarkService.getMyBookmarkTimesMap(userId, BookmarkTargetType.PLACE, placeIds);
     }
 
     // == 폴더 프리뷰 (동네별 최신 1개) == //

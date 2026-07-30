@@ -38,6 +38,27 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
             @Param("targetType") BookmarkTargetType targetType,
             @Param("targetIds") List<Long> targetIds);
 
+    /**
+     * 내 북마크의 생성 시각 (표시 카운트 보정용). row: [target_id (Long), created_at (LocalDateTime)].
+     * 북마크하지 않은 대상은 행이 없다 — 호출측이 존재 여부를 isBookmarked 판정으로도 함께 쓰므로
+     * 여부 조회와 시각 조회가 쿼리 1회로 합쳐진다.
+     *
+     * <p>{@code findBookmarkedTargetIdsByTargetIds}와 조건절이 동일하고 select 목록만 다르다.
+     * uk_bookmark_user_target(user_id, target_type, target_id)으로 잡히는 range 조회이며,
+     * created_at은 인덱스에 없어 PK 조회가 붙지만 대상은 한 페이지(최대 20건)뿐이다.
+     */
+    @Query("""
+        select b.targetId, b.createdAt
+        from Bookmark b
+        where b.user.id = :userId
+          and b.targetType = :targetType
+          and b.targetId in :targetIds
+    """)
+    List<Object[]> findMyBookmarkTimesByTargetIds(
+            @Param("userId") Long userId,
+            @Param("targetType") BookmarkTargetType targetType,
+            @Param("targetIds") List<Long> targetIds);
+
     @Query("""
         select b.targetId
         from Bookmark b
