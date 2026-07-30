@@ -60,6 +60,14 @@ services:
       SERVER_TOMCAT_THREADS_MAX: "50"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "10"
       JAVA_TOOL_OPTIONS: "-Xmx1280m -XX:MaxMetaspaceSize=256m"
+      # 쿼리 로깅을 끈다. application.yml의 p6spy: INFO를 그대로 두면 초당 240쿼리를
+      # 전문(full SQL text)으로 로깅해 앱 CPU가 2 vCPU에 포화되고, PK 단건 조회가
+      # 495ms까지 늘어나 레이턴시 측정이 무의미해진다 (실측으로 확인).
+      # 쿼리 "카운트"를 재야 할 때만 LOGGING_LEVEL_P6SPY=INFO로 별도 라운드를 돌리고,
+      # 그 라운드의 레이턴시는 다른 라운드와 비교하지 않는다.
+      LOGGING_LEVEL_P6SPY: "OFF"
+      LOGGING_LEVEL_ORG_FLYWAYDB: "WARN"
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_JDBC_CORE: "WARN"
       # v0 벤치 시: BENCH_APP_JSON='{"solply.place-list.popular-read-mode":"db"}' docker compose ... up -d
       SPRING_APPLICATION_JSON: ${BENCH_APP_JSON:-{}}
     cpus: 2
