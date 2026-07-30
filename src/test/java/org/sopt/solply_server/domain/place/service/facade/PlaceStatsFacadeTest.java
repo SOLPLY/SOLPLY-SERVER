@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import ch.qos.logback.classic.Level;
@@ -11,6 +12,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import java.time.LocalDateTime;
+import java.util.OptionalInt;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +27,7 @@ import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.support.CronExpression;
+import org.springframework.transaction.annotation.Transactional;
 
 @ExtendWith(MockitoExtension.class)
 class PlaceStatsFacadeTest {
@@ -100,6 +103,66 @@ class PlaceStatsFacadeTest {
 
         assertThat(CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0)))
                 .isEqualTo(LocalDateTime.of(2026, 7, 30, 2, 0));
+    }
+
+    /**
+     * 부팅 진입점은 반드시 {@code recalculateIfEmpty}를 타야 한다. {@code recalculateAll}로 바꾸면
+     * 롤링 배포마다 전량 재계산이 돌고 그 동안 {@code places} FK S 락으로 어드민 쓰기가 막힌다.
+     */
+    @Test
+    void 부팅_적재는_비었을때만_실행_경로를_호출한다() {
+        given(batchProcessor.recalculateIfEmpty(any(LocalDateTime.class)))
+                .willReturn(OptionalInt.of(10));
+
+        placeStatsFacade.backfillPlaceStatsOnStartup();
+
+        verify(batchProcessor).recalculateIfEmpty(any(LocalDateTime.class));
+        verify(batchProcessor, never()).recalculateAll(any(LocalDateTime.class));
+    }
+
+    @Test
+    void 부팅_적재를_건너뛰면_생략_로그를_남긴다() {
+        given(batchProcessor.recalculateIfEmpty(any(LocalDateTime.class)))
+                .willReturn(OptionalInt.empty());
+
+        placeStatsFacade.backfillPlaceStatsOnStartup();
+
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.INFO)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains("생략"));
+    }
+
+    /**
+     * 최초 적재가 터져도 기동 자체는 계속돼야 한다. 여기서 예외가 새면
+     * {@code ApplicationReadyEvent} 발행이 실패해 애플리케이션이 뜨지 않는다.
+     */
+    @Test
+    void 부팅_적재가_실패해도_예외를_흘리지_않고_error로_남긴다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateIfEmpty(any(LocalDateTime.class));
+
+        placeStatsFacade.backfillPlaceStatsOnStartup();
+
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.ERROR)
+                .singleElement()
+                .satisfies(event -> assertThat(event.getThrowableProxy().getMessage())
+                        .isEqualTo("boom"));
+    }
+
+    /**
+     * {@code PlaceStatsFacade}에 {@code @Transactional}이 붙는 순간 프로세서가 이 트랜잭션에
+     * <em>참여</em>해 {@code READ_COMMITTED} 지정이 조용히 버려지고, 배치가 {@code bookmarks}
+     * 전 행에 next-key 락을 걸게 된다. 클래스·메서드 어디에도 붙지 않았음을 못 박는다.
+     */
+    @Test
+    void 파사드에는_트랜잭션_어노테이션이_붙어_있지_않다() throws Exception {
+        assertThat(PlaceStatsFacade.class.getAnnotation(Transactional.class)).isNull();
+        assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceStats")
+                .getAnnotation(Transactional.class)).isNull();
+        assertThat(PlaceStatsFacade.class.getMethod("backfillPlaceStatsOnStartup")
+                .getAnnotation(Transactional.class)).isNull();
     }
 
     @Test

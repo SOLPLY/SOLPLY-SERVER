@@ -2,14 +2,17 @@ package org.sopt.solply_server.domain.place.service.facade;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 인기순 복합 점수 배치의 스케줄 진입점.
+ * 인기순 복합 점수 배치의 진입점. 정기 스케줄(매일 02:00)과 부팅 시 최초 적재 둘을 연다.
  *
  * <p>매일 02:00 전량 재계산. 장소 임베딩(03:00)·코스 임베딩(04:00)과 시간대를 분리한다.
  * 반감기 90일에서 한 시간의 감쇠 변화는 {@code 1 - 0.5^(1/2160) = 0.032%}라 더 잦은 주기는
@@ -62,6 +65,47 @@ public class PlaceStatsFacade {
         } catch (Exception e) {
             // 전량 재계산이라 다음 회차가 전부 복원한다. 스케줄러 스레드로 예외를 흘리지 않는다.
             log.error("인기순 점수 배치 실패 - calculatedAt={}", calculatedAt, e);
+        }
+    }
+
+    /**
+     * 부팅 시 {@code place_stats} 최초 적재.
+     *
+     * <p><b>이 진입점이 없으면 배포 첫날의 읽기 경로가 전부 0이 된다.</b>
+     * {@code TownPlacesSnapshotLoader}가 이 테이블을 읽는데 {@code V24}는 백필하지 않고 채우는
+     * 수단이 위 스케줄뿐이라, 배포 시각부터 다음 02:00까지 최악 24시간 동안 전 장소가
+     * "통계 행 없음" 분기를 타 인기순이 장소 id 순서가 되고 북마크 수가 0으로 응답된다.
+     *
+     * <p><b>Flyway 백필 마이그레이션을 쓰지 않은 이유:</b> Flyway는 자기 트랜잭션(기본 RR)에서
+     * 돌아 {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#upsertAll}
+     * javadoc이 실측으로 경고한 {@code bookmarks} next-key 락을 그대로 건다. 무중단 배포 중이면
+     * 동시 북마크 INSERT가 {@code ERROR 1205}로 죽는다. 이 경로는 이미 검증된 프로세서의
+     * READ_COMMITTED 경계를 그대로 재사용한다.
+     *
+     * <p>실제 실행 여부와 "비었을 때만"의 근거는
+     * {@link PlaceStatsBatchProcessor#recalculateIfEmpty}에 있다.
+     *
+     * <p>여기서도 {@code @Transactional}을 붙이면 안 된다 — 위 클래스 주석과 같은 이유이고,
+     * 붙는 순간 프로세서가 이 트랜잭션에 참여해 READ_COMMITTED 지정이 조용히 버려진다.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void backfillPlaceStatsOnStartup() {
+        LocalDateTime calculatedAt = LocalDateTime.now();
+        long startNanos = System.nanoTime();
+        log.info("인기순 점수 최초 적재 검사 - calculatedAt={}", calculatedAt);
+        try {
+            OptionalInt affected = batchProcessor.recalculateIfEmpty(calculatedAt);
+            if (affected.isEmpty()) {
+                log.info("인기순 점수 최초 적재 생략 - place_stats에 이미 데이터가 있다");
+                return;
+            }
+            log.info("인기순 점수 최초 적재 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms",
+                    calculatedAt, affected.getAsInt(),
+                    Duration.ofNanos(System.nanoTime() - startNanos).toMillis());
+        } catch (Exception e) {
+            // 기동을 막지 않는다. 실패하면 다음 02:00 스케줄이 메우고, 그때까지는
+            // 통계 없는 장소 분기(0점·0건)로 동작한다 — 응답이 틀릴 뿐 장애는 아니다.
+            log.error("인기순 점수 최초 적재 실패 - calculatedAt={}", calculatedAt, e);
         }
     }
 }

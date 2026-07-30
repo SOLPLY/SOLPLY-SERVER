@@ -10,6 +10,7 @@ import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -462,6 +463,61 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
         }
+    }
+
+    /**
+     * place_stats를 비운다. 같은 클래스의 {@code 배치_트랜잭션은_READ_COMMITTED로_열린다}가 결과를
+     * <b>실제로 커밋</b>하고 정리는 {@link #cleanUpCommittedStats()}(@AfterAll)에서야 돌기 때문에,
+     * 그 테스트가 먼저 실행되면 뒤따르는 테스트에게 place_stats가 비어 보이지 않는다.
+     * 아래 최초 적재 테스트들은 "비었는가"가 곧 검증 대상이라 시작 상태를 직접 못 박아야 한다.
+     *
+     * <p>이 DELETE는 테스트 트랜잭션과 함께 롤백되므로 커밋된 행을 영구히 지우지 않는다.
+     */
+    private void clearStats() {
+        em.createNativeQuery("DELETE FROM place_stats").executeUpdate();
+    }
+
+    @Test
+    void 비어_있으면_최초_적재가_모든_장소를_채운다() {
+        clearStats();
+        insertBookmark(placeA, 0);
+        long placeCount = ((Number) em.createNativeQuery("SELECT COUNT(*) FROM places")
+                .getSingleResult()).longValue();
+
+        OptionalInt affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+
+        assertThat(affected).isPresent();
+        assertThat(placeStatsRepository.count()).isEqualTo(placeCount);
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(1.0, within(0.000001));
+    }
+
+    /**
+     * 가드가 실제로 재계산을 막는지 본다. 센티널 행을 하나 심어 두고, 최초 적재가 그것을
+     * 덮어쓰지 않는지·다른 장소 행을 만들지 않는지 둘 다 확인한다.
+     * 가드를 제거하면 UPSERT가 전 장소를 채우고 센티널 점수를 실제 집계값으로 덮어써 둘 다 깨진다.
+     */
+    @Test
+    void 이미_채워져_있으면_최초_적재는_다시_돌지_않는다() {
+        clearStats();
+        em.createNativeQuery("""
+                INSERT INTO place_stats
+                    (place_id, town_id, active, popular_score, bookmark_count,
+                     review_count, avg_rating, calculated_at)
+                SELECT p.id, p.town_id, p.active, 777.000000, 0, 0, NULL, :calculatedAt
+                FROM places p WHERE p.id = :placeId
+                """)
+                .setParameter("placeId", placeA)
+                .setParameter("calculatedAt", CALCULATED_AT)
+                .executeUpdate();
+        insertBookmark(placeA, 0);   // 재계산이 돌면 점수가 777이 아니라 1.0이 된다
+
+        OptionalInt affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+
+        assertThat(affected).isEmpty();
+        assertThat(placeStatsRepository.count()).isEqualTo(1);
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(777.0, within(0.000001));
     }
 
     @Test
