@@ -111,12 +111,36 @@ class PlaceStatsFacadeTest {
         placeStatsFacade.recalculatePlaceStats();
 
         assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.ERROR)
                 .singleElement()
                 .satisfies(event -> {
-                    assertThat(event.getLevel()).isEqualTo(Level.ERROR);
                     // 스택트레이스가 빠지면 "실패했다"만 알고 왜인지는 영영 모른다
                     assertThat(event.getThrowableProxy()).isNotNull();
                     assertThat(event.getThrowableProxy().getMessage()).isEqualTo("boom");
                 });
+    }
+
+    /**
+     * 시작 로그는 프로세서 호출 <b>전에</b> 나가야 한다.
+     *
+     * <p>다중 인스턴스에서 뒤에 온 배치는 앞 배치가 커밋될 때까지 {@code place_stats} PK 첫 행에서
+     * 블록된다(최대 {@code innodb_lock_wait_timeout} 50초). 시작 로그가 없거나 호출 <em>뒤에</em>
+     * 있으면 "배치가 매달려 있다"와 "스케줄이 애초에 안 돌았다"가 로그로 구분되지 않는다.
+     *
+     * <p>프로세서가 즉시 던지게 만들어 두면, 시작 로그가 남아 있다는 사실 자체가
+     * "호출 전에 찍혔다"의 증거가 된다.
+     */
+    @Test
+    @DisplayName("배치 실패 시에도 시작 로그가 먼저 남아 있다")
+    void logsStartBeforeInvokingProcessor() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateAll(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePlaceStats();
+
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.INFO)
+                .singleElement()
+                .satisfies(event -> assertThat(event.getFormattedMessage()).contains("시작"));
     }
 }

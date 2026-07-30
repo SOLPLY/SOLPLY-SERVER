@@ -15,11 +15,28 @@ import org.springframework.stereotype.Component;
  * 반감기 90일에서 한 시간의 감쇠 변화는 {@code 1 - 0.5^(1/2160) = 0.032%}라 더 잦은 주기는
  * 의미가 없고, 하루 동안 반영되지 않는 것은 상위권 순위를 흔들지 못하는 하루치 유입뿐이다.
  *
- * <p>멱등하므로 여러 인스턴스가 동시에 실행해도 결과가 같다 — 리더 선출(ShedLock 등)이 없다.
+ * <p><b>리더 선출(ShedLock 등)이 없는 이유 — "멱등해서"가 아니다.</b> 두 인스턴스는 각자
+ * {@code LocalDateTime.now()}를 쓰므로 {@code calculatedAt}이 다르고, 1초 차이만으로도
+ * {@code DECIMAL(18,6)}의 6번째 소수 자리에서 값이 갈린다(실측: {@code 02:00:00 → 313.861182},
+ * {@code 02:00:01 → 313.861154}). 즉 <b>동시 실행 결과는 같지 않다.</b>
+ * 안전한 진짜 이유는 각 회차가 <b>완결된 스냅샷을 단일 트랜잭션으로 원자 교체</b>하기 때문이다 —
+ * 마지막 커밋이 이기고, 반쯤 섞인 상태는 존재하지 않는다. 어느 세대가 이겨도 그 자체로 정합적이다.
+ * ("멱등이니 병렬로 쪼개도 된다"로 확장하지 말 것. 쪼개면 부분 반영 상태가 생겨 이 성질이 깨진다.)
  *
- * <p><b>이 클래스에 {@code @Transactional}을 붙이지 말 것.</b> 트랜잭션 경계는
- * {@link PlaceStatsBatchProcessor}가 갖는다. 여기서 트랜잭션을 열면 프로세서가 그것에 참여해
- * {@code READ_COMMITTED} 지정이 조용히 무시되고, 배치가 {@code bookmarks} 전 행에 락을 건다.
+ * <p>실측(4세션 × 60회 = 240회 동시 UPSERT): 오류 0건, {@code Innodb_deadlocks} 0.
+ * 두 문장이 동일 플랜·동일 순서로 {@code place_stats} PK를 잠그므로 데드락이 나지 않고,
+ * 뒤에 온 세션은 집계를 끝낸 뒤 <b>첫 행에서 앞 배치가 커밋될 때까지 블록</b>된다.
+ * 따라서 배치가 {@code innodb_lock_wait_timeout}(기본 50초)을 넘기면 두 번째 인스턴스는
+ * {@code ERROR 1205}로 죽고 아래 {@code log.error}에 삼켜진다 — 데이터는 무해하지만
+ * <b>매일 에러 로그가 한 줄 남는다.</b> 그때는 리더 선출을 넣을 시점이다.
+ *
+ * <p><b>이 클래스에 {@code @Transactional}을 붙이지 말 것 — Processor를 분리한 핵심 이유다.</b>
+ * {@code try/catch}가 트랜잭션 경계 <b>바깥</b>에 있어야 한다. 한 메서드로 합치면 예외를 잡는
+ * 지점이 트랜잭션 안이 되어, 실패한 문장 뒤에 커밋을 시도하는 모양이 된다.
+ * (참고: {@code @Scheduled} 메서드에 {@code @Transactional}을 직접 붙여도 RC 자체는 정상
+ * 적용된다 — {@code ScheduledAnnotationBeanPostProcessor}가 {@code LOWEST_PRECEDENCE}라
+ * auto-proxy creator보다 나중에 돌아 프록시를 등록한다. 즉 "합치면 RC가 무시된다"는 이유가
+ * 아니다. 합치면 안 되는 이유는 오직 위의 예외 처리 위치다.)
  */
 @Slf4j
 @Component
@@ -31,14 +48,17 @@ public class PlaceStatsFacade {
     @Scheduled(cron = "${solply.place-stats.cron:0 0 2 * * *}")
     public void recalculatePlaceStats() {
         LocalDateTime calculatedAt = LocalDateTime.now();
-        long startedAt = System.nanoTime();
+        long startNanos = System.nanoTime();
+        // 시작 로그가 없으면 "배치가 락 대기로 매달린 상태"와 "스케줄이 애초에 안 돌은 상태"를
+        // 로그로 구분할 수 없다. 다중 인스턴스에서 뒤에 온 쪽은 최대 50초 블록될 수 있다.
+        log.info("인기순 점수 배치 시작 - calculatedAt={}", calculatedAt);
         try {
             // affectedRows는 장소 수가 아니다 — MySQL이 INSERT를 1, UPDATE를 2로 세므로
             // 정상 운영(전부 UPDATE) 상태에서는 장소 수의 약 2배가 찍힌다. 장소 수로 오해하지 말 것.
             int affected = batchProcessor.recalculateAll(calculatedAt);
             log.info("인기순 점수 배치 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms",
                     calculatedAt, affected,
-                    Duration.ofNanos(System.nanoTime() - startedAt).toMillis());
+                    Duration.ofNanos(System.nanoTime() - startNanos).toMillis());
         } catch (Exception e) {
             // 전량 재계산이라 다음 회차가 전부 복원한다. 스케줄러 스레드로 예외를 흘리지 않는다.
             log.error("인기순 점수 배치 실패 - calculatedAt={}", calculatedAt, e);

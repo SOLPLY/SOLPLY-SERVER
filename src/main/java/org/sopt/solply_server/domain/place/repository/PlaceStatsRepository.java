@@ -47,6 +47,21 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p>RC로 낮추면 스캔 도중 커밋된 행이 집계에 일부 섞일 수 있다. 이 값은 애초에 "대략 지금"의
      * 스냅샷이고 24시간 stale을 수용하는 2급 데이터라 문제가 되지 않는다 — 다음 1회로 씻긴다.
      *
+     * <p><b>⚠️ RC로 낮췄어도 이 배치가 <em>아무것도</em> 막지 않는 것은 아니다 — {@code places}는 막는다.</b>
+     * {@code place_stats.place_id → places.id} FK의 부모 존재 검사 때문에, 갱신한 행마다
+     * {@code places}에 S 락이 걸리고 <b>커밋까지 유지</b>된다. 장소 320개 시드 기준 hold 중 락 덤프:
+     * <pre>
+     * place_stats  RECORD  X,REC_NOT_GAP  320
+     * places       RECORD  S,REC_NOT_GAP  320
+     * bookmarks    (없음)
+     * </pre>
+     * 그래서 동시 {@code INSERT INTO bookmarks}는 즉시 성공하지만(RC 효과),
+     * 어드민의 동네 일괄 비활성화({@code AdminPlaceRepository.updateActiveByTownId} →
+     * {@code UPDATE places SET active = ...})는 배치가 커밋될 때까지 대기한다 —
+     * 실측 12,203ms 블록. 배치 소요가 6초대인 현재는 어드민 액션이 그만큼 지연되는 수준이지만,
+     * 배치가 길어지면 이 지연도 같이 늘어난다. FK는 V24가 {@code ON DELETE CASCADE}로 잡아 둔
+     * 관계라 제거 대상이 아니므로, 완화하려면 배치 시간을 줄이거나 어드민 작업 시간대를 피해야 한다.
+     *
      * <p><b>반면 {@code place_stats} 읽기는 이 배치에 막히지 않는다.</b> 조회는 MVCC 일관된 읽기라
      * 배치가 도는 중에도 대기 없이 <em>직전 배치 결과</em>를 보고, 커밋 시점에 원자적으로 새 세대로
      * 바뀐다. 즉 읽기 경로(스냅샷 로더)는 반쯤 갱신된 중간 상태를 절대 보지 않는다.

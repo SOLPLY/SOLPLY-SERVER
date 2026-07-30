@@ -36,7 +36,24 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "solply.place-stats")
 public class PlaceStatsProperties {
 
-    /** 배치 실행 cron. 장소 임베딩(03:00)·코스 임베딩(04:00)과 겹치지 않게 02:00. */
+    /**
+     * 배치 실행 cron. 장소 임베딩(03:00)·코스 임베딩(04:00)과 겹치지 않게 02:00.
+     *
+     * <p><b>⚠️ 이 필드의 값은 스케줄에 쓰이지 않는다 — {@code getCron()} 호출처가 0건이다.</b>
+     * 스케줄러는 {@code PlaceStatsFacade}의
+     * {@code @Scheduled(cron = "${solply.place-stats.cron:0 0 2 * * *}")}로 프로퍼티를 직접 읽는다.
+     * {@code @ConfigurationProperties}의 필드 기본값은 플레이스홀더 해석 시점에 보이지 않으므로
+     * <b>기본값 리터럴이 두 곳에 존재하는 것은 구조적으로 강제된 중복</b>이다.
+     * <b>주기를 바꿀 때는 반드시 두 곳을 함께 고칠 것</b> — 이 필드만 고치면 스케줄은 그대로인
+     * 방향으로 조용히 갈라진다.
+     *
+     * <p>그럼에도 필드를 남기는 이유는 <b>진단 가능한 실패</b>다. yml에 {@code cron: ""}이 들어오면
+     * {@code @NotBlank}가 "cron이 비었다"고 명시하며 부팅을 막는다. 이 필드가 없으면 빈 문자열이
+     * 플레이스홀더로 해석돼 {@code @Scheduled}까지 내려가는데, 스프링은 그때 스케줄을 등록하지 않고
+     * (spring-context 6.1.14 바이트코드 확인: 해석 결과가 빈 문자열이면 등록 분기를 건너뛴다)
+     * 결국 {@code IllegalArgumentException: One-time task only supported with specified initial delay}로
+     * 부팅이 죽는다 — cron과 아무 상관없어 보이는 메시지라 원인 추적이 훨씬 어렵다.
+     */
     @NotBlank
     private String cron = "0 0 2 * * *";
 
