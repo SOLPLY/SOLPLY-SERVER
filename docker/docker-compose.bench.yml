@@ -24,6 +24,9 @@ services:
     mem_limit: 4g
     volumes:
       - solply-bench-mysql-data:/var/lib/mysql
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.10
 
   bench-redis:
     # 캐시-on baseline(#377 이전 커밋) 측정 전용. 현행 코드 측정에도 앱 기동 의존성으로 필요.
@@ -34,6 +37,9 @@ services:
     command: [ "redis-server", "--requirepass", "solplyredispwd" ]
     cpus: 1
     mem_limit: 512m
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.11
 
   # 부하 모델(DAU 2만, 예상 피크 22 req/s, 목표 120 req/s = 5.5배 헤드룸) 기준 실서버 체급 재현.
   # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. 가용성을 위해 2대 + LB 구성이 고정 스펙이다.
@@ -61,12 +67,19 @@ services:
     depends_on:
       - bench-mysql
       - bench-redis
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.21
 
   bench-app-2:
     <<: *bench-app
     container_name: solply-bench-app-2
     environment:
       <<: *bench-app-env
+    # 앵커가 networks까지 상속하므로 반드시 오버라이드한다 (같은 IP면 기동 실패)
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.22
 
   # 부하는 항상 LB(8082)로 보낸다. 개별 인스턴스 직접 접근은 포트를 노출하지 않는다 —
   # 실환경에서 클라이언트가 인스턴스를 지정할 수 없는 조건을 그대로 재현하기 위함.
@@ -83,6 +96,24 @@ services:
     # nginx는 upstream 호스트명을 설정 파싱 시점에 해석한다. 두 앱 컨테이너가 아직
     # 생성되지 않은 순간에 뜨면 [emerg] host not found로 즉시 죽으므로 자동 복구시킨다.
     restart: unless-stopped
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.30
 
 volumes:
   solply-bench-mysql-data:
+
+# 고정 IP를 쓰는 이유:
+# nginx OSS는 upstream 호스트명을 설정 파싱 시점에 한 번만 해석하고 프로세스 수명 내내
+# 그 IP를 캐시한다 (재해석은 nginx Plus의 `resolve` 파라미터 전용). Docker 기본 네트워크는
+# 컨테이너 재기동 시 IP를 재할당하므로, 앱만 재기동하면 nginx가 stale IP를 붙들고
+# 전 요청이 502가 된다 — 실제로 겪었고 원인 파악에 시간이 걸리는 종류의 함정이다.
+# 코드 변경마다 앱을 재기동하게 되므로 규율(= 앱 재기동 시 LB도 재기동)에 의존하지 않고
+# 주소를 고정해 실패 모드 자체를 제거한다.
+networks:
+  bench-net:
+    name: solply-bench-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
