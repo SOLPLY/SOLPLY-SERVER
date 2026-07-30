@@ -59,17 +59,27 @@ class PlaceStatsRepositoryIT {
     @Autowired
     EntityManager em;
 
-    /** Flyway V2 시드에서 실제 존재하는 장소 id 하나를 빌려 쓴다 (BookmarkRepositoryIT와 같은 관례) */
-    private long anyPlaceId() {
-        Object id = em.createNativeQuery(
-                "SELECT p.id FROM places p WHERE p.active = true ORDER BY p.id LIMIT 1")
+    /** 배치가 places에서 비정규화해 오는 세 값. 기댓값을 INSERT와 같은 출처에서 얻으려고 함께 읽는다. */
+    private record PlaceRow(long id, long townId, boolean active) {
+    }
+
+    /** Flyway V2 시드에서 실제 존재하는 장소 하나를 빌려 쓴다 (BookmarkRepositoryIT와 같은 관례) */
+    private PlaceRow anyPlace() {
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT p.id, p.town_id, p.active FROM places p WHERE p.active = true ORDER BY p.id LIMIT 1")
                 .getSingleResult();
-        return ((Number) id).longValue();
+        // active는 Boolean으로 받는다 — MySQL의 BOOLEAN은 TINYINT(1)이고,
+        // Connector/J가 tinyInt1isBit 기본값(true)에 따라 java.lang.Boolean으로 돌려준다.
+        return new PlaceRow(
+                ((Number) row[0]).longValue(),
+                ((Number) row[1]).longValue(),
+                (Boolean) row[2]);
     }
 
     @Test
     void 네이티브로_삽입한_행을_엔티티로_읽을_수_있다() {
-        long placeId = anyPlaceId();
+        PlaceRow place = anyPlace();
+        long placeId = place.id();
         LocalDateTime calculatedAt = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
         em.createNativeQuery("""
@@ -89,6 +99,10 @@ class PlaceStatsRepositoryIT {
         assertThat(found).hasSize(1);
         PlaceStats stats = found.get(0);
         assertThat(stats.getPlaceId()).isEqualTo(placeId);
+        // places에서 비정규화해 온 두 값. validate는 타입만 보고 값 왕복은 못 잡으므로 직접 대조한다.
+        // 특히 active는 MySQL BOOLEAN(TINYINT(1)) ↔ Java boolean 매핑이라 왕복 검증 가치가 있다.
+        assertThat(stats.getTownId()).isEqualTo(place.townId());
+        assertThat(stats.isActive()).isEqualTo(place.active());
         assertThat(stats.getPopularScore()).isEqualByComparingTo(new BigDecimal("12.5"));
         assertThat(stats.getBookmarkCount()).isEqualTo(7);
         assertThat(stats.getReviewCount()).isEqualTo(2);
@@ -98,6 +112,6 @@ class PlaceStatsRepositoryIT {
 
     @Test
     void 통계가_없는_장소는_빈_결과를_반환한다() {
-        assertThat(placeStatsRepository.findAllById(List.of(anyPlaceId()))).isEmpty();
+        assertThat(placeStatsRepository.findAllById(List.of(anyPlace().id()))).isEmpty();
     }
 }
