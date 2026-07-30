@@ -9,8 +9,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
@@ -62,16 +63,37 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     @Autowired
     EntityManager em;
 
-    /** 트랜잭션 <em>안쪽</em>에서 관측한 {@code @@transaction_isolation}. 격리 테스트 직전에 비운다. */
-    private static final List<String> OBSERVED_ISOLATIONS = new ArrayList<>();
+    /**
+     * 프로세서가 <em>스스로 연</em> 트랜잭션의 이름. 스프링은 트랜잭션 이름을
+     * {@code FQCN.메서드명}으로 짓는다({@code TransactionAspectSupport}).
+     */
+    private static final String BATCH_TX_NAME =
+            PlaceStatsBatchProcessor.class.getName() + ".recalculateAll";
+
+    /** 트랜잭션 <em>안쪽</em>에서 관측한 {@code @@transaction_isolation}. @BeforeEach에서 비운다. */
+    private static final List<String> OBSERVED_ISOLATIONS = new CopyOnWriteArrayList<>();
 
     /**
-     * 트랜잭션이 열린 직후의 격리 수준을 서버에 물어 기록한다.
+     * 배치 트랜잭션이 열린 직후의 격리 수준을 서버에 물어 기록한다.
      *
      * <p>스프링이 커넥션에 건 격리는 트랜잭션 종료 시 원복되므로 밖에서는 볼 수 없다.
      * Spring Framework 6.1의 {@code TransactionExecutionListener}만이 "이미 begin됐고 아직
      * 아무 일도 안 한" 시점에 끼어들 수 있어, 트랜잭션 매니저에 직접 붙인다
      * (리스너 빈을 자동으로 주워 가지는 않는다).
+     *
+     * <p><b>이름을 {@link #BATCH_TX_NAME}으로 좁히는 이유.</b> 좁히지 않으면 이 컨텍스트의
+     * <em>모든</em> 트랜잭션(테스트 메서드마다 하나씩)마다 SELECT가 날아가고 static 리스트에
+     * 쌓인다. 좁히면 기록 대상이 "프로세서가 스스로 연 트랜잭션" 하나로 줄어든다 — 다른
+     * 테스트들은 이미 열린 테스트 트랜잭션에 프로세서가 <em>참여</em>하므로 begin 자체가
+     * 일어나지 않아 애초에 이 리스너를 타지 않는다.
+     *
+     * <p><b>실측 단서 — 이 필터는 테스트로 검출되지 않는다.</b> 필터를 제거해도 순차 실행에서는
+     * 14건이 전부 그린이었다. {@code @BeforeEach}의 {@code clear()}가 스프링의 테스트 트랜잭션
+     * begin <em>이후에</em> 돌아(스프링은 {@code beforeTestMethod}에서 트랜잭션을 열고 그 다음
+     * {@code @BeforeEach}를 부른다) 그 기록을 지워 버리기 때문이다. 그러므로 이 필터는 변이로
+     * 잡히는 장치가 아니라 {@code junit.jupiter.execution.parallel.enabled}를 켰을 때
+     * 무관한 트랜잭션이 섞여 드는 플레이크를 막는 <b>예방책</b>이다.
+     * 반면 {@code BATCH_TX_NAME} 상수 자체는 검증된다 — 틀리면 격리 테스트가 빈 리스트로 실패한다.
      */
     @TestConfiguration
     static class IsolationProbeConfig {
@@ -81,6 +103,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                     new TransactionExecutionListener() {
                         @Override
                         public void afterBegin(TransactionExecution tx, Throwable beginFailure) {
+                            if (!BATCH_TX_NAME.equals(tx.getTransactionName())) {
+                                return;
+                            }
                             EntityManager bound =
                                     EntityManagerFactoryUtils.getTransactionalEntityManager(emf);
                             OBSERVED_ISOLATIONS.add(bound == null ? "NO-EM" : String.valueOf(
@@ -98,6 +123,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     @BeforeEach
     void setUp() {
+        OBSERVED_ISOLATIONS.clear();
         List<?> placeIds = em.createNativeQuery(
                 "SELECT p.id FROM places p WHERE p.active = true ORDER BY p.id LIMIT 3")
                 .getResultList();
@@ -380,24 +406,61 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 그래서 {@link IsolationProbeConfig}가 {@code TransactionExecutionListener.afterBegin}에서
      * 트랜잭션 안쪽 값을 잡아 둔다.
      *
-     * <p>비트랜잭션 실행이라 배치 결과가 <b>실제로 커밋된다</b>. place_stats에 전 장소 행이 남으면
-     * {@code PlaceStatsRepositoryIT.통계가_없는_장소는_빈_결과를_반환한다}가 (같은 컨테이너를 공유하므로)
-     * 깨진다 — finally에서 별도 커넥션으로 반드시 지운다.
+     * <p><b>커밋이 불가피한 이유:</b> 격리 수준은 트랜잭션이 실제로 열려야만 관측되고, 그 트랜잭션을
+     * 여는 주체가 프로세서 자신이어야 한다(테스트가 열면 검증 대상이 바뀐다). 프로세서는 커밋 여부를
+     * 호출자에게 위임하지 않으므로 롤백시킬 지점이 없다. 그래서 이 테스트만 배치 결과를
+     * <b>실제로 커밋한다</b> — 뒷정리는 {@link #cleanUpCommittedStats()}가 맡는다.
      */
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void 배치_트랜잭션은_READ_COMMITTED로_열린다() throws Exception {
-        OBSERVED_ISOLATIONS.clear();
-        try {
-            batchProcessor.recalculateAll(CALCULATED_AT);
+    void 배치_트랜잭션은_READ_COMMITTED로_열린다() {
+        batchProcessor.recalculateAll(CALCULATED_AT);
 
-            assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED");
-        } finally {
-            try (Connection con = DriverManager.getConnection(
-                    MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
-                    Statement st = con.createStatement()) {
-                st.executeUpdate("DELETE FROM place_stats");
-            }
+        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED");
+    }
+
+    /**
+     * 위 테스트의 짝. <b>이미 트랜잭션이 열려 있으면 프로세서는 새 트랜잭션을 열지 않고
+     * 참여하며, 그때 격리 지정은 조용히 버려진다</b>는 사실을 못 박는다
+     * ({@code validateExistingTransaction} 기본 false).
+     *
+     * <p>{@code PlaceStatsBatchProcessor.recalculateAll} 이름의 트랜잭션이 한 번도 begin되지
+     * 않았다는 것이 곧 "참여했다"의 증거다. 프로세서를 {@code REQUIRES_NEW}로 바꾸면 이 단언이
+     * 깨진다 — 즉 전파 방식 변경을 눈치채는 장치다(실측 확인).
+     *
+     * <p>이것이 나머지 12개 테스트가 격리 수준을 검증할 수 없는 이유이자,
+     * {@code PlaceStatsFacade}에 {@code @Transactional}을 붙이면 안 되는 이유다.
+     */
+    @Test
+    void 이미_열린_트랜잭션에_참여하면_새_트랜잭션을_열지_않는다() {
+        runBatch();
+
+        assertThat(OBSERVED_ISOLATIONS).isEmpty();
+    }
+
+    /**
+     * {@code 배치_트랜잭션은_READ_COMMITTED로_열린다}가 커밋한 place_stats 행을 지운다.
+     *
+     * <p>지우지 않으면 같은 싱글턴 컨테이너를 쓰는 {@code PlaceStatsRepositoryIT}의
+     * <b>2건이 모두</b> 깨진다 — {@code 통계가_없는_장소는_빈_결과를_반환한다}는 빈 결과를 기대하고,
+     * {@code 네이티브로_삽입한_행을_엔티티로_읽을_수_있다}는 같은 place_id INSERT가 중복 키로 터진다.
+     * (실측: 클래스 실행 순서를 뒤집고 이 정리를 빼면 정확히 그 2건이 FAILED.)
+     *
+     * <p><b>{@code @AfterEach}가 아니라 {@code @AfterAll}인 이유.</b> 스프링의
+     * {@code TransactionalTestExecutionListener}는 테스트 트랜잭션을 {@code @AfterEach}
+     * <em>이후에</em> 롤백한다. 즉 {@code @AfterEach} 시점에는 방금 배치가 INSERT한 place_stats 행이
+     * 아직 커밋 안 된 채 X 락에 잡혀 있고, 여기처럼 <b>별도 커넥션</b>으로 DELETE를 날리면
+     * 그 락을 기다리다 {@code ERROR 1205 Lock wait timeout}(기본 50초)으로 죽는다.
+     * 클래스의 마지막 트랜잭션까지 끝난 뒤 도는 {@code @AfterAll}이라야 안전하다.
+     *
+     * <p>테스트 본문의 {@code finally}가 아닌 것은 예외·실패 경로까지 확실히 덮기 위해서다.
+     */
+    @AfterAll
+    static void cleanUpCommittedStats() throws Exception {
+        try (Connection con = DriverManager.getConnection(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+                Statement st = con.createStatement()) {
+            st.executeUpdate("DELETE FROM place_stats");
         }
     }
 
