@@ -1,15 +1,16 @@
 package org.sopt.solply_server.domain.place.cache;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
+import org.sopt.solply_server.domain.place.entity.PlaceStats;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.global.util.TagViewUtils;
@@ -18,16 +19,23 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 캐시 미스/리프레시 시 동네의 active 장소 전체를 스냅샷으로 로드한다.
- * 장소별 북마크 수도 이 시점에 1회 집계해 내장한다 — 인기순 정렬의 신선도는
- * soft TTL(10분)에 수렴하며, 이는 설계상 허용된 stale 범위다.
- * 캐시 로더는 요청 스레드가 아닌 워커 스레드에서 실행되므로 자체 트랜잭션 경계가 필요하다.
+ *
+ * <p>인기순 점수·북마크 수는 배치가 미리 계산해둔 place_stats에서 읽는다. 예전에는 이 자리에서
+ * 매번 북마크를 집계했는데(서울 시 단위 324만 엔트리), 그러면 캐시 리프레시 10분마다
+ * 하루 144회 같은 집계를 반복하게 된다. 사전 집계로 바꾸면서 <b>읽기 비용이 북마크 수와
+ * 무관해졌다</b> — 데이터가 쌓여도 늘어나는 건 하루 1회 배치 시간뿐이다.
+ *
+ * <p>place_stats 읽기는 배치와 경합하지 않는다. 조회는 MVCC 일관된 읽기라 배치가 도는 중에도
+ * 대기 없이 직전 배치 결과를 보고, 커밋 시점에 원자적으로 새 세대로 바뀐다.
+ *
+ * <p>캐시 로더는 요청 스레드가 아닌 워커 스레드에서 실행되므로 자체 트랜잭션 경계가 필요하다.
  */
 @Component
 @RequiredArgsConstructor
 public class TownPlacesSnapshotLoader {
 
     private final PlaceRepository placeRepository;
-    private final BookmarkRepository bookmarkRepository;
+    private final PlaceStatsRepository placeStatsRepository;
 
     @Transactional(readOnly = true)
     public List<CachedPlace> loadSnapshot(Long townId) {
@@ -35,21 +43,17 @@ public class TownPlacesSnapshotLoader {
         if (places.isEmpty()) {
             return List.of();
         }
-        Map<Long, Long> counts = countBookmarks(places.stream().map(Place::getId).toList());
+        Map<Long, PlaceStats> statsByPlaceId = placeStatsRepository
+                .findAllById(places.stream().map(Place::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(PlaceStats::getPlaceId, Function.identity()));
         return places.stream()
-                .map(p -> toSnapshot(p, townId, counts.getOrDefault(p.getId(), 0L)))
+                .map(p -> toSnapshot(p, townId, statsByPlaceId.get(p.getId())))
                 .toList();
     }
 
-    private Map<Long, Long> countBookmarks(List<Long> placeIds) {
-        Map<Long, Long> counts = new HashMap<>();
-        for (Object[] row : bookmarkRepository.countByPlaceIds(placeIds)) {
-            counts.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
-        }
-        return counts;
-    }
-
-    private CachedPlace toSnapshot(Place place, Long townId, long bookmarkCount) {
+    /** stats가 null이면 배치가 아직 닿지 않은 신규 장소다 — 실제로 활동이 0이므로 0점이 정답이다 */
+    private CachedPlace toSnapshot(Place place, Long townId, PlaceStats stats) {
         List<Tag> tags = place.getPlaceTags().stream()
                 .map(PlaceTag::getTag)
                 .toList();
@@ -64,7 +68,9 @@ public class TownPlacesSnapshotLoader {
                 activeTagIdsOf(tags, TagType.OPTION2),
                 place.getCreatedAt(),
                 townId,
-                bookmarkCount
+                stats == null ? 0.0 : stats.getPopularScore().doubleValue(),
+                stats == null ? 0L : stats.getBookmarkCount(),
+                stats == null ? null : stats.getCalculatedAt()
         );
     }
 

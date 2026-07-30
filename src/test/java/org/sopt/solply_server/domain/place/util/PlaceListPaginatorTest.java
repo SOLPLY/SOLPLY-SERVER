@@ -19,7 +19,10 @@ class PlaceListPaginatorTest {
 
     private CachedPlace place(long id, long bookmarkCount, LocalDateTime createdAt) {
         return new CachedPlace(id, "p" + id, null, null, Set.of(), Set.of(), Set.of(),
-                createdAt, 1L, bookmarkCount);
+                createdAt, 1L,
+                (double) bookmarkCount,   // popularScore — Task 6에서 정렬 키가 이 값으로 옮겨간다
+                bookmarkCount,
+                null);
     }
 
     @Test

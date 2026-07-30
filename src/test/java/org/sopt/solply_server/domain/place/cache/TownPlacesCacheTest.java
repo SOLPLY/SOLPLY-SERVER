@@ -22,7 +22,8 @@ class TownPlacesCacheTest {
     void setUp() {
         loader = mock(TownPlacesSnapshotLoader.class);
         when(loader.loadSnapshot(anyLong())).thenReturn(List.of(
-                new CachedPlace(1L, "장소", null, "카페", Set.of(10L), Set.of(), Set.of(), null, 1L, 0L)));
+                new CachedPlace(1L, "장소", null, "카페", Set.of(10L), Set.of(), Set.of(),
+                        null, 1L, 0.0, 0L, null)));
         cache = new TownPlacesCache(loader);
     }
 

@@ -49,7 +49,12 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
     // == DB 직행 조회 쿼리 (캐시 제거 후 단일 경로) == //
 
-    /** 장소별 북마크 수 집계 (타겟 축 커버링 인덱스). row: [target_id, cnt]. 0건인 장소는 행 없음 */
+    /**
+     * 장소별 북마크 수 집계 (타겟 축 커버링 인덱스). row: [target_id, cnt]. 0건인 장소는 행 없음
+     *
+     * <p>프로덕션 읽기 경로는 place_stats로 전환됐고, 이 쿼리는 기각한 대안(매 요청 실시간 집계)의
+     * 비용 측정용으로 남긴다.
+     */
     @Query(value = """
         SELECT b.target_id, COUNT(*) AS cnt
         FROM bookmarks b
