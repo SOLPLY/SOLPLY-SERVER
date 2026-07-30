@@ -64,8 +64,15 @@ public class PlaceBookmarkFacade {
 
     /**
      * 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회).
-     * 캐시 경로는 getMyPlaceBookmarkTimesMap으로 전환했고, 여기는 벤치 전용 popularFromDb가 쓴다 —
-     * 그 경로는 실시간 COUNT(*)를 세므로 표시 카운트 보정이 필요 없다.
+     *
+     * <p><b>현역 메서드다 — 지우지 말 것.</b> 장소 목록의 캐시 경로만
+     * getMyPlaceBookmarkTimesMap으로 옮겨갔고, 이 메서드는 두 곳이 계속 쓴다:
+     * <ul>
+     *   <li>CourseService의 코스 상세 (프로덕션) — 코스에 담긴 장소들의 북마크 여부.
+     *       표시 카운트를 쓰지 않는 화면이라 시각 보정이 필요 없다.</li>
+     *   <li>PlaceService.popularFromDb (벤치 전용) — 실시간 COUNT(*)를 세므로 보정이 필요 없다.</li>
+     * </ul>
+     * 아래 계층의 BookmarkService.getBookmarkStatusMap은 코스·마이페이지에서도 쓰인다.
      */
     public Map<Long, Boolean> getPlaceBookmarkStatusMap(final Long userId, final List<Long> placeIds) {
         return bookmarkService.getBookmarkStatusMap(userId, BookmarkTargetType.PLACE, placeIds);

@@ -349,10 +349,12 @@ public class PlaceService {
 
   /**
    * 북마크 검색처럼 <b>여부가 구조적으로 확정된</b> 경로용 — 시각은 카운트 보정에만 쓴다.
-   * 그 경로에서 여부를 시각 유무로 재유도하지 않는 이유: 목록은 북마크 조회로 만들었는데 시각 조회가
-   * 그 사이 삭제를 봐서 비면 "내 북마크 목록인데 isBookmarked=false"라는 모순이 나온다.
-   * 현재 격리 수준(MySQL 기본 REPEATABLE READ)에서는 같은 트랜잭션의 두 조회가 같은 스냅샷을 보므로
-   * 발생하지 않지만, 여부를 격리 수준에 의존시키지 않는 편이 낫다.
+   * "이 목록은 전부 내 북마크"라는 불변식을 시각 유무로 재유도하지 않고 코드에 그대로 적는다.
+   *
+   * <p><b>현재 구성에서 이것 없이도 모순이 나지는 않는다.</b> 전역 격리 수준 오버라이드가 없어
+   * MySQL 기본 REPEATABLE READ이고, PlaceService가 클래스 레벨 readOnly 트랜잭션이라 목록 조회와
+   * 시각 조회가 같은 스냅샷을 본다. Bookmark는 soft delete도 아니라 두 쿼리 간 필터 비대칭도 없다.
+   * 그래도 여부를 격리 수준에 의존시키지 않는 편이 낫다는 판단이다.
    */
   private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked,
       LocalDateTime myBookmarkedAt) {
