@@ -3,6 +3,9 @@ package org.sopt.solply_server.domain.place.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.sql.Connection;
@@ -15,6 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
@@ -65,11 +69,17 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     EntityManager em;
 
     /**
-     * 프로세서가 <em>스스로 연</em> 트랜잭션의 이름. 스프링은 트랜잭션 이름을
+     * 프로세서가 <em>스스로 연</em> 트랜잭션 이름의 접두사. 스프링은 트랜잭션 이름을
      * {@code FQCN.메서드명}으로 짓는다({@code TransactionAspectSupport}).
+     *
+     * <p><b>메서드명까지 박지 않고 접두사로 두는 이유.</b> 예전에는 {@code ".recalculateAll"}까지
+     * 하드코딩했는데, 그러면 나중에 추가되는 트랜잭션 진입점이 이 프로브에서 <b>구조적으로 배제</b>돼
+     * 격리 계약이 검증되지 않은 채로 들어온다. 실제로 {@code recalculateIfEmpty}가 그 구멍으로
+     * 들어왔고, 거기서 {@code isolation}·{@code @Transactional}을 통째로 지우는 변이 2건이
+     * 전부 살아남았다(실측). 접두사로 넓히면 이 클래스가 여는 모든 트랜잭션이 프로브에 걸린다.
      */
-    private static final String BATCH_TX_NAME =
-            PlaceStatsBatchProcessor.class.getName() + ".recalculateAll";
+    private static final String BATCH_TX_NAME_PREFIX =
+            PlaceStatsBatchProcessor.class.getName() + ".";
 
     /** 트랜잭션 <em>안쪽</em>에서 관측한 {@code @@transaction_isolation}. @BeforeEach에서 비운다. */
     private static final List<String> OBSERVED_ISOLATIONS = new CopyOnWriteArrayList<>();
@@ -82,7 +92,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 아무 일도 안 한" 시점에 끼어들 수 있어, 트랜잭션 매니저에 직접 붙인다
      * (리스너 빈을 자동으로 주워 가지는 않는다).
      *
-     * <p><b>이름을 {@link #BATCH_TX_NAME}으로 좁히는 이유.</b> 좁히지 않으면 이 컨텍스트의
+     * <p><b>이름을 {@link #BATCH_TX_NAME_PREFIX}로 좁히는 이유.</b> 좁히지 않으면 이 컨텍스트의
      * <em>모든</em> 트랜잭션(테스트 메서드마다 하나씩)마다 SELECT가 날아가고 static 리스트에
      * 쌓인다. 좁히면 기록 대상이 "프로세서가 스스로 연 트랜잭션" 하나로 줄어든다 — 다른
      * 테스트들은 이미 열린 테스트 트랜잭션에 프로세서가 <em>참여</em>하므로 begin 자체가
@@ -94,7 +104,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * {@code @BeforeEach}를 부른다) 그 기록을 지워 버리기 때문이다. 그러므로 이 필터는 변이로
      * 잡히는 장치가 아니라 {@code junit.jupiter.execution.parallel.enabled}를 켰을 때
      * 무관한 트랜잭션이 섞여 드는 플레이크를 막는 <b>예방책</b>이다.
-     * 반면 {@code BATCH_TX_NAME} 상수 자체는 검증된다 — 틀리면 격리 테스트가 빈 리스트로 실패한다.
+     * 반면 {@code BATCH_TX_NAME_PREFIX} 상수 자체는 검증된다 — 틀리면 격리 테스트가 빈 리스트로 실패한다.
      */
     @TestConfiguration
     static class IsolationProbeConfig {
@@ -104,7 +114,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                     new TransactionExecutionListener() {
                         @Override
                         public void afterBegin(TransactionExecution tx, Throwable beginFailure) {
-                            if (!BATCH_TX_NAME.equals(tx.getTransactionName())) {
+                            String name = tx.getTransactionName();
+                            if (name == null || !name.startsWith(BATCH_TX_NAME_PREFIX)) {
                                 return;
                             }
                             EntityManager bound =
@@ -421,6 +432,26 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
+     * 최초 적재 진입점도 같은 계약을 진다. <b>이 커밋의 설계 논거 전체가 이 어노테이션 하나에
+     * 걸려 있다</b> — Flyway 백필을 기각한 이유가 "RR에서 {@code bookmarks} 1,073만 행에
+     * next-key 락"이었으므로, 여기서 RC가 사라지면 부팅 시 정확히 그 장애 모드가 재현된다.
+     * {@code @Transactional} 자체가 사라지면 백필이 조용히 한 번도 돌지 않는 상태가 된다.
+     *
+     * <p>격리는 {@code afterBegin} 시점 — 즉 <b>가드 실행 이전</b>에 관측되므로, place_stats가
+     * 비어 있든 이미 채워져 있든 이 단언은 동일하게 성립한다.
+     *
+     * <p>{@code NOT_SUPPORTED}인 이유와 커밋이 불가피한 이유는 위 테스트와 같다. 이 테스트도
+     * 테이블이 비어 있으면 결과를 실제로 커밋하므로 뒷정리는 {@link #cleanUpCommittedStats()}가 맡는다.
+     */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void 최초_적재_트랜잭션도_READ_COMMITTED로_열린다() {
+        batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+
+        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED");
+    }
+
+    /**
      * 위 테스트의 짝. <b>이미 트랜잭션이 열려 있으면 프로세서는 새 트랜잭션을 열지 않고
      * 참여하며, 그때 격리 지정은 조용히 버려진다</b>는 사실을 못 박는다
      * ({@code validateExistingTransaction} 기본 false).
@@ -486,7 +517,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
         OptionalInt affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
 
-        assertThat(affected).isPresent();
+        // 빈 테이블이라 전부 INSERT 경로 → MySQL이 INSERT를 1로 세므로 영향 행 수 = 장소 수.
+        // "재계산했고 영향 행 0"과 "건너뜀"이 다른 사실이라는 것을 값으로도 못 박는다.
+        assertThat(affected).hasValue((int) placeCount);
         assertThat(placeStatsRepository.count()).isEqualTo(placeCount);
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
                 .isCloseTo(1.0, within(0.000001));
@@ -512,12 +545,29 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 .executeUpdate();
         insertBookmark(placeA, 0);   // 재계산이 돌면 점수가 777이 아니라 1.0이 된다
 
-        OptionalInt affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Logger processorLogger = (Logger) LoggerFactory.getLogger(PlaceStatsBatchProcessor.class);
+        processorLogger.addAppender(appender);
+
+        OptionalInt affected;
+        try {
+            affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+        } finally {
+            processorLogger.detachAppender(appender);
+        }
 
         assertThat(affected).isEmpty();
         assertThat(placeStatsRepository.count()).isEqualTo(1);
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
                 .isCloseTo(777.0, within(0.000001));
+        // 운영자가 "생략, 320행"(정상)과 "생략, 1행"(이상)을 구분할 수 있어야 한다 — 수치가
+        // 로그에서 빠지면 생략 분기는 관측 불가능한 사건이 된다.
+        assertThat(appender.list)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> assertThat(message)
+                        .contains("생략")
+                        .contains("행 수=1"));
     }
 
     @Test
