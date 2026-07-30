@@ -46,6 +46,9 @@ public class PlaceReview extends BaseTimeEntity {
   @Column(name = "content", nullable = false, length = 500)
   private String content;
 
+  // 1~5 정수. primitive int가 아니라 Integer인 이유는 미설정 값을 드러내기 위해서다.
+  // int면 값을 안 넣었을 때 조용히 0이 되어 CHECK 제약 위반으로 터지지만,
+  // Integer는 null로 남아 NOT NULL 위반이 되므로 "안 넣었다"는 원인이 더 분명하다.
   @Column(name = "rating", nullable = false)
   private Integer rating;
 

@@ -128,6 +128,7 @@ public enum ErrorCode {
    FORBIDDEN_PLACE_REVIEW_DELETE(HttpStatus.FORBIDDEN, "PLACE-REVIEW-006", "본인이 작성한 리뷰만 삭제할 수 있습니다."),
    FORBIDDEN_SELF_REVIEW_REPORT(HttpStatus.FORBIDDEN, "PLACE-REVIEW-007", "본인이 작성한 리뷰는 신고할 수 없습니다."),
    ALREADY_REPORTED_REVIEW(HttpStatus.CONFLICT, "PLACE-REVIEW-008", "이미 신고한 리뷰입니다."),
+   INVALID_PLACE_REVIEW_RATING(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-009", "평점은 1점 이상 5점 이하여야 합니다."),
     ;
 
 

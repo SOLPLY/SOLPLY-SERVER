@@ -39,6 +39,8 @@ import org.springframework.util.StringUtils;
 public class PlaceReviewServiceImpl implements PlaceReviewService {
 
   private static final int MAX_IMAGE_COUNT = 5;
+  private static final int MIN_RATING = 1;
+  private static final int MAX_RATING = 5;
 
   private final PlaceReviewRepository placeReviewRepository;
   private final UserRepository userRepository;
@@ -105,6 +107,13 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     validateVisitedAt(request.visitedAt());
     validateContent(request.content());
     validateImages(request.imageKeys());
+    validateRating(request.rating());
+  }
+
+  private void validateRating(Integer rating) {
+    if (rating == null || rating < MIN_RATING || rating > MAX_RATING) {
+      throw new BusinessValidationException(ErrorCode.INVALID_PLACE_REVIEW_RATING);
+    }
   }
 
   private void validateVisitedAt(LocalDate visitedAt) {

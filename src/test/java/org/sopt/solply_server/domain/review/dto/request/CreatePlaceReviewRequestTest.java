@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.sopt.solply_server.domain.review.entity.VisitTime;
 
 class CreatePlaceReviewRequestTest {
@@ -49,10 +51,9 @@ class CreatePlaceReviewRequestTest {
     assertThat(violatedFields(requestWithRating(6))).contains("rating");
   }
 
-  @Test
-  void 평점_1에서_5는_검증을_통과한다() {
-    for (int rating = 1; rating <= 5; rating++) {
-      assertThat(violatedFields(requestWithRating(rating))).isEmpty();
-    }
+  @ParameterizedTest
+  @ValueSource(ints = {1, 2, 3, 4, 5})
+  void 평점_1에서_5는_검증을_통과한다(int rating) {
+    assertThat(violatedFields(requestWithRating(rating))).isEmpty();
   }
 }
