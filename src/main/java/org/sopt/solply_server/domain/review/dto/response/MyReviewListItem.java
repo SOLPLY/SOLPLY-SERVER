@@ -17,7 +17,8 @@ public record MyReviewListItem(
     LocalDate visitedAt,
     VisitTime visitTimeSlot,
     String content,
-    List<String> imageUrls
+    List<String> imageUrls,
+    Integer rating
 ) {
   public static MyReviewListItem from(
       PlaceReview review,
@@ -50,7 +51,8 @@ public record MyReviewListItem(
         review.getVisitedAt(),
         review.getVisitTimeSlot(),
         review.getContent(),
-        imageUrls
+        imageUrls,
+        review.getRating()
     );
   }
 }

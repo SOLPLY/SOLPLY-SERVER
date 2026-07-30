@@ -16,7 +16,7 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @Table(
         name = "place_reviews",
         indexes = {
-                @Index(name = "idx_place_reviews_place_id_created_at", columnList = "place_id, created_at DESC"),
+                @Index(name = "idx_place_reviews_place_created_rating", columnList = "place_id, created_at, rating"),
                 @Index(name = "idx_place_reviews_user_id_created_at", columnList = "user_id, created_at DESC")
         }
 )
@@ -46,6 +46,9 @@ public class PlaceReview extends BaseTimeEntity {
   @Column(name = "content", nullable = false, length = 500)
   private String content;
 
+  @Column(name = "rating", nullable = false)
+  private Integer rating;
+
   @OneToMany(mappedBy = "placeReview", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<PlaceReviewImage> placeReviewImages = new ArrayList<>();
 
@@ -55,13 +58,15 @@ public class PlaceReview extends BaseTimeEntity {
       Place place,
       LocalDate visitedAt,
       VisitTime visitTimeSlot,
-      String content
+      String content,
+      Integer rating
   ) {
     this.user = user;
     this.place = place;
     this.visitedAt = visitedAt;
     this.visitTimeSlot = visitTimeSlot;
     this.content = content;
+    this.rating = rating;
   }
 
   public static PlaceReview create(
@@ -69,7 +74,8 @@ public class PlaceReview extends BaseTimeEntity {
       Place place,
       LocalDate visitedAt,
       VisitTime visitTimeSlot,
-      String content
+      String content,
+      Integer rating
   ) {
     return PlaceReview.builder()
         .user(user)
@@ -77,6 +83,7 @@ public class PlaceReview extends BaseTimeEntity {
         .visitedAt(visitedAt)
         .visitTimeSlot(visitTimeSlot)
         .content(content)
+        .rating(rating)
         .build();
   }
 

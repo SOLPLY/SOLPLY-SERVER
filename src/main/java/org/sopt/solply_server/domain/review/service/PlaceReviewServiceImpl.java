@@ -62,7 +62,8 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
         place,
         request.visitedAt(),
         request.visitTimeSlot(),
-        request.content().trim()
+        request.content().trim(),
+        request.rating()
     );
 
     PlaceReview savedPlaceReview = placeReviewRepository.save(placeReview);

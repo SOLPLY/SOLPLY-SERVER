@@ -1,5 +1,7 @@
 package org.sopt.solply_server.domain.review.dto.request;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
@@ -24,6 +26,11 @@ public record CreatePlaceReviewRequest(
     @Size(min = 10, max = 500, message = "오늘의 기록은 10자 이상 500자 이하여야 합니다.")
     String content,
 
-    List<String> imageKeys
+    List<String> imageKeys,
+
+    @NotNull(message = "평점은 필수입니다.")
+    @Min(value = 1, message = "평점은 1점 이상이어야 합니다.")
+    @Max(value = 5, message = "평점은 5점 이하여야 합니다.")
+    Integer rating
 ) {
 }
