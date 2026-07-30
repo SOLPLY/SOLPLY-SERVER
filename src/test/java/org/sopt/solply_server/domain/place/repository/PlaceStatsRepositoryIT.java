@@ -26,6 +26,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 엔티티↔스키마 불일치를 전혀 잡지 못한다. 이 IT만 의도적으로 validate를 쓴다 —
  * 운영의 ddl-auto: validate와 같은 조건이라, 부팅을 막는 타입 불일치를 빌드에서 걸러낸다.
  * ddl-auto 값을 none으로 바꾸면 이 클래스의 존재 이유가 사라진다.
+ *
+ * <p><b>실패를 만났다면:</b> validate는 place_stats만이 아니라 <em>전 엔티티 모델</em>을 검증한다.
+ * 이 IT가 유일하게 validate로 도는 탓에, place_stats와 무관한 엔티티의 매핑 실수도 여기서 터진다.
+ * 예외 메시지의 테이블·컬럼명을 먼저 확인할 것 — place_stats가 아닐 수 있다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -68,12 +72,12 @@ class PlaceStatsRepositoryIT {
         Object[] row = (Object[]) em.createNativeQuery(
                 "SELECT p.id, p.town_id, p.active FROM places p WHERE p.active = true ORDER BY p.id LIMIT 1")
                 .getSingleResult();
-        // active는 Boolean으로 받는다 — MySQL의 BOOLEAN은 TINYINT(1)이고,
-        // Connector/J가 tinyInt1isBit 기본값(true)에 따라 java.lang.Boolean으로 돌려준다.
+        // active는 드라이버 설정에 따라 타입이 갈린다 — MySQL의 BOOLEAN은 TINYINT(1)이고,
+        // Connector/J는 tinyInt1isBit 기본값(true)에서 Boolean을, false면 Number를 돌려준다. 둘 다 받는다.
         return new PlaceRow(
                 ((Number) row[0]).longValue(),
                 ((Number) row[1]).longValue(),
-                (Boolean) row[2]);
+                row[2] instanceof Boolean b ? b : ((Number) row[2]).intValue() != 0);
     }
 
     @Test
