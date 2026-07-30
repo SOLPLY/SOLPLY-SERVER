@@ -1,6 +1,7 @@
 # 벤치마크 전용 환경 (#379 북마크 인덱스 → 인기순 정렬 벤치로 확장)
 # - MySQL: 데이터+인덱스 전부 버퍼풀에 상주하도록 2G (디스크 I/O 노이즈 제거)
-# - 앱: bench-app 컨테이너가 기본 (부하 모델 기반 리소스 제한). 호스트 bootRun(run-app.sh)은 디버깅용
+# - 앱: bench-app-1/2 컨테이너 2대 + nginx LB(bench-lb) 구성. 호스트 bootRun(run-app.sh)은 디버깅용
+# - 부하는 항상 LB(localhost:8082)로 보낸다 — 개별 인스턴스 포트는 노출하지 않는다
 # 기동: ./gradlew bootJar && docker compose -f docker/docker-compose.bench.yml up -d --build
 services:
   bench-mysql:
@@ -34,16 +35,15 @@ services:
     cpus: 1
     mem_limit: 512m
 
-  bench-app:
-    # 부하 모델(MAU 10만/DAU 2만, 피크 120 req/s) 기준 실서버 체급 재현 (플랜 Task 10.5)
-    # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. Little's law: 120 req/s × 30ms ≈ 동시 ~4
-    container_name: solply-bench-app
+  # 부하 모델(DAU 2만, 예상 피크 22 req/s, 목표 120 req/s = 5.5배 헤드룸) 기준 실서버 체급 재현.
+  # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. 가용성을 위해 2대 + LB 구성이 고정 스펙이다.
+  # Little's law: 120 req/s × 30ms ≈ 동시 ~4
+  bench-app-1: &bench-app
+    container_name: solply-bench-app-1
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    ports:
-      - "8082:8082"
-    environment:
+    environment: &bench-app-env
       SPRING_DATASOURCE_URL: "jdbc:mysql://bench-mysql:3306/solply_bench_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8"
       SPRING_DATASOURCE_USERNAME: solplyuser
       SPRING_DATASOURCE_PASSWORD: solplyuserpwd
@@ -54,13 +54,35 @@ services:
       SERVER_TOMCAT_THREADS_MAX: "50"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "10"
       JAVA_TOOL_OPTIONS: "-Xmx1280m -XX:MaxMetaspaceSize=256m"
-      # v0 벤치 시: BENCH_APP_JSON='{"solply.place-list.popular-read-mode":"db"}' docker compose ... up -d bench-app
+      # v0 벤치 시: BENCH_APP_JSON='{"solply.place-list.popular-read-mode":"db"}' docker compose ... up -d
       SPRING_APPLICATION_JSON: ${BENCH_APP_JSON:-{}}
     cpus: 2
     mem_limit: 2g
     depends_on:
       - bench-mysql
       - bench-redis
+
+  bench-app-2:
+    <<: *bench-app
+    container_name: solply-bench-app-2
+    environment:
+      <<: *bench-app-env
+
+  # 부하는 항상 LB(8082)로 보낸다. 개별 인스턴스 직접 접근은 포트를 노출하지 않는다 —
+  # 실환경에서 클라이언트가 인스턴스를 지정할 수 없는 조건을 그대로 재현하기 위함.
+  bench-lb:
+    container_name: solply-bench-lb
+    image: nginx:1.27-alpine
+    ports:
+      - "8082:80"
+    volumes:
+      - ./nginx-bench.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - bench-app-1
+      - bench-app-2
+    # nginx는 upstream 호스트명을 설정 파싱 시점에 해석한다. 두 앱 컨테이너가 아직
+    # 생성되지 않은 순간에 뜨면 [emerg] host not found로 즉시 죽으므로 자동 복구시킨다.
+    restart: unless-stopped
 
 volumes:
   solply-bench-mysql-data:
