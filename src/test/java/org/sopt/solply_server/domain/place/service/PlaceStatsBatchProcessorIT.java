@@ -695,10 +695,19 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      *
      * <p>점수는 {@link #statsOf}가 읽은 엔티티 값과 대조한다. 상수 1.0을 쓰면 "뷰가 옮겼는가"가
      * 아니라 "배치 계산이 맞는가"를 또 한 번 보는 셈이고, 그건 이미 위쪽 테스트들의 몫이다.
+     *
+     * <p><b>북마크를 2건 넣는 이유 — 줄이지 말 것.</b> 1건이면 {@code bookmarkCount}가 1이 되는데
+     * 시드 첫 장소의 id도 1이라({@code V2__create_initial_data.sql}) 두 컴포넌트의 기대값이
+     * 우연히 같아진다. 그러면 이 둘을 뒤바꾸는 회귀를 <b>값으로는</b> 구분할 수 없다.
+     * 지금은 {@code Long}/{@code int} 타입 차이 덕에 하이버네이트가 부팅 시
+     * {@code SemanticException: Missing constructor}로 걸러 주지만(실측), 그건 record 컴포넌트
+     * 타입에 딸린 우연이지 이 테스트가 보장하는 성질이 아니다 — 나중에 둘 다 {@code long}이 되면
+     * 그 그물이 사라진다. 2건이면 기대값이 2와 1로 갈려 값만으로 구분된다.
      */
     @Test
     void 뷰_조회는_배치가_저장한_점수와_카운트와_기준시각을_그대로_돌려준다() {
         insertBookmark(placeA, 0);
+        insertBookmark(placeA, 90);   // 호출마다 새 유저를 만들므로 uk_bookmark_user_target 충돌 없음
         runBatch();
 
         List<PlaceStatsView> views = placeStatsRepository.findViewsByPlaceIds(List.of(placeA));
@@ -707,7 +716,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         PlaceStatsView view = views.get(0);
         assertThat(view.placeId()).isEqualTo(placeA);
         assertThat(view.score()).isEqualTo(statsOf(placeA).getPopularScore().doubleValue());
-        assertThat(view.bookmarkCount()).isEqualTo(1);
+        assertThat(view.bookmarkCount()).isEqualTo(2);
         assertThat(view.calculatedAt()).isEqualTo(CALCULATED_AT);
     }
 

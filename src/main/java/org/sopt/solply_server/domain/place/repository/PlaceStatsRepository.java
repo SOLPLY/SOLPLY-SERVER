@@ -179,7 +179,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             @Param("halfLifeDays") double halfLifeDays);
 
     /**
-     * 요청 경로의 점수·카운트 조회. PK IN 조회라 후보 수(동네 병합 최대 ~1,800)에 선형이고
+     * 요청 경로의 점수·카운트 조회. PK IN 조회라 후보 수(시 단위 병합 최대 ~1,800)에 선형이고
      * 북마크 수와는 무관하다. 배치와의 경합 없음 — 근거는 {@link #upsertAll} javadoc.
      */
     @Query("""
