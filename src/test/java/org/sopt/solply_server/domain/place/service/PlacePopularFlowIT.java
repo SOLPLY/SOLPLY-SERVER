@@ -10,6 +10,8 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
+import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
 import org.sopt.solply_server.domain.place.cache.TownPlacesCache;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -55,6 +57,8 @@ class PlacePopularFlowIT extends MySqlContainerSupport {
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private TownPlacesCache townPlacesCache;
     @Autowired private JdbcTemplate jdbcTemplate;
+    /** 증분 이벤트의 발행 주체. 리포지토리를 직접 부르면 "발행 가드"와 배선이 검증에서 빠진다. */
+    @Autowired private BookmarkService bookmarkService;
 
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
@@ -139,7 +143,106 @@ class PlacePopularFlowIT extends MySqlContainerSupport {
         assertThat(b.isBookmarked()).isTrue();
     }
 
+    /**
+     * 증분의 실제 이익("배치 이후에도 카운트가 는다")과 그 대가를 막는 계약("보정과 겹치지 않는다")을
+     * 한 테스트에서 함께 본다. 배치값 4에서 1건을 더 눌렀을 때 답은 <b>5</b>다.
+     *
+     * <p>6이 나오면 증분이 {@code calculated_at}을 전진시키지 못한 것이다 —
+     * 그 순간 {@code PlaceDisplayCount.correct}가 "배치 이후에 눌린 북마크"로 보고 +1을 더해
+     * 같은 1건이 두 번 세어진다. 이 단언이 {@code incrementBookmark}의 GREATEST 줄과
+     * {@code CAST(... AS DATETIME)}을 동시에 문다.
+     */
+    @Test
+    void 배치_이후_북마크는_증분으로_반영되고_보정과_이중_계산되지_않는다() throws Exception {
+        long userNew = createUser();
+        assertThat(bookmarkCountInDb(placeA)).isEqualTo(4);   // 사전 조건을 값으로 못 박는다
+
+        bookmarkService.create(userNew, BookmarkTargetType.PLACE, placeA);
+
+        awaitUntil(() -> bookmarkCountInDb(placeA) == 5);
+
+        PlacePreviewDto a = previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA);
+        assertThat(a.bookmarkCount()).isEqualTo(5);
+        assertThat(a.isBookmarked()).isTrue();
+    }
+
+    /**
+     * 취소 즉시 반영이 이 기능을 만든 이유고, 배치 재대사가 그 대가(유실·중복 드리프트)를 갚는 장치다.
+     *
+     * <p>플랜 초안은 placeB를 썼으나 placeB의 배치값은 이미 5라(남 4 + 나 1) 첫 {@code awaitUntil}이
+     * 증분 도달 전에 참이 되어 아무것도 검증하지 못한다. 배치값 4인 placeA로 바꿔 4→5→4를 본다.
+     */
+    @Test
+    void 취소는_즉시_반영되고_배치_재실행은_증분_드리프트를_재대사한다() throws Exception {
+        long userNew = createUser();
+        bookmarkService.create(userNew, BookmarkTargetType.PLACE, placeA);
+        awaitUntil(() -> bookmarkCountInDb(placeA) == 5);
+
+        bookmarkService.delete(userNew, BookmarkTargetType.PLACE, placeA);
+
+        awaitUntil(() -> bookmarkCountInDb(placeA) == 4);   // 취소 즉시 반영 — 증분의 실이익
+
+        // 재대사: 원본 기준으로 다시 세면 증분이 남긴 흔적과 무관하게 같은 값에 수렴한다
+        batchProcessor.recalculateAll(CALCULATED_AT.plusDays(1));
+        assertThat(bookmarkCountInDb(placeA)).isEqualTo(4);
+    }
+
+    /**
+     * {@code BookmarkService.create}의 {@code type == PLACE} 발행 가드를 문다.
+     * {@code bookmarks.target_id}는 PLACE와 COURSE가 숫자 공간을 공유하므로, 가드를 지우면
+     * 코스 북마크가 <b>같은 id의 장소</b> 카운트를 올린다
+     * (배치 쪽 동일 계약: {@code 코스_북마크는_같은_id의_장소_점수에_섞이지_않는다}).
+     *
+     * <p>{@code awaitUntil}이 아니라 고정 대기인 이유: 검증 대상이 "도달함"이 아니라
+     * <b>"도달하지 않음"</b>이라 기다릴 조건이 없다. 500ms는 같은 스위트의 증분이 수십 ms 안에
+     * 반영되는 것을 관측한 데서 잡은 여유다.
+     */
+    @Test
+    void 코스_북마크는_같은_id_장소의_카운트를_증분하지_않는다() throws Exception {
+        createCourseWithId(placeA);   // validatorRegistry가 존재를 검사하므로 실제 행이 필요하다
+        int before = bookmarkCountInDb(placeA);
+
+        bookmarkService.create(createUser(), BookmarkTargetType.COURSE, placeA);
+        Thread.sleep(500);
+
+        assertThat(bookmarkCountInDb(placeA)).isEqualTo(before);
+    }
+
     // === helpers ===
+
+    /**
+     * {@code @Async} 증분이 반영될 때까지 폴링. 5초 타임아웃 — 실패 시 그 자체가 배선 단절의 증거다
+     * (리스너의 {@code @TransactionalEventListener}나 발행 한 줄이 빠지면 여기서 걸린다).
+     * awaitility를 새로 들이지 않는 것은 이 한 곳에서만 쓰기 때문이다.
+     */
+    private void awaitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (!condition.getAsBoolean()) {
+            if (System.currentTimeMillis() > deadline) {
+                org.junit.jupiter.api.Assertions.fail("5초 내 비동기 증분 미반영");
+            }
+            Thread.sleep(50);
+        }
+    }
+
+    /** place_stats의 원시 카운트. 행이 없으면 −1 (기대값과 절대 겹치지 않는 센티널) */
+    private int bookmarkCountInDb(long placeId) {
+        List<Integer> rows = jdbcTemplate.queryForList(
+                "SELECT bookmark_count FROM place_stats WHERE place_id = ?", Integer.class, placeId);
+        return rows.isEmpty() ? -1 : rows.get(0);
+    }
+
+    /**
+     * 장소와 <b>같은 id</b>의 코스를 만든다 — 그래야 target_id 혼동을 재현할 수 있다.
+     * courses.id는 AUTO_INCREMENT지만 명시 지정이 가능하다. 이미 그 id의 코스가 있으면
+     * (시드 데이터와 충돌한 경우) 그대로 두고 쓴다 — 뒷정리는 town_id 기준이라 남의 행을 지우지 않는다.
+     */
+    private void createCourseWithId(long id) {
+        jdbcTemplate.update("""
+                INSERT INTO courses (id, name, introduction, is_shared, town_id, active, created_at)
+                VALUES (?, '사슬IT코스', '사슬IT', true, ?, true, ?)
+                ON DUPLICATE KEY UPDATE id = id""", id, townId, CALCULATED_AT.minusDays(1));
+    }
 
     private PlaceFilterGetRequest popularRequest(String cursor, Integer size) {
         return new PlaceFilterGetRequest(
@@ -229,7 +332,17 @@ class PlacePopularFlowIT extends MySqlContainerSupport {
             st.executeUpdate(
                     "DELETE FROM bookmarks WHERE target_type = 'PLACE' AND target_id IN ("
                             + myPlaces + ")");
+            // 코스 북마크: createCourseWithId가 장소와 같은 id로 코스를 만들므로 target_id도 내 장소 id다.
+            // 남기면 뒤의 users DELETE가 fk_bookmarks_user에 걸려 뒷정리 전체가 실패한다.
+            st.executeUpdate(
+                    "DELETE FROM bookmarks WHERE target_type = 'COURSE' AND target_id IN ("
+                            + myPlaces + ")");
             st.executeUpdate("DELETE FROM place_reviews WHERE place_id IN (" + myPlaces + ")");
+            // courses는 towns를 FK로 참조하므로 towns보다 먼저 지운다. town_id 기준이라
+            // 우연히 같은 id를 갖는 시드 코스는 건드리지 않는다.
+            st.executeUpdate(
+                    "DELETE FROM courses WHERE town_id IN (SELECT id FROM towns WHERE name = '"
+                            + TOWN_NAME + "')");
             st.executeUpdate(
                     "DELETE FROM places WHERE town_id IN (SELECT id FROM towns WHERE name = '"
                             + TOWN_NAME + "')");
