@@ -48,6 +48,15 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p><b>증분이 아니라 전량 재계산인 이유:</b> 이벤트 유실·중복 컨슈밍·배포 중 재시작 누락이
      * 전부 다음 1회로 씻긴다. drift가 원리적으로 불가능하므로 별도의 정합성 보정 배치가
      * 필요 없고, 다중 인스턴스가 동시에 돌려도 결과가 같아 리더 선출도 필요 없다.
+     * 2026-07-31부터 카운트 두 개는 이벤트 증분({@link #incrementBookmark} 외 3개)도 만지지만,
+     * 그건 회차 사이의 패치일 뿐 <b>권위는 여전히 이 문장</b>이다 — 증분의 드리프트를 재대사하는 것이
+     * 이 배치의 두 번째 역할이 됐다.
+     *
+     * <p><b>calculated_at을 GREATEST가 아니라 {@code = :calculatedAt}으로 SET하는 것은 의도다.</b>
+     * 증분({@link #incrementBookmark})이 전진시킨 값보다 과거로 후퇴할 수 있는데, 배치는 자기 기준 시각
+     * 이하만 센 값이므로 이게 정확하다 — 배치 실행 창에 생긴 북마크의 증분은 이 UPSERT가 덮어쓰며,
+     * 그 사용자의 표시는 보정(+1)이 다시 커버한다. GREATEST로 바꾸면 그 보정이 물러나 카운트가
+     * 1 낮게 보인다. (설계 §2.5 재검토의 비대칭 표)
      *
      * <p><b>평점을 3점 중심화하는 이유:</b> 합(Σ) 형태라 원값을 쓰면 1점 리뷰도 점수를 올려
      * 평점 낮은 장소가 리뷰 수만으로 상위에 오른다. (rating − 3)이면 나쁜 평가가 순위를 끌어내린다.
@@ -189,6 +198,86 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             @Param("bookmarkWeight") double bookmarkWeight,
             @Param("reviewWeight") double reviewWeight,
             @Param("halfLifeDays") double halfLifeDays);
+
+    /**
+     * 북마크 생성 증분. 행이 없으면(배치가 아직 안 닿은 신규 장소) 생성한다 — 점수 0은 정답이다.
+     * calculated_at은 GREATEST로 전진만 한다: 내 증분이 반영된 순간 표시 보정(+1)이 자동으로
+     * 물러나고, 반영 전 공백은 보정이 덮는다 (설계 §2.5 재검토의 수렴 논거).
+     *
+     * <p><b>{@code CAST(:bookmarkedAt AS DATETIME)}은 장식이 아니다 — 지우면 이중 계산이 돌아온다.</b>
+     * {@code bookmarks.created_at}은 {@code DATETIME}(fsp 0, V1)인데 여기 {@code calculated_at}은
+     * {@code DATETIME(6)}(V24)이다. 같은 {@code LocalDateTime}을 양쪽에 넣어도 저장되는 값이
+     * 달라져(북마크 쪽은 초 단위로 반올림, 이쪽은 마이크로초까지 보존) 초의 소수부가 0.5 이상인
+     * 절반의 경우 {@code bookmarks.created_at > place_stats.calculated_at}이 된다. 그러면
+     * {@code PlaceDisplayCount.correct}의 {@code myBookmarkedAt.isAfter(calculatedAt)}이 참이 되어
+     * 이미 증분에 반영된 내 북마크에 +1이 또 붙는다. CAST가 북마크 행이 실제로 저장할 값과
+     * 같은 값을 넣어 그 틈을 없앤다 — {@code 증분의_calculated_at은_북마크_행의_created_at과_같다}가
+     * 이 성질을 DB에 직접 물어 못 박는다.
+     *
+     * <p>{@code VALUES(calculated_at)}은 SELECT 식의 결과, 즉 CAST를 <em>거친</em> 값을 돌려주므로
+     * INSERT 경로와 UPDATE 경로가 같은 값을 쓴다.
+     *
+     * @param placeId      장소 id. COURSE 북마크는 이 경로로 오면 안 된다 (발행측 가드가 막는다)
+     * @param bookmarkedAt 북마크 행의 {@code created_at}. 다른 시각을 넣으면 위 수렴 논거가 깨진다
+     * @return 영향 행 수 (INSERT 1 / UPDATE 2). 장소가 없으면 0
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        INSERT INTO place_stats (
+            place_id, town_id, active, popular_score,
+            bookmark_count, review_count, avg_rating, calculated_at)
+        SELECT p.id, p.town_id, p.active, 0, 1, 0, NULL, CAST(:bookmarkedAt AS DATETIME)
+        FROM places p WHERE p.id = :placeId
+        ON DUPLICATE KEY UPDATE
+            bookmark_count = bookmark_count + 1,
+            calculated_at  = GREATEST(calculated_at, VALUES(calculated_at))
+        """, nativeQuery = true)
+    int incrementBookmark(@Param("placeId") Long placeId,
+            @Param("bookmarkedAt") LocalDateTime bookmarkedAt);
+
+    /**
+     * 북마크 취소 감분 — 카운트만. calculated_at 불변(전진할수록 유실된 타인 생성 이벤트를 덮는다),
+     * GREATEST 바닥 0(유실된 생성 + 도달한 삭제 조합의 음수 방지). 행이 없으면 no-op.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE place_stats
+           SET bookmark_count = GREATEST(bookmark_count - 1, 0)
+         WHERE place_id = :placeId
+        """, nativeQuery = true)
+    int decrementBookmark(@Param("placeId") Long placeId);
+
+    /**
+     * 리뷰 생성 증분 — review_count만. avg_rating·popular_score·기존 calculated_at은 배치 몫이다
+     * (리뷰 카운트에는 표시 보정 계약이 없어 전진시킬 이유가 없고, 전진시키면 유실된 타인의
+     * 북마크 생성 이벤트를 덮어 유실 창만 넓어진다 — 설계 §2.5 재검토의 비대칭 표).
+     *
+     * <p>행이 없을 때만 {@code :occurredAt}이 새 행의 calculated_at이 된다. 이 경로로 만들어진 행은
+     * "북마크 0건이 지금 기준으로 정산됐다"고 주장하게 되므로, 배치가 아직 닿지 않은 장소에
+     * 리뷰가 북마크보다 먼저 오면 기존 북마커의 +1 보정이 다음 배치까지 눌린다.
+     * 배치가 전 장소에 매일 행을 남기므로 대상은 "마지막 배치 이후 생성된 장소"뿐이다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        INSERT INTO place_stats (
+            place_id, town_id, active, popular_score,
+            bookmark_count, review_count, avg_rating, calculated_at)
+        SELECT p.id, p.town_id, p.active, 0, 0, 1, NULL, :occurredAt
+        FROM places p WHERE p.id = :placeId
+        ON DUPLICATE KEY UPDATE
+            review_count = review_count + 1
+        """, nativeQuery = true)
+    int incrementReview(@Param("placeId") Long placeId,
+            @Param("occurredAt") LocalDateTime occurredAt);
+
+    /** 리뷰 삭제 감분 — 규칙은 {@link #decrementBookmark}와 동일 */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE place_stats
+           SET review_count = GREATEST(review_count - 1, 0)
+         WHERE place_id = :placeId
+        """, nativeQuery = true)
+    int decrementReview(@Param("placeId") Long placeId);
 
     /**
      * 요청 경로의 점수·카운트 조회. PK IN 조회라 후보 수(시 단위 병합 최대 ~1,800)에 선형이고
