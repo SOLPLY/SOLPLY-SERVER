@@ -79,6 +79,8 @@ public class BookmarkService {
      *
      * <p>row 타입([Long, LocalDateTime])은 BookmarkRepositoryIT가 못 박아둔다 — 네이티브 쿼리에서
      * TINYINT(1)이 Boolean으로 와 ClassCastException이 난 전례가 있어 캐스팅을 추측으로 두지 않는다.
+     *
+     * <p>반환 맵은 불변이다 — 호출자 수정이 표시 카운트 보정의 입력을 오염시키는 것을 막는다.
      */
     public Map<Long, LocalDateTime> getMyBookmarkTimesMap(Long userId, BookmarkTargetType type,
             List<Long> targetIds) {
@@ -90,6 +92,7 @@ public class BookmarkService {
                 userId, type, targetIds)) {
             times.put((Long) row[0], (LocalDateTime) row[1]);
         }
-        return times;
+        // 값에 null이 없어 copyOf가 안전하다 — bookmarks.created_at은 NOT NULL이다
+        return Map.copyOf(times);
     }
 }
