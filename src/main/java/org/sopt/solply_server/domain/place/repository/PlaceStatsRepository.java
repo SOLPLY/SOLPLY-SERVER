@@ -59,7 +59,8 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      *
      * <p><b>⚠️ 반드시 {@code READ_COMMITTED} 트랜잭션 안에서 호출할 것.</b>
      * MySQL의 {@code INSERT ... SELECT}는 REPEATABLE READ(스프링 기본)에서 소스 테이블의 스캔 행에
-     * shared next-key 락을 건다. 북마크 1,073만 행 기준 실측:
+     * shared next-key 락을 건다. 북마크 10,399,466행 스캔 기준 실측 (아래 10,730,488은 행 수가
+     * 아니라 락 건수다 — next-key 락이라 갭 몫이 더해져 행 수보다 많다):
      * <pre>
      * ---TRANSACTION 2002, ACTIVE 198 sec
      * 28518 lock struct(s), heap size 4431992, 10730488 row lock(s)

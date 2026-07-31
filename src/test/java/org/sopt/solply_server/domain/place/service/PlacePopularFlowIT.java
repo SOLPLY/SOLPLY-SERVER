@@ -204,8 +204,9 @@ class PlacePopularFlowIT extends MySqlContainerSupport {
      *
      * <p><b>place_stats만 전량 삭제하는 이유.</b> {@code recalculateAll}은 내 장소가 아니라
      * <b>모든 장소</b>에 행을 남긴다. 그 행들을 남겨두면 place_stats가 비어 있음을 전제로 하는
-     * 다른 IT들이 깨진다 — {@code TownPlacesSnapshotLoaderIT.통계_행이_없는_장소는_0점_0건_계산시각_null로_채운다}와
-     * {@code PlaceStatsRepositoryIT}가 그렇다. 배치가 만든 행은 전부 이 테스트가 만든 것이므로
+     * 다른 IT들이 깨진다 — 현재는 {@code PlaceStatsRepositoryIT}가 그렇다
+     * ({@code TownPlacesSnapshotLoaderIT}도 그랬으나, 스냅샷이 place_stats를 더는 읽지 않게 되면서
+     * 해당 테스트가 사라졌다). 배치가 만든 행은 전부 이 테스트가 만든 것이므로
      * 전량 삭제가 곧 "내가 만든 것만 삭제"다. {@code PlaceStatsBatchProcessorIT}도 같은 이유로 같은 정리를 한다.
      *
      * <p><b>{@code @AfterAll} + {@code DriverManager}인 이유는 두 가지뿐이다.</b> (a) {@code @AfterAll}은

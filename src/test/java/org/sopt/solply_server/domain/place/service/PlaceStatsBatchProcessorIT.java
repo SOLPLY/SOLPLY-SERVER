@@ -548,8 +548,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /**
      * 최초 적재 진입점도 같은 계약을 진다. <b>이 커밋의 설계 논거 전체가 이 어노테이션 하나에
-     * 걸려 있다</b> — Flyway 백필을 기각한 이유가 "RR에서 {@code bookmarks} 1,073만 행에
-     * next-key 락"이었으므로, 여기서 RC가 사라지면 부팅 시 정확히 그 장애 모드가 재현된다.
+     * 걸려 있다</b> — Flyway 백필을 기각한 이유가 "RR에서 {@code bookmarks} 전 행에
+     * next-key 락(행 10,399,466 / 락 10,730,488건 — 갭 몫 포함)"이었으므로, 여기서 RC가
+     * 사라지면 부팅 시 정확히 그 장애 모드가 재현된다.
      * {@code @Transactional} 자체가 사라지면 백필이 조용히 한 번도 돌지 않는 상태가 된다.
      *
      * <p>격리는 {@code afterBegin} 시점 — 즉 <b>가드 실행 이전</b>에 관측되므로, place_stats가
