@@ -1,0 +1,163 @@
+{
+ "code": "200",
+ "data": {
+  "nextCursor": null,
+  "places": [
+   {
+    "bookmarkCount": 48264,
+    "isBookmarked": true,
+    "placeId": 10002,
+    "placeName": "벤치플레이스 10002",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10002.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 14973,
+    "isBookmarked": false,
+    "placeId": 10010,
+    "placeName": "벤치플레이스 10010",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10010.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 25816,
+    "isBookmarked": true,
+    "placeId": 10005,
+    "placeName": "벤치플레이스 10005",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10005.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 10651,
+    "isBookmarked": true,
+    "placeId": 10015,
+    "placeName": "벤치플레이스 10015",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10015.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 9773,
+    "isBookmarked": false,
+    "placeId": 10017,
+    "placeName": "벤치플레이스 10017",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10017.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 8325,
+    "isBookmarked": true,
+    "placeId": 10020,
+    "placeName": "벤치플레이스 10020",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10020.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 6551,
+    "isBookmarked": false,
+    "placeId": 10027,
+    "placeName": "벤치플레이스 10027",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10027.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 6021,
+    "isBookmarked": false,
+    "placeId": 10030,
+    "placeName": "벤치플레이스 10030",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10030.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 5546,
+    "isBookmarked": false,
+    "placeId": 10032,
+    "placeName": "벤치플레이스 10032",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10032.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 3697,
+    "isBookmarked": false,
+    "placeId": 10051,
+    "placeName": "벤치플레이스 10051",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10051.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 3496,
+    "isBookmarked": false,
+    "placeId": 10056,
+    "placeName": "벤치플레이스 10056",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10056.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 3000,
+    "isBookmarked": false,
+    "placeId": 10066,
+    "placeName": "벤치플레이스 10066",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10066.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 2861,
+    "isBookmarked": true,
+    "placeId": 10069,
+    "placeName": "벤치플레이스 10069",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10069.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 2426,
+    "isBookmarked": false,
+    "placeId": 10087,
+    "placeName": "벤치플레이스 10087",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10087.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 2469,
+    "isBookmarked": false,
+    "placeId": 10082,
+    "placeName": "벤치플레이스 10082",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10082.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 2178,
+    "isBookmarked": false,
+    "placeId": 10092,
+    "placeName": "벤치플레이스 10092",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10092.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 2084,
+    "isBookmarked": false,
+    "placeId": 10099,
+    "placeName": "벤치플레이스 10099",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10099.jpg",
+    "townId": 301
+   }
+  ]
+ },
+ "message": "장소 리스트 조회 성공",
+ "success": true
+}

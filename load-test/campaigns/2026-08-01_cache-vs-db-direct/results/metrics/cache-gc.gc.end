@@ -1,0 +1,12 @@
+solply-bench-app-1 jvm_gc_memory_allocated_bytes_total{application="solply-app"} 6.8822237168E10
+solply-bench-app-1 jvm_gc_pause_seconds_count{action="end of minor GC",application="solply-app",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 503
+solply-bench-app-1 jvm_gc_pause_seconds_sum{action="end of minor GC",application="solply-app",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 1.869
+solply-bench-app-1 jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Eden Space"} 9.437184E7
+solply-bench-app-1 jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Old Gen"} 8.0555616E7
+solply-bench-app-1 jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Survivor Space"} 740880.0
+solply-bench-app-2 jvm_gc_memory_allocated_bytes_total{application="solply-app"} 6.005089892E10
+solply-bench-app-2 jvm_gc_pause_seconds_count{action="end of minor GC",application="solply-app",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 383
+solply-bench-app-2 jvm_gc_pause_seconds_sum{action="end of minor GC",application="solply-app",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 1.758
+solply-bench-app-2 jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Eden Space"} 3.670016E7
+solply-bench-app-2 jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Old Gen"} 8.2841E7
+solply-bench-app-2 jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Survivor Space"} 1720528.0

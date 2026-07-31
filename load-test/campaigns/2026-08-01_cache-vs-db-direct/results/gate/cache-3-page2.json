@@ -1,0 +1,190 @@
+{
+ "code": "200",
+ "data": {
+  "nextCursor": "djI6UE9QVUxBUjo3NjM1Ljg4NjIwMzoxMDAwNw",
+  "places": [
+   {
+    "bookmarkCount": 30355,
+    "isBookmarked": true,
+    "placeId": 10004,
+    "placeName": "벤치플레이스 10004",
+    "primaryTag": "서점/책방",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10004.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 28670,
+    "isBookmarked": true,
+    "placeId": 11201,
+    "placeName": "벤치플레이스 11201",
+    "primaryTag": "서점/책방",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p11201.jpg",
+    "townId": 313
+   },
+   {
+    "bookmarkCount": 27205,
+    "isBookmarked": true,
+    "placeId": 10202,
+    "placeName": "벤치플레이스 10202",
+    "primaryTag": "서점/책방",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10202.jpg",
+    "townId": 303
+   },
+   {
+    "bookmarkCount": 27125,
+    "isBookmarked": true,
+    "placeId": 11302,
+    "placeName": "벤치플레이스 11302",
+    "primaryTag": "쇼핑",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p11302.jpg",
+    "townId": 314
+   },
+   {
+    "bookmarkCount": 26852,
+    "isBookmarked": true,
+    "placeId": 10904,
+    "placeName": "벤치플레이스 10904",
+    "primaryTag": "음식",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10904.jpg",
+    "townId": 310
+   },
+   {
+    "bookmarkCount": 14973,
+    "isBookmarked": false,
+    "placeId": 10010,
+    "placeName": "벤치플레이스 10010",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10010.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 28552,
+    "isBookmarked": false,
+    "placeId": 11101,
+    "placeName": "벤치플레이스 11101",
+    "primaryTag": "이색공간",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p11101.jpg",
+    "townId": 312
+   },
+   {
+    "bookmarkCount": 25816,
+    "isBookmarked": true,
+    "placeId": 10005,
+    "placeName": "벤치플레이스 10005",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10005.jpg",
+    "townId": 301
+   },
+   {
+    "bookmarkCount": 24989,
+    "isBookmarked": true,
+    "placeId": 11003,
+    "placeName": "벤치플레이스 11003",
+    "primaryTag": "음식",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p11003.jpg",
+    "townId": 311
+   },
+   {
+    "bookmarkCount": 24004,
+    "isBookmarked": true,
+    "placeId": 10702,
+    "placeName": "벤치플레이스 10702",
+    "primaryTag": "음식",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10702.jpg",
+    "townId": 308
+   },
+   {
+    "bookmarkCount": 23862,
+    "isBookmarked": true,
+    "placeId": 10802,
+    "placeName": "벤치플레이스 10802",
+    "primaryTag": "산책",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10802.jpg",
+    "townId": 309
+   },
+   {
+    "bookmarkCount": 25210,
+    "isBookmarked": true,
+    "placeId": 10504,
+    "placeName": "벤치플레이스 10504",
+    "primaryTag": "카페",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10504.jpg",
+    "townId": 306
+   },
+   {
+    "bookmarkCount": 22544,
+    "isBookmarked": true,
+    "placeId": 10301,
+    "placeName": "벤치플레이스 10301",
+    "primaryTag": "산책",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10301.jpg",
+    "townId": 304
+   },
+   {
+    "bookmarkCount": 23860,
+    "isBookmarked": true,
+    "placeId": 10102,
+    "placeName": "벤치플레이스 10102",
+    "primaryTag": "서점/책방",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10102.jpg",
+    "townId": 302
+   },
+   {
+    "bookmarkCount": 21228,
+    "isBookmarked": false,
+    "placeId": 10505,
+    "placeName": "벤치플레이스 10505",
+    "primaryTag": "산책",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10505.jpg",
+    "townId": 306
+   },
+   {
+    "bookmarkCount": 12026,
+    "isBookmarked": false,
+    "placeId": 11203,
+    "placeName": "벤치플레이스 11203",
+    "primaryTag": "이색공간",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p11203.jpg",
+    "townId": 313
+   },
+   {
+    "bookmarkCount": 22966,
+    "isBookmarked": true,
+    "placeId": 10905,
+    "placeName": "벤치플레이스 10905",
+    "primaryTag": "이색공간",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10905.jpg",
+    "townId": 310
+   },
+   {
+    "bookmarkCount": 20358,
+    "isBookmarked": false,
+    "placeId": 10402,
+    "placeName": "벤치플레이스 10402",
+    "primaryTag": "서점/책방",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10402.jpg",
+    "townId": 305
+   },
+   {
+    "bookmarkCount": 20080,
+    "isBookmarked": true,
+    "placeId": 11303,
+    "placeName": "벤치플레이스 11303",
+    "primaryTag": "이색공간",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p11303.jpg",
+    "townId": 314
+   },
+   {
+    "bookmarkCount": 20039,
+    "isBookmarked": true,
+    "placeId": 10007,
+    "placeName": "벤치플레이스 10007",
+    "primaryTag": "서점/책방",
+    "thumbnailImageUrl": "https://d2ga1f2858oj5h.cloudfront.net/bench/p10007.jpg",
+    "townId": 301
+   }
+  ]
+ },
+ "message": "장소 리스트 조회 성공",
+ "success": true
+}
