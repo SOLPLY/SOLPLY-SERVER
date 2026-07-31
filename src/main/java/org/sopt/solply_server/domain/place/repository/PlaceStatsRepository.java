@@ -28,35 +28,27 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 누르지 않았다면"이라는 사실상 성립하지 않는 조건부 주장이 된다. 상한을 지우지 말 것 —
      * 잃는 것은 성능이 아니라 이 문장의 참/거짓이다.
      *
-     * <p><b>상한이 없으면 값이 두 방향으로 틀어진다.</b>
-     * <ul>
-     *   <li><b>표시 카운트 이중 계산:</b> {@code PlaceDisplayCount.correct}는 "{@code bookmark_count}는
-     *       {@code calculated_at} 이하의 북마크만 센 값"을 전제로 {@code myBookmarkedAt > calculatedAt}일 때
-     *       +1을 한다. 상한이 없으면 배치 커밋 이후에 생긴 북마크가 이미 {@code COUNT(*)}에 들어가 있어
-     *       같은 1건이 두 번 반영된다 (배치 02:00 · 내 북마크 02:30 → 실제 4건인데 5로 표시).</li>
-     *   <li><b>감쇠가 아니라 증폭:</b> {@code created_at > calculatedAt}이면
-     *       {@code TIMESTAMPDIFF}가 음수라 {@code POW(0.5, 음수) > 1}이 된다. 미래 시각 활동이 가중치보다
-     *       큰 기여를 하는 셈이다 (실측: 오늘 북마크 4건이 {@code 4.00016}).</li>
-     * </ul>
+     * <p><b>상한이 없으면 감쇠가 아니라 증폭이 된다.</b> {@code created_at > calculatedAt}이면
+     * {@code TIMESTAMPDIFF}가 음수라 {@code POW(0.5, 음수) > 1}이 된다. 미래 시각 활동이 가중치보다
+     * 큰 기여를 하는 셈이다 (실측: 오늘 북마크 4건이 {@code 4.00016}).
+     *
+     * <p>2026-07-31 이전에는 표시 카운트 보정({@code PlaceDisplayCount})이 "{@code bookmark_count}는
+     * {@code calculated_at} 이하만 센 값"이라는 이 상한의 성질에 기대어 +1을 붙였다. 이벤트 증분이
+     * 들어오면서 그 보정을 걷어냈으므로 <b>지금 상한을 지탱하는 근거는 위 증폭과 멱등성 둘뿐</b>이다.
      *
      * <p>대신 "{@code calculatedAt} 이후에 생긴 활동은 이번 세대에 반영되지 않는다"가 성립한다.
      * 이 배치는 애초에 최대 24시간 stale을 수용하는 2급 데이터이고, 스캔 시작~커밋 사이에 들어온
      * 활동을 어차피 다음 회차로 미루고 있었다. 상한은 그 경계를 "커밋 시점"이라는 관측 불가능한
-     * 값에서 {@code calculatedAt}이라는 기록된 값으로 옮길 뿐이다 — 그래서 읽기 경로의 보정이
-     * 그 경계를 근거로 삼을 수 있게 된다.
+     * 값에서 {@code calculatedAt}이라는 기록된 값으로 옮길 뿐이다 — 그래서 이 배치의 멱등성을
+     * 조건 없이 주장할 수 있게 된다.
      *
      * <p><b>증분이 아니라 전량 재계산인 이유:</b> 이벤트 유실·중복 컨슈밍·배포 중 재시작 누락이
      * 전부 다음 1회로 씻긴다. drift가 원리적으로 불가능하므로 별도의 정합성 보정 배치가
      * 필요 없고, 다중 인스턴스가 동시에 돌려도 결과가 같아 리더 선출도 필요 없다.
      * 2026-07-31부터 카운트 두 개는 이벤트 증분({@link #incrementBookmark} 외 3개)도 만지지만,
-     * 그건 회차 사이의 패치일 뿐 <b>권위는 여전히 이 문장</b>이다 — 증분의 드리프트를 재대사하는 것이
-     * 이 배치의 두 번째 역할이 됐다.
-     *
-     * <p><b>calculated_at을 GREATEST가 아니라 {@code = :calculatedAt}으로 SET하는 것은 의도다.</b>
-     * 증분({@link #incrementBookmark})이 전진시킨 값보다 과거로 후퇴할 수 있는데, 배치는 자기 기준 시각
-     * 이하만 센 값이므로 이게 정확하다 — 배치 실행 창에 생긴 북마크의 증분은 이 UPSERT가 덮어쓰며,
-     * 그 사용자의 표시는 보정(+1)이 다시 커버한다. GREATEST로 바꾸면 그 보정이 물러나 카운트가
-     * 1 낮게 보인다. (설계 §2.5 재검토의 비대칭 표)
+     * 그건 회차 사이의 패치일 뿐 <b>권위는 여전히 이 문장</b>이다 — 증분의 드리프트(유실·중복)를
+     * 재대사하는 것이 이 배치의 두 번째 역할이 됐다. 증분은 카운트 두 개만 만지고
+     * {@code calculated_at}을 포함한 나머지는 전부 이 UPSERT가 정한다.
      *
      * <p><b>평점을 3점 중심화하는 이유:</b> 합(Σ) 형태라 원값을 쓰면 1점 리뷰도 점수를 올려
      * 평점 낮은 장소가 리뷰 수만으로 상위에 오른다. (rating − 3)이면 나쁜 평가가 순위를 끌어내린다.
@@ -200,25 +192,20 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             @Param("halfLifeDays") double halfLifeDays);
 
     /**
-     * 북마크 생성 증분. 행이 없으면(배치가 아직 안 닿은 신규 장소) 생성한다 — 점수 0은 정답이다.
-     * calculated_at은 GREATEST로 전진만 한다: 내 증분이 반영된 순간 표시 보정(+1)이 자동으로
-     * 물러나고, 반영 전 공백은 보정이 덮는다 (설계 §2.5 재검토의 수렴 논거).
+     * 북마크 생성 증분 — {@code bookmark_count}만 +1. 행이 없으면(배치가 아직 안 닿은 신규 장소)
+     * 만든다. 점수 0은 오답이 아니라 "아직 배치가 안 셌다"는 정확한 표현이다.
      *
-     * <p><b>{@code CAST(:bookmarkedAt AS DATETIME)}은 장식이 아니다 — 지우면 이중 계산이 돌아온다.</b>
-     * {@code bookmarks.created_at}은 {@code DATETIME}(fsp 0, V1)인데 여기 {@code calculated_at}은
-     * {@code DATETIME(6)}(V24)이다. 같은 {@code LocalDateTime}을 양쪽에 넣어도 저장되는 값이
-     * 달라져(북마크 쪽은 초 단위로 반올림, 이쪽은 마이크로초까지 보존) 초의 소수부가 0.5 이상인
-     * 절반의 경우 {@code bookmarks.created_at > place_stats.calculated_at}이 된다. 그러면
-     * {@code PlaceDisplayCount.correct}의 {@code myBookmarkedAt.isAfter(calculatedAt)}이 참이 되어
-     * 이미 증분에 반영된 내 북마크에 +1이 또 붙는다. CAST가 북마크 행이 실제로 저장할 값과
-     * 같은 값을 넣어 그 틈을 없앤다 — {@code 증분의_calculated_at은_북마크_행의_created_at과_같다}가
-     * 이 성질을 DB에 직접 물어 못 박는다.
+     * <p><b>{@code calculated_at}은 건드리지 않는다 — 그 컬럼은 배치 전용이다.</b> 뜻이
+     * "마지막 배치가 이 행을 정산한 기준 시각"이므로 증분이 올릴 자격이 없다. 새로 만드는 행에는
+     * {@code NULL}을 넣는다(V25에서 NULL 허용으로 전환) — "아직 한 번도 정산된 적 없음"이고,
+     * 첫 배치가 실제 기준 시각으로 덮는다. {@code NOW()}를 넣으면 "방금 배치가 정산함"이라는
+     * 거짓이 기록되고, epoch 같은 센티널을 쓰면 {@code MIN(calculated_at)}으로 배치 지연을
+     * 관측할 때 그 값이 지표를 영구히 끌어내린다.
      *
-     * <p>{@code VALUES(calculated_at)}은 SELECT 식의 결과, 즉 CAST를 <em>거친</em> 값을 돌려주므로
-     * INSERT 경로와 UPDATE 경로가 같은 값을 쓴다.
+     * <p>읽고-계산-쓰기가 아니라 {@code c = c + 1} 형태인 것이 계약이다. 전자는 동시 2건이면
+     * lost update로 틀리므로 "부하가 낮으면 괜찮다"는 임계가 존재하지 않는다.
      *
-     * @param placeId      장소 id. COURSE 북마크는 이 경로로 오면 안 된다 (발행측 가드가 막는다)
-     * @param bookmarkedAt 북마크 행의 {@code created_at}. 다른 시각을 넣으면 위 수렴 논거가 깨진다
+     * @param placeId 장소 id. COURSE 북마크는 이 경로로 오면 안 된다 (발행측 가드가 막는다)
      * @return 영향 행 수 (INSERT 1 / UPDATE 2). 장소가 없으면 0
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -226,18 +213,17 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         INSERT INTO place_stats (
             place_id, town_id, active, popular_score,
             bookmark_count, review_count, avg_rating, calculated_at)
-        SELECT p.id, p.town_id, p.active, 0, 1, 0, NULL, CAST(:bookmarkedAt AS DATETIME)
+        SELECT p.id, p.town_id, p.active, 0, 1, 0, NULL, NULL
         FROM places p WHERE p.id = :placeId
         ON DUPLICATE KEY UPDATE
-            bookmark_count = bookmark_count + 1,
-            calculated_at  = GREATEST(calculated_at, VALUES(calculated_at))
+            bookmark_count = bookmark_count + 1
         """, nativeQuery = true)
-    int incrementBookmark(@Param("placeId") Long placeId,
-            @Param("bookmarkedAt") LocalDateTime bookmarkedAt);
+    int incrementBookmark(@Param("placeId") Long placeId);
 
     /**
-     * 북마크 취소 감분 — 카운트만. calculated_at 불변(전진할수록 유실된 타인 생성 이벤트를 덮는다),
-     * GREATEST 바닥 0(유실된 생성 + 도달한 삭제 조합의 음수 방지). 행이 없으면 no-op.
+     * 북마크 취소 감분 — 카운트만. 바닥은 {@code GREATEST(cnt - 1, 0)}이다:
+     * at-most-once라 생성 이벤트가 유실된 채 삭제 이벤트만 도달하는 조합이 가능한데,
+     * 그때 카운트가 음수가 되어 화면에 찍힌다. 행이 없으면 no-op.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
@@ -248,27 +234,21 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     int decrementBookmark(@Param("placeId") Long placeId);
 
     /**
-     * 리뷰 생성 증분 — review_count만. avg_rating·popular_score·기존 calculated_at은 배치 몫이다
-     * (리뷰 카운트에는 표시 보정 계약이 없어 전진시킬 이유가 없고, 전진시키면 유실된 타인의
-     * 북마크 생성 이벤트를 덮어 유실 창만 넓어진다 — 설계 §2.5 재검토의 비대칭 표).
-     *
-     * <p>행이 없을 때만 {@code :occurredAt}이 새 행의 calculated_at이 된다. 이 경로로 만들어진 행은
-     * "북마크 0건이 지금 기준으로 정산됐다"고 주장하게 되므로, 배치가 아직 닿지 않은 장소에
-     * 리뷰가 북마크보다 먼저 오면 기존 북마커의 +1 보정이 다음 배치까지 눌린다.
-     * 배치가 전 장소에 매일 행을 남기므로 대상은 "마지막 배치 이후 생성된 장소"뿐이다.
+     * 리뷰 생성 증분 — {@code review_count}만 +1. 규칙은 {@link #incrementBookmark}와 같다.
+     * {@code avg_rating}·{@code popular_score}는 배치 몫이다 — 평균의 증분 유지는 (합, 수)
+     * 분해가 필요하고, 감쇠 합은 기준 시각 없이 증분이 성립하지 않는다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, active, popular_score,
             bookmark_count, review_count, avg_rating, calculated_at)
-        SELECT p.id, p.town_id, p.active, 0, 0, 1, NULL, :occurredAt
+        SELECT p.id, p.town_id, p.active, 0, 0, 1, NULL, NULL
         FROM places p WHERE p.id = :placeId
         ON DUPLICATE KEY UPDATE
             review_count = review_count + 1
         """, nativeQuery = true)
-    int incrementReview(@Param("placeId") Long placeId,
-            @Param("occurredAt") LocalDateTime occurredAt);
+    int incrementReview(@Param("placeId") Long placeId);
 
     /** 리뷰 삭제 감분 — 규칙은 {@link #decrementBookmark}와 동일 */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -285,7 +265,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      */
     @Query("""
         SELECT new org.sopt.solply_server.domain.place.dto.PlaceStatsView(
-            ps.placeId, ps.popularScore, ps.bookmarkCount, ps.calculatedAt)
+            ps.placeId, ps.popularScore, ps.bookmarkCount)
         FROM PlaceStats ps
         WHERE ps.placeId IN :placeIds
         """)

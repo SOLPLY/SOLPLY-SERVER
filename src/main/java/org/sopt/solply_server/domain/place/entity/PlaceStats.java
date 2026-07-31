@@ -30,6 +30,15 @@ import lombok.NoArgsConstructor;
  * 증분의 드리프트(유실·중복)는 다음 회차에 소멸한다. 엔티티에 create(...)를 노출하면
  * "아무나 쓰는 테이블"이라는 잘못된 신호를 주므로 계속 봉인한다. (설계 §2.5 재검토)
  *
+ * <p><b>증분이 만지는 것은 카운트 두 개뿐이다.</b> {@code popular_score}·{@code avg_rating}은
+ * 감쇠 합·평균이라 기준 시각 없이 증분이 성립하지 않고, {@code calculated_at}은 뜻이
+ * "마지막 배치가 이 행을 정산한 기준 시각"이라 증분이 올리면 그 뜻이 깨진다. 증분이 행을 새로
+ * 만들 때는 epoch를 넣어 "아직 정산된 적 없음"을 표시한다.
+ *
+ * <p>조회 응답은 {@code bookmark_count}를 <b>가공 없이</b> 내보낸다. 2026-07-31 이전에는
+ * "내 북마크가 배치 이후면 +1"이라는 표시 보정이 읽기 경로에 있었는데, 배치가 하루 1회뿐이라
+ * 생긴 임시방편이었고 증분이 그 구간을 없애면서 함께 제거했다.
+ *
  * <p><b>avg_rating·review_count는 현재 write-only다</b> — 읽는 코드가 없다. 배치가 점수를
  * 계산하는 같은 스캔에서 나오는 부산물이라 저장 비용이 0이고, 예정 용처가 둘 있다:
  * 장소 평균 평점 표시, 그리고 플랜 C에서 검토할 하이브리드 공식의 저평점 게이트
@@ -70,6 +79,11 @@ public class PlaceStats {
     @Column(name = "avg_rating", precision = 3, scale = 2)
     private BigDecimal avgRating;
 
-    @Column(name = "calculated_at", nullable = false)
+    /**
+     * 마지막 배치가 이 행을 정산한 기준 시각. <b>배치가 아직 닿지 않은 행은 null이다</b> —
+     * 증분이 먼저 만든 행이 그렇다 (V25에서 NULL 허용으로 전환).
+     * 애플리케이션이 읽지 않는 관측용 컬럼이라, "없음"을 매직 상수 대신 null로 표현한다.
+     */
+    @Column(name = "calculated_at")
     private LocalDateTime calculatedAt;
 }

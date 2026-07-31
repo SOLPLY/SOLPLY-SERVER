@@ -25,9 +25,10 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * 북마크·리뷰 INSERT → 배치 → 조회 경로 → 인기순 정렬 → 커서 왕복 → 표시 카운트 보정까지
+ * 북마크·리뷰 INSERT → 배치 → 조회 경로 → 인기순 정렬 → 커서 왕복 → 이벤트 증분까지
  * 사슬 전체를 걷는 회귀 IT. 조각별 테스트(배치 IT·로더 IT·페이지네이터 단위 테스트)는 이음새를
  * 못 지킨다 — 이 기능의 실제 버그 2건(LATEST 커서 누락, 표시 이중 계산)이 전부 이음새에서 났다.
+ * 리스너·{@code @Async}가 실제로 배선된 유일한 무대이기도 하다.
  * (이 파일이 실제로 걷는 정렬 축은 POPULAR 하나다. LATEST 축의 커서 정합은
  * {@code PlaceListPaginatorTest}가 단위 수준에서 맡는다.)
  *
@@ -91,14 +92,14 @@ class PlacePopularFlowIT extends MySqlContainerSupport {
         }
         insertReview(createUser(), placeC, 5, CALCULATED_AT.minusMinutes(1));
 
-        // 내 북마크지만 배치 "이전" — 배치가 이미 셌으므로 보정하면 안 되는 쪽이다.
-        // 이 한 줄이 없으면 correct()의 "이후가 아니면 그대로" 분기를 이 IT가 한 번도 걷지 않아,
-        // correct를 "myBookmarkedAt != null이면 무조건 +1"로 바꿔도 전부 그린으로 살아남는다(실측).
+        // 내 북마크지만 배치 "이전" — 배치가 이미 센 쪽이다 (placeB 카운트 5의 다섯 번째)
         insertBookmark(me, placeB, CALCULATED_AT.minusDays(90));
 
         batchProcessor.recalculateAll(CALCULATED_AT);
 
-        // 내 북마크는 배치 "이후" — 표시 카운트 +1 보정의 대상
+        // 내 북마크지만 배치 "이후"이고, 이벤트가 아니라 직접 INSERT라 증분도 없다 —
+        // place_stats는 0인데 isBookmarked는 true인 상태를 만든다.
+        // 표시 보정이 되살아나면 이 조합에서만 카운트가 1로 부풀어 즉시 잡힌다.
         insertBookmark(me, placeC, CALCULATED_AT.plusMinutes(30));
 
         // townId는 방금 INSERT한 신규 auto-increment 값이라 지금은 캐시 엔트리가 존재할 수 없다.
@@ -123,37 +124,40 @@ class PlacePopularFlowIT extends MySqlContainerSupport {
         assertThat(ids(page1)).doesNotContainAnyElementsOf(ids(page2));
     }
 
+    /**
+     * 표시 카운트는 place_stats 값 그대로다 — 조회 경로가 더하거나 빼지 않는다.
+     *
+     * <p>placeC가 이 계약을 무는 자리다. setUp이 배치 <b>이후에</b> 내 북마크를 <em>직접 INSERT</em>해
+     * 두므로(이벤트를 거치지 않아 증분도 없다) place_stats는 0인데 {@code isBookmarked}는 true다.
+     * 예전의 표시 보정이라면 1을 냈다. 보정을 되살리면 여기가 0 대신 1이 되어 깨진다.
+     */
     @Test
-    void 표시_카운트는_배치값에_배치_이후_내_북마크만_더한다() {
+    void 표시_카운트는_place_stats_값을_가공_없이_내보낸다() {
         PlaceFilterGetResponse page = placeService.getPlaces(me, popularRequest(null, 3));
 
         PlacePreviewDto c = previewOf(page, placeC);
         PlacePreviewDto a = previewOf(page, placeA);
         PlacePreviewDto b = previewOf(page, placeB);
 
-        // C: 배치 시점 카운트 0 + 내 북마크(배치 이후) 보정 +1
-        assertThat(c.bookmarkCount()).isEqualTo(1);
+        // C: 배치가 센 값은 0. 내 북마크가 배치 이후지만 응답은 보정하지 않는다
+        assertThat(c.bookmarkCount()).isZero();
         assertThat(c.isBookmarked()).isTrue();
-        // A: 남의 북마크 4건은 배치값 그대로, 내 보정 없음
+        // A: 남의 북마크 4건 그대로, 내 북마크 없음
         assertThat(a.bookmarkCount()).isEqualTo(4);
         assertThat(a.isBookmarked()).isFalse();
-        // B: 내 북마크가 배치 "이전"이라 이미 배치값 5에 포함됨 — 보정 없이 5 그대로.
-        // "이후만 더한다"의 '만'을 무는 유일한 단언이다 (isBookmarked는 true인데 카운트는 안 늘어야 한다)
+        // B: 내 북마크가 배치 이전이라 이미 배치값 5에 포함
         assertThat(b.bookmarkCount()).isEqualTo(5);
         assertThat(b.isBookmarked()).isTrue();
     }
 
     /**
-     * 증분의 실제 이익("배치 이후에도 카운트가 는다")과 그 대가를 막는 계약("보정과 겹치지 않는다")을
-     * 한 테스트에서 함께 본다. 배치값 4에서 1건을 더 눌렀을 때 답은 <b>5</b>다.
+     * 증분의 실제 이익 — 배치를 기다리지 않고 카운트가 는다. 배치값 4에서 1건을 더 누르면 5다.
      *
-     * <p>6이 나오면 증분이 {@code calculated_at}을 전진시키지 못한 것이다 —
-     * 그 순간 {@code PlaceDisplayCount.correct}가 "배치 이후에 눌린 북마크"로 보고 +1을 더해
-     * 같은 1건이 두 번 세어진다. 이 단언이 {@code incrementBookmark}의 GREATEST 줄과
-     * {@code CAST(... AS DATETIME)}을 동시에 문다.
+     * <p>DB 값(5)과 응답 값(5)을 함께 단언한다. 응답이 6이면 조회 경로가 다시 뭔가를 더하고 있다는
+     * 뜻이고, DB가 4에서 멈추면 배선(발행·리스너)이 끊긴 것이다 — 두 실패가 값으로 구분된다.
      */
     @Test
-    void 배치_이후_북마크는_증분으로_반영되고_보정과_이중_계산되지_않는다() throws Exception {
+    void 북마크는_배치를_기다리지_않고_증분으로_반영된다() throws Exception {
         long userNew = createUser();
         assertThat(bookmarkCountInDb(placeA)).isEqualTo(4);   // 사전 조건을 값으로 못 박는다
 

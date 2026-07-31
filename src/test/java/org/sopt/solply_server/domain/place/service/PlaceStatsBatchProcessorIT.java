@@ -379,13 +379,10 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     /**
      * 배치 기준 시각 이후에 생긴 북마크는 이번 세대의 집계 대상이 아니다.
      *
-     * <p>이 상한이 없으면 두 가지가 동시에 틀어진다.
-     * <ul>
-     *   <li>{@code bookmark_count}에 이미 포함돼, {@code PlaceDisplayCount.correct}가
-     *       {@code myBookmarkedAt > calculatedAt}으로 더하는 +1과 겹쳐 <b>같은 1건이 두 번</b> 반영된다.</li>
-     *   <li>{@code TIMESTAMPDIFF}가 음수가 되어 {@code POW(0.5, 음수) > 1} — 감쇠가 아니라 증폭이다.
-     *       상한이 없을 때 아래 시나리오는 {@code 1.0}이 아니라 {@code 2.0002...}가 나온다.</li>
-     * </ul>
+     * <p>이 상한이 없으면 {@code TIMESTAMPDIFF}가 음수가 되어 {@code POW(0.5, 음수) > 1} —
+     * 감쇠가 아니라 증폭이다. 상한이 없을 때 아래 시나리오는 {@code 1.0}이 아니라
+     * {@code 2.0002...}가 나온다. 멱등성 주장도 이 상한 위에 서 있다
+     * ({@code 두_실행_사이에_기준시각_이후_활동이_들어와도_결과가_같다}).
      */
     @Test
     void 기준시각_이후에_생긴_북마크는_집계에_들어가지_않는다() {
@@ -416,8 +413,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /**
      * 상한이 {@code <}가 아니라 {@code <=}인 것을 못 박는다. {@code calculatedAt}과 정확히 같은
-     * 시각의 활동은 포함돼야 한다 — {@code PlaceDisplayCount.correct}가 {@code isAfter}(엄격 초과)로
-     * 판정하므로, 여기가 {@code <}가 되면 경계값 1건이 <b>양쪽 어디에도 세어지지 않아</b> 사라진다.
+     * 시각의 활동은 포함돼야 한다 — {@code <}로 바꾸면 배치를 같은 기준 시각으로 아무리 다시 돌려도
+     * 경계값 1건이 영영 집계되지 않는다.
      */
     @Test
     void 기준시각과_정확히_같은_시각의_북마크는_포함된다() {
@@ -706,7 +703,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 그 그물이 사라진다. 2건이면 기대값이 2와 1로 갈려 값만으로 구분된다.
      */
     @Test
-    void 뷰_조회는_배치가_저장한_점수와_카운트와_기준시각을_그대로_돌려준다() {
+    void 뷰_조회는_배치가_저장한_점수와_카운트를_그대로_돌려준다() {
         insertBookmark(placeA, 0);
         insertBookmark(placeA, 90);   // 호출마다 새 유저를 만들므로 uk_bookmark_user_target 충돌 없음
         runBatch();
@@ -718,7 +715,6 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(view.placeId()).isEqualTo(placeA);
         assertThat(view.score()).isEqualTo(statsOf(placeA).getPopularScore().doubleValue());
         assertThat(view.bookmarkCount()).isEqualTo(2);
-        assertThat(view.calculatedAt()).isEqualTo(CALCULATED_AT);
     }
 
     @Test

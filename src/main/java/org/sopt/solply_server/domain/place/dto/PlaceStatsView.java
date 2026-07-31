@@ -1,7 +1,6 @@
 package org.sopt.solply_server.domain.place.dto;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 /**
  * place_stats의 요청 경로 읽기 모델. 엔티티(PlaceStats)는 배치 UPSERT 전용이라 생성자를
@@ -11,12 +10,16 @@ import java.time.LocalDateTime;
  *
  * <p>{@code PlaceService.getPlaces}가 정렬 점수와 표시 카운트를 모두 이 뷰에서 얻는다.
  * 그 결과 정렬 신선도의 상한이 "배치 24h + 캐시 hard TTL 1h"에서 <b>"배치 24h"</b> 하나로 줄었다.
+ * 카운트 쪽은 이벤트 증분이 붙어 그보다 훨씬 신선하다.
+ *
+ * <p><b>{@code calculated_at}은 싣지 않는다.</b> 표시 카운트 보정이 그 시각을 내 북마크 시각과
+ * 비교하느라 필요했는데, 증분 도입으로 보정이 사라지면서(2026-07-31) 읽는 코드가 없어졌다.
+ * 컬럼 자체는 "마지막 배치 정산 시각"으로 테이블에 남아 있다 — 운영 관측용이다.
  */
 public record PlaceStatsView(
         Long placeId,
         BigDecimal popularScore,
-        int bookmarkCount,
-        LocalDateTime calculatedAt
+        int bookmarkCount
 ) {
 
     /**

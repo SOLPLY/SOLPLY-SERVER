@@ -65,25 +65,13 @@ public class PlaceBookmarkFacade {
     /**
      * 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회).
      *
-     * <p><b>현역 메서드다 — 지우지 말 것.</b> 장소 목록의 캐시 경로만
-     * getMyPlaceBookmarkTimesMap으로 옮겨갔고, 이 메서드는 두 곳이 계속 쓴다:
-     * <ul>
-     *   <li>CourseService의 코스 상세 (프로덕션) — 코스에 담긴 장소들의 북마크 여부.
-     *       표시 카운트를 쓰지 않는 화면이라 시각 보정이 필요 없다.</li>
-     *   <li>PlaceService.popularFromDb (벤치 전용) — 실시간 COUNT(*)를 세므로 보정이 필요 없다.</li>
-     * </ul>
-     * 아래 계층의 BookmarkService.getBookmarkStatusMap은 코스·마이페이지에서도 쓰인다.
+     * <p>장소 목록·코스 상세·벤치 경로가 모두 이것을 쓴다. 한동안 장소 목록만
+     * {@code getMyPlaceBookmarkTimesMap}(북마크 생성 시각까지 싣는 변형)으로 갈라져 있었는데,
+     * 그 시각의 유일한 용처가 표시 카운트 보정이었고 보정이 사라지면서(2026-07-31,
+     * 이벤트 증분 도입) 함께 걷어냈다. 여부 판정에는 시각이 필요 없다.
      */
     public Map<Long, Boolean> getPlaceBookmarkStatusMap(final Long userId, final List<Long> placeIds) {
         return bookmarkService.getBookmarkStatusMap(userId, BookmarkTargetType.PLACE, placeIds);
-    }
-
-    /**
-     * 내 장소 북마크 생성 시각 맵 — 여부 판정 + 표시 카운트 보정을 한 번의 조회로 처리한다.
-     * 값이 있으면 북마크한 것이고, 그 시각이 곧 보정 기준이다 (DB 1회, 위 여부 조회와 동수).
-     */
-    public Map<Long, LocalDateTime> getMyPlaceBookmarkTimesMap(final Long userId, final List<Long> placeIds) {
-        return bookmarkService.getMyBookmarkTimesMap(userId, BookmarkTargetType.PLACE, placeIds);
     }
 
     // == 폴더 프리뷰 (동네별 최신 1개) == //

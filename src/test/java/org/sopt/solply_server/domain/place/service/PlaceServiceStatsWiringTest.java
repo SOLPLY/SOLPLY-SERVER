@@ -43,23 +43,25 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 
 /**
- * 표시 카운트 배선(wiring) 검증에 한정한 테스트.
+ * place_stats 값이 응답에 닿는 배선(wiring) 검증에 한정한 테스트.
  *
- * <p>보정 규칙 자체는 PlaceDisplayCountTest(순수 함수)가 덮는다. 여기서 막는 것은 그 함수가
- * <b>실제 응답 경로에 연결돼 있는가</b>다 — 변이 주입에서 "보정을 빼고 원시 카운트를 넘긴다",
- * "isBookmarked를 true로 고정한다", "시각 맵을 무시한다"가 전부 살아남았기 때문이다
- * (순수 함수와 쿼리 테스트만으로는 배선이 끊겨도 아무 테스트가 죽지 않았다).
+ * <p><b>2026-07-31 이전에는 표시 카운트 "보정" 배선을 지키던 파일이었다.</b> 조회 응답을 만들면서
+ * "내 북마크가 배치 이후면 +1"을 더하던 로직({@code PlaceDisplayCount})이 있었고, 그 배선이
+ * 끊겨도 순수 함수 테스트와 쿼리 테스트가 전부 살아남아서 만든 파일이다. 이벤트 증분이 그
+ * 보정을 대체하면서 규칙 자체가 사라졌고, 지금 이 파일이 지키는 것은 둘로 줄었다:
+ * <ul>
+ *   <li>place_stats에서 읽은 카운트가 <b>가공 없이</b> 응답에 실린다 (보정 부활 회귀 방지)</li>
+ *   <li>place_stats 조회가 네 경로 각각에서 정확히 1회다</li>
+ * </ul>
  *
  * <p>PlaceService 전반을 덮으려는 테스트가 아니다. 의존성 12개 중 이 경로가 실제로 쓰는
  * 5개만 스텁하고 나머지는 빈 mock으로 둔다.
  */
 @ExtendWith(MockitoExtension.class)
-class PlaceServiceDisplayCountTest {
+class PlaceServiceStatsWiringTest {
 
   private static final long TOWN_ID = 100L;
   private static final long USER_ID = 7L;
-  /** place_stats 배치가 돈 시각 */
-  private static final LocalDateTime BATCH_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
   @Mock private PlaceRepository placeRepository;
   @Mock private PlaceTagRepository placeTagRepository;
@@ -76,16 +78,16 @@ class PlaceServiceDisplayCountTest {
 
   @InjectMocks private PlaceService placeService;
 
-  /** 장소 식별 정보만 담는 스냅샷 — 카운트·기준시각은 place_stats 뷰에서 온다 */
+  /** 장소 식별 정보만 담는 스냅샷 — 카운트는 place_stats 뷰에서 온다 */
   private CachedPlace place(long id) {
     return new CachedPlace(id, "장소" + id, "key" + id, "카페",
         Set.of(), Set.of(), Set.of(), LocalDateTime.of(2026, 1, 1, 0, 0), TOWN_ID);
   }
 
-  /** 배치가 카운트 100으로 집계해 둔 상태 (기준시각 BATCH_AT) */
-  private void givenBatchCounted(long metaCount) {
+  /** place_stats가 들고 있는 카운트 (배치가 센 값 + 그 뒤 도달한 증분) */
+  private void givenStatsCount(int bookmarkCount) {
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(
-        List.of(new PlaceStatsView(1L, BigDecimal.valueOf(12.5), (int) metaCount, BATCH_AT)));
+        List.of(new PlaceStatsView(1L, BigDecimal.valueOf(12.5), bookmarkCount)));
   }
 
   @BeforeEach
@@ -104,25 +106,16 @@ class PlaceServiceDisplayCountTest {
         TOWN_ID, bookmarkSearch, null, null, null, sort, null, null));
   }
 
+  /**
+   * <b>보정 부활 감시.</b> 내가 북마크한 장소여도 카운트는 place_stats 값 그대로여야 한다.
+   * "내 것이면 +1"을 다시 넣으면 여기서 101이 나온다 — 증분이 이미 센 1건을 두 번 세는 회귀다.
+   */
   @Test
-  @DisplayName("내 북마크가 배치 이후면 표시 카운트에 1을 더해 응답한다")
-  void addsMyBookmarkWhenCreatedAfterBatch() {
-    givenBatchCounted(100L);
-    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of(1L, BATCH_AT.plusMinutes(5)));
-
-    PlacePreviewDto preview = getPlaces(false).places().get(0);
-
-    assertThat(preview.bookmarkCount()).isEqualTo(101L);
-    assertThat(preview.isBookmarked()).isTrue();
-  }
-
-  @Test
-  @DisplayName("내 북마크가 배치 이전이면 이미 집계에 포함돼 메타 값을 그대로 응답한다")
-  void keepsMetaCountWhenMyBookmarkIsBeforeBatch() {
-    givenBatchCounted(100L);
-    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of(1L, BATCH_AT.minusMinutes(5)));
+  @DisplayName("내가 북마크한 장소도 place_stats 카운트를 가공 없이 응답한다")
+  void keepsStatsCountEvenWhenBookmarkedByMe() {
+    givenStatsCount(100);
+    given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
+        .willReturn(Map.of(1L, true));
 
     PlacePreviewDto preview = getPlaces(false).places().get(0);
 
@@ -131,11 +124,11 @@ class PlaceServiceDisplayCountTest {
   }
 
   @Test
-  @DisplayName("내가 북마크하지 않았으면 보정 없이 미북마크로 응답한다")
-  void keepsMetaCountAndMarksUnbookmarkedWhenNotMine() {
-    givenBatchCounted(100L);
-    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of());
+  @DisplayName("내가 북마크하지 않았으면 미북마크로 응답한다")
+  void marksUnbookmarkedWhenNotMine() {
+    givenStatsCount(100);
+    given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
+        .willReturn(Map.of(1L, false));
 
     PlacePreviewDto preview = getPlaces(false).places().get(0);
 
@@ -143,51 +136,44 @@ class PlaceServiceDisplayCountTest {
     assertThat(preview.isBookmarked()).isFalse();
   }
 
+  /**
+   * 배치도 증분도 닿지 않은 장소는 place_stats에 행 자체가 없다 — IN 조회가 그 id를 돌려주지 않는다.
+   * 그때 0으로 읽는지(NPE도, 임의값도 아니게) 본다.
+   */
   @Test
-  @DisplayName("배치가 닿지 않은 장소는 내 북마크만으로 1이 된다")
-  void countsMyBookmarkWhenBatchNeverRan() {
-    // 배치가 닿지 않은 장소는 place_stats에 행 자체가 없다 — IN 조회가 그 id를 돌려주지 않는다
+  @DisplayName("place_stats에 행이 없는 장소는 카운트 0으로 응답한다")
+  void readsZeroWhenNoStatsRow() {
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(List.of());
-    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of(1L, BATCH_AT));
+    given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
+        .willReturn(Map.of(1L, true));
 
     PlacePreviewDto preview = getPlaces(false).places().get(0);
 
-    assertThat(preview.bookmarkCount()).isEqualTo(1L);
-  }
-
-  @Test
-  @DisplayName("캐시 경로는 북마크 여부 조회를 따로 하지 않는다 (추가 쿼리 없음)")
-  void doesNotIssueSeparateBookmarkStatusQuery() {
-    // 이 Task의 핵심 주장이 "추가 쿼리 0"이다. 시각 조회가 여부 조회를 대체하므로
-    // 둘 다 호출되면 쿼리가 하나 늘어난 것이고 주장이 거짓이 된다.
-    givenBatchCounted(100L);
-    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of(1L, BATCH_AT.plusMinutes(5)));
-
-    getPlaces(false);
-
-    verify(placeBookmarkFacade).getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L));
-    verify(placeBookmarkFacade, never()).getPlaceBookmarkStatusMap(any(), anyList());
-  }
-
-  @Test
-  @DisplayName("북마크 검색 경로도 표시 카운트를 보정한다")
-  void correctsDisplayCountOnBookmarkSearchPath() {
-    givenBatchCounted(100L);
-    given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
-        .willReturn(List.of(1L));
-    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of(1L, BATCH_AT.plusMinutes(5)));
-
-    PlacePreviewDto preview = getPlaces(true).places().get(0);
-
-    assertThat(preview.bookmarkCount()).isEqualTo(101L);
+    assertThat(preview.bookmarkCount()).isZero();
     assertThat(preview.isBookmarked()).isTrue();
   }
 
   /**
-   * 이 리팩터링의 핵심 주장이 "place_stats 조회는 경로당 1회"다. 목록 경로는 정렬에 따라
+   * 북마크 검색 목록은 전부 내 북마크라 여부가 구조적으로 확정이다 — 조회할 이유가 없다.
+   * 보정이 있던 시절에는 이 경로가 <b>보정 입력(북마크 생성 시각)을 얻으려고</b> 쿼리를 1회 더
+   * 발행했다. 보정이 사라졌으므로 그 쿼리도 함께 사라져야 한다.
+   */
+  @Test
+  @DisplayName("북마크 검색 경로는 북마크 여부를 다시 조회하지 않는다")
+  void doesNotQueryBookmarksOnBookmarkSearchPath() {
+    givenStatsCount(100);
+    given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
+        .willReturn(List.of(1L));
+
+    PlacePreviewDto preview = getPlaces(true).places().get(0);
+
+    assertThat(preview.bookmarkCount()).isEqualTo(100L);
+    assertThat(preview.isBookmarked()).isTrue();
+    verify(placeBookmarkFacade, never()).getPlaceBookmarkStatusMap(any(), anyList());
+  }
+
+  /**
+   * "place_stats 조회는 경로당 1회"가 이 리팩터링의 주장이다. 목록 경로는 정렬에 따라
    * 읽는 시점이 갈리고(POPULAR는 페이징 전 후보 전체 / LATEST는 페이징 후 페이지 항목),
    * 북마크 검색은 정렬 분기 <b>밖</b>에서 한 번 읽는다. 어느 쪽이든 분기를 한 줄만 잘못
    * 고쳐도 조용히 2회가 되는데, 값 단언만으로는 그 변이가 전부 살아남는다 —
@@ -197,18 +183,19 @@ class PlaceServiceDisplayCountTest {
   @CsvSource({"POPULAR, false", "LATEST, false", "POPULAR, true", "LATEST, true"})
   @DisplayName("place_stats 조회는 네 경로 각각에서 정확히 1회다")
   void readsPlaceStatsExactlyOncePerPath(PlaceSortType sort, boolean bookmarkSearch) {
-    givenBatchCounted(100L);
+    givenStatsCount(100);
     if (bookmarkSearch) {
       given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
           .willReturn(List.of(1L));
+    } else {
+      given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
+          .willReturn(Map.of(1L, true));
     }
-    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of(1L, BATCH_AT.plusMinutes(5)));
 
     PlacePreviewDto preview = getPlaces(bookmarkSearch, sort).places().get(0);
 
     // 횟수만 세면 "한 번도 안 읽는" 변이가 통과하므로, 읽은 값이 응답에 닿았음도 함께 본다
-    assertThat(preview.bookmarkCount()).isEqualTo(101L);
+    assertThat(preview.bookmarkCount()).isEqualTo(100L);
     verify(placeStatsRepository, times(1)).findViewsByPlaceIds(anyList());
   }
 }

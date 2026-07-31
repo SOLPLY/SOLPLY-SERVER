@@ -23,16 +23,16 @@ import org.springframework.test.context.DynamicPropertySource;
  * <p>여기서 검증하는 것은 <b>쿼리의 성질</b>이지 배선이 아니다. 리스너·{@code @Async}·이벤트 발행이
  * 실제로 이어져 있는지는 {@code @SpringBootTest}인 {@code PlacePopularFlowIT}만이 볼 수 있다.
  *
- * <p><b>계약 요약 — 이 표가 흔들리면 표시 카운트가 틀린다.</b>
+ * <p><b>계약 요약 — 증분이 만지는 컬럼은 카운트 둘뿐이다.</b>
  * <pre>
- *                    bookmark_count  review_count  calculated_at
- * incrementBookmark        +1              -        GREATEST(기존, 북마크 created_at)
- * decrementBookmark   max(-1, 0)           -        불변
- * incrementReview           -             +1        불변 (행이 없을 때만 :occurredAt으로 생성)
- * decrementReview           -        max(-1, 0)     불변
+ *                    bookmark_count  review_count   그 밖의 컬럼
+ * incrementBookmark        +1              -        전부 불변 (행이 없을 때만 생성)
+ * decrementBookmark   max(-1, 0)           -        전부 불변
+ * incrementReview           -             +1        전부 불변 (행이 없을 때만 생성)
+ * decrementReview           -        max(-1, 0)     전부 불변
  * </pre>
- * 감분이 {@code calculated_at}을 전진시키면 유실된 <em>타인</em>의 생성 이벤트를 덮어
- * "내 북마크가 안 늘어 보이는" 창이 넓어진다. 그래서 비대칭이 의도다.
+ * {@code popular_score}·{@code avg_rating}·{@code calculated_at}은 배치 전용이다. 특히
+ * {@code calculated_at}은 "마지막 배치가 이 행을 정산한 기준 시각"이라, 증분이 올리면 그 뜻이 깨진다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -44,8 +44,8 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
 
-    /** 초의 소수부가 0 — 정밀도 문제를 <b>일부러</b> 피한 값이다. 그 축은 마지막 테스트가 따로 본다. */
-    private static final LocalDateTime T0 = LocalDateTime.of(2026, 7, 31, 2, 0, 0);
+    /** 배치가 남겼다고 가정할 기준 시각. 증분이 이 값을 흔들지 않는지가 검증 대상이다. */
+    private static final LocalDateTime BATCH_AT = LocalDateTime.of(2026, 7, 31, 2, 0, 0);
 
     @Autowired
     PlaceStatsRepository placeStatsRepository;
@@ -56,7 +56,6 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
     private long placeId;
     private long expectedTownId;
     private boolean expectedActive;
-    private int userSeq;
 
     /**
      * Flyway V2 시드의 실제 장소 하나를 빌린다 (PlaceStatsRepositoryIT와 같은 관례).
@@ -83,20 +82,27 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
         return placeStatsRepository.findById(placeId).orElseThrow();
     }
 
-    /** users는 nickname이 UNIQUE고 role만 NOT NULL·DEFAULT 없음 (V1__init_tables.sql) */
-    private long createUser() {
-        String nickname = "증분테스트유저" + (++userSeq);
-        em.createNativeQuery("INSERT INTO users (role, nickname) VALUES ('USER', :nickname)")
-                .setParameter("nickname", nickname)
+    /** 배치가 돌아 카운트를 정산해 둔 상태를 만든다 */
+    private void givenBatchRow(int bookmarkCount, int reviewCount) {
+        em.createNativeQuery("""
+                INSERT INTO place_stats
+                    (place_id, town_id, active, popular_score, bookmark_count,
+                     review_count, avg_rating, calculated_at)
+                SELECT p.id, p.town_id, p.active, 12.500000, :bookmarkCount,
+                       :reviewCount, 4.50, :calculatedAt
+                FROM places p WHERE p.id = :placeId
+                """)
+                .setParameter("placeId", placeId)
+                .setParameter("bookmarkCount", bookmarkCount)
+                .setParameter("reviewCount", reviewCount)
+                .setParameter("calculatedAt", BATCH_AT)
                 .executeUpdate();
-        return ((Number) em.createNativeQuery("SELECT id FROM users WHERE nickname = :nickname")
-                .setParameter("nickname", nickname)
-                .getSingleResult()).longValue();
+        em.clear();
     }
 
     @Test
     void 행이_없으면_생성하며_places의_town_id와_active를_복사한다() {
-        int affected = placeStatsRepository.incrementBookmark(placeId, T0);
+        int affected = placeStatsRepository.incrementBookmark(placeId);
 
         assertThat(affected).isEqualTo(1);   // MySQL은 INSERT를 1, UPDATE를 2로 센다
         PlaceStats stats = statsOf(placeId);
@@ -104,54 +110,88 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
         assertThat(stats.getReviewCount()).isZero();
         assertThat(stats.getPopularScore()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(stats.getAvgRating()).isNull();
-        assertThat(stats.getCalculatedAt()).isEqualTo(T0);
         // town_id·active는 배치가 아니라 이 쿼리도 places에서 복사해야 한다 —
         // 낡거나 틀리면 순위가 아니라 노출 대상 자체가 틀린다 (V24·PlaceStats 주석)
         assertThat(stats.getTownId()).isEqualTo(expectedTownId);
         assertThat(stats.isActive()).isEqualTo(expectedActive);
     }
 
+    /**
+     * 증분이 만든 행은 "배치가 아직 이 행을 정산한 적 없다"고 말해야 한다 — 그 표현이 null이다(V25).
+     *
+     * <p>{@code NOW()}를 넣으면 "방금 정산됨"이라는 거짓이 기록되고, epoch 같은 센티널을 쓰면
+     * {@code MIN(calculated_at)}으로 배치 지연을 관측할 때 그 값이 지표를 영구히 끌어내린다.
+     * null은 집계에서 자동으로 빠진다.
+     */
+    @Test
+    void 증분이_만든_행의_calculated_at은_null이다() {
+        placeStatsRepository.incrementBookmark(placeId);
+        assertThat(statsOf(placeId).getCalculatedAt()).isNull();
+
+        em.createNativeQuery("DELETE FROM place_stats").executeUpdate();
+        em.clear();
+
+        placeStatsRepository.incrementReview(placeId);
+        assertThat(statsOf(placeId).getCalculatedAt()).isNull();
+    }
+
     @Test
     void 행이_있으면_카운트만_1_올린다() {
-        placeStatsRepository.incrementBookmark(placeId, T0);
-        placeStatsRepository.incrementBookmark(placeId, T0.plusMinutes(1));
+        placeStatsRepository.incrementBookmark(placeId);
+        placeStatsRepository.incrementBookmark(placeId);
 
         assertThat(statsOf(placeId).getBookmarkCount()).isEqualTo(2);
     }
 
     /**
-     * 전진만 한다는 것이 계약이다. 후퇴를 허용하면(단순 대입) 늦게 도착한 오래된 이벤트가
-     * calculated_at을 과거로 끌어내려, 이미 증분에 반영된 북마크에 표시 보정 +1이 다시 붙는다.
+     * <b>이 클래스의 핵심 계약.</b> 증분은 카운트 한 칸만 만지고 나머지는 배치가 써 둔 값 그대로 둔다.
+     * 여기가 깨지면 배치가 계산한 점수·평점이 증분에 조용히 덮이거나,
+     * {@code calculated_at}이 "마지막 배치 정산 시각"이 아니게 된다.
      */
     @Test
-    void calculated_at은_전진만_한다() {
-        placeStatsRepository.incrementBookmark(placeId, T0);
-        placeStatsRepository.incrementBookmark(placeId, T0.minusDays(1));
+    void 증분과_감분은_점수_평점_기준시각을_건드리지_않는다() {
+        givenBatchRow(4, 2);
 
-        assertThat(statsOf(placeId).getCalculatedAt()).isEqualTo(T0);
-        assertThat(statsOf(placeId).getBookmarkCount()).isEqualTo(2);
+        placeStatsRepository.incrementBookmark(placeId);
+        placeStatsRepository.incrementReview(placeId);
+        placeStatsRepository.decrementBookmark(placeId);
+        placeStatsRepository.decrementReview(placeId);
+        placeStatsRepository.incrementBookmark(placeId);
+
+        PlaceStats stats = statsOf(placeId);
+        assertThat(stats.getBookmarkCount()).isEqualTo(5);   // 4 +1 −1 +1
+        assertThat(stats.getReviewCount()).isEqualTo(2);     // 2 +1 −1
+        assertThat(stats.getPopularScore()).isEqualByComparingTo(new BigDecimal("12.5"));
+        assertThat(stats.getAvgRating()).isEqualByComparingTo(new BigDecimal("4.50"));
+        assertThat(stats.getCalculatedAt()).isEqualTo(BATCH_AT);
     }
 
     @Test
-    void 감분은_카운트만_내리고_calculated_at을_건드리지_않는다() {
-        placeStatsRepository.incrementBookmark(placeId, T0);
+    void 감분은_카운트만_내린다() {
+        givenBatchRow(4, 2);
 
-        int affected = placeStatsRepository.decrementBookmark(placeId);
+        assertThat(placeStatsRepository.decrementBookmark(placeId)).isEqualTo(1);
+        assertThat(placeStatsRepository.decrementReview(placeId)).isEqualTo(1);
 
-        assertThat(affected).isEqualTo(1);
         PlaceStats stats = statsOf(placeId);
-        assertThat(stats.getBookmarkCount()).isZero();
-        assertThat(stats.getCalculatedAt()).isEqualTo(T0);
+        assertThat(stats.getBookmarkCount()).isEqualTo(3);
+        assertThat(stats.getReviewCount()).isEqualTo(1);
     }
 
-    /** 유실된 생성 + 도달한 삭제 조합의 음수 방지. 카운트는 부호 없는 표시값이라 음수가 곧 버그다. */
+    /**
+     * at-most-once라 "생성 이벤트는 유실됐는데 삭제 이벤트만 도달"하는 조합이 가능하다.
+     * 바닥이 없으면 카운트가 음수가 되어 화면에 그대로 찍힌다.
+     */
     @Test
     void 감분은_0_아래로_내려가지_않는다() {
-        placeStatsRepository.incrementBookmark(placeId, T0);
+        placeStatsRepository.incrementBookmark(placeId);
         placeStatsRepository.decrementBookmark(placeId);
         placeStatsRepository.decrementBookmark(placeId);
 
         assertThat(statsOf(placeId).getBookmarkCount()).isZero();
+
+        placeStatsRepository.decrementReview(placeId);
+        assertThat(statsOf(placeId).getReviewCount()).isZero();
     }
 
     @Test
@@ -161,62 +201,15 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
         assertThat(placeStatsRepository.findById(placeId)).isEmpty();
     }
 
-    /**
-     * 리뷰 축은 카운트만 만진다. 평점 평균은 (합, 수) 분해 없이 증분이 성립하지 않아 배치 전용이고,
-     * calculated_at은 북마크 표시 보정의 기준이라 리뷰가 전진시키면 안 된다.
-     */
+    /** 두 축이 서로의 카운트를 넘보지 않는지 — 컬럼을 맞바꾸는 실수를 값으로 구분한다 */
     @Test
-    void 리뷰_증분은_review_count만_올리고_평점과_calculated_at을_건드리지_않는다() {
-        placeStatsRepository.incrementBookmark(placeId, T0);
-
-        placeStatsRepository.incrementReview(placeId, T0.plusHours(1));
+    void 북마크_축과_리뷰_축은_서로의_카운트를_건드리지_않는다() {
+        placeStatsRepository.incrementBookmark(placeId);
+        placeStatsRepository.incrementReview(placeId);
+        placeStatsRepository.incrementReview(placeId);
 
         PlaceStats stats = statsOf(placeId);
-        assertThat(stats.getReviewCount()).isEqualTo(1);
         assertThat(stats.getBookmarkCount()).isEqualTo(1);
-        assertThat(stats.getAvgRating()).isNull();
-        assertThat(stats.getPopularScore()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(stats.getCalculatedAt()).isEqualTo(T0);
-
-        placeStatsRepository.decrementReview(placeId);
-
-        PlaceStats after = statsOf(placeId);
-        assertThat(after.getReviewCount()).isZero();
-        assertThat(after.getCalculatedAt()).isEqualTo(T0);
-    }
-
-    /**
-     * <b>두 컬럼의 정밀도가 다르다는 사실 위에 표시 보정 계약이 서 있다.</b>
-     * {@code bookmarks.created_at}은 {@code DATETIME}(fsp 0, V1__init_tables.sql),
-     * {@code place_stats.calculated_at}은 {@code DATETIME(6)}(V24__create_place_stats.sql)이다.
-     * 같은 {@code LocalDateTime}을 양쪽에 넣으면 저장되는 값이 갈리고,
-     * {@code PlaceDisplayCount.correct}는 그 차이를 "배치 이후에 눌린 북마크"로 읽어 +1을 더한다 —
-     * 이미 증분에 반영된 1건이 두 번 세어진다.
-     *
-     * <p>그래서 기대값을 상수로 쓰지 않고 <b>같은 값을 넣은 북마크 행에서 읽어와</b> 대조한다.
-     * MySQL이 반올림하든 절사하든 이 단언은 계약("두 값이 같다")만을 검증한다.
-     * {@code incrementBookmark}에서 {@code CAST(... AS DATETIME)}을 지우면 여기서 깨진다.
-     */
-    @Test
-    void 증분의_calculated_at은_북마크_행의_created_at과_같은_값이_된다() {
-        LocalDateTime withFraction = T0.plusNanos(789_000_000);   // .789초 — 반올림이면 초가 올라간다
-        em.createNativeQuery("""
-                INSERT INTO bookmarks (user_id, target_type, target_id, created_at, updated_at)
-                VALUES (:userId, 'PLACE', :placeId, :createdAt, :createdAt)
-                """)
-                .setParameter("userId", createUser())
-                .setParameter("placeId", placeId)
-                .setParameter("createdAt", withFraction)
-                .executeUpdate();
-
-        placeStatsRepository.incrementBookmark(placeId, withFraction);
-
-        LocalDateTime storedBookmarkCreatedAt = ((java.sql.Timestamp) em.createNativeQuery(
-                "SELECT created_at FROM bookmarks WHERE target_type = 'PLACE' "
-                        + "AND target_id = :placeId ORDER BY id DESC LIMIT 1")
-                .setParameter("placeId", placeId)
-                .getSingleResult()).toLocalDateTime();
-
-        assertThat(statsOf(placeId).getCalculatedAt()).isEqualTo(storedBookmarkCreatedAt);
+        assertThat(stats.getReviewCount()).isEqualTo(2);
     }
 }

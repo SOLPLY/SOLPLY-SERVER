@@ -1,6 +1,5 @@
 package org.sopt.solply_server.domain.place.service.event;
 
-import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.service.event.PlaceBookmarkCreatedEvent;
@@ -42,7 +41,7 @@ public class PlaceStatsIncrementListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(PlaceBookmarkCreatedEvent event) {
         try {
-            placeStatsRepository.incrementBookmark(event.placeId(), event.bookmarkedAt());
+            placeStatsRepository.incrementBookmark(event.placeId());
         } catch (Exception e) {
             log.warn("북마크 증분 실패 — 다음 배치가 재대사한다. placeId={}, error={}",
                     event.placeId(), e.getMessage());
@@ -61,17 +60,12 @@ public class PlaceStatsIncrementListener {
         }
     }
 
-    /**
-     * 리뷰 증분. {@code LocalDateTime.now()}는 <b>행이 없을 때 새로 만들 행의 calculated_at</b>으로만
-     * 쓰인다 — 이미 행이 있으면 이 값은 버려진다(리뷰는 calculated_at을 전진시키지 않는 계약).
-     * 그래서 이벤트가 시각을 싣지 않아도 된다.
-     */
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(PlaceReviewCreatedEvent event) {
         try {
-            placeStatsRepository.incrementReview(event.placeId(), LocalDateTime.now());
+            placeStatsRepository.incrementReview(event.placeId());
         } catch (Exception e) {
             log.warn("리뷰 증분 실패 — 다음 배치가 재대사한다. placeId={}, error={}",
                     event.placeId(), e.getMessage());

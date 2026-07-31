@@ -7,6 +7,7 @@ import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
@@ -14,49 +15,30 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
-import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
-import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidatorRegistry;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.config.QueryDslConfig;
-import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({QueryDslConfig.class, BookmarkService.class})
+@Import(QueryDslConfig.class)
 class BookmarkRepositoryIT extends MySqlContainerSupport {
 
     @DynamicPropertySource
     static void ddlAuto(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
-        // 표시 카운트 보정의 핵심 주장이 "추가 쿼리 0"이라 발행 statement 수를 실측한다
+        // 목록 경로가 페이지당 북마크 조회 1회임을 실측으로 못 박기 위해 통계를 켠다
         registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
     }
 
     @Autowired
     BookmarkRepository bookmarkRepository;
-
-    /**
-     * row → Map 변환·캐스팅 층을 <b>실제 row로</b> 실행하기 위해 서비스를 빈으로 올린다.
-     * 이 층만 아무 테스트도 밟지 않아, 캐스팅을 LocalDateTime.MIN으로 바꿔도 112개 테스트가
-     * 전부 통과하던 구멍이 있었다 (레포지토리 IT는 row 타입만, 서비스 단위 테스트는 facade를 목킹).
-     */
-    @Autowired
-    BookmarkService bookmarkService;
-
-    /** getMyBookmarkTimesMap이 쓰지 않는 협력자 — 빈 생성을 위해서만 채운다 */
-    @MockBean
-    BookmarkTargetValidatorRegistry validatorRegistry;
-
-    @MockBean
-    EntityLoader entityLoader;
 
     @Autowired
     EntityManager em;
@@ -232,96 +214,23 @@ class BookmarkRepositoryIT extends MySqlContainerSupport {
                 .hasSize(2);
     }
 
+    /**
+     * 여부 조회가 statement 1회임을 못 박는다 — 장소 목록 경로가 페이지당 이 조회 하나만 쓴다.
+     *
+     * <p>한동안 이 자리에 "북마크 생성 시각까지 함께 싣는" 변형 조회
+     * ({@code findMyBookmarkTimesByTargetIds})의 테스트가 6건 더 있었다. 그 시각의 유일한 용처가
+     * 표시 카운트 보정이었고, 이벤트 증분이 보정을 대체하면서(2026-07-31) 쿼리째 사라졌다.
+     */
     @Test
-    void 내_북마크_시각_조회는_targetId를_Long_createdAt을_LocalDateTime으로_반환한다() {
-        // 네이티브 쿼리에서 TINYINT(1)이 Boolean으로 와 ClassCastException이 난 전례가 있어
-        // JPQL 프로젝션의 실제 런타임 타입을 못 박아둔다. 호출측 캐스팅이 이 검증에 기댄다.
-        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
-                userId, BookmarkTargetType.PLACE, List.of(placeA));
-
-        assertThat(rows).hasSize(1);
-        assertThat(rows.get(0)[0]).isInstanceOf(Long.class);
-        assertThat(rows.get(0)[1]).isInstanceOf(LocalDateTime.class);
-    }
-
-    @Test
-    void 내_북마크_시각을_대상별로_반환하고_북마크하지_않은_대상은_행이_없다() {
-        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
-                userId, BookmarkTargetType.PLACE, List.of(placeA, placeC, unbookmarkedPlace));
-
-        Map<Long, LocalDateTime> times = rows.stream()
-                .collect(Collectors.toMap(r -> (Long) r[0], r -> (LocalDateTime) r[1]));
-
-        assertThat(times).containsOnlyKeys(placeA, placeC);
-        assertThat(times.get(placeA)).isEqualTo(LocalDateTime.parse("2026-01-01T10:00:00"));
-        assertThat(times.get(placeC)).isEqualTo(LocalDateTime.parse("2026-03-01T10:00:00"));
-        assertThat(times).doesNotContainKey(unbookmarkedPlace); // 미북마크는 행 없음 = 여부 판정 겸용
-    }
-
-    @Test
-    void 내_북마크_시각_조회는_다른_유저의_북마크를_섞지_않는다() {
-        User other = User.create("bookmark-times-other-it@test.com");
-        em.persist(other);
-        em.persist(Bookmark.create(other, BookmarkTargetType.PLACE, unbookmarkedPlace));
-        em.flush();
-        em.clear();
-
-        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
-                userId, BookmarkTargetType.PLACE, List.of(placeA, unbookmarkedPlace));
-
-        assertThat(rows.stream().map(r -> (Long) r[0]))
-                .containsExactly(placeA); // 남이 누른 unbookmarkedPlace는 내 보정 대상이 아니다
-    }
-
-    @Test
-    void 내_북마크_시각_조회는_타입_경계를_지킨다() {
-        // 같은 id 값을 갖는 COURSE 북마크가 있어도 PLACE 조회에 섞이면 안 된다
-        List<Object[]> rows = bookmarkRepository.findMyBookmarkTimesByTargetIds(
-                userId, BookmarkTargetType.COURSE, List.of(courseA, placeA));
-
-        assertThat(rows.stream().map(r -> (Long) r[0])).containsExactly(courseA);
-    }
-
-    @Test
-    void 서비스가_실제_row를_생성_시각_그대로_맵에_담는다() {
-        // 레포지토리 IT가 row 타입을, 서비스 단위 테스트가 배선을 덮지만 그 사이의
-        // "row → Map 변환 + 캐스팅" 층은 실제 row로 실행되지 않았다. 값을 통째로 상수로
-        // 바꿔도(예: LocalDateTime.MIN) 아무 테스트가 죽지 않던 구멍을 여기서 막는다.
-        Map<Long, LocalDateTime> times = bookmarkService.getMyBookmarkTimesMap(
-                userId, BookmarkTargetType.PLACE, List.of(placeA, placeC, unbookmarkedPlace));
-
-        assertThat(times).containsOnlyKeys(placeA, placeC);
-        assertThat(times.get(placeA)).isEqualTo(LocalDateTime.parse("2026-01-01T10:00:00"));
-        assertThat(times.get(placeC)).isEqualTo(LocalDateTime.parse("2026-03-01T10:00:00"));
-    }
-
-    @Test
-    void 서비스는_userId가_없거나_대상이_비면_조회하지_않고_빈_맵을_준다() {
-        assertThat(bookmarkService.getMyBookmarkTimesMap(
-                null, BookmarkTargetType.PLACE, List.of(placeA))).isEmpty();
-        assertThat(bookmarkService.getMyBookmarkTimesMap(
-                userId, BookmarkTargetType.PLACE, List.of())).isEmpty();
-        assertThat(bookmarkService.getMyBookmarkTimesMap(
-                userId, BookmarkTargetType.PLACE, null)).isEmpty();
-    }
-
-    @Test
-    void 내_북마크_시각_조회는_statement를_1회만_발행한다() {
-        // "추가 쿼리 0"의 근거 — 여부 조회(findBookmarkedTargetIdsByTargetIds)와 동일하게 1회다.
+    void 북마크_여부_조회는_statement를_1회만_발행한다() {
         Statistics stats = emf.unwrap(SessionFactory.class).getStatistics();
 
         stats.clear();
-        bookmarkRepository.findBookmarkedTargetIdsByTargetIds(
+        Set<Long> bookmarked = bookmarkRepository.findBookmarkedTargetIdsByTargetIds(
                 userId, BookmarkTargetType.PLACE, List.of(placeA, placeB, placeC));
-        long statusOnly = stats.getPrepareStatementCount();
 
-        stats.clear();
-        bookmarkRepository.findMyBookmarkTimesByTargetIds(
-                userId, BookmarkTargetType.PLACE, List.of(placeA, placeB, placeC));
-        long withTimes = stats.getPrepareStatementCount();
-
-        assertThat(statusOnly).isEqualTo(1L);
-        assertThat(withTimes).isEqualTo(1L); // createdAt을 더 실어도 쿼리 수는 그대로
+        assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);
+        assertThat(bookmarked).containsExactlyInAnyOrder(placeA, placeB, placeC);
     }
 
     @Test

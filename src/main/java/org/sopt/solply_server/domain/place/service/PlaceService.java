@@ -31,7 +31,6 @@ import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlacePopularDirectQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
-import org.sopt.solply_server.domain.place.util.PlaceDisplayCount;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.PlaceListPaginator;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
@@ -184,12 +183,13 @@ public class PlaceService {
         ? candidateStatsViews
         : statsViewMap(pageIds);
 
-    // 여부 판정과 표시 카운트 보정을 이 한 번의 조회로 함께 처리한다 (기존 여부 조회를 대체 — 쿼리 증가 없음)
-    Map<Long, LocalDateTime> myBookmarkTimes =
-        placeBookmarkFacade.getMyPlaceBookmarkTimesMap(userId, pageIds);
+    // 북마크 여부 배치 조회 (커버링 인덱스, DB 1회)
+    Map<Long, Boolean> isBookmarkedMap =
+        placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
 
     List<PlacePreviewDto> previews = slice.items().stream()
-        .map(cp -> toPreview(cp, statsViews.get(cp.id()), myBookmarkTimes.get(cp.id())))
+        .map(cp -> toPreview(
+            cp, Boolean.TRUE.equals(isBookmarkedMap.get(cp.id())), statsViews.get(cp.id())))
         .toList();
 
     return PlaceFilterGetResponse.of(previews, slice.nextCursor());
@@ -349,44 +349,26 @@ public class PlaceService {
           .toList();
     }
 
-    // 여기 목록은 전부 내 북마크라 여부는 이미 확정이고, 시각은 표시 카운트 보정에만 쓴다.
-    // 이 경로는 여부 조회를 하지 않았으므로 이 조회가 쿼리 1회 추가다 — 페이징 없는 대신
-    // 유저당 상한이 작은 목록이고, 조건절은 위 여부 조회와 같은 uk 인덱스를 탄다.
-    Map<Long, LocalDateTime> myBookmarkTimes = placeBookmarkFacade.getMyPlaceBookmarkTimesMap(
-        userId, mine.stream().map(CachedPlace::id).toList());
-
+    // 이 목록은 전부 내 북마크라 여부가 구조적으로 확정이다 — 여부 조회를 하지 않는다.
     List<PlacePreviewDto> previews = mine.stream()
-        .map(cp -> toPreview(cp, true, statsViews.get(cp.id()), myBookmarkTimes.get(cp.id())))
+        .map(cp -> toPreview(cp, true, statsViews.get(cp.id())))
         .toList();
     return PlaceFilterGetResponse.of(previews, null);
   }
 
   /**
-   * 표시 카운트 = place_stats 값 + 내 액션 보정.
-   * myBookmarkedAt이 null이 아니라는 것이 곧 "내가 북마크한 상태"다 — 추가 조회가 없다.
-   */
-  private PlacePreviewDto toPreview(CachedPlace cp, PlaceStatsView stats,
-      LocalDateTime myBookmarkedAt) {
-    return toPreview(cp, myBookmarkedAt != null, stats, myBookmarkedAt);
-  }
-
-  /**
-   * 북마크 검색처럼 <b>여부가 구조적으로 확정된</b> 경로용 — isBookmarked를 인자로 받는다.
-   * "이 목록은 전부 내 북마크"라는 불변식을 시각 유무로 재유도하지 않고 코드에 그대로 적는다.
+   * 표시 카운트는 <b>place_stats 값 그대로</b>다. 응답을 만들면서 더하거나 빼지 않는다.
    *
-   * <p><b>현재 구성에서 이것 없이도 모순이 나지는 않는다.</b> 전역 격리 수준 오버라이드가 없어
-   * MySQL 기본 REPEATABLE READ이고, PlaceService가 클래스 레벨 readOnly 트랜잭션이라 목록 조회와
-   * 시각 조회가 같은 스냅샷을 본다. Bookmark는 soft delete도 아니라 두 쿼리 간 필터 비대칭도 없다.
-   * 그래도 여부를 격리 수준에 의존시키지 않는 편이 낫다는 판단이다.
+   * <p>예전에는 여기서 "내 북마크가 배치 이후면 +1"이라는 표시 보정을 했다. 배치가 하루 1회뿐이라
+   * 내가 방금 누른 것이 다음 새벽까지 숫자에 안 나타나는 문제를 화면에서만 덮던 장치였는데,
+   * 이벤트 증분({@code PlaceStatsIncrementListener})이 그 구간을 수십 ms로 줄이면서
+   * 걷어냈다 (2026-07-31). 카운트를 고치는 주체가 증분과 배치 둘로 확정돼,
+   * 조회 경로는 읽어서 그대로 싣기만 한다.
    *
-   * <p>{@code stats}가 null이면 place_stats에 행이 없는 장소다 — 배치가 아직 닿지 않았을 뿐이므로
-   * 0건 / 기준시각 null로 읽는다. {@code PlaceDisplayCount.correct}의 null 분기가 이 경우를
-   * "내 북마크가 있으면 무조건 +1"로 처리한다.
+   * <p>{@code stats}가 null이면 place_stats에 행이 없는 장소다 — 배치도 증분도 아직 닿지
+   * 않았을 뿐이므로 0건으로 읽는다.
    */
-  private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked, PlaceStatsView stats,
-      LocalDateTime myBookmarkedAt) {
-    long metaCount = stats == null ? 0L : stats.bookmarkCount();
-    LocalDateTime calculatedAt = stats == null ? null : stats.calculatedAt();
+  private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked, PlaceStatsView stats) {
     return PlacePreviewDto.of(
         cp.id(),
         cp.name(),
@@ -394,7 +376,7 @@ public class PlaceService {
         cp.mainTagName(),
         isBookmarked,
         cp.townId(),
-        PlaceDisplayCount.correct(metaCount, calculatedAt, myBookmarkedAt)
+        stats == null ? 0L : stats.bookmarkCount()
     );
   }
 
