@@ -22,13 +22,19 @@ import lombok.NoArgsConstructor;
  * <p><b>취소 방향은 보정하지 않는다.</b> 대칭으로 처리하려면 삭제된 내 북마크까지 조회해야 해
  * 쿼리가 무거워진다. 취소는 추가보다 드물고 "안 줄어드는" 위화감이 "안 늘어나는" 것보다 약하므로,
  * 다음 배치까지 1 높게 보이는 것을 수용한다.
+ *
+ * <p>2026-07-31 증분 도입 후: 취소는 비동기 감분이 준실시간으로 반영하므로 "1 높게"는
+ * 감분 이벤트가 유실된 경우에만, 다음 배치까지로 좁아졌다. 보정 로직 자체는 불변이다 —
+ * 증분이 calculated_at을 전진시키면 이 함수가 자동으로 +1을 거둔다.
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PlaceDisplayCount {
 
     /**
-     * @param metaCount      place_stats.bookmark_count (배치 시점 집계값)
-     * @param calculatedAt   place_stats.calculated_at. 배치가 닿지 않은 장소면 null
+     * @param metaCount      place_stats.bookmark_count (배치 집계값 + 그 뒤 도달한 증분)
+     * @param calculatedAt   place_stats.calculated_at — 이 행 카운트의 <b>정산 기준 시각</b>
+     *                       (배치 기준 시각, 또는 그보다 나중이면 북마크 생성 증분이 전진시킨 시각).
+     *                       배치도 증분도 닿지 않은 장소면 null
      * @param myBookmarkedAt 내 북마크 생성 시각. 북마크하지 않았으면 null
      */
     public static long correct(
