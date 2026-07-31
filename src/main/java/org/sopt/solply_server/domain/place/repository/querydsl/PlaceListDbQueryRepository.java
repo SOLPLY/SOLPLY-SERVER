@@ -43,13 +43,27 @@ public class PlaceListDbQueryRepository {
      * 인기순을 place_stats 정렬로 서빙한다 — {@code idx_place_stats_town_score}
      * (town_id, active, popular_score DESC, place_id)가 필터·정렬·타이브레이크를 흡수한다.
      *
-     * <p><b>단 "정렬을 흡수한다"가 성립하는 것은 동네(leaf) 단위 조회뿐이다.</b> 술어가
-     * {@code town_id IN (:townIds)}이므로 시 단위 조회(leaf 최대 18개)에서는 town별 range가
-     * <em>각각</em> 점수순일 뿐 전역 점수순이 아니고, 옵티마이저가 그 위에 filesort를 얹는다.
-     * 벤치 시나리오의 20%가 시 단위(`popular-city`)이므로 B의 존재 이유는 그 구간에 그대로
-     * 적용되지 않는다 — <b>측정 전 EXPLAIN으로 {@code Using filesort} 유무를 확정하고 판정문에
-     * 근거로 실을 것.</b> 정렬 대상이 시 단위 ≤1,800행이라 비용 자체는 LATEST에 대해 수용한 것과
-     * 같은 규모이므로, 확정되더라도 설계를 바꿀 사유는 아니고 <em>주장의 범위</em>를 좁힐 사유다.
+     * <p><b>단 "정렬을 흡수한다"가 성립하는 것은 동네(leaf) 단위 조회뿐이다 — 2026-08-01 EXPLAIN
+     * 실측으로 확정.</b> 술어가 {@code town_id IN (:townIds)}라 town이 여러 개면 town별 range가
+     * <em>각각</em> 점수순일 뿐 전역 점수순이 아니고, 옵티마이저는 그 위에 filesort를 얹는 대신
+     * <b>인덱스를 통째로 포기하고 place_stats를 풀스캔</b>한다.
+     *
+     * <table>
+     *   <caption>벤치 DB(장소 6,320) 실측 — {@code results/explain/popular-sort-plan.txt}</caption>
+     *   <tr><th>조회</th><th>접근</th><th>정렬</th><th>소요</th></tr>
+     *   <tr><td>동네 1개</td><td>{@code ref} · idx_place_stats_town_score</td><td>없음</td><td>0.324ms</td></tr>
+     *   <tr><td>시(leaf 18)</td><td>{@code ALL} · key=NULL, 6,320행 스캔</td><td>filesort</td><td>6.46ms</td></tr>
+     * </table>
+     *
+     * <p>스캔 대상이 그 시의 1,800행이 아니라 <b>테이블 전체</b>라는 점이 중요하다 — 서울 조회
+     * 비용이 부산 장소 수에도 비례한다. 지금은 6,320행이라 6.46ms지만 전국 규모로 늘면 선형으로
+     * 커진다. 시 단위 조회가 시나리오의 40%(`popular-city` 20 + `popular-scroll` 20)이므로 이것이
+     * B의 실제 성격이며, <b>"정렬을 인덱스가 흡수한다"는 동네 단위에 한정해서만 말할 수 있다.</b>
+     *
+     * <p>그럼에도 지금 인덱스를 더하지 않는다. 시 단위를 인덱스로 덮으려면 정렬 축을 town과
+     * 분리해야 하는데({@code (active, popular_score DESC)} 등), 그러면 동네 단위가 잃는다 —
+     * 두 접근 패턴이 같은 테이블에서 상충한다. 어느 쪽을 살릴지는 <b>측정이 시 단위 비용을 실제
+     * 병목으로 지목한 뒤에</b> 정할 문제이고, 그 전에 인덱스를 추가하면 쓰기 비용만 늘린다.
      *
      * <p><b>술어를 ps 컬럼으로 잡고 신선도는 조인으로 거르는 이유.</b> town_id·active는 places에서
      * 비정규화해 온 값이라 최대 24시간 낡을 수 있다(V24 주석). 그럼에도 WHERE를 ps 쪽에 거는 것은
