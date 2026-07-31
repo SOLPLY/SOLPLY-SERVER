@@ -1,6 +1,8 @@
 package org.sopt.solply_server.domain.place.repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -175,4 +177,16 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             @Param("bookmarkWeight") double bookmarkWeight,
             @Param("reviewWeight") double reviewWeight,
             @Param("halfLifeDays") double halfLifeDays);
+
+    /**
+     * 요청 경로의 점수·카운트 조회. PK IN 조회라 후보 수(동네 병합 최대 ~1,800)에 선형이고
+     * 북마크 수와는 무관하다. 배치와의 경합 없음 — 근거는 {@link #upsertAll} javadoc.
+     */
+    @Query("""
+        SELECT new org.sopt.solply_server.domain.place.dto.PlaceStatsView(
+            ps.placeId, ps.popularScore, ps.bookmarkCount, ps.calculatedAt)
+        FROM PlaceStats ps
+        WHERE ps.placeId IN :placeIds
+        """)
+    List<PlaceStatsView> findViewsByPlaceIds(@Param("placeIds") List<Long> placeIds);
 }

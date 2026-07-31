@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
+import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.global.config.QueryDslConfig;
@@ -682,6 +683,32 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 .anySatisfy(message -> assertThat(message)
                         .contains("생략")
                         .contains("행 수=1"));
+    }
+
+    /**
+     * 요청 경로가 쓸 읽기 모델이 배치 결과를 손실 없이 실어 나르는지 본다.
+     *
+     * <p>엔티티({@link PlaceStats})는 배치 UPSERT 전용이라 생성자를 봉인해 뒀으므로, 요청 경로는
+     * JPQL 생성자 표현식으로 뽑는 {@code PlaceStatsView}만 만진다. 그 변환 층이 컬럼을 뒤바꾸거나
+     * 값을 깎지 않는지는 <b>배치가 실제로 쓴 행</b>과 대조해야만 확인된다 — 그래서 네이티브 INSERT가
+     * 아니라 {@link #runBatch()}를 거친다.
+     *
+     * <p>점수는 {@link #statsOf}가 읽은 엔티티 값과 대조한다. 상수 1.0을 쓰면 "뷰가 옮겼는가"가
+     * 아니라 "배치 계산이 맞는가"를 또 한 번 보는 셈이고, 그건 이미 위쪽 테스트들의 몫이다.
+     */
+    @Test
+    void 뷰_조회는_배치가_저장한_점수와_카운트와_기준시각을_그대로_돌려준다() {
+        insertBookmark(placeA, 0);
+        runBatch();
+
+        List<PlaceStatsView> views = placeStatsRepository.findViewsByPlaceIds(List.of(placeA));
+
+        assertThat(views).hasSize(1);
+        PlaceStatsView view = views.get(0);
+        assertThat(view.placeId()).isEqualTo(placeA);
+        assertThat(view.score()).isEqualTo(statsOf(placeA).getPopularScore().doubleValue());
+        assertThat(view.bookmarkCount()).isEqualTo(1);
+        assertThat(view.calculatedAt()).isEqualTo(CALCULATED_AT);
     }
 
     @Test
