@@ -142,6 +142,24 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
                 .fetch();
     }
 
+    /**
+     * db 모드({@code popular-read-mode=db})의 페이지 채우기 전용 — 호출자는 {@code PlaceService.listFromDb}
+     * 하나다. 정렬 쿼리가 확정한 페이지 id(최대 50건)만 받아 응답 조립에 필요한 연관을 한 번에 끌어온다.
+     *
+     * <p><b>town을 페치 조인하는 이유.</b> 응답 DTO가 {@code place.getTown().getId()}를 쓰는데,
+     * {@code Place.town}은 {@code LAZY} + 필드 접근이라 하이버네이트가 식별자 getter를 프록시에서
+     * 가로채지 못한다 — {@code getId()} 한 번이 프록시를 통째로 초기화해 <b>SELECT 1회</b>를 낸다.
+     * 페이지에 서로 다른 동네가 N개면 N회다(시 단위 조회는 leaf 18개까지 벌어진다).
+     *
+     * <p>이것이 기능 버그는 아니지만 <b>측정을 왜곡한다.</b> 캐시 경로는 같은 값을 스냅샷
+     * ({@code CachedPlace.townId})에서 읽어 추가 조회가 0인데, db 경로만 동네 수에 비례해 쿼리가
+     * 붙으면 A/B의 "요청당 statements" 차이가 구조가 아니라 <b>페치 전략</b>에서 나온다.
+     * 플랜 C Q1의 성공 조건이 "요청당 statements가 A+3 이내"이므로, 그 지표가 비교하려는 것을
+     * 정확히 비교하게 하려면 여기서 함께 끌어와야 한다.
+     *
+     * <p>{@code town}은 {@code nullable = false}라 inner join으로 충분하며, ToOne 페치 조인이라
+     * {@code placeTags} 컬렉션 페치와 겹쳐도 곱집합이 늘지 않는다.
+     */
     @Override
     public List<Place> findPlacesWithTagsByIds(List<Long> ids) {
         if (ids.isEmpty()) {
@@ -153,6 +171,7 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         return queryFactory
                 .selectDistinct(place)
                 .from(place)
+                .join(place.town).fetchJoin()
                 .leftJoin(place.placeTags, placeTag).fetchJoin()
                 .leftJoin(placeTag.tag, tag).fetchJoin()
                 .where(place.id.in(ids))

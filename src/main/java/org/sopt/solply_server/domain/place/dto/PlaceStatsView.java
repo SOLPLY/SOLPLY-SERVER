@@ -25,8 +25,12 @@ public record PlaceStatsView(
     /**
      * 정렬 키. 커서 sortKey(double)와 같은 표현이다.
      *
-     * <p>DECIMAL(18,6) → double 변환 지점은 <b>여기 하나뿐</b>이다. {@code CachedPlace}에서
-     * 점수·카운트 필드가 빠지면서 스냅샷 로더 쪽 변환이 사라졌다.
+     * <p>DECIMAL(18,6) → double 변환 지점은 <b>캐시 경로에서는 여기 하나뿐</b>이다
+     * ({@code CachedPlace}에서 점수·카운트 필드가 빠지면서 스냅샷 로더 쪽 변환이 사라졌다).
+     * db 경로에는 짝이 되는 변환이 하나 더 있다 —
+     * {@code PlaceListDbQueryRepository#findPopularRows}의 {@code ((Number) row).doubleValue()}.
+     * 두 지점은 같은 {@code BigDecimal.doubleValue()}로 귀결되므로 같은 DECIMAL은 같은 double이 되고,
+     * 그 등가가 <b>두 모드의 커서가 호환되는 근거</b>다. 한쪽만 변환 방식을 바꾸면 그 근거가 깨진다.
      */
     public double score() {
         return popularScore.doubleValue();
