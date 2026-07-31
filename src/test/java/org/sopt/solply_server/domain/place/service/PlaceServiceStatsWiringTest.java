@@ -33,7 +33,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
-import org.sopt.solply_server.domain.place.repository.querydsl.PlacePopularDirectQueryRepository;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
@@ -73,7 +73,7 @@ class PlaceServiceStatsWiringTest {
   @Mock private PlaceReviewRepository placeReviewRepository;
   @Mock private TownPlacesCache townPlacesCache;
   @Mock private TownHierarchyResolver townHierarchyResolver;
-  @Mock private PlacePopularDirectQueryRepository placePopularDirectQueryRepository;
+  @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
   @Mock private PlaceStatsRepository placeStatsRepository;
 
   @InjectMocks private PlaceService placeService;
