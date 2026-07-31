@@ -26,6 +26,7 @@ import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlacePopularDirectQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
@@ -66,6 +67,7 @@ class PlaceServiceDisplayCountTest {
   @Mock private TownPlacesCache townPlacesCache;
   @Mock private TownHierarchyResolver townHierarchyResolver;
   @Mock private PlacePopularDirectQueryRepository placePopularDirectQueryRepository;
+  @Mock private PlaceStatsRepository placeStatsRepository;
 
   @InjectMocks private PlaceService placeService;
 

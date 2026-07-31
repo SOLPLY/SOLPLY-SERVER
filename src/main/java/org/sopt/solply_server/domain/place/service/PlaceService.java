@@ -2,7 +2,6 @@ package org.sopt.solply_server.domain.place.service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -18,6 +17,7 @@ import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceLatestReviewDto;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchResultDto;
+import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceDetailsGetResponse;
@@ -27,6 +27,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlacePopularDirectQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
@@ -69,6 +70,7 @@ public class PlaceService {
   private final TownPlacesCache townPlacesCache;
   private final TownHierarchyResolver townHierarchyResolver;
   private final PlacePopularDirectQueryRepository placePopularDirectQueryRepository;
+  private final PlaceStatsRepository placeStatsRepository;
 
   /** [벤치 전용] popular 정렬 읽기 경로: cache(기본) | db */
   @Value("${solply.place-list.popular-read-mode:cache}")
@@ -165,8 +167,14 @@ public class PlaceService {
       return bookmarkSearchResponse(userId, leafTownIds, filtered, sort);
     }
 
-    PlaceListPaginator.PageSlice slice =
-        PlaceListPaginator.paginate(filtered, sort, request.cursor(), request.size());
+    // 인기순은 정렬 키가 필요하므로 페이징 "전에" 후보 전체의 점수를 읽는다 (IN 조회 1회).
+    // LATEST는 정렬 키가 스냅샷 안에 있어 조회가 필요 없다.
+    Map<Long, Double> popularScores = sort == PlaceSortType.POPULAR
+        ? scoreMap(statsViewMap(filtered.stream().map(CachedPlace::id).toList()))
+        : Map.of();
+
+    PlaceListPaginator.PageSlice slice = PlaceListPaginator.paginate(
+        filtered, sort, request.cursor(), request.size(), popularScores);
 
     // 여부 판정과 표시 카운트 보정을 이 한 번의 조회로 함께 처리한다 (기존 여부 조회를 대체 — 쿼리 증가 없음)
     Map<Long, LocalDateTime> myBookmarkTimes = placeBookmarkFacade.getMyPlaceBookmarkTimesMap(
@@ -320,10 +328,13 @@ public class PlaceService {
     List<Long> orderedIds = placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(userId, leafTownIds);
     List<CachedPlace> mine = sortByBookmarkedOrder(filtered, orderedIds);
 
+    // 정렬 규칙을 손으로 다시 적지 않고 페이지네이터의 비교자를 재사용한다 — 여기만 규칙이
+    // 어긋나면 같은 "인기순"이 경로마다 다른 순서를 내고, 그것을 잡아줄 타입이 없다.
     if (sort == PlaceSortType.POPULAR) {
+      Map<Long, Double> popularScores =
+          scoreMap(statsViewMap(mine.stream().map(CachedPlace::id).toList()));
       mine = mine.stream()
-          .sorted(Comparator.comparingDouble(CachedPlace::popularScore).reversed()
-              .thenComparing(CachedPlace::id))
+          .sorted(PlaceListPaginator.comparatorOf(PlaceSortType.POPULAR, popularScores))
           .toList();
     }
 
@@ -367,6 +378,26 @@ public class PlaceService {
         cp.townId(),
         PlaceDisplayCount.correct(cp.bookmarkCount(), cp.calculatedAt(), myBookmarkedAt)
     );
+  }
+
+  /**
+   * 요청 시점 place_stats 조회 — 캐시를 거치지 않으므로 정렬·표시가 보는 세대는 배치 세대 하나다.
+   * PK IN 조회 1회이고 후보 수(시 단위 병합 최대 ~1,800)에 선형이다.
+   *
+   * <p>배치가 아직 닿지 않은 장소는 <b>행 자체가 없다</b> — 결과 map에 키가 없는 것이 정상이며,
+   * 호출자가 그 경우의 기본값(0점 / 0건 / 기준시각 null)을 정한다.
+   */
+  private Map<Long, PlaceStatsView> statsViewMap(List<Long> placeIds) {
+    if (placeIds.isEmpty()) {
+      return Map.of();
+    }
+    return placeStatsRepository.findViewsByPlaceIds(placeIds).stream()
+        .collect(Collectors.toMap(PlaceStatsView::placeId, Function.identity()));
+  }
+
+  private static Map<Long, Double> scoreMap(Map<Long, PlaceStatsView> views) {
+    return views.values().stream()
+        .collect(Collectors.toMap(PlaceStatsView::placeId, PlaceStatsView::score));
   }
 
   /** 북마크 검색: 필터링된 장소를 북마크 최신순(orderedIds 순서)으로 재배열 */

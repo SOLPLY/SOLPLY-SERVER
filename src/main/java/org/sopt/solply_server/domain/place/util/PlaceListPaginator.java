@@ -4,6 +4,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.sopt.solply_server.domain.place.cache.CachedPlace;
@@ -32,11 +33,15 @@ public final class PlaceListPaginator {
 
     public record PageSlice(List<CachedPlace> items, String nextCursor) {}
 
-    public static PageSlice paginate(
-            List<CachedPlace> places, PlaceSortType sort, String cursorToken, Integer size) {
+    /**
+     * @param popularScoreById 인기 점수 map (id → 점수). 호출자가 요청 시점에 place_stats를 읽어
+     *                         넘긴다. LATEST 정렬은 이 값을 읽지 않으므로 빈 map이어도 무방하다
+     */
+    public static PageSlice paginate(List<CachedPlace> places, PlaceSortType sort,
+            String cursorToken, Integer size, Map<Long, Double> popularScoreById) {
 
         List<CachedPlace> ordered = new ArrayList<>(places);
-        ordered.sort(comparatorOf(sort));
+        ordered.sort(comparatorOf(sort, popularScoreById));
 
         boolean paging = cursorToken != null || size != null;
         if (!paging) {
@@ -50,19 +55,20 @@ public final class PlaceListPaginator {
             if (cursor.sort() != sort) {
                 throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
             }
-            start = firstIndexAfter(ordered, cursor, sort);
+            start = firstIndexAfter(ordered, cursor, sort, popularScoreById);
         }
 
         int end = Math.min(start + pageSize, ordered.size());
         List<CachedPlace> page = List.copyOf(ordered.subList(start, end));
         String nextCursor = (end < ordered.size() && !page.isEmpty())
-                ? cursorOf(page.get(page.size() - 1), sort).encode()
+                ? cursorOf(page.get(page.size() - 1), sort, popularScoreById).encode()
                 : null;
         return new PageSlice(page, nextCursor);
     }
 
-    public static PlaceListCursor cursorOf(CachedPlace place, PlaceSortType sort) {
-        return new PlaceListCursor(sort, sortKeyOf(place, sort), place.id());
+    public static PlaceListCursor cursorOf(CachedPlace place, PlaceSortType sort,
+            Map<Long, Double> popularScoreById) {
+        return new PlaceListCursor(sort, sortKeyOf(place, sort, popularScoreById), place.id());
     }
 
     /**
@@ -75,17 +81,27 @@ public final class PlaceListPaginator {
      * (epochMicro 1.78e15 &lt; 2^53 ≈ 9.0e15, epochNano 1.78e18은 초과).
      * places.created_at이 DATETIME(6)으로 올라가 그 충실도가 필요해지면
      * toEpochSecond → epochMicro 한 번의 교체로 끝난다.
+     *
+     * <p>POPULAR 점수가 map에 없으면 0점이다 — place_stats에 행이 없는 장소, 즉 배치가 아직
+     * 닿지 않은 신규 장소이고 실제 활동이 0이므로 0이 정답이다.
      */
-    private static double sortKeyOf(CachedPlace place, PlaceSortType sort) {
+    private static double sortKeyOf(CachedPlace place, PlaceSortType sort,
+            Map<Long, Double> popularScoreById) {
         return switch (sort) {
-            case POPULAR -> place.popularScore();
+            case POPULAR -> popularScoreById.getOrDefault(place.id(), 0.0);
             case LATEST -> place.createdAt().toEpochSecond(ZoneOffset.UTC);
         };
     }
 
-    private static Comparator<CachedPlace> comparatorOf(PlaceSortType sort) {
-        Comparator<CachedPlace> byKey =
-                Comparator.comparingDouble((CachedPlace p) -> sortKeyOf(p, sort)).reversed();
+    /**
+     * 페이징을 타지 않는 경로(북마크 검색)도 이 비교자를 재사용한다 — 정렬 규칙을 손으로 다시
+     * 적으면 여기와 조용히 어긋난다.
+     */
+    public static Comparator<CachedPlace> comparatorOf(PlaceSortType sort,
+            Map<Long, Double> popularScoreById) {
+        Comparator<CachedPlace> byKey = Comparator
+                .comparingDouble((CachedPlace p) -> sortKeyOf(p, sort, popularScoreById))
+                .reversed();
         return switch (sort) {
             case POPULAR -> byKey.thenComparing(CachedPlace::id);
             case LATEST -> byKey.thenComparing(Comparator.comparing(CachedPlace::id).reversed());
@@ -93,17 +109,19 @@ public final class PlaceListPaginator {
     }
 
     /** 커서 위치 "다음" 항목의 인덱스 — 항목이 사라졌어도 정렬 키 비교로 복원 */
-    private static int firstIndexAfter(List<CachedPlace> ordered, PlaceListCursor cursor, PlaceSortType sort) {
+    private static int firstIndexAfter(List<CachedPlace> ordered, PlaceListCursor cursor,
+            PlaceSortType sort, Map<Long, Double> popularScoreById) {
         for (int i = 0; i < ordered.size(); i++) {
-            if (isAfterCursor(ordered.get(i), cursor, sort)) {
+            if (isAfterCursor(ordered.get(i), cursor, sort, popularScoreById)) {
                 return i;
             }
         }
         return ordered.size();
     }
 
-    private static boolean isAfterCursor(CachedPlace place, PlaceListCursor cursor, PlaceSortType sort) {
-        double key = sortKeyOf(place, sort);
+    private static boolean isAfterCursor(CachedPlace place, PlaceListCursor cursor,
+            PlaceSortType sort, Map<Long, Double> popularScoreById) {
+        double key = sortKeyOf(place, sort, popularScoreById);
         return switch (sort) {
             case POPULAR -> key < cursor.sortKey()
                     || (key == cursor.sortKey() && place.id() > cursor.placeId());
