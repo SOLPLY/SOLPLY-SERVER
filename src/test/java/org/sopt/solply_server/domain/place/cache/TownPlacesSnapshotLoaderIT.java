@@ -54,7 +54,9 @@ class TownPlacesSnapshotLoaderIT extends MySqlContainerSupport {
     /**
      * 스냅샷은 place_stats를 더는 읽지 않는다 — 점수·카운트·기준시각 단언이 여기 있었으나
      * 그 값들이 CachedPlace에서 빠지면서 함께 삭제했다. 요청 경로가 place_stats를 직접 읽고,
-     * 그 계약은 PlaceStatsRepositoryIT(조회)와 PlacePopularFlowIT(사슬)가 맡는다.
+     * 그 계약은 PlaceStatsBatchProcessorIT(뷰 조회가 배치 값을 그대로 옮기는가),
+     * PlaceListPaginatorTest·PlaceServiceDisplayCountTest(뷰가 없을 때의 0점·0건 기본값),
+     * PlacePopularFlowIT(사슬 전체)가 나눠 맡는다.
      */
     @Test
     void 스냅샷_모든_항목에_소속_동네_id가_내장된다() {

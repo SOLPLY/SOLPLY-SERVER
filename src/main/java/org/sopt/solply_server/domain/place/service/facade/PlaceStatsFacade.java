@@ -72,7 +72,7 @@ public class PlaceStatsFacade {
      * 부팅 시 {@code place_stats} 최초 적재.
      *
      * <p><b>이 진입점이 없으면 배포 첫날의 읽기 경로가 전부 0이 된다.</b>
-     * {@code TownPlacesSnapshotLoader}가 이 테이블을 읽는데 {@code V24}는 백필하지 않고 채우는
+     * {@code PlaceStatsRepository.findViewsByPlaceIds}가 이 테이블을 읽는데 {@code V24}는 백필하지 않고 채우는
      * 수단이 위 스케줄뿐이라, 배포 시각부터 다음 02:00까지 최악 24시간 동안 전 장소가
      * "통계 행 없음" 분기를 타 인기순이 장소 id 순서가 되고 북마크 수가 0으로 응답된다.
      *

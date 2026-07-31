@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
@@ -17,6 +18,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -93,8 +96,12 @@ class PlaceServiceDisplayCountTest {
   }
 
   private PlaceFilterGetResponse getPlaces(boolean bookmarkSearch) {
+    return getPlaces(bookmarkSearch, PlaceSortType.POPULAR);
+  }
+
+  private PlaceFilterGetResponse getPlaces(boolean bookmarkSearch, PlaceSortType sort) {
     return placeService.getPlaces(USER_ID, new PlaceFilterGetRequest(
-        TOWN_ID, bookmarkSearch, null, null, null, PlaceSortType.POPULAR, null, null));
+        TOWN_ID, bookmarkSearch, null, null, null, sort, null, null));
   }
 
   @Test
@@ -177,5 +184,31 @@ class PlaceServiceDisplayCountTest {
 
     assertThat(preview.bookmarkCount()).isEqualTo(101L);
     assertThat(preview.isBookmarked()).isTrue();
+  }
+
+  /**
+   * 이 리팩터링의 핵심 주장이 "place_stats 조회는 경로당 1회"다. 목록 경로는 정렬에 따라
+   * 읽는 시점이 갈리고(POPULAR는 페이징 전 후보 전체 / LATEST는 페이징 후 페이지 항목),
+   * 북마크 검색은 정렬 분기 <b>밖</b>에서 한 번 읽는다. 어느 쪽이든 분기를 한 줄만 잘못
+   * 고쳐도 조용히 2회가 되는데, 값 단언만으로는 그 변이가 전부 살아남는다 —
+   * 그래서 횟수를 별도로 못 박는다.
+   */
+  @ParameterizedTest(name = "{0} / 북마크검색={1}")
+  @CsvSource({"POPULAR, false", "LATEST, false", "POPULAR, true", "LATEST, true"})
+  @DisplayName("place_stats 조회는 네 경로 각각에서 정확히 1회다")
+  void readsPlaceStatsExactlyOncePerPath(PlaceSortType sort, boolean bookmarkSearch) {
+    givenBatchCounted(100L);
+    if (bookmarkSearch) {
+      given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
+          .willReturn(List.of(1L));
+    }
+    given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
+        .willReturn(Map.of(1L, BATCH_AT.plusMinutes(5)));
+
+    PlacePreviewDto preview = getPlaces(bookmarkSearch, sort).places().get(0);
+
+    // 횟수만 세면 "한 번도 안 읽는" 변이가 통과하므로, 읽은 값이 응답에 닿았음도 함께 본다
+    assertThat(preview.bookmarkCount()).isEqualTo(101L);
+    verify(placeStatsRepository, times(1)).findViewsByPlaceIds(anyList());
   }
 }

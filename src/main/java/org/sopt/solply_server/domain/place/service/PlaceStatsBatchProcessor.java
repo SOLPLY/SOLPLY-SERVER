@@ -61,7 +61,7 @@ public class PlaceStatsBatchProcessor {
     /**
      * {@code place_stats}가 <b>비어 있을 때만</b> 전량 재계산한다. 최초 적재 전용 진입점이다.
      *
-     * <p><b>왜 필요한가.</b> 읽기 경로({@code TownPlacesSnapshotLoader})가 이 테이블에 의존하는데
+     * <p><b>왜 필요한가.</b> 읽기 경로({@code PlaceStatsRepository.findViewsByPlaceIds})가 이 테이블에 의존하는데
      * 채우는 수단이 하루 한 번 도는 스케줄뿐이면, 배포 시각부터 다음 02:00까지(최악 24시간)
      * 전 장소가 {@code stats == null} 분기를 타 <b>인기순이 장소 id 순서가 되고 북마크 수가 전부
      * 0으로 응답된다</b>. {@code V24}는 테이블만 만들 뿐 백필하지 않으므로 여기서 메운다.

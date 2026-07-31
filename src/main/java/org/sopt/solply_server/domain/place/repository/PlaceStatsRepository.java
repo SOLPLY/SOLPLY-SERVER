@@ -90,7 +90,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      *
      * <p><b>반면 {@code place_stats} 읽기는 이 배치에 막히지 않는다.</b> 조회는 MVCC 일관된 읽기라
      * 배치가 도는 중에도 대기 없이 <em>직전 배치 결과</em>를 보고, 커밋 시점에 원자적으로 새 세대로
-     * 바뀐다. 즉 읽기 경로(스냅샷 로더)는 반쯤 갱신된 중간 상태를 절대 보지 않는다.
+     * 바뀐다. 즉 읽기 경로({@code findViewsByPlaceIds})는 반쯤 갱신된 중간 상태를 절대 보지 않는다.
      * 이 성질에 기대도 좋다.
      *
      * <p><b>{@code binlog_format} 전제:</b> RC + {@code INSERT ... SELECT}는 {@code STATEMENT}
