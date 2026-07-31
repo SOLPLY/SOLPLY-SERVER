@@ -2,7 +2,6 @@ package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -53,74 +52,16 @@ class TownPlacesSnapshotLoaderIT extends MySqlContainerSupport {
     }
 
     /**
-     * 원래 이 테스트는 "bookmarks에 1건 넣으면 스냅샷 bookmarkCount가 1이 된다"를 단언했다.
-     * 로더가 place_stats를 읽도록 전환된 지금은 그 단언이 성립하지 않는 것이 정상이므로,
-     * 반대 방향(실시간 집계가 더는 반영되지 않는다)을 고정해 전환의 회귀 감시망으로 남긴다.
+     * 스냅샷은 place_stats를 더는 읽지 않는다 — 점수·카운트·기준시각 단언이 여기 있었으나
+     * 그 값들이 CachedPlace에서 빠지면서 함께 삭제했다. 요청 경로가 place_stats를 직접 읽고,
+     * 그 계약은 PlaceStatsRepositoryIT(조회)와 PlacePopularFlowIT(사슬)가 맡는다.
      */
     @Test
-    void 스냅샷에_소속_동네_id가_내장되고_북마크_실시간_집계는_반영되지_않는다() {
-        List<CachedPlace> before = loader.loadSnapshot(MANGWON_TOWN_ID);
-        assertThat(before).hasSizeGreaterThanOrEqualTo(2);
-        Long bookmarkedPlaceId = before.get(0).id();
-        Long plainPlaceId = before.get(1).id();
-
-        jdbcTemplate.update(
-                "INSERT INTO users (role, nickname, email, is_new_user, is_deleted) "
-                        + "VALUES ('USER', 'snapshot-it', 'snapshot-it@test.com', false, false)");
-        Long userId = jdbcTemplate.queryForObject(
-                "SELECT id FROM users WHERE email = 'snapshot-it@test.com'", Long.class);
-        jdbcTemplate.update(
-                "INSERT INTO bookmarks (user_id, target_type, target_id, created_at, updated_at) "
-                        + "VALUES (?, 'PLACE', ?, NOW(), NOW())", userId, bookmarkedPlaceId);
-
-        List<CachedPlace> snapshot = loader.loadSnapshot(MANGWON_TOWN_ID);
-
-        // 소속 동네 id가 모든 스냅샷 항목에 내장된다
-        assertThat(snapshot).allSatisfy(cp -> assertThat(cp.townId()).isEqualTo(MANGWON_TOWN_ID));
-        // 북마크를 방금 넣었어도 place_stats에 행이 없으므로 0 — 배치가 돌아야 반영된다
-        assertThat(findById(snapshot, bookmarkedPlaceId).bookmarkCount()).isZero();
-        assertThat(findById(snapshot, plainPlaceId).bookmarkCount()).isZero();
-    }
-
-    @Test
-    void 스냅샷은_place_stats의_점수와_카운트와_계산시각을_담는다() {
-        Long placeId = jdbcTemplate.queryForObject(
-                "SELECT id FROM places WHERE town_id = ? AND active = true ORDER BY id LIMIT 1",
-                Long.class, MANGWON_TOWN_ID);
-        LocalDateTime calculatedAt = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
-
-        jdbcTemplate.update("""
-                INSERT INTO place_stats
-                    (place_id, town_id, active, popular_score, bookmark_count,
-                     review_count, avg_rating, calculated_at)
-                VALUES (?, ?, true, 42.125000, 9, 3, 4.33, ?)
-                """, placeId, MANGWON_TOWN_ID, calculatedAt);
-
-        List<CachedPlace> snapshot = loader.loadSnapshot(MANGWON_TOWN_ID);
-
-        CachedPlace target = snapshot.stream()
-                .filter(cp -> cp.id().equals(placeId))
-                .findFirst()
-                .orElseThrow();
-        assertThat(target.popularScore()).isEqualTo(42.125);
-        assertThat(target.bookmarkCount()).isEqualTo(9L);
-        assertThat(target.calculatedAt()).isEqualTo(calculatedAt);
-    }
-
-    @Test
-    void 통계_행이_없는_장소는_0점_0건_계산시각_null로_채운다() {
+    void 스냅샷_모든_항목에_소속_동네_id가_내장된다() {
         List<CachedPlace> snapshot = loader.loadSnapshot(MANGWON_TOWN_ID);
 
         assertThat(snapshot).isNotEmpty();
-        assertThat(snapshot).allSatisfy(cp -> {
-            assertThat(cp.popularScore()).isEqualTo(0.0);
-            assertThat(cp.bookmarkCount()).isEqualTo(0L);
-            assertThat(cp.calculatedAt()).isNull();
-        });
-    }
-
-    private CachedPlace findById(List<CachedPlace> snapshot, Long id) {
-        return snapshot.stream().filter(cp -> cp.id().equals(id)).findFirst().orElseThrow();
+        assertThat(snapshot).allSatisfy(cp -> assertThat(cp.townId()).isEqualTo(MANGWON_TOWN_ID));
     }
 
     @Test

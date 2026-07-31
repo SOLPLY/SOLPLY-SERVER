@@ -27,20 +27,16 @@ class PlaceListPaginatorTest {
      */
     private final Map<Long, Double> scores = new HashMap<>();
 
-    /** 점수와 카운트를 따로 받는다 — 인기순이 어느 쪽을 따르는지 구분해서 못 박기 위함 */
-    private CachedPlace place(long id, double popularScore, long bookmarkCount,
-            LocalDateTime createdAt) {
+    /** 스냅샷을 만들면서 점수를 map에 함께 등록한다 — 이 둘이 페이지네이터의 두 입력이다 */
+    private CachedPlace place(long id, double popularScore, LocalDateTime createdAt) {
         scores.put(id, popularScore);
         return new CachedPlace(id, "p" + id, null, null, Set.of(), Set.of(), Set.of(),
-                createdAt, 1L,
-                popularScore,
-                bookmarkCount,
-                null);
+                createdAt, 1L);
     }
 
     @Test
     void POPULAR는_점수_내림차순_동점은_id_오름차순이다() {
-        List<CachedPlace> input = List.of(place(3, 5, 5, T1), place(1, 9, 9, T1), place(2, 5, 5, T1));
+        List<CachedPlace> input = List.of(place(3, 5, T1), place(1, 9, T1), place(2, 5, T1));
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(input, PlaceSortType.POPULAR, null, null, scores);
         assertThat(slice.items()).extracting(CachedPlace::id).containsExactly(1L, 2L, 3L);
@@ -49,7 +45,7 @@ class PlaceListPaginatorTest {
 
     @Test
     void LATEST는_생성일_내림차순_동점은_id_내림차순이다() {
-        List<CachedPlace> input = List.of(place(1, 0, 0, T1), place(2, 0, 0, T3), place(3, 0, 0, T3));
+        List<CachedPlace> input = List.of(place(1, 0, T1), place(2, 0, T3), place(3, 0, T3));
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(input, PlaceSortType.LATEST, null, null, scores);
         assertThat(slice.items()).extracting(CachedPlace::id).containsExactly(3L, 2L, 1L);
@@ -63,9 +59,9 @@ class PlaceListPaginatorTest {
         // place_stats.calculated_at 포함) 정밀도를 맞추는 마이그레이션 한 건이면 실재하게 된다.
         LocalDateTime base = LocalDateTime.of(2026, 7, 30, 12, 0, 0);
         List<CachedPlace> input = List.of(
-                place(5, 0, 0, base.withNano(500_000_000)),
-                place(9, 0, 0, base.withNano(100_000_000)),
-                place(1, 0, 0, base.minusSeconds(10)));
+                place(5, 0, base.withNano(500_000_000)),
+                place(9, 0, base.withNano(100_000_000)),
+                place(1, 0, base.minusSeconds(10)));
 
         List<Long> whole = PlaceListPaginator.paginate(input, PlaceSortType.LATEST, null, null, scores)
                 .items().stream().map(CachedPlace::id).toList();
@@ -85,7 +81,7 @@ class PlaceListPaginatorTest {
 
     @Test
     void size를_지정하면_해당_개수만_반환하고_nextCursor를_준다() {
-        List<CachedPlace> input = List.of(place(1, 9, 9, T1), place(2, 5, 5, T1), place(3, 1, 1, T1));
+        List<CachedPlace> input = List.of(place(1, 9, T1), place(2, 5, T1), place(3, 1, T1));
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(input, PlaceSortType.POPULAR, null, 2, scores);
         assertThat(slice.items()).extracting(CachedPlace::id).containsExactly(1L, 2L);
@@ -94,7 +90,7 @@ class PlaceListPaginatorTest {
 
     @Test
     void 커서_다음_항목부터_반환하고_끝에_도달하면_nextCursor가_null이다() {
-        List<CachedPlace> input = List.of(place(1, 9, 9, T1), place(2, 5, 5, T1), place(3, 1, 1, T1));
+        List<CachedPlace> input = List.of(place(1, 9, T1), place(2, 5, T1), place(3, 1, T1));
         String cursor = new PlaceListCursor(PlaceSortType.POPULAR, 5, 2).encode();
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(input, PlaceSortType.POPULAR, cursor, 10, scores);
@@ -104,8 +100,8 @@ class PlaceListPaginatorTest {
 
     @Test
     void 커서의_장소가_사라져도_정렬_키_비교로_이어서_반환한다() {
-        // 커서는 (count=5, id=2)인데 id=2가 목록에 없음 → 그 위치 이후인 id=3부터
-        List<CachedPlace> input = List.of(place(1, 9, 9, T1), place(3, 1, 1, T1));
+        // 커서는 (점수=5, id=2)인데 id=2가 목록에 없음 → 그 위치 이후인 id=3부터
+        List<CachedPlace> input = List.of(place(1, 9, T1), place(3, 1, T1));
         String cursor = new PlaceListCursor(PlaceSortType.POPULAR, 5, 2).encode();
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(input, PlaceSortType.POPULAR, cursor, 10, scores);
@@ -123,7 +119,7 @@ class PlaceListPaginatorTest {
     @Test
     void 커서만_있고_size가_없으면_기본_페이지_크기를_쓴다() {
         List<CachedPlace> input = IntStream.rangeClosed(1, 30)
-                .mapToObj(i -> place(i, 100 - i, 100 - i, T1)).toList();
+                .mapToObj(i -> place(i, 100 - i, T1)).toList();
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(input, PlaceSortType.POPULAR, null, null, scores);
         assertThat(slice.items()).hasSize(30); // cursor·size 둘 다 없으면 전체
@@ -136,10 +132,11 @@ class PlaceListPaginatorTest {
 
     @Test
     void 인기순은_북마크_수가_아니라_복합_점수로_정렬한다() {
-        // 북마크는 적지만 좋은 평점이 붙어 점수가 높은 장소가 1위여야 한다
+        // 북마크 수는 이제 페이지네이터가 볼 수조차 없다(CachedPlace에서 빠졌다). 남은 축은
+        // 점수 하나이고, 리뷰 가중치가 섞인 소수점 값이 그대로 순위를 정하는지만 확인한다.
         List<CachedPlace> places = List.of(
-                place(1L, 10.0, 100L, T1),
-                place(2L, 55.5, 3L, T1));
+                place(1L, 10.0, T1),
+                place(2L, 55.5, T1));
 
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(places, PlaceSortType.POPULAR, null, 10, scores);
@@ -151,9 +148,9 @@ class PlaceListPaginatorTest {
     void 인기순_커서는_소수점_점수를_잃지_않고_이어진다() {
         // 정수로 절삭하면 세 장소가 모두 7점이 되어 커서 위치가 무너진다
         List<CachedPlace> places = List.of(
-                place(1L, 7.9, 0L, T1),
-                place(2L, 7.5, 0L, T1),
-                place(3L, 7.1, 0L, T1));
+                place(1L, 7.9, T1),
+                place(2L, 7.5, T1),
+                place(3L, 7.1, T1));
 
         PlaceListPaginator.PageSlice first =
                 PlaceListPaginator.paginate(places, PlaceSortType.POPULAR, null, 1, scores);
@@ -167,9 +164,9 @@ class PlaceListPaginatorTest {
     @Test
     void 인기순_커서는_점수_동점일_때_id_오름차순으로_이어진다() {
         List<CachedPlace> places = List.of(
-                place(1L, 7.5, 1L, T1),
-                place(2L, 7.5, 1L, T1),
-                place(3L, 7.5, 1L, T1));
+                place(1L, 7.5, T1),
+                place(2L, 7.5, T1),
+                place(3L, 7.5, T1));
 
         PlaceListPaginator.PageSlice first =
                 PlaceListPaginator.paginate(places, PlaceSortType.POPULAR, null, 2, scores);
@@ -183,13 +180,13 @@ class PlaceListPaginatorTest {
     }
 
     @Test
-    void 커서에_담기는_키도_북마크_수가_아니라_복합_점수다() {
-        // 점수 내림차순(1,2,3)과 북마크 내림차순(3,2,1)이 정반대라, 커서가 북마크 수를 담으면
-        // 2페이지 이후 위치 복원이 무너진다 (comparatorOf만 점수로 바꾸고 sortKeyOf를 두면 통과해버림)
+    void 커서에_담기는_키도_정렬에_쓴_점수와_같아야_한다() {
+        // 한 장씩 끝까지 넘어가며 순서가 유지되는지를 본다. 커서 키(sortKeyOf)와 정렬
+        // 키(comparatorOf)가 다른 값을 쓰기 시작하면 2페이지부터 위치 복원이 무너진다.
         List<CachedPlace> places = List.of(
-                place(1L, 30.0, 1L, T1),
-                place(2L, 20.0, 2L, T1),
-                place(3L, 10.0, 3L, T1));
+                place(1L, 30.0, T1),
+                place(2L, 20.0, T1),
+                place(3L, 10.0, T1));
 
         PlaceListPaginator.PageSlice p1 =
                 PlaceListPaginator.paginate(places, PlaceSortType.POPULAR, null, 1, scores);
@@ -208,9 +205,9 @@ class PlaceListPaginatorTest {
     @Test
     void 음수_점수도_정렬_순서를_지킨다() {
         List<CachedPlace> places = List.of(
-                place(1L, -3.0, 0L, T1),
-                place(2L, 0.0, 0L, T1),
-                place(3L, 2.5, 0L, T1));
+                place(1L, -3.0, T1),
+                place(2L, 0.0, T1),
+                place(3L, 2.5, T1));
 
         PlaceListPaginator.PageSlice slice =
                 PlaceListPaginator.paginate(places, PlaceSortType.POPULAR, null, 10, scores);
@@ -223,7 +220,7 @@ class PlaceListPaginatorTest {
         // place_stats에 행이 없는 장소 — 배치가 아직 닿지 않았을 뿐이고 실제 활동이 0이므로
         // 0점이 정답이다 (스냅샷 로더가 갖고 있던 기본값 계약을 그대로 승계).
         // 2번이 원래 더 높은 점수라, map에서 빼면 순서가 뒤집혀야 이 계약이 실제로 걸린 것이다.
-        List<CachedPlace> input = List.of(place(1, 5, 5, T1), place(2, 9, 9, T1));
+        List<CachedPlace> input = List.of(place(1, 5, T1), place(2, 9, T1));
         scores.remove(2L);
 
         PlaceListPaginator.PageSlice slice =

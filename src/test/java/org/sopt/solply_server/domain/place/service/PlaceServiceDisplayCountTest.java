@@ -76,8 +76,7 @@ class PlaceServiceDisplayCountTest {
   /** 장소 식별 정보만 담는 스냅샷 — 카운트·기준시각은 place_stats 뷰에서 온다 */
   private CachedPlace place(long id) {
     return new CachedPlace(id, "장소" + id, "key" + id, "카페",
-        Set.of(), Set.of(), Set.of(), LocalDateTime.of(2026, 1, 1, 0, 0),
-        TOWN_ID, 12.5, 0L, null);
+        Set.of(), Set.of(), Set.of(), LocalDateTime.of(2026, 1, 1, 0, 0), TOWN_ID);
   }
 
   /** 배치가 카운트 100으로 집계해 둔 상태 (기준시각 BATCH_AT) */

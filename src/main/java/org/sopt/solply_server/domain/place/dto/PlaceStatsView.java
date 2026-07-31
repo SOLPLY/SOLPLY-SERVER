@@ -9,9 +9,8 @@ import java.time.LocalDateTime;
  * 읽는 이유: 기존 캐시 구조의 존치 자체가 플랜 C 검증 대상이라 그 위에 점수를 얹지 않는다는
  * 결정(2026-07-31).
  *
- * <p><b>아직 아무도 이 뷰를 소비하지 않는다.</b> 이 타입이 노리는 효과 — 정렬 신선도 상한이
- * "배치 24h + 캐시 1h"에서 "배치 24h"로 주는 것 — 는 요청 경로가 {@code CachedPlace.popularScore}
- * 대신 이 뷰를 읽도록 바뀐 뒤에야 실현된다. 그 전까지 상한은 여전히 캐시 hard TTL을 포함한다.
+ * <p>{@code PlaceService.getPlaces}가 정렬 점수와 표시 카운트를 모두 이 뷰에서 얻는다.
+ * 그 결과 정렬 신선도의 상한이 "배치 24h + 캐시 hard TTL 1h"에서 <b>"배치 24h"</b> 하나로 줄었다.
  */
 public record PlaceStatsView(
         Long placeId,
@@ -23,9 +22,8 @@ public record PlaceStatsView(
     /**
      * 정렬 키. 커서 sortKey(double)와 같은 표현이다.
      *
-     * <p>DECIMAL(18,6) → double 변환 지점은 <b>현재 두 곳</b>이다 — 여기와
-     * {@code TownPlacesSnapshotLoader}(스냅샷에 점수를 실을 때). {@code CachedPlace}에서
-     * 점수·카운트 필드가 빠지면 후자가 사라지고 이 메서드가 유일한 변환 지점이 된다.
+     * <p>DECIMAL(18,6) → double 변환 지점은 <b>여기 하나뿐</b>이다. {@code CachedPlace}에서
+     * 점수·카운트 필드가 빠지면서 스냅샷 로더 쪽 변환이 사라졌다.
      */
     public double score() {
         return popularScore.doubleValue();
