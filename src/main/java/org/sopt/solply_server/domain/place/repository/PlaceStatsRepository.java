@@ -58,34 +58,45 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 빠지지 않았는지부터 확인할 것.
      *
      * <p><b>⚠️ 반드시 {@code READ_COMMITTED} 트랜잭션 안에서 호출할 것.</b>
-     * MySQL의 {@code INSERT ... SELECT}는 REPEATABLE READ(스프링 기본)에서 소스 테이블의 스캔 행에
-     * shared next-key 락을 건다. 북마크 10,399,466행 스캔 기준 실측 (아래 10,730,488은 행 수가
-     * 아니라 락 건수다 — next-key 락이라 갭 몫이 더해져 행 수보다 많다):
+     * MySQL의 {@code INSERT ... SELECT}는 REPEATABLE READ(스프링 기본)에서 <b>두 소스 테이블 모두</b>의
+     * 스캔 행에 shared next-key 락을 건다. 벤치 규모(북마크 10,399,466행 · 리뷰 198,191행) 실측
+     * (2026-07-31 Task 8. 아래는 행 수가 아니라 <b>락 건수</b>다 — next-key라 갭 몫이 더해져 행 수를 넘는다):
      * <pre>
-     * ---TRANSACTION 2002, ACTIVE 198 sec
-     * 28518 lock struct(s), heap size 4431992, 10730488 row lock(s)
+     *                  RR                    RC (채택)
+     * bookmarks        10,420,265 (S)        0
+     * place_reviews       198,766 (S)        0
+     * places                6,330 (S)        0   ← FK 갭 몫. 아래 S,REC_NOT_GAP과 별개
+     * 합계 = trx_rows_locked 10,638,001      12,640
      * </pre>
-     * 이 동안 동시 세션의 {@code INSERT INTO bookmarks ...}가 {@code ERROR 1205 Lock wait timeout}으로
-     * 죽는다. gap 락까지 잡히므로 새 북마크 삽입 자체가 막힌다. 같은 문장을 READ COMMITTED로 돌리면
-     * 소스 테이블 락 0건, 동시 INSERT 즉시 성공. 현재 배치 소요는 6.0~6.2초라 체감이 작지만
+     * RR에서는 동시 세션의 {@code INSERT INTO bookmarks}와 {@code INSERT INTO place_reviews}가 둘 다
+     * {@code ERROR 1205 Lock wait timeout}으로 죽는다. gap 락까지 잡히므로 새 행 삽입 자체가 막힌다.
+     * 같은 문장을 READ COMMITTED로 돌리면 <b>두 소스 테이블 모두 락 0건</b>, 동시 INSERT는 실측
+     * 93ms·82ms로 즉시 성공한다. 현재 배치 소요는 6,049ms라 체감이 작지만
      * 북마크가 3배 늘면 정지 구간도 ~18초로 함께 늘어난다.
+     *
+     * <p>{@code place_reviews} 쪽은 2026-07-31 이전까지 <b>측정된 적이 없었다</b> — 그때까지의 락 덤프는
+     * 리뷰가 0건인 DB에서 뜬 것이라 잡힐 것이 없었고, "북마크 축과 쿼리 구조가 같으니 같을 것"이라는
+     * 추정만 있었다. 이제 실측으로 확정됐다.
      *
      * <p>RC로 낮추면 스캔 도중 커밋된 행이 집계에 일부 섞일 수 있다. 이 값은 애초에 "대략 지금"의
      * 스냅샷이고 24시간 stale을 수용하는 2급 데이터라 문제가 되지 않는다 — 다음 1회로 씻긴다.
      *
      * <p><b>⚠️ RC로 낮췄어도 이 배치가 <em>아무것도</em> 막지 않는 것은 아니다 — {@code places}는 막는다.</b>
      * {@code place_stats.place_id → places.id} FK의 부모 존재 검사 때문에, 갱신한 행마다
-     * {@code places}에 S 락이 걸리고 <b>커밋까지 유지</b>된다. 장소 320개 시드 기준 hold 중 락 덤프:
+     * {@code places}에 S 락이 걸리고 <b>커밋까지 유지</b>된다. 벤치 규모(장소 6,320) RC 락 덤프:
      * <pre>
-     * place_stats  RECORD  X,REC_NOT_GAP  320
-     * places       RECORD  S,REC_NOT_GAP  320
+     * place_stats  RECORD  X,REC_NOT_GAP  6320
+     * places       RECORD  S,REC_NOT_GAP  6320
      * bookmarks    (없음)
+     * place_reviews(없음)
      * </pre>
-     * 그래서 동시 {@code INSERT INTO bookmarks}는 즉시 성공하지만(RC 효과),
+     * 갱신 행 수만큼 걸린다는 성질은 규모를 키워도 그대로다 (이전 javadoc의 "320"은
+     * 마이그레이션 기본 데이터만 있던 DB의 값이었다).
+     * 그래서 동시 {@code INSERT INTO bookmarks}·{@code INSERT INTO place_reviews}는 즉시 성공하지만(RC 효과),
      * 어드민의 동네 일괄 비활성화({@code AdminPlaceRepository.updateActiveByTownId} →
      * {@code UPDATE places SET active = ...})는 배치가 커밋될 때까지 대기한다 —
-     * 실측 12,203ms 블록. 배치 소요가 6초대인 현재는 어드민 액션이 그만큼 지연되는 수준이지만,
-     * 배치가 길어지면 이 지연도 같이 늘어난다. FK는 V24가 {@code ON DELETE CASCADE}로 잡아 둔
+     * <b>RC에서 유일하게 남는 차단</b>이다. 배치 소요가 6초대인 현재는 어드민 액션이 그만큼 지연되는
+     * 수준이지만, 배치가 길어지면 이 지연도 같이 늘어난다. FK는 V24가 {@code ON DELETE CASCADE}로 잡아 둔
      * 관계라 제거 대상이 아니므로, 완화하려면 배치 시간을 줄이거나 어드민 작업 시간대를 피해야 한다.
      *
      * <p><b>반면 {@code place_stats} 읽기는 이 배치에 막히지 않는다.</b> 조회는 MVCC 일관된 읽기라

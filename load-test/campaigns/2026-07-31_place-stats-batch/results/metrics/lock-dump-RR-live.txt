@@ -1,0 +1,22 @@
+=== 살아있는 RR 홀더 직접 관측 (trx 16451) 17:23:12 ===
++--------+-----------+-----------------+-------------------+---------------------+------------+
+| trx_id | trx_state | trx_rows_locked | trx_rows_modified | trx_isolation_level | active_sec |
++--------+-----------+-----------------+-------------------+---------------------+------------+
+|  16451 | RUNNING   |        10638001 |                 0 | REPEATABLE READ     |         90 |
++--------+-----------+-----------------+-------------------+---------------------+------------+
+--- 테이블별 락 분포 ---
++---------------+-----------+---------------+----------+
+| tbl           | LOCK_TYPE | LOCK_MODE     | cnt      |
++---------------+-----------+---------------+----------+
+| bookmarks     | RECORD    | S             | 10420265 |
+| place_reviews | RECORD    | S             |   198766 |
+| places        | RECORD    | S             |     6330 |
+| place_stats   | RECORD    | X,REC_NOT_GAP |     6320 |
+| places        | RECORD    | S,REC_NOT_GAP |     6320 |
+| bookmarks     | TABLE     | IS            |        1 |
+| place_reviews | TABLE     | IS            |        1 |
+| place_stats   | TABLE     | IX            |        1 |
+| places        | TABLE     | IS            |        1 |
++---------------+-----------+---------------+----------+
+--- History list length ---
+History list length 0
