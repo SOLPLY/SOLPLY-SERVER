@@ -17,6 +17,8 @@ import org.sopt.solply_server.domain.review.dto.response.PlaceReviewListItem;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.entity.PlaceReviewImage;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
+import org.sopt.solply_server.domain.review.service.event.PlaceReviewCreatedEvent;
+import org.sopt.solply_server.domain.review.service.event.PlaceReviewDeletedEvent;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.global.exception.BusinessValidationException;
@@ -69,6 +71,10 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     );
 
     PlaceReview savedPlaceReview = placeReviewRepository.save(placeReview);
+
+    // place_stats.review_count 준실시간 증분 (AFTER_COMMIT · at-most-once).
+    // placeId는 request가 아니라 위에서 조회한 활성 장소에서 가져온다 — 검증을 통과한 값이다.
+    eventPublisher.publishEvent(new PlaceReviewCreatedEvent(place.getId()));
 
     List<String> imageKeys = request.imageKeys() == null
         ? Collections.emptyList()
@@ -157,7 +163,12 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
         .map(PlaceReviewImage::getImageUrl)
         .toList();
 
+    // 삭제 후에는 엔티티에서 placeId를 꺼낼 수 없으므로 미리 확보해 둔다
+    Long placeId = placeReview.getPlace().getId();
+
     placeReviewRepository.delete(placeReview);
+
+    eventPublisher.publishEvent(new PlaceReviewDeletedEvent(placeId));
 
     if (!imageKeys.isEmpty()) {
       eventPublisher.publishEvent(new ImageFileDeleteEvent(imageKeys));
