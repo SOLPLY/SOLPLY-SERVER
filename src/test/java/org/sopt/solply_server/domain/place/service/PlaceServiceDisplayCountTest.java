@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.sopt.solply_server.domain.place.cache.CachedPlace;
 import org.sopt.solply_server.domain.place.cache.TownPlacesCache;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
+import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -45,8 +47,8 @@ import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
  * "isBookmarked를 true로 고정한다", "시각 맵을 무시한다"가 전부 살아남았기 때문이다
  * (순수 함수와 쿼리 테스트만으로는 배선이 끊겨도 아무 테스트가 죽지 않았다).
  *
- * <p>PlaceService 전반을 덮으려는 테스트가 아니다. 의존성 11개 중 이 경로가 실제로 쓰는
- * 4개만 스텁하고 나머지는 빈 mock으로 둔다.
+ * <p>PlaceService 전반을 덮으려는 테스트가 아니다. 의존성 12개 중 이 경로가 실제로 쓰는
+ * 5개만 스텁하고 나머지는 빈 mock으로 둔다.
  */
 @ExtendWith(MockitoExtension.class)
 class PlaceServiceDisplayCountTest {
@@ -71,17 +73,23 @@ class PlaceServiceDisplayCountTest {
 
   @InjectMocks private PlaceService placeService;
 
-  /** 메타 카운트 100, 배치 시각 BATCH_AT인 장소 하나짜리 스냅샷 */
-  private CachedPlace place(long id, long bookmarkCount, LocalDateTime calculatedAt) {
+  /** 장소 식별 정보만 담는 스냅샷 — 카운트·기준시각은 place_stats 뷰에서 온다 */
+  private CachedPlace place(long id) {
     return new CachedPlace(id, "장소" + id, "key" + id, "카페",
         Set.of(), Set.of(), Set.of(), LocalDateTime.of(2026, 1, 1, 0, 0),
-        TOWN_ID, 12.5, bookmarkCount, calculatedAt);
+        TOWN_ID, 12.5, 0L, null);
+  }
+
+  /** 배치가 카운트 100으로 집계해 둔 상태 (기준시각 BATCH_AT) */
+  private void givenBatchCounted(long metaCount) {
+    given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(
+        List.of(new PlaceStatsView(1L, BigDecimal.valueOf(12.5), (int) metaCount, BATCH_AT)));
   }
 
   @BeforeEach
   void givenOnePlaceInTown() {
     given(townHierarchyResolver.resolveLeafTownIds(TOWN_ID)).willReturn(List.of(TOWN_ID));
-    given(townPlacesCache.getPlaces(TOWN_ID)).willReturn(List.of(place(1L, 100L, BATCH_AT)));
+    given(townPlacesCache.getPlaces(TOWN_ID)).willReturn(List.of(place(1L)));
     given(imageUrlProvider.getImageUrl(anyString())).willReturn("https://img/1");
   }
 
@@ -93,6 +101,7 @@ class PlaceServiceDisplayCountTest {
   @Test
   @DisplayName("내 북마크가 배치 이후면 표시 카운트에 1을 더해 응답한다")
   void addsMyBookmarkWhenCreatedAfterBatch() {
+    givenBatchCounted(100L);
     given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, BATCH_AT.plusMinutes(5)));
 
@@ -105,6 +114,7 @@ class PlaceServiceDisplayCountTest {
   @Test
   @DisplayName("내 북마크가 배치 이전이면 이미 집계에 포함돼 메타 값을 그대로 응답한다")
   void keepsMetaCountWhenMyBookmarkIsBeforeBatch() {
+    givenBatchCounted(100L);
     given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, BATCH_AT.minusMinutes(5)));
 
@@ -117,6 +127,7 @@ class PlaceServiceDisplayCountTest {
   @Test
   @DisplayName("내가 북마크하지 않았으면 보정 없이 미북마크로 응답한다")
   void keepsMetaCountAndMarksUnbookmarkedWhenNotMine() {
+    givenBatchCounted(100L);
     given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
         .willReturn(Map.of());
 
@@ -129,7 +140,8 @@ class PlaceServiceDisplayCountTest {
   @Test
   @DisplayName("배치가 닿지 않은 장소는 내 북마크만으로 1이 된다")
   void countsMyBookmarkWhenBatchNeverRan() {
-    given(townPlacesCache.getPlaces(TOWN_ID)).willReturn(List.of(place(1L, 0L, null)));
+    // 배치가 닿지 않은 장소는 place_stats에 행 자체가 없다 — IN 조회가 그 id를 돌려주지 않는다
+    given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(List.of());
     given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, BATCH_AT));
 
@@ -143,6 +155,7 @@ class PlaceServiceDisplayCountTest {
   void doesNotIssueSeparateBookmarkStatusQuery() {
     // 이 Task의 핵심 주장이 "추가 쿼리 0"이다. 시각 조회가 여부 조회를 대체하므로
     // 둘 다 호출되면 쿼리가 하나 늘어난 것이고 주장이 거짓이 된다.
+    givenBatchCounted(100L);
     given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, BATCH_AT.plusMinutes(5)));
 
@@ -155,6 +168,7 @@ class PlaceServiceDisplayCountTest {
   @Test
   @DisplayName("북마크 검색 경로도 표시 카운트를 보정한다")
   void correctsDisplayCountOnBookmarkSearchPath() {
+    givenBatchCounted(100L);
     given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
         .willReturn(List.of(1L));
     given(placeBookmarkFacade.getMyPlaceBookmarkTimesMap(USER_ID, List.of(1L)))

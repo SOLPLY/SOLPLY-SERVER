@@ -167,21 +167,29 @@ public class PlaceService {
       return bookmarkSearchResponse(userId, leafTownIds, filtered, sort);
     }
 
-    // 인기순은 정렬 키가 필요하므로 페이징 "전에" 후보 전체의 점수를 읽는다 (IN 조회 1회).
-    // LATEST는 정렬 키가 스냅샷 안에 있어 조회가 필요 없다.
-    Map<Long, Double> popularScores = sort == PlaceSortType.POPULAR
-        ? scoreMap(statsViewMap(filtered.stream().map(CachedPlace::id).toList()))
+    // 인기순은 정렬 키가 필요하므로 페이징 "전에" 후보 전체를 읽는다 (IN 조회 1회).
+    // LATEST는 정렬 키가 스냅샷 안에 있어 여기서는 읽지 않고, 페이지가 확정된 뒤 그 항목만 읽는다.
+    Map<Long, PlaceStatsView> candidateStatsViews = sort == PlaceSortType.POPULAR
+        ? statsViewMap(filtered.stream().map(CachedPlace::id).toList())
         : Map.of();
 
     PlaceListPaginator.PageSlice slice = PlaceListPaginator.paginate(
-        filtered, sort, request.cursor(), request.size(), popularScores);
+        filtered, sort, request.cursor(), request.size(), scoreMap(candidateStatsViews));
+
+    List<Long> pageIds = slice.items().stream().map(CachedPlace::id).toList();
+
+    // 어느 정렬이든 place_stats 조회는 이 경로에서 1회다 — POPULAR는 위에서 읽은 후보 전체를
+    // 재사용하고, LATEST는 여기서 페이지 항목(최대 50건)만 읽는다.
+    Map<Long, PlaceStatsView> statsViews = sort == PlaceSortType.POPULAR
+        ? candidateStatsViews
+        : statsViewMap(pageIds);
 
     // 여부 판정과 표시 카운트 보정을 이 한 번의 조회로 함께 처리한다 (기존 여부 조회를 대체 — 쿼리 증가 없음)
-    Map<Long, LocalDateTime> myBookmarkTimes = placeBookmarkFacade.getMyPlaceBookmarkTimesMap(
-        userId, slice.items().stream().map(CachedPlace::id).toList());
+    Map<Long, LocalDateTime> myBookmarkTimes =
+        placeBookmarkFacade.getMyPlaceBookmarkTimesMap(userId, pageIds);
 
     List<PlacePreviewDto> previews = slice.items().stream()
-        .map(cp -> toPreview(cp, myBookmarkTimes.get(cp.id())))
+        .map(cp -> toPreview(cp, statsViews.get(cp.id()), myBookmarkTimes.get(cp.id())))
         .toList();
 
     return PlaceFilterGetResponse.of(previews, slice.nextCursor());
@@ -328,13 +336,16 @@ public class PlaceService {
     List<Long> orderedIds = placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(userId, leafTownIds);
     List<CachedPlace> mine = sortByBookmarkedOrder(filtered, orderedIds);
 
+    // 뷰 조회는 정렬 분기 밖에 둔다 — LATEST도 표시 카운트를 여기서 얻으므로, 어느 정렬이든
+    // 이 경로의 place_stats 조회는 1회다. 목록이 페이징 없이 확정돼 있어 이 시점에 읽어도 된다.
+    Map<Long, PlaceStatsView> statsViews =
+        statsViewMap(mine.stream().map(CachedPlace::id).toList());
+
     // 정렬 규칙을 손으로 다시 적지 않고 페이지네이터의 비교자를 재사용한다 — 여기만 규칙이
     // 어긋나면 같은 "인기순"이 경로마다 다른 순서를 내고, 그것을 잡아줄 타입이 없다.
     if (sort == PlaceSortType.POPULAR) {
-      Map<Long, Double> popularScores =
-          scoreMap(statsViewMap(mine.stream().map(CachedPlace::id).toList()));
       mine = mine.stream()
-          .sorted(PlaceListPaginator.comparatorOf(PlaceSortType.POPULAR, popularScores))
+          .sorted(PlaceListPaginator.comparatorOf(PlaceSortType.POPULAR, scoreMap(statsViews)))
           .toList();
     }
 
@@ -345,7 +356,7 @@ public class PlaceService {
         userId, mine.stream().map(CachedPlace::id).toList());
 
     List<PlacePreviewDto> previews = mine.stream()
-        .map(cp -> toPreview(cp, true, myBookmarkTimes.get(cp.id())))
+        .map(cp -> toPreview(cp, true, statsViews.get(cp.id()), myBookmarkTimes.get(cp.id())))
         .toList();
     return PlaceFilterGetResponse.of(previews, null);
   }
@@ -354,21 +365,28 @@ public class PlaceService {
    * 표시 카운트 = place_stats 값 + 내 액션 보정.
    * myBookmarkedAt이 null이 아니라는 것이 곧 "내가 북마크한 상태"다 — 추가 조회가 없다.
    */
-  private PlacePreviewDto toPreview(CachedPlace cp, LocalDateTime myBookmarkedAt) {
-    return toPreview(cp, myBookmarkedAt != null, myBookmarkedAt);
+  private PlacePreviewDto toPreview(CachedPlace cp, PlaceStatsView stats,
+      LocalDateTime myBookmarkedAt) {
+    return toPreview(cp, myBookmarkedAt != null, stats, myBookmarkedAt);
   }
 
   /**
-   * 북마크 검색처럼 <b>여부가 구조적으로 확정된</b> 경로용 — 시각은 카운트 보정에만 쓴다.
+   * 북마크 검색처럼 <b>여부가 구조적으로 확정된</b> 경로용 — isBookmarked를 인자로 받는다.
    * "이 목록은 전부 내 북마크"라는 불변식을 시각 유무로 재유도하지 않고 코드에 그대로 적는다.
    *
    * <p><b>현재 구성에서 이것 없이도 모순이 나지는 않는다.</b> 전역 격리 수준 오버라이드가 없어
    * MySQL 기본 REPEATABLE READ이고, PlaceService가 클래스 레벨 readOnly 트랜잭션이라 목록 조회와
    * 시각 조회가 같은 스냅샷을 본다. Bookmark는 soft delete도 아니라 두 쿼리 간 필터 비대칭도 없다.
    * 그래도 여부를 격리 수준에 의존시키지 않는 편이 낫다는 판단이다.
+   *
+   * <p>{@code stats}가 null이면 place_stats에 행이 없는 장소다 — 배치가 아직 닿지 않았을 뿐이므로
+   * 0건 / 기준시각 null로 읽는다. {@code PlaceDisplayCount.correct}의 null 분기가 이 경우를
+   * "내 북마크가 있으면 무조건 +1"로 처리한다.
    */
-  private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked,
+  private PlacePreviewDto toPreview(CachedPlace cp, boolean isBookmarked, PlaceStatsView stats,
       LocalDateTime myBookmarkedAt) {
+    long metaCount = stats == null ? 0L : stats.bookmarkCount();
+    LocalDateTime calculatedAt = stats == null ? null : stats.calculatedAt();
     return PlacePreviewDto.of(
         cp.id(),
         cp.name(),
@@ -376,7 +394,7 @@ public class PlaceService {
         cp.mainTagName(),
         isBookmarked,
         cp.townId(),
-        PlaceDisplayCount.correct(cp.bookmarkCount(), cp.calculatedAt(), myBookmarkedAt)
+        PlaceDisplayCount.correct(metaCount, calculatedAt, myBookmarkedAt)
     );
   }
 
