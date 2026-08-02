@@ -12,11 +12,30 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 인기순 복합 점수 배치의 진입점. 정기 스케줄(매일 02:00)과 부팅 시 최초 적재 둘을 연다.
+ * 인기순 복합 점수 배치의 진입점. 정기 스케줄(매시 30분)과 부팅 시 최초 적재 둘을 연다.
  *
- * <p>매일 02:00 전량 재계산. 장소 임베딩(03:00)·코스 임베딩(04:00)과 시간대를 분리한다.
- * 반감기 90일에서 한 시간의 감쇠 변화는 {@code 1 - 0.5^(1/2160) = 0.032%}라 더 잦은 주기는
- * 의미가 없고, 하루 동안 반영되지 않는 것은 상위권 순위를 흔들지 못하는 하루치 유입뿐이다.
+ * <p><b>매시 30분 전량 재계산 (2026-08-02 결정. 그전에는 매일 02:00이었다).</b>
+ * 잦게 도는 이유는 점수의 신선도가 아니다 — 반감기 90일에서 한 시간의 감쇠 변화는
+ * {@code 1 - 0.5^(1/2160) = 0.032%}라 순위를 흔들지 못한다. 이유는 <b>배치 간격이
+ * 다른 두 가지의 상한이기 때문</b>이다:
+ * <ol>
+ *   <li><b>stale 상한</b> — {@code place_stats.town_id}는 places에서 비정규화해 온 값이라
+ *       동네를 옮긴 장소가 다음 배치까지 이전 동네 목록에 낀다. 신규 장소가 인기순에서
+ *       빠지는 창도 같다(기준 테이블이 place_stats라서). 쿼리로는 못 막고 배치 간격이
+ *       유일한 조절 나사다 — 24h → 1h.</li>
+ *   <li><b>증분 유실 치유</b> — 이벤트 증분은 at-most-once라 유실·중복이 드리프트를 남기는데,
+ *       그것을 재대사하는 것이 이 배치다. 치유 지연도 24h → 1h가 된다.</li>
+ * </ol>
+ * 비용은 무시할 수준이다: 배치 소요 6초, 소스 테이블 락 0건(READ COMMITTED + 시각 상한.
+ * 근거는 {@code PlaceStatsRepository#upsertAll} javadoc). 시간당 1회면 하루 24회 × 6초다.
+ *
+ * <p><b>정각이 아니라 30분인 이유</b>는 장소 임베딩(03:00)·코스 임베딩(04:00)과의 스케줄러
+ * 스레드 경합 회피다. {@code @Scheduled} 기본 실행기는 단일 스레드라 정각에 겹치면 한쪽이 밀린다.
+ *
+ * <p><b>남은 미검증 항목 하나.</b> 매시 배치는 커서 세대가 갈리는 창을 새벽에서 전 시간대로
+ * 퍼뜨린다. 1시간치 점수 드리프트가 미미해 페이지 간 항목 흘림·중복은 수용 가능하다고 봤지만,
+ * <b>피크 트래픽 중 배치가 도는 순간의 부하는 측정한 적이 없다</b>. 리팩터링 후 측정 캠페인에서
+ * "부하 라운드 중 배치 강제 실행 1회"로 확인할 것 (perf 문서 §9-3 후속).
  *
  * <p><b>리더 선출(ShedLock 등)이 없는 이유 — "멱등해서"가 아니다.</b> 두 인스턴스는 각자
  * {@code LocalDateTime.now()}를 쓰므로 {@code calculatedAt}이 다르고, 1초 차이만으로도
@@ -31,7 +50,7 @@ import org.springframework.stereotype.Component;
  * 뒤에 온 세션은 집계를 끝낸 뒤 <b>첫 행에서 앞 배치가 커밋될 때까지 블록</b>된다.
  * 따라서 배치가 {@code innodb_lock_wait_timeout}(기본 50초)을 넘기면 두 번째 인스턴스는
  * {@code ERROR 1205}로 죽고 아래 {@code log.error}에 삼켜진다 — 데이터는 무해하지만
- * <b>매일 에러 로그가 한 줄 남는다.</b> 그때는 리더 선출을 넣을 시점이다.
+ * <b>매시 에러 로그가 한 줄 남는다.</b> 그때는 리더 선출을 넣을 시점이다.
  *
  * <p><b>이 클래스에 {@code @Transactional}을 붙이지 말 것 — Processor를 분리한 핵심 이유다.</b>
  * {@code try/catch}가 트랜잭션 경계 <b>바깥</b>에 있어야 한다. 한 메서드로 합치면 예외를 잡는
@@ -48,7 +67,7 @@ public class PlaceStatsFacade {
 
     private final PlaceStatsBatchProcessor batchProcessor;
 
-    @Scheduled(cron = "${solply.place-stats.cron:0 0 2 * * *}")
+    @Scheduled(cron = "${solply.place-stats.cron:0 30 * * * *}")
     public void recalculatePlaceStats() {
         LocalDateTime calculatedAt = LocalDateTime.now();
         long startNanos = System.nanoTime();
@@ -73,8 +92,8 @@ public class PlaceStatsFacade {
      *
      * <p><b>이 진입점이 없으면 배포 첫날의 읽기 경로가 전부 0이 된다.</b>
      * {@code PlaceStatsRepository.findViewsByPlaceIds}가 이 테이블을 읽는데 {@code V24}는 백필하지 않고 채우는
-     * 수단이 위 스케줄뿐이라, 배포 시각부터 다음 02:00까지 최악 24시간 동안 전 장소가
-     * "통계 행 없음" 분기를 타 인기순이 장소 id 순서가 되고 북마크 수가 0으로 응답된다.
+     * 수단이 위 스케줄뿐이라, 배포 시각부터 다음 회차까지(매시 배치라 최악 1시간) 인기순이
+     * 통째로 비고 최신순의 북마크 수가 0으로 응답된다.
      *
      * <p><b>Flyway 백필 마이그레이션을 쓰지 않은 이유:</b> Flyway는 자기 트랜잭션(기본 RR)에서
      * 돌아 {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#upsertAll}
@@ -104,7 +123,7 @@ public class PlaceStatsFacade {
                     calculatedAt, affected.getAsInt(),
                     Duration.ofNanos(System.nanoTime() - startNanos).toMillis());
         } catch (Exception e) {
-            // 기동을 막지 않는다. 실패하면 다음 02:00 스케줄이 메우고, 그때까지는
+            // 기동을 막지 않는다. 실패하면 다음 정기 스케줄이 메우고, 그때까지는
             // 통계 없는 장소 분기(0점·0건)로 동작한다 — 응답이 틀릴 뿐 장애는 아니다.
             log.error("인기순 점수 최초 적재 실패 - calculatedAt={}", calculatedAt, e);
         }

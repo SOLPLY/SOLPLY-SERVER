@@ -37,7 +37,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 들어오면서 그 보정을 걷어냈으므로 <b>지금 상한을 지탱하는 근거는 위 증폭과 멱등성 둘뿐</b>이다.
      *
      * <p>대신 "{@code calculatedAt} 이후에 생긴 활동은 이번 세대에 반영되지 않는다"가 성립한다.
-     * 이 배치는 애초에 최대 24시간 stale을 수용하는 2급 데이터이고, 스캔 시작~커밋 사이에 들어온
+     * 이 배치는 애초에 배치 간격만큼의 stale을 수용하는 2급 데이터이고, 스캔 시작~커밋 사이에 들어온
      * 활동을 어차피 다음 회차로 미루고 있었다. 상한은 그 경계를 "커밋 시점"이라는 관측 불가능한
      * 값에서 {@code calculatedAt}이라는 기록된 값으로 옮길 뿐이다 — 그래서 이 배치의 멱등성을
      * 조건 없이 주장할 수 있게 된다.
@@ -80,7 +80,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 추정만 있었다. 이제 실측으로 확정됐다.
      *
      * <p>RC로 낮추면 스캔 도중 커밋된 행이 집계에 일부 섞일 수 있다. 이 값은 애초에 "대략 지금"의
-     * 스냅샷이고 24시간 stale을 수용하는 2급 데이터라 문제가 되지 않는다 — 다음 1회로 씻긴다.
+     * 스냅샷이고 배치 간격만큼의 stale을 수용하는 2급 데이터라 문제가 되지 않는다 — 다음 1회로 씻긴다.
      *
      * <p><b>⚠️ RC로 낮췄어도 이 배치가 <em>아무것도</em> 막지 않는 것은 아니다 — {@code places}는 막는다.</b>
      * {@code place_stats.place_id → places.id} FK의 부모 존재 검사 때문에, 갱신한 행마다

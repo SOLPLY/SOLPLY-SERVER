@@ -297,7 +297,7 @@ public class PlaceService {
     Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
 
     // 표시 카운트는 row가 실어 온 place_stats 값 그대로다 — 응답을 만들면서 더하거나 빼지 않는다.
-    // 예전에는 "내 북마크가 배치 이후면 +1"이라는 표시 보정이 있었다. 배치가 하루 1회뿐이라
+    // 예전에는 "내 북마크가 배치 이후면 +1"이라는 표시 보정이 있었다. 당시 배치가 하루 1회뿐이라
     // 내가 방금 누른 것이 다음 새벽까지 숫자에 안 나타나는 문제를 화면에서만 덮던 장치였는데,
     // 이벤트 증분(PlaceStatsIncrementListener)이 그 구간을 수십 ms로 줄이면서 걷어냈다
     // (2026-07-31). 카운트를 고치는 주체가 증분과 배치 둘로 확정돼, 조회 경로는 읽어서 싣기만 한다.

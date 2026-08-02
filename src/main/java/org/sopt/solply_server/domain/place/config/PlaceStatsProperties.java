@@ -37,11 +37,11 @@ import org.springframework.validation.annotation.Validated;
 public class PlaceStatsProperties {
 
     /**
-     * 배치 실행 cron. 장소 임베딩(03:00)·코스 임베딩(04:00)과 겹치지 않게 02:00.
+     * 배치 실행 cron. 매시 30분 — 근거는 {@code PlaceStatsFacade} javadoc에 있다.
      *
      * <p><b>⚠️ 이 필드의 값은 스케줄에 쓰이지 않는다 — {@code getCron()} 호출처가 0건이다.</b>
      * 스케줄러는 {@code PlaceStatsFacade}의
-     * {@code @Scheduled(cron = "${solply.place-stats.cron:0 0 2 * * *}")}로 프로퍼티를 직접 읽는다.
+     * {@code @Scheduled(cron = "${solply.place-stats.cron:0 30 * * * *}")}로 프로퍼티를 직접 읽는다.
      * {@code @ConfigurationProperties}의 필드 기본값은 플레이스홀더 해석 시점에 보이지 않으므로
      * <b>기본값 리터럴이 두 곳에 존재하는 것은 구조적으로 강제된 중복</b>이다.
      * <b>주기를 바꿀 때는 반드시 두 곳을 함께 고칠 것</b> — 이 필드만 고치면 스케줄은 그대로인
@@ -55,7 +55,7 @@ public class PlaceStatsProperties {
      * 부팅이 죽는다 — cron과 아무 상관없어 보이는 메시지라 원인 추적이 훨씬 어렵다.
      */
     @NotBlank
-    private String cron = "0 0 2 * * *";
+    private String cron = "0 30 * * * *";
 
     /**
      * 감쇠 반감기(일). 90일이면 30일 경과 시 79%, 1년 경과 시 6%가 남는다.

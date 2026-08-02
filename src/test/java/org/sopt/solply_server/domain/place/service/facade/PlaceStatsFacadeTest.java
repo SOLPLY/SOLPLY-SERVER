@@ -23,6 +23,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -86,13 +87,21 @@ class PlaceStatsFacadeTest {
      * (신규 클론·CI)에서는 {@code solply.place-stats.cron} 키가 <b>존재하지 않는다</b>.
      * 플레이스홀더에 기본값이 없으면 그 환경은 스케줄러 초기화 단계에서 기동이 통째로 실패한다.
      *
-     * <p>로컬 yml에 키가 있으면 {@code contextLoads}는 이 결함을 절대 못 잡는다 — 실제로 현재
-     * 로컬 yml에 {@code cron: "0 0 2 * * *"}이 있어 컨텍스트 테스트는 기본값 경로를 밟지 않는다.
-     * 그래서 키가 전혀 없는 빈 Environment로 직접 해석해 본다.
+     * <p>로컬 yml에 키가 있으면 {@code contextLoads}는 이 결함을 절대 못 잡는다 — 컨텍스트 테스트는
+     * 기본값 경로를 밟지 않기 때문이다. 그래서 키가 전혀 없는 빈 Environment로 직접 해석해 본다.
+     *
+     * <p><b>이 테스트는 주기의 값 자체도 지킨다.</b> 기본값 리터럴이
+     * {@code @Scheduled}와 {@code PlaceStatsProperties.cron} 두 곳에 <b>구조적으로 중복</b>돼 있어
+     * (프로퍼티 필드 기본값은 플레이스홀더 해석 시점에 보이지 않는다) 한쪽만 고치면 조용히 갈라진다.
+     * 아래 두 단언이 그 중복을 묶는다 — 주기를 바꾸려면 <b>세 곳</b>(두 리터럴 + 이 기대값)을
+     * 함께 고쳐야 하고, 그러지 않으면 여기서 멈춘다.
+     *
+     * <p>다음 실행 시각을 <b>두 번</b> 보는 이유: 정시 하나만 보면 "매일 00:30"도 통과한다.
+     * 연속 두 회가 1시간 간격임을 함께 봐야 매시라는 것이 고정된다.
      */
     @Test
-    @DisplayName("cron 플레이스홀더는 프로퍼티가 없어도 매일 02:00으로 해석된다")
-    void cronPlaceholderFallsBackToDailyTwoAm() throws Exception {
+    @DisplayName("cron 플레이스홀더는 프로퍼티가 없어도 매시 30분으로 해석된다")
+    void cronPlaceholderFallsBackToHourlyHalfPast() throws Exception {
         String cronExpression = PlaceStatsFacade.class
                 .getMethod("recalculatePlaceStats")
                 .getAnnotation(Scheduled.class)
@@ -101,8 +110,14 @@ class PlaceStatsFacadeTest {
         // 기본값이 없으면 여기서 IllegalArgumentException으로 터진다 (= 기동 실패와 같은 지점)
         String resolved = new StandardEnvironment().resolveRequiredPlaceholders(cronExpression);
 
-        assertThat(CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0)))
-                .isEqualTo(LocalDateTime.of(2026, 7, 30, 2, 0));
+        LocalDateTime first =
+                CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 30));
+        assertThat(CronExpression.parse(resolved).next(first))
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 30));
+
+        // 두 리터럴이 갈라지지 않았는지 — 프로퍼티 필드의 기본값도 같은 식이어야 한다
+        assertThat(new PlaceStatsProperties().getCron()).isEqualTo(resolved);
     }
 
     /**
