@@ -83,27 +83,29 @@ public class PlaceListDbQueryRepository {
      * 2026-08-01 A/B 측정이 현행 인덱스 위에서 이뤄졌기 때문이다. 측정이 끝난 조건을 바꾸면
      * 그 판정의 근거가 흔들린다. 캐시 제거 리팩터링 때 마이그레이션으로 함께 넣을 것.
      *
-     * <p><b>술어를 ps 컬럼으로 잡고 신선도는 조인으로 거르는 이유.</b> town_id·active는 places에서
-     * 비정규화해 온 값이라 최대 24시간 낡을 수 있다(V24 주석). 그럼에도 WHERE를 ps 쪽에 거는 것은
+     * <p><b>술어를 ps 컬럼으로 잡고 신선도는 조인으로 거르는 이유.</b> town_id는 places에서
+     * 비정규화해 온 값이라 배치 간격만큼 낡을 수 있다(V24 주석). 그럼에도 WHERE를 ps 쪽에 거는 것은
      * places와 JOIN한 조건으로는 위 인덱스가 정렬에 쓰이지 못해 이 경로의 존재 이유가 사라지기
-     * 때문이다. 대신 {@code JOIN places p ON ... AND p.active = 1}이 <b>내려간 장소</b>는 즉시
-     * 걸러 준다 — 노출돼선 안 될 장소가 하루 더 보이는 쪽이 correctness 문제이므로 그쪽만 막는다.
+     * 때문이다.
      *
-     * <p><b>단 조인 가드가 닫는 것은 active 축의 한쪽 방향뿐이다.</b> 남는 구멍은 둘이다.
-     * <ol>
-     *   <li><b>재활성화 누락</b> — {@code p.active=1}인데 {@code ps.active=0}인 상태, 즉 내렸던 장소나
-     *       동네를 <em>다시 올린</em> 직후 다음 배치 전까지다. 이때 db 모드는 그 장소를 통째로
-     *       누락하고, 캐시 모드는 {@code invalidateAfterCommit}으로 스냅샷을 다시 읽어 실제 점수로
-     *       노출한다. 가상의 경로가 아니다 — {@code AdminPlaceService.activatePlacesByTownIds}가
-     *       {@code updateActiveByTownId(townIds, true)}로 동네 단위 일괄 재활성화를 한다.
-     *       즉 동네 하나가 인기순에서 최대 24시간 사라질 수 있고, 이는 "내려간 장소가 더 보인다"보다
-     *       눈에 띄는 방향이다.</li>
-     *   <li><b>동네 이동</b> — 동네를 옮긴 장소가 최대 24시간 이전 동네에 나타난다. 이는 순위가 아니라
-     *       소속의 문제라 다음 배치가 정정한다.</li>
-     * </ol>
-     * 둘 다 다음 배치가 자동으로 메우므로 창은 ≤24h이고, 어느 쪽도 쿼리로는 못 막는다
-     * (막으려면 술어를 places로 옮겨야 하는데 그러면 인덱스를 잃는다). 실제 해법은 어드민 변경 시
-     * place_stats를 동기 갱신하는 훅이며 그것이 <b>플랜 C Q3</b>다 — 측정 문서에 기록할 것.
+     * <p><b>active 축은 술어에서 빠졌다 — 진실은 {@code places.active} 하나다 (2026-08-02 결정).</b>
+     * 이전에는 {@code AND ps.active = 1}이 함께 걸려 있었고, 조인 가드
+     * ({@code JOIN places p ON ... AND p.active = 1})는 <b>내려간 장소</b>만 즉시 거르는 한쪽 방향
+     * 가드였다. 그래서 반대 방향에 구멍이 있었다 — {@code p.active=1}인데 {@code ps.active=0}인
+     * 상태, 즉 내렸던 장소나 동네를 <em>다시 올린</em> 직후 다음 배치 전까지 그 장소가 목록에서
+     * 통째로 실종됐다. 가상의 경로가 아니다: {@code AdminPlaceService.activatePlacesByTownIds}가
+     * {@code updateActiveByTownId(townIds, true)}로 동네 단위 일괄 재활성화를 한다.
+     *
+     * <p>ps 쪽 술어를 지운 근거는 <b>실익과 비용의 비대칭</b>이다. 즉시 숨김은 원래 조인 가드의
+     * 몫이었으므로 {@code ps.active}의 실효는 인덱스 스캔 가지치기 하나뿐이었는데, 비활성 장소가
+     * 희소해 그 이득은 ~0이다 (그리고 "프리픽스에 active가 있어 이득"이라는 주장은 비활성 행이
+     * 많이 존재함을 전제한 순환 논리였다). 반면 낡음의 비용 — 재활성화 누락 — 은 실재했다.
+     * 복제본을 없애면 낡을 것도 없다. V26이 컬럼 자체를 drop해 이 판단을 스키마로 굳힌다.
+     *
+     * <p><b>남는 구멍은 하나 — 동네 이동이다.</b> 동네를 옮긴 장소가 다음 배치까지 이전 동네에
+     * 나타난다. 이는 순위가 아니라 소속의 문제이고, 쿼리로는 못 막는다(막으려면 술어를 places로
+     * 옮겨야 하는데 그러면 인덱스를 잃는다). 어드민 동기 갱신 훅 대신 <b>배치 간격 단축</b>으로
+     * 갈음한다 — 매시 30분이라 창은 ≤1h다 (2026-08-02, {@code PlaceStatsFacade} javadoc 참조).
      *
      * <p><b>커서 점수를 double로 바인딩하는 이유.</b> 캐시 경로가 커서에 싣는 값은
      * {@code DECIMAL(18,6)}을 {@code doubleValue()}로 좁힌 것이다. MySQL은 DECIMAL 컬럼과 DOUBLE
@@ -150,7 +152,6 @@ public class PlaceListDbQueryRepository {
                 FROM place_stats ps
                 JOIN places p ON p.id = ps.place_id AND p.active = 1
                 WHERE ps.town_id IN (:townIds)
-                  AND ps.active = 1
                 """);
         appendTagFilters(sql, useMainTag, useSubA, useSubB);
         if (useCursor) {

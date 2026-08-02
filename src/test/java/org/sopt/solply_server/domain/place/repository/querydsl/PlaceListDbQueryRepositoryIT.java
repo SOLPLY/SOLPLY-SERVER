@@ -249,6 +249,27 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>반대 방향 — 낡은 {@code ps.active=0}은 장소를 지우지 못한다.</b> 활성 여부의 진실은
+     * {@code places.active} 하나이고, 조인 가드가 이미 그것을 즉시 반영한다. ps 쪽 복제본은
+     * 배치 산출물이라 최대 배치 간격만큼 낡는데, 그 낡은 값을 술어로 쓰면 <b>내렸다 다시 올린
+     * 장소가 다음 배치까지 목록에서 통째로 실종된다</b> (동네 일괄 재활성화
+     * {@code AdminPlaceService.activatePlacesByTownIds}가 실제 경로다).
+     *
+     * <p>가장 높은 점수 6.0을 낡은 행에 주는 것이 핵심이다 — {@code AND ps.active = 1}이 되살아나면
+     * 결과가 [A, C]로 쪼그라들어 <em>맨 앞</em>이 사라지므로 순서만 봐도 드러난다.
+     */
+    @Test
+    void 재활성화_직후_ps_active가_낡아도_결과에_포함된다() {
+        insertStats(placeA, townId, true, 4.0, 0);
+        insertStats(placeB, townId, false, 6.0, 0);   // places.active=1인데 ps.active만 낡은 세대
+        insertStats(placeC, townId, true, 2.0, 0);
+
+        List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
+
+        assertThat(placeIdsOf(rows)).containsExactly(placeB, placeA, placeC);
+    }
+
+    /**
      * 표시 카운트는 정렬 쿼리가 함께 실어 오는 {@code ps.bookmark_count}다 (추가 조회 0).
      * 값 7은 점수(4.0)·id·행 수 어느 것과도 겹치지 않게 고른 것이다 — 겹치면 컬럼을 뒤바꾼
      * 회귀를 값으로 구분할 수 없다.
