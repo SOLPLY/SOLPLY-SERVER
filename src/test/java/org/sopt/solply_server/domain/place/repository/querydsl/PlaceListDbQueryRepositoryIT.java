@@ -20,11 +20,11 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * db 모드 정렬 쿼리의 계약을 실제 MySQL로 못 박는다.
+ * 목록 정렬 쿼리의 계약을 실제 MySQL로 못 박는다.
  *
- * <p>검증 대상은 "캐시 경로와 같은 순서·같은 커서 의미론을 SQL로 재현하는가"다. 두 경로가 어긋나면
- * A/B 벤치의 응답 diff가 무의미해지므로, 여기서 지키는 규칙은 전부
- * {@code PlaceListPaginator}의 {@code comparatorOf}/{@code sortKeyOf}에서 온 것이다.
+ * <p>검증 대상은 정렬 순서와 커서 의미론이다 — POPULAR (점수 DESC, id ASC),
+ * LATEST (생성일 DESC, id DESC), 그리고 각각의 커서 경계. 이 규칙들은 커서를 <em>발급</em>하는
+ * {@code PlaceService}와 한 쌍이라, 여기만 바뀌면 페이징이 조용히 어긋난다.
  *
  * <p><b>place_stats는 네이티브 INSERT로 직접 심는다.</b> 엔티티 생성자가 배치 전용으로 봉인돼 있고,
  * 정렬 쿼리는 배치 결과를 <em>읽을</em> 뿐이라 배치를 돌릴 이유가 없다 — 배치를 끼우면 점수 계산
@@ -34,7 +34,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * 여기서 만든 town·place·tag·place_stats 행은 커밋되지 않는다. 같은 싱글턴 컨테이너를 쓰는 다른
  * IT에 place_stats를 남기지 않는다는 것이 중요한데({@code PlaceStatsRepositoryIT}가 빈 테이블을
  * 전제한다) 롤백이 그것을 보장한다. 이 클래스에 커밋하는 테스트를 추가한다면
- * {@code PlacePopularFlowIT.cleanUpCommittedFixtures}와 같은 정리를 함께 넣어야 한다.
+ * {@code PlaceListFlowIT.cleanUpCommittedFixtures}와 같은 정리를 함께 넣어야 한다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -91,7 +91,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
 
-        // 6.0이 먼저, 동점 4.0 둘은 id 오름차순 — 캐시 경로 comparatorOf(POPULAR)와 같은 규칙
+        // 6.0이 먼저, 동점 4.0 둘은 id 오름차순 — 북마크 검색의 인기순 정렬과 같은 규칙
         assertThat(placeIdsOf(rows)).containsExactly(placeC, placeA, placeB);
         assertThat(rows.get(0).popularScore()).isEqualTo(6.0);
     }
@@ -129,7 +129,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     /**
      * <b>타입 내 OR.</b> 서브A에 두 태그를 주면 <em>둘 중 하나만</em> 가진 장소도 통과해야 한다
-     * ({@code CachedPlaceFilter}의 {@code containsAny}와 같은 의미론).
+     * (북마크 검색의 {@code PlaceTagMatcher}와 같은 의미론).
      *
      * <p>서브 태그 EXISTS는 {@code t.id IN (:subTagAIds)}로 메인({@code t.id = :mainTagId})과
      * <b>다른 SQL 분기</b>라 메인 태그 테스트가 이 경로를 대신 물어 주지 못한다. 그래서 여기서
@@ -183,8 +183,8 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     /**
      * <b>메인 태그가 없으면 서브 태그는 무시한다.</b> 구현의 {@code useSubA = useMainTag && ...}
-     * 가드가 그 일을 하고, 캐시 경로도 {@code mainTagId == null}이면 원본을 그대로 돌려준다.
-     * 두 경로가 여기서 갈리면 A/B diff가 태그 요청에서 통째로 깨진다.
+     * 가드가 그 일을 하고, 북마크 검색의 {@code PlaceTagMatcher}도 {@code mainTagId == null}이면
+     * 원본을 그대로 돌려준다 — 두 경로가 여기서 갈리면 같은 요청이 경로마다 다른 답을 낸다.
      *
      * <p>서브A를 가진 장소를 <em>하나만</em> 두어(placeA) 가드가 사라지면 결과가 1건으로
      * 쪼그라들게 만든다 — 전부가 서브A를 가지면 가드를 지워도 테스트가 통과해 버린다.
@@ -286,9 +286,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * {@code p.created_at < :cursor}만으로 다음 페이지를 잡으면 커서와 같은 초에 남아 있던
      * placeB가 통째로 사라진다. 등호 분기의 id 타이브레이크가 그 구멍을 메운다.
      *
-     * <p>커서 값을 상수가 아니라 <b>앞 페이지 마지막 행에서 캐시 경로와 같은 식</b>
-     * ({@code createdAt.toEpochSecond(ZoneOffset.UTC)})으로 만든다 — 그래야 저장 시각과 커서 초의
-     * 왕복까지 함께 검증된다. 타임존이 개입하면 여기서 페이지가 비거나 전부 되돌아온다.
+     * <p>커서 값을 상수가 아니라 <b>앞 페이지 마지막 행에서 발급부와 같은 식</b>
+     * ({@code PlaceService}가 쓰는 {@code createdAt.toEpochSecond(ZoneOffset.UTC)})으로 만든다 —
+     * 그래야 저장 시각과 커서 초의 왕복까지 함께 검증된다. 타임존이 개입하면 여기서 페이지가 비거나 전부 되돌아온다.
      */
     @Test
     void LATEST_커서는_초_단위_경계에서_항목을_흘리지_않는다() {
@@ -324,7 +324,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * <b>LATEST의 태그 경로.</b> 두 정렬은 {@code appendTagFilters}/{@code bindTagFilters}를
      * 공유하지만, 공유한다는 <em>사실</em>은 호출부가 실제로 그것을 부르고 파라미터까지 넘긴다는
      * 보장이 아니다 — LATEST 쪽 호출이 통째로 빠져도 POPULAR 테스트는 전부 그린이다.
-     * A/B 정합성 diff의 3종 요청에 태그가 들어 있으므로 최신순도 같은 의미론이어야 한다.
+     * 태그 필터는 정렬과 직교한 조건이므로 최신순도 같은 의미론이어야 한다.
      *
      * <p>탈락자를 <b>가장 최신인 placeD</b>로 잡는다 — 필터가 빠지면 결과 맨 앞이 D로 바뀌므로
      * 순서만 봐도 드러난다. 통과자를 둘 남겨(placeB·placeA) 필터가 붙은 뒤에도 생성일 내림차순이
@@ -399,7 +399,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .longValue();
     }
 
-    /** created_by는 DEFAULT 1 — V2 시드의 admin 유저(id=1)라 FK가 성립한다 (PlacePopularFlowIT와 동일) */
+    /** created_by는 DEFAULT 1 — V2 시드의 admin 유저(id=1)라 FK가 성립한다 (PlaceListFlowIT와 동일) */
     private long createPlace(String name, LocalDateTime createdAt) {
         em.createNativeQuery("""
                 INSERT INTO places (name, introduction, town_id, active, created_at)

@@ -11,7 +11,6 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResp
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
-import org.sopt.solply_server.domain.place.cache.TownPlacesCache;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.sopt.solply_server.domain.place.service.event.PlaceCreatedEvent;
 import org.sopt.solply_server.global.util.s3.FileTransferMode;
@@ -48,7 +47,6 @@ public class AdminPlaceService {
     private final ImageUrlProvider imageUrlProvider;
     private final AdminTagValidator adminTagValidator;
     private final AdminEntityLoader adminEntityLoader;
-    private final TownPlacesCache townPlacesCache;
 
     @Transactional
     public AdminPlaceUpsertResponse createPlace(final Long adminUserId, final AdminPlaceUpsertRequest req) {
@@ -89,9 +87,6 @@ public class AdminPlaceService {
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
         applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
-
-        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
-        townPlacesCache.invalidateAfterCommit(town.getId());
 
         log.info("어드민 장소 생성 - adminId: {}, placeId: {}", adminUserId, saved.getId());
         return AdminPlaceUpsertResponse.of(saved.getId());
@@ -135,13 +130,6 @@ public class AdminPlaceService {
         );
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
-
-        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
-        // 동네 이동 시 이전/새 동네 스냅샷 모두 무효화
-        townPlacesCache.invalidateAfterCommit(previousTownId);
-        if (!previousTownId.equals(updatedTown.getId())) {
-            townPlacesCache.invalidateAfterCommit(updatedTown.getId());
-        }
 
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
@@ -242,18 +230,12 @@ public class AdminPlaceService {
         Long townId = place.getTown().getId();
         adminPlaceRepository.delete(place);
 
-        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
-        townPlacesCache.invalidateAfterCommit(townId);
-
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
 
     @Transactional
     public void activatePlacesByTownIds(final List<Long> townIds) {
         adminPlaceRepository.updateActiveByTownId(townIds, true);
-
-        // 커밋 이후 로컬 캐시 무효화 (pre-commit 레이스 방지) — 단일 인스턴스 전제, 스케일아웃 시 재검토
-        townIds.forEach(townPlacesCache::invalidateAfterCommit);
     }
 
 

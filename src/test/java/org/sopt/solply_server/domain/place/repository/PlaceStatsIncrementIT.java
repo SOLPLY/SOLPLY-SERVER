@@ -21,7 +21,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * 이벤트 증분 쿼리 4개의 계약을 실제 MySQL에 물어 못 박는다 (설계 §2.5 재검토 · §2.8 사다리 ②단).
  *
  * <p>여기서 검증하는 것은 <b>쿼리의 성질</b>이지 배선이 아니다. 리스너·{@code @Async}·이벤트 발행이
- * 실제로 이어져 있는지는 {@code @SpringBootTest}인 {@code PlacePopularFlowIT}만이 볼 수 있다.
+ * 실제로 이어져 있는지는 {@code @SpringBootTest}인 {@code PlaceListFlowIT}만이 볼 수 있다.
  *
  * <p><b>계약 요약 — 증분이 만지는 컬럼은 카운트 둘뿐이다.</b>
  * <pre>
@@ -59,7 +59,7 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
     /**
      * Flyway V2 시드의 실제 장소 하나를 빌린다 (PlaceStatsRepositoryIT와 같은 관례).
      * 시작 상태를 못 박는 이유: 같은 싱글턴 컨테이너를 쓰는 {@code PlaceStatsBatchProcessorIT}·
-     * {@code PlacePopularFlowIT}가 place_stats에 <b>커밋</b>을 남기고 정리는 각자 {@code @AfterAll}에서
+     * {@code PlaceListFlowIT}가 place_stats에 <b>커밋</b>을 남기고 정리는 각자 {@code @AfterAll}에서
      * 하므로, "행이 없을 때"가 검증 대상인 이 클래스는 스스로 비워야 한다.
      * 이 DELETE는 테스트 트랜잭션과 함께 롤백되므로 남의 데이터를 영구히 지우지 않는다.
      */

@@ -15,18 +15,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.sopt.solply_server.domain.place.cache.CachedPlace;
-import org.sopt.solply_server.domain.place.cache.TownPlacesCache;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -37,6 +34,8 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.LatestRow;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.PopularRow;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
@@ -47,25 +46,39 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 
 /**
- * place_stats 값이 응답에 닿는 배선(wiring) 검증에 한정한 테스트.
+ * 북마크 카운트가 응답에 닿는 배선(wiring) 검증에 한정한 테스트.
  *
  * <p><b>2026-07-31 이전에는 표시 카운트 "보정" 배선을 지키던 파일이었다.</b> 조회 응답을 만들면서
  * "내 북마크가 배치 이후면 +1"을 더하던 로직({@code PlaceDisplayCount})이 있었고, 그 배선이
  * 끊겨도 순수 함수 테스트와 쿼리 테스트가 전부 살아남아서 만든 파일이다. 이벤트 증분이 그
- * 보정을 대체하면서 규칙 자체가 사라졌고, 지금 이 파일이 지키는 것은 둘로 줄었다:
+ * 보정을 대체하면서 규칙 자체가 사라졌고, 지금 이 파일이 지키는 것은 둘이다:
  * <ul>
- *   <li>place_stats에서 읽은 카운트가 <b>가공 없이</b> 응답에 실린다 (보정 부활 회귀 방지)</li>
- *   <li>place_stats 조회가 네 경로 각각에서 정확히 1회다</li>
+ *   <li>카운트가 <b>가공 없이</b> 응답에 실린다 (보정 부활 회귀 방지)</li>
+ *   <li>카운트의 <b>출처가 경로마다 정해져 있고</b>, 그래서 조회 횟수가 정해져 있다</li>
  * </ul>
  *
- * <p>PlaceService 전반을 덮으려는 테스트가 아니다. 의존성 12개 중 이 경로가 실제로 쓰는
- * 5개만 스텁하고 나머지는 빈 mock으로 둔다.
+ * <p><b>출처가 둘로 갈린 것이 이 파일의 핵심이다 (캐시 철거 후).</b>
+ * <table>
+ *   <caption>경로별 카운트 출처와 place_stats 뷰 조회 횟수</caption>
+ *   <tr><th>경로</th><th>카운트 출처</th><th>{@code findViewsByPlaceIds}</th></tr>
+ *   <tr><td>목록(POPULAR·LATEST)</td><td>정렬 쿼리가 실어 온 {@code ps.bookmark_count}</td>
+ *       <td><b>0회</b></td></tr>
+ *   <tr><td>북마크 검색</td><td>{@code PlaceStatsView}</td><td>1회</td></tr>
+ * </table>
+ * 목록 경로가 0회인 것은 최적화가 아니라 <b>설계</b>다 — 정렬 쿼리가 이미 그 행을 읽고 있으므로
+ * 같은 값을 다시 조회하면 순전한 낭비다. 캐시 시절에는 스냅샷에 카운트가 없어 양쪽 다 1회였고,
+ * 그때의 "네 경로 각각 1회"라는 이 파일의 옛 주장은 캐시와 함께 사라졌다.
+ *
+ * <p>PlaceService 전반을 덮으려는 테스트가 아니다. 의존성 중 이 경로가 실제로 쓰는 것만 스텁한다.
  */
 @ExtendWith(MockitoExtension.class)
 class PlaceServiceStatsWiringTest {
 
   private static final long TOWN_ID = 100L;
   private static final long USER_ID = 7L;
+
+  /** 페이징 인자가 없을 때 서비스가 잡는 fetch 크기 — 스텁이 이 값으로 매칭돼야 호출이 성립한다 */
+  private static final int NO_PAGING_FETCH_SIZE = Integer.MAX_VALUE - 1;
 
   @Mock private PlaceRepository placeRepository;
   @Mock private PlaceTagRepository placeTagRepository;
@@ -75,64 +88,73 @@ class PlaceServiceStatsWiringTest {
   @Mock private TownValidator townValidator;
   @Mock private EntityLoader entityLoader;
   @Mock private PlaceReviewRepository placeReviewRepository;
-  @Mock private TownPlacesCache townPlacesCache;
   @Mock private TownHierarchyResolver townHierarchyResolver;
   @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
   @Mock private PlaceStatsRepository placeStatsRepository;
 
   @InjectMocks private PlaceService placeService;
 
-  /** 장소 식별 정보만 담는 스냅샷 — 카운트는 place_stats 뷰에서 온다 */
-  private CachedPlace place(long id) {
-    return new CachedPlace(id, "장소" + id, "key" + id, "카페",
-        Set.of(), Set.of(), Set.of(), LocalDateTime.of(2026, 1, 1, 0, 0), TOWN_ID);
-  }
-
   /**
-   * 목록 경로가 후보를 얻는 곳(캐시 스냅샷). <b>북마크 검색 경로는 이것을 쓰지 않으므로</b>
-   * {@code @BeforeEach}가 아니라 목록 경로 테스트에서만 세운다 — 공통 스텁으로 두면
-   * strict stubs가 "쓰이지 않은 스텁"으로 북마크 검색 케이스를 떨어뜨린다.
+   * 응답 조립 재료가 되는 장소. 두 경로 모두 {@code findPlacesWithTagsByIds}로 엔티티를 채우므로
+   * 재료는 하나로 족하고, <b>이 경로가 실제로 읽는 게터만</b> 세운다.
+   *
+   * <p>태그 게터를 세우지 않는 것은 의도다: 요청에 메인 태그가 없으면 {@code PlaceTagMatcher}가
+   * 즉시 원본을 돌려주므로 호출되지 않는다.
    */
-  private void givenCachedPlace() {
-    given(townPlacesCache.getPlaces(TOWN_ID)).willReturn(List.of(place(1L)));
-  }
-
-  /**
-   * 북마크 검색 경로가 조립 재료로 쓰는 장소 — 내 북마크 id 목록 → 엔티티 fetch → 앱 조립.
-   * 이 경로가 실제로 읽는 필드만 세운다. 태그 게터를 세우지 않는 것은 의도다:
-   * 요청에 메인 태그가 없으면 {@code PlaceTagMatcher}가 즉시 원본을 돌려주므로 호출되지 않는다.
-   */
-  private void givenBookmarkedPlace() {
+  private Place placeEntity() {
     Town town = mock(Town.class);
     given(town.getId()).willReturn(TOWN_ID);
 
     Place place = mock(Place.class);
     given(place.getId()).willReturn(1L);
-    given(place.isActive()).willReturn(true);
     given(place.getName()).willReturn("장소1");
     given(place.getThumbnailFileKey()).willReturn("key1");
     given(place.getMainTag()).willReturn(Optional.empty());
     given(place.getTown()).willReturn(town);
+    return place;
+  }
 
+  /**
+   * 목록 경로: 정렬 쿼리가 (id, 정렬키, 카운트) row를 돌려주고 그 id로 엔티티를 채운다.
+   *
+   * @param bookmarkCount row가 싣고 오는 {@code ps.bookmark_count} — 이 값이 곧 응답의 카운트여야 한다
+   */
+  private void givenListRow(PlaceSortType sort, long bookmarkCount) {
+    // placeEntity()를 willReturn 인자 안에서 부르면 스터빙이 스터빙 안에서 시작돼
+    // UnfinishedStubbingException이 난다 — 반드시 먼저 만들어 둔다.
+    Place place = placeEntity();
+    if (sort == PlaceSortType.POPULAR) {
+      given(placeListDbQueryRepository.findPopularRows(
+          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+          .willReturn(List.of(new PopularRow(1L, 9.0, bookmarkCount)));
+    } else {
+      given(placeListDbQueryRepository.findLatestRows(
+          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+          .willReturn(List.of(
+              new LatestRow(1L, LocalDateTime.of(2026, 1, 1, 0, 0), bookmarkCount)));
+    }
+    given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
+  }
+
+  /** 북마크 검색 경로: 내 북마크 id 목록 → 엔티티 fetch → 앱 조립 */
+  private void givenBookmarkedPlace() {
+    Place place = placeEntity();
+    given(place.isActive()).willReturn(true);
     given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
         .willReturn(List.of(1L));
     given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
   }
 
-  /** place_stats가 들고 있는 카운트 (배치가 센 값 + 그 뒤 도달한 증분) */
-  private void givenStatsCount(int bookmarkCount) {
+  /** 북마크 검색 경로의 카운트 출처 (배치가 센 값 + 그 뒤 도달한 증분) */
+  private void givenStatsView(int bookmarkCount) {
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(
         List.of(new PlaceStatsView(1L, BigDecimal.valueOf(12.5), bookmarkCount)));
   }
 
   @BeforeEach
-  void givenOnePlaceInTown() {
+  void givenOneTown() {
     given(townHierarchyResolver.resolveLeafTownIds(TOWN_ID)).willReturn(List.of(TOWN_ID));
     given(imageUrlProvider.getImageUrl(anyString())).willReturn("https://img/1");
-  }
-
-  private PlaceFilterGetResponse getPlaces(boolean bookmarkSearch) {
-    return getPlaces(bookmarkSearch, PlaceSortType.POPULAR);
   }
 
   private PlaceFilterGetResponse getPlaces(boolean bookmarkSearch, PlaceSortType sort) {
@@ -141,18 +163,17 @@ class PlaceServiceStatsWiringTest {
   }
 
   /**
-   * <b>보정 부활 감시.</b> 내가 북마크한 장소여도 카운트는 place_stats 값 그대로여야 한다.
+   * <b>보정 부활 감시.</b> 내가 북마크한 장소여도 카운트는 읽어 온 값 그대로여야 한다.
    * "내 것이면 +1"을 다시 넣으면 여기서 101이 나온다 — 증분이 이미 센 1건을 두 번 세는 회귀다.
    */
   @Test
-  @DisplayName("내가 북마크한 장소도 place_stats 카운트를 가공 없이 응답한다")
-  void keepsStatsCountEvenWhenBookmarkedByMe() {
-    givenCachedPlace();
-    givenStatsCount(100);
+  @DisplayName("내가 북마크한 장소도 카운트를 가공 없이 응답한다")
+  void keepsCountEvenWhenBookmarkedByMe() {
+    givenListRow(PlaceSortType.POPULAR, 100L);
     given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, true));
 
-    PlacePreviewDto preview = getPlaces(false).places().get(0);
+    PlacePreviewDto preview = getPlaces(false, PlaceSortType.POPULAR).places().get(0);
 
     assertThat(preview.bookmarkCount()).isEqualTo(100L);
     assertThat(preview.isBookmarked()).isTrue();
@@ -161,30 +182,31 @@ class PlaceServiceStatsWiringTest {
   @Test
   @DisplayName("내가 북마크하지 않았으면 미북마크로 응답한다")
   void marksUnbookmarkedWhenNotMine() {
-    givenCachedPlace();
-    givenStatsCount(100);
+    givenListRow(PlaceSortType.POPULAR, 100L);
     given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, false));
 
-    PlacePreviewDto preview = getPlaces(false).places().get(0);
+    PlacePreviewDto preview = getPlaces(false, PlaceSortType.POPULAR).places().get(0);
 
     assertThat(preview.bookmarkCount()).isEqualTo(100L);
     assertThat(preview.isBookmarked()).isFalse();
   }
 
   /**
-   * 배치도 증분도 닿지 않은 장소는 place_stats에 행 자체가 없다 — IN 조회가 그 id를 돌려주지 않는다.
-   * 그때 0으로 읽는지(NPE도, 임의값도 아니게) 본다.
+   * 배치도 증분도 닿지 않은 장소는 place_stats에 <b>행 자체가 없다</b> — IN 조회가 그 id를
+   * 돌려주지 않는다. 그때 0으로 읽는지(NPE도, 임의값도 아니게) 본다.
+   *
+   * <p>이 분기는 북마크 검색 경로에만 있다. 목록 경로의 카운트는 정렬 쿼리가 실어 오는 값이라
+   * "행이 없다"는 상태가 존재할 수 없다 — POPULAR는 place_stats가 기준 테이블이라 행 없는 장소가
+   * 애초에 안 나오고, LATEST는 {@code COALESCE(ps.bookmark_count, 0)}로 SQL이 0을 만든다.
    */
   @Test
-  @DisplayName("place_stats에 행이 없는 장소는 카운트 0으로 응답한다")
+  @DisplayName("북마크 검색: place_stats에 행이 없는 장소는 카운트 0으로 응답한다")
   void readsZeroWhenNoStatsRow() {
-    givenCachedPlace();
+    givenBookmarkedPlace();
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(List.of());
-    given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
-        .willReturn(Map.of(1L, true));
 
-    PlacePreviewDto preview = getPlaces(false).places().get(0);
+    PlacePreviewDto preview = getPlaces(true, PlaceSortType.POPULAR).places().get(0);
 
     assertThat(preview.bookmarkCount()).isZero();
     assertThat(preview.isBookmarked()).isTrue();
@@ -199,9 +221,9 @@ class PlaceServiceStatsWiringTest {
   @DisplayName("북마크 검색 경로는 북마크 여부를 다시 조회하지 않는다")
   void doesNotQueryBookmarksOnBookmarkSearchPath() {
     givenBookmarkedPlace();
-    givenStatsCount(100);
+    givenStatsView(100);
 
-    PlacePreviewDto preview = getPlaces(true).places().get(0);
+    PlacePreviewDto preview = getPlaces(true, PlaceSortType.POPULAR).places().get(0);
 
     assertThat(preview.bookmarkCount()).isEqualTo(100L);
     assertThat(preview.isBookmarked()).isTrue();
@@ -209,28 +231,44 @@ class PlaceServiceStatsWiringTest {
   }
 
   /**
-   * "place_stats 조회는 경로당 1회"가 이 리팩터링의 주장이다. 목록 경로는 정렬에 따라
-   * 읽는 시점이 갈리고(POPULAR는 페이징 전 후보 전체 / LATEST는 페이징 후 페이지 항목),
-   * 북마크 검색은 정렬 분기 <b>밖</b>에서 한 번 읽는다. 어느 쪽이든 분기를 한 줄만 잘못
-   * 고쳐도 조용히 2회가 되는데, 값 단언만으로는 그 변이가 전부 살아남는다 —
-   * 그래서 횟수를 별도로 못 박는다.
+   * <b>목록 경로는 place_stats를 다시 조회하지 않는다.</b> 정렬 쿼리가 이미 그 행을 읽어
+   * 카운트를 실어 왔으므로 뷰 조회는 순전한 낭비다.
+   *
+   * <p>row의 카운트를 42로 두고 응답에서 42를 확인하는 것이 핵심이다 — 횟수만 세면
+   * "조회는 안 하는데 엉뚱한 값을 싣는" 변이가 통과하고, 값만 보면 "값은 맞는데 조회를
+   * 한 번 더 하는" 변이가 통과한다. 둘을 함께 본다.
+   *
+   * <p>두 정렬을 모두 도는 이유는 카운트를 싣는 코드가 정렬마다 다른 SQL·다른 record에서
+   * 오기 때문이다 (POPULAR는 {@code ps.bookmark_count}, LATEST는 {@code COALESCE}).
    */
-  @ParameterizedTest(name = "{0} / 북마크검색={1}")
-  @CsvSource({"POPULAR, false", "LATEST, false", "POPULAR, true", "LATEST, true"})
-  @DisplayName("place_stats 조회는 네 경로 각각에서 정확히 1회다")
-  void readsPlaceStatsExactlyOncePerPath(PlaceSortType sort, boolean bookmarkSearch) {
-    givenStatsCount(100);
-    if (bookmarkSearch) {
-      givenBookmarkedPlace();
-    } else {
-      givenCachedPlace();
-      given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
-          .willReturn(Map.of(1L, true));
-    }
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(PlaceSortType.class)
+  @DisplayName("목록 경로는 정렬 쿼리가 실어 온 카운트를 쓰고 place_stats를 다시 읽지 않는다")
+  void listPathCarriesCountAndSkipsStatsQuery(PlaceSortType sort) {
+    givenListRow(sort, 42L);
+    given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
+        .willReturn(Map.of(1L, true));
 
-    PlacePreviewDto preview = getPlaces(bookmarkSearch, sort).places().get(0);
+    PlacePreviewDto preview = getPlaces(false, sort).places().get(0);
 
-    // 횟수만 세면 "한 번도 안 읽는" 변이가 통과하므로, 읽은 값이 응답에 닿았음도 함께 본다
+    assertThat(preview.bookmarkCount()).isEqualTo(42L);
+    verify(placeStatsRepository, never()).findViewsByPlaceIds(anyList());
+  }
+
+  /**
+   * 북마크 검색은 정렬 분기 <b>밖</b>에서 한 번 읽는다 — LATEST도 표시 카운트가 필요하므로
+   * 정렬과 무관하게 1회다. 분기 안으로 옮기면 LATEST가 0회가 되어 카운트가 전부 0이 되고,
+   * 분기마다 따로 부르면 POPULAR가 2회가 된다. 값 단언만으로는 후자가 살아남는다.
+   */
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(PlaceSortType.class)
+  @DisplayName("북마크 검색은 정렬과 무관하게 place_stats를 정확히 1회 읽는다")
+  void bookmarkSearchReadsStatsExactlyOnce(PlaceSortType sort) {
+    givenBookmarkedPlace();
+    givenStatsView(100);
+
+    PlacePreviewDto preview = getPlaces(true, sort).places().get(0);
+
     assertThat(preview.bookmarkCount()).isEqualTo(100L);
     verify(placeStatsRepository, times(1)).findViewsByPlaceIds(anyList());
   }

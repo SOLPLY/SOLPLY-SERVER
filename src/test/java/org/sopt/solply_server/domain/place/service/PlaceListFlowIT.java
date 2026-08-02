@@ -24,44 +24,42 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * {@code solply.place-list.popular-read-mode=db}(캐시를 거치지 않는 DB 직행 경로)로 같은 사슬을 걷는다 —
- * 북마크·리뷰 INSERT → 배치 → 조회 → 정렬 → 커서 왕복 → 이벤트 증분.
+ * 장소 목록 <b>유일 경로</b>의 사슬 IT — 북마크·리뷰 INSERT → 배치 → 조회 → 정렬 → 커서 왕복 →
+ * 이벤트 증분까지 걷는다. 조각별 테스트(배치 IT·쿼리 IT·커서 단위 테스트)는 이음새를 못 지키는데,
+ * 이 기능의 실제 버그 2건(LATEST 커서 누락, 표시 이중 계산)이 전부 이음새에서 났다.
+ * 리스너·{@code @Async}가 실제로 배선된 유일한 무대이기도 하다.
  *
- * <p><b>이 파일의 존재 이유는 커버리지가 아니라 정합성이다.</b> 두 모드의 랭킹 소스가
- * {@code place_stats.popular_score} 하나로 통일돼 있어 <b>응답과 커서가 모드 간 호환되고 동일해야</b>
- * 하고, 그 성질이 A/B 벤치의 응답 diff 검증을 성립시킨다. 그래서 {@link PlacePopularFlowIT}와
- * <b>같은 픽스처·같은 기대값</b>을 쓴다 — 두 IT가 같은 캐논을 통과하는 것 자체가 모드 간 정합의 증명이다.
- * 기대값을 공유 상수로 빼지 않고 양쪽 파일에 리터럴로 적어 두는 것도 같은 이유다: 상수를 공유하면
- * "두 모드가 똑같이 틀린" 회귀를 아무도 못 잡는다.
+ * <p><b>한때 이 캐논을 두 파일이 나눠 통과했다.</b> 캐시 경로와 DB 직행 경로를 A/B로 재던 시절,
+ * 이 파일의 쌍둥이({@code PlacePopularFlowIT})가 <b>같은 픽스처·같은 기대값</b>을 캐시 모드로
+ * 걸었고 두 IT가 같은 답을 내는 것 자체가 모드 간 정합의 증명이었다. 2026-08-01 판정으로
+ * 캐시가 사라지면서 쌍둥이도 함께 지웠다 — 이 파일이 그쪽 단언을 전부 포함하므로 잃은 검증은 없다.
  *
- * <p>다만 <b>정렬 축은 원본보다 하나 넓다</b>. db 모드는 POPULAR뿐 아니라 LATEST까지 DB로 서빙하므로
- * (캐시 경로에서 LATEST의 정렬 키는 스냅샷 안에 있어 {@code PlaceListPaginatorTest}가 단위로 맡는다)
- * 여기서는 LATEST의 생성일 내림차순·id 타이브레이크·커서 왕복을 사슬 수준에서 한 번 더 문다.
+ * <p>덮는 정렬 축은 POPULAR·LATEST 둘이다. 캐시 시절 LATEST의 정렬 키는 스냅샷 안에 있어
+ * 단위 테스트가 맡았지만, 지금은 DB가 서빙하므로 생성일 내림차순·id 타이브레이크·커서 왕복을
+ * 여기서 사슬 수준으로 문다. 북마크 검색(페이징 없는 별도 조립)도 같은 무대에서 걷는다.
  *
  * <p><b>계약: 단언은 PlaceService 응답 DTO 수준으로만 한다.</b> 내부 표현(네이티브 SQL의 컬럼 순서,
  * 레포지토리 record 모양)이 바뀌는 리팩터링에서 이 파일은 수정 없이 그린이어야 한다.
  */
 @SpringBootTest
-class PlaceDbDirectFlowIT extends MySqlContainerSupport {
+class PlaceListFlowIT extends MySqlContainerSupport {
 
     /**
-     * 메서드 이름은 베이스의 {@code datasource}·원본의 {@code flowItProps}와 반드시 달라야 한다.
+     * 메서드 이름은 베이스의 {@code datasource}와 반드시 달라야 한다.
      * {@code @DynamicPropertySource}는 static이라 같은 이름이면 상위/동명 메서드를 <em>숨겨</em>
-     * 설정이 통째로 사라진다. (이름이 다르면 {@code MergedContextConfiguration}도 갈려
-     * {@code popular-read-mode=db}인 컨텍스트가 캐시 모드 IT와 섞이지 않는다.)
+     * 설정이 통째로 사라진다.
      *
      * <p><b>배치 스케줄을 꺼야 하는 이유.</b> {@code @SpringBootTest}는 실제 앱을 띄우므로
-     * {@code PlaceStatsFacade.recalculatePlaceStats}의 {@code @Scheduled(cron = "0 0 2 * * *")}가
-     * 그대로 등록된다. 하필 {@link #CALCULATED_AT}이 02:00이라, 스위트 실행이 실제 벽시계 02:00을
-     * 지나면 스케줄러가 {@code recalculateAll(now())}를 돌려 픽스처가 의존하는 place_stats를
-     * 통째로 다른 세대로 덮어쓴다. {@code "-"}는 스프링이 "등록하지 않음"으로 해석하는 센티널이다
+     * {@code PlaceStatsFacade.recalculatePlaceStats}의 {@code @Scheduled}가 그대로 등록된다.
+     * 매시 30분 배치라 스위트가 어느 시간대에 돌든 그 순간을 지나면 스케줄러가
+     * {@code recalculateAll(now())}를 돌려 픽스처가 의존하는 place_stats를 통째로 다른 세대로
+     * 덮어쓴다. {@code "-"}는 스프링이 "등록하지 않음"으로 해석하는 센티널이다
      * ({@code Scheduled.CRON_DISABLED}).
      */
     @DynamicPropertySource
-    static void dbDirectProps(DynamicPropertyRegistry registry) {
+    static void listFlowProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("solply.place-stats.cron", () -> "-");
-        registry.add("solply.place-list.popular-read-mode", () -> "db");
     }
 
     @Autowired private PlaceService placeService;
@@ -76,9 +74,8 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
 
     /**
-     * 뒷정리가 이 테스트의 픽스처를 역추적하는 유일한 기준점.
-     * <b>원본 {@link PlacePopularFlowIT}의 상수("사슬IT동네"/"사슬IT유저")와 반드시 달라야 한다</b> —
-     * 같으면 먼저 끝난 쪽의 {@code @AfterAll}이 아직 도는 쪽의 픽스처를 지운다.
+     * 뒷정리가 이 테스트의 픽스처를 역추적하는 유일한 기준점. 같은 싱글턴 컨테이너를 쓰는 다른
+     * IT의 접두사와 겹치면 먼저 끝난 쪽의 {@code @AfterAll}이 아직 도는 쪽의 픽스처를 지운다.
      * ({@code _}·{@code %}가 들어가면 아래 LIKE에서 와일드카드가 되므로 넣지 않는다.)
      */
     private static final String TOWN_NAME_PREFIX = "db직행IT동네";
@@ -89,7 +86,7 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
     /** 최신순 픽스처가 사는 동네 — 인기순 동네와 나누는 이유는 최신순 테스트의 주석 참조 */
     private static final String LATEST_TOWN_NAME = TOWN_NAME_PREFIX + "최신";
 
-    /** users.nickname UNIQUE — 원본 사슬 IT('사슬IT유저')·배치 IT('배치테스트유저')와 겹치지 않는 접두사 */
+    /** users.nickname UNIQUE — 배치 IT('배치테스트유저')와 겹치지 않는 접두사 */
     private static final String USER_NICKNAME_PREFIX = "db직행IT유저";
 
     /** 태그 필터 배선 검증용 태그의 이름 접두사 — 뒷정리가 이것으로 되찾는다 */
@@ -128,11 +125,6 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
         // 표시 보정이 되살아나면 이 조합에서만 카운트가 1로 부풀어 즉시 잡힌다.
         insertBookmark(me, placeC, CALCULATED_AT.plusMinutes(30));
 
-        // 원본 setUp 끝의 townPlacesCache.invalidate(townId)는 여기에 옮기지 않았다.
-        // db 모드의 목록 경로(PlaceService.listFromDb)는 TownPlacesCache를 아예 조회하지 않으므로
-        // (캐시를 타는 것은 북마크 검색뿐이고 이 파일은 그 경로를 걷지 않는다) 무효화는 무조건 no-op이고,
-        // 남겨 두면 "db 모드도 캐시 세대에 의존한다"는 거짓 신호를 준다. 캐시 세대에 대한 방어는
-        // 캐시 모드를 검증하는 PlacePopularFlowIT의 책임이다.
     }
 
     @Test
@@ -152,13 +144,13 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * 최신순도 db 모드에서는 DB가 서빙한다 ({@code places} 기준, 카운트만 place_stats LEFT JOIN).
+     * 최신순은 {@code places}를 기준 테이블로 DB가 서빙한다 (카운트만 place_stats LEFT JOIN).
      *
      * <p><b>인기순과 동네를 나눈 이유.</b> 최신순 픽스처를 같은 동네에 심으면 그 장소들이 인기순
-     * 결과에도 0점으로 끼어들어 위 테스트의 기대값([C, A] → [B])이 통째로 흔들린다. 원본과 같은
-     * 기대값을 유지하는 것이 이 파일의 목적이므로, 축을 늘리는 대신 무대를 나눴다.
+     * 결과에도 0점으로 끼어들어 위 테스트의 기대값([C, A] → [B])이 통째로 흔들린다.
+     * 인기순 기대값을 지키려고 축을 늘리는 대신 무대를 나눴다.
      *
-     * <p><b>픽스처 설계.</b> 원본의 A·B·C는 전부 같은 초에 생성돼 id 타이브레이크만 검증된다.
+     * <p><b>픽스처 설계.</b> 인기순 무대의 A·B·C는 전부 같은 초에 생성돼 id 타이브레이크만 검증된다.
      * 그래서 여기서는 (1) 같은 초 3건으로 <b>id 내림차순</b> 타이브레이크를, (2) id는 가장 크지만
      * 생성일은 가장 이른 1건으로 <b>생성일 내림차순</b>이 id보다 우선함을 함께 문다 —
      * 시각 축이 빠지면 {@code lOld}가 맨 앞으로 올라와 즉시 깨진다.
@@ -271,8 +263,7 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
 
     /**
      * 표시 카운트는 place_stats 값 그대로다 — 조회 경로가 더하거나 빼지 않는다.
-     * db 모드에서는 정렬 쿼리가 실어 온 {@code ps.bookmark_count}가 그 값이고, 캐시 모드에서는
-     * 요청 시점 {@code findViewsByPlaceIds}가 읽은 값이다 — <b>출처가 달라도 결과는 같아야 한다.</b>
+     * 목록 경로에서는 정렬 쿼리가 실어 온 {@code ps.bookmark_count}가 그 값이다.
      *
      * <p>placeC가 이 계약을 무는 자리다. setUp이 배치 <b>이후에</b> 내 북마크를 <em>직접 INSERT</em>해
      * 두므로(이벤트를 거치지 않아 증분도 없다) place_stats는 0인데 {@code isBookmarked}는 true다.
@@ -303,8 +294,7 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
      * <p>DB 값(5)과 응답 값(5)을 함께 단언한다. 응답이 6이면 조회 경로가 다시 뭔가를 더하고 있다는
      * 뜻이고, DB가 4에서 멈추면 배선(발행·리스너)이 끊긴 것이다 — 두 실패가 값으로 구분된다.
      *
-     * <p>db 모드에는 무효화할 캐시 세대가 없으므로 증분이 DB에 닿는 순간이 곧 응답에 보이는 순간이다.
-     * 그래서 {@code awaitUntil} 이후의 기대값이 캐시 모드와 같다 — 같아야만 A/B diff가 성립한다.
+     * <p>무효화할 캐시 세대가 없으므로 증분이 DB에 닿는 순간이 곧 응답에 보이는 순간이다.
      */
     @Test
     void 북마크는_배치를_기다리지_않고_증분으로_반영된다() throws Exception {
@@ -336,8 +326,8 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
 
         awaitUntil(() -> bookmarkCountInDb(placeA) == 4);   // 취소 즉시 반영 — 증분의 실이익
 
-        // 원본에 없는 한 줄: db 모드는 감분이 DB에 닿으면 그대로 응답이 된다. DB만 보면 조회 경로가
-        // 감분을 무시하고 다른 값을 싣는 회귀를 못 잡는다.
+        // 감분이 DB에 닿으면 그대로 응답이 된다. DB만 보면 조회 경로가 감분을 무시하고
+        // 다른 값을 싣는 회귀를 못 잡으므로 응답으로 한 번 더 확인한다.
         PlacePreviewDto a =
                 previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA);
         assertThat(a.bookmarkCount()).isEqualTo(4);
@@ -497,13 +487,12 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
     /**
      * 이 IT는 롤백되지 않으므로(@SpringBootTest는 기본 커밋) 만든 행을 직접 지운다.
      * 픽스처 역추적의 기준점은 towns.name — 거기서 places, 그 places의 bookmarks·place_reviews로 내려간다.
-     * 이름 접두사가 원본 사슬 IT("사슬IT…")와 다르므로 두 IT는 서로의 픽스처를 지우지 않는다.
      *
      * <p><b>place_stats만 전량 삭제하는 이유.</b> {@code recalculateAll}은 내 장소가 아니라
      * <b>모든 장소</b>에 행을 남긴다. 그 행들을 남겨두면 place_stats가 비어 있음을 전제로 하는
      * 다른 IT들이 깨진다 — 현재는 {@code PlaceStatsRepositoryIT}가 그렇다. 배치가 만든 행은 전부
      * 이 테스트가 만든 것이므로 전량 삭제가 곧 "내가 만든 것만 삭제"다
-     * ({@code PlaceStatsBatchProcessorIT}·{@code PlacePopularFlowIT}도 같은 이유로 같은 정리를 한다).
+     * ({@code PlaceStatsBatchProcessorIT}도 같은 이유로 같은 정리를 한다).
      *
      * <p><b>{@code @AfterAll} + {@code DriverManager}인 이유는 두 가지뿐이다.</b> (a) {@code @AfterAll}은
      * static이라 {@code @Autowired JdbcTemplate}에 닿을 수 없어 커넥션을 직접 연다, (b) 클래스당 1회가

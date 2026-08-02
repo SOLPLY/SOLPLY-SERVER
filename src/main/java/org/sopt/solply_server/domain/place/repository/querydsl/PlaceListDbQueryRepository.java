@@ -11,22 +11,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 /**
- * [db 모드] 장소 목록을 캐시 없이 DB에서 정렬·필터·페이징한다.
- * {@code solply.place-list.popular-read-mode=db} 일 때만 쓰인다 — 캐시(A) vs DB 직행(B) A/B 벤치의 B다.
+ * 장소 목록을 DB에서 정렬·필터·페이징한다 — 목록 조회의 <b>유일한</b> 경로다.
  *
- * <p><b>벤치 v0(요청마다 bookmarks를 COUNT(*)로 세던 구현)를 대체한다.</b> v0는 캐시 경로와 랭킹
- * 소스가 달라(원시 북마크 수 vs 복합 점수) 두 모드의 응답을 diff로 대조할 수 없었고, 그래서
- * "지연은 비교되지만 정합은 비교되지 않는" 반쪽짜리 B였다. 지금은 양쪽 모두 place_stats의
- * popular_score를 랭킹 소스로 쓰므로 <b>두 모드의 커서가 호환되고 응답이 동일해야 한다</b> —
- * 그 동일성 자체가 벤치의 검증 장치다.
+ * <p><b>여기까지 온 경위.</b> 2026-08-01까지 이 클래스는 A/B 실측의 B였다. A는 동네별 스냅샷을
+ * 메모리에 들고 앱에서 정렬하는 캐시 경로였고, 두 경로가 {@code place_stats.popular_score}라는
+ * 같은 랭킹 소스를 써서 응답이 동일해야 한다는 성질이 벤치의 검증 장치였다. 판정은 B였고
+ * ({@code docs/perf/2026-08-01-cache-vs-db-direct.md}) 캐시는 철거됐다.
  *
- * <p><b>커서 계약.</b> {@code PlaceListCursor} v2를 그대로 쓴다. sortKey는 캐시 경로
- * {@code PlaceListPaginator.sortKeyOf}와 같은 값이다 — POPULAR은 popular_score의 double,
- * LATEST는 createdAt의 epoch 초(UTC). 정렬 규칙도 캐시 경로의 {@code comparatorOf}와 같다:
- * POPULAR은 (점수 DESC, id ASC), LATEST는 (생성일 DESC, id DESC). 한쪽만 바꾸면 모드 간
- * diff가 깨지므로 둘은 함께 움직여야 한다.
+ * <p><b>커서 계약.</b> {@code PlaceListCursor} v2를 그대로 쓴다 — 코덱이 캐시 시절과 같으므로
+ * 철거 배포 중 스크롤하던 클라이언트의 커서도 거부되지 않는다. sortKey는 POPULAR이 popular_score의
+ * double, LATEST가 createdAt의 epoch 초(UTC)이고, 정렬 규칙은 POPULAR (점수 DESC, id ASC) /
+ * LATEST (생성일 DESC, id DESC)다. 발급하는 쪽({@code PlaceService})과 해석하는 쪽(여기)이
+ * 한 쌍이라 한쪽만 바꾸면 페이징이 조용히 어긋난다.
  *
- * <p>태그 필터 의미론은 {@code CachedPlaceFilter}와 동일하다 (타입 내 OR, 타입 간 AND,
+ * <p>태그 필터 의미론은 북마크 검색의 {@code PlaceTagMatcher}와 같다 (타입 내 OR, 타입 간 AND,
  * 메인 태그가 없으면 서브 태그는 무시).
  */
 @Repository
@@ -41,7 +39,8 @@ public class PlaceListDbQueryRepository {
 
     /**
      * 인기순을 place_stats 정렬로 서빙한다 — {@code idx_place_stats_town_score}
-     * (town_id, active, popular_score DESC, place_id)가 필터·정렬·타이브레이크를 흡수한다.
+     * (town_id, popular_score DESC, place_id, bookmark_count)가 필터·정렬·타이브레이크를 흡수하고,
+     * 끝의 {@code bookmark_count}가 커버링까지 만든다 (V26).
      *
      * <p><b>단 "정렬을 흡수한다"가 성립하는 것은 동네(leaf) 단위 조회뿐이다 — 2026-08-01 EXPLAIN
      * 실측으로 확정.</b> 술어가 {@code town_id IN (:townIds)}라 town이 여러 개면 town별 range가
@@ -71,17 +70,16 @@ public class PlaceListDbQueryRepository {
      *       랜덤 1,800회 &gt; 순차 6,440행 — 그래서 풀스캔이 이긴다.</li>
      * </ol>
      *
-     * <p><b>②는 인덱스 끝에 {@code bookmark_count} 한 컬럼을 덧붙이면 사라진다 — 실측 확인
-     * (2026-08-01): 6.46ms → 0.806ms, 8배.</b> 풀스캔이 인덱스 range scan으로 바뀌어 스캔 대상이
-     * 테이블 전체가 아니라 그 시의 1,800행이 되므로, 위에 적은 "전국 규모로 선형 증가"라는
+     * <p><b>②는 V26이 없앴다 — 인덱스 끝에 {@code bookmark_count}를 덧붙여 커버링으로 만들었다.
+     * 실측(2026-08-01): 6.46ms → 0.806ms, 8배.</b> 풀스캔이 인덱스 range scan으로 바뀌어 스캔
+     * 대상이 테이블 전체가 아니라 그 시의 1,800행이 되므로, 위에 적은 "전국 규모로 선형 증가"라는
      * 확장성 문제도 함께 사라진다. ①은 남아 filesort는 계속되지만 정렬 대상이 인덱스 엔트리라
-     * 훨씬 싸다.
+     * 훨씬 싸다. <b>위 표의 6.46ms는 V26 이전 인덱스에서 잰 값이다</b> — 판정 근거로 남긴다.
      *
-     * <p>선두 프리픽스 {@code (town_id, active, popular_score DESC, place_id)}가 그대로이므로
-     * <b>동네 단위는 하나도 잃지 않는다.</b> 즉 두 접근 패턴은 상충하지 않는다 — 한때 그렇게
-     * 적었으나 실측으로 뒤집혔다. 그럼에도 이 변경을 <b>지금</b> 넣지 않는 이유는 단 하나,
-     * 2026-08-01 A/B 측정이 현행 인덱스 위에서 이뤄졌기 때문이다. 측정이 끝난 조건을 바꾸면
-     * 그 판정의 근거가 흔들린다. 캐시 제거 리팩터링 때 마이그레이션으로 함께 넣을 것.
+     * <p>선두 프리픽스 {@code (town_id, popular_score DESC, place_id)}는 그대로라
+     * <b>동네 단위는 하나도 잃지 않는다.</b> 즉 두 접근 패턴은 상충하지 않는다 — 한때 상충한다고
+     * 적었으나 실측으로 뒤집혔다. 이 변경을 A/B 측정 직후가 아니라 캐시 제거와 함께 넣은 이유는,
+     * 측정이 끝난 조건을 바꾸면 그 판정의 근거가 흔들리기 때문이다.
      *
      * <p><b>술어를 ps 컬럼으로 잡고 신선도는 조인으로 거르는 이유.</b> town_id는 places에서
      * 비정규화해 온 값이라 배치 간격만큼 낡을 수 있다(V24 주석). 그럼에도 WHERE를 ps 쪽에 거는 것은
@@ -107,7 +105,7 @@ public class PlaceListDbQueryRepository {
      * 옮겨야 하는데 그러면 인덱스를 잃는다). 어드민 동기 갱신 훅 대신 <b>배치 간격 단축</b>으로
      * 갈음한다 — 매시 30분이라 창은 ≤1h다 (2026-08-02, {@code PlaceStatsFacade} javadoc 참조).
      *
-     * <p><b>커서 점수를 double로 바인딩하는 이유.</b> 캐시 경로가 커서에 싣는 값은
+     * <p><b>커서 점수를 double로 바인딩하는 이유.</b> 커서에 싣는 값은
      * {@code DECIMAL(18,6)}을 {@code doubleValue()}로 좁힌 것이다. MySQL은 DECIMAL 컬럼과 DOUBLE
      * 파라미터를 비교할 때 양쪽을 DOUBLE로 올려 비교하므로, 자바가 커서를 만들 때 겪은 것과 같은
      * 좁힘을 SQL도 겪는다 — 즉 경계에서의 등가(=)가 양쪽에서 똑같이 판정된다. BigDecimal로
@@ -116,23 +114,20 @@ public class PlaceListDbQueryRepository {
      * <p>표시 카운트({@code ps.bookmark_count})를 같은 SELECT에 실어 추가 조회를 0으로 둔다.
      * 표시 보정은 2026-07-31에 제거됐으므로 읽은 값을 그대로 내보내면 된다.
      *
-     * <p><b>⚠️ 모드 간 응답 등가의 유일한 예외 — ps 행이 없는 장소.</b> 이 쿼리는 place_stats를
-     * <em>기준 테이블</em>로 잡으므로 행이 없는 장소를 아예 반환하지 않는다. 캐시 경로는 반대로
-     * 스냅샷의 전 장소를 후보로 삼고 점수가 없으면 0점으로 쳐서({@code PlaceListPaginator.sortKeyOf}의
-     * {@code getOrDefault(id, 0.0)}) 목록 <b>맨 뒤</b>에 포함시킨다. 따라서 "배치도 증분도 아직 닿지
-     * 않은 신규 장소"에서만 두 모드의 결과 집합이 갈린다 (캐시=포함, db=누락).
+     * <p><b>⚠️ ps 행이 없는 장소는 인기순에 나오지 않는다.</b> 이 쿼리는 place_stats를
+     * <em>기준 테이블</em>로 잡으므로 행이 없는 장소를 아예 반환하지 않는다. 즉 "배치도 증분도
+     * 아직 닿지 않은 신규 장소"가 인기순에서 통째로 빠진다 (캐시 경로는 스냅샷의 전 장소를 후보로
+     * 삼고 점수가 없으면 0점으로 쳐 맨 뒤에 포함시켰다 — 이 지점이 두 경로가 갈리던 유일한 곳이었다).
      *
      * <p>기준 테이블을 places로 뒤집어 {@code LEFT JOIN place_stats}로 맞출 수도 있지만 그러지
      * 않는다 — 그 순간 {@code idx_place_stats_town_score}가 정렬에 쓰이지 못해 이 경로의 존재 이유
-     * (정렬을 인덱스가 흡수한다)가 통째로 사라진다. 즉 이것은 버그가 아니라 <b>B가 사는 방식의
-     * 대가</b>이고, 대가의 크기는 "활동 0인 장소가 인기순 꼬리에서 최대 24시간 빠진다"이다.
-     * 배치가 전 장소에 행을 남기므로(부팅 최초 적재 + 매일 02:00 전량 재계산) 구멍은 마지막 배치
-     * 이후 <em>새로 생긴</em> 장소로 한정된다.
+     * (정렬을 인덱스가 흡수한다)가 통째로 사라진다. 즉 이것은 버그가 아니라 <b>대가</b>이고,
+     * 대가의 크기는 "활동 0인 장소가 인기순 꼬리에서 다음 배치까지 빠진다"이다.
+     * 배치가 전 장소에 행을 남기므로(부팅 최초 적재 + 매시 30분 전량 재계산) 구멍은 마지막 배치
+     * 이후 <em>새로 생긴</em> 장소로 한정되고 창은 ≤1h다.
      *
-     * <p>A/B 벤치의 정합성 diff 게이트는 이 예외 위에서만 성립한다 — <b>모든 active 장소가 ps 행을
-     * 가진 상태(배치 직후)에서 돌려야</b> diff가 비고, 그렇지 않은데 비었다면 그건 게이트가
-     * 통과한 게 아니라 게이트가 아무것도 보지 않은 것이다. LATEST는 기준 테이블이 places라
-     * 이 예외가 없다 — 같은 파일 안에서 두 정렬의 기준 테이블이 비대칭인 것은 의도된 것이다.
+     * <p>LATEST는 기준 테이블이 places라 이 예외가 없다 — 같은 파일 안에서 두 정렬의 기준 테이블이
+     * 비대칭인 것은 의도된 것이다. 신규 장소야말로 최신순 맨 앞에 와야 할 대상이기 때문이다.
      *
      * @param cursorScore   커서의 sortKey(popular_score). null이면 첫 페이지
      * @param cursorPlaceId 커서의 장소 id. null이면 첫 페이지
@@ -258,18 +253,16 @@ public class PlaceListDbQueryRepository {
      * 구조적으로 보장된다 — 복사해 두면 한쪽만 고치는 실수가 조용히 통과한다.
      * 기준 별칭이 {@code p}인 것은 두 쿼리 모두 places를 {@code p}로 두기 때문이다.
      *
-     * <p><b>캐시 경로와의 차이 — 태그 타입을 여기서는 검사하지 않는다.</b> {@code CachedPlaceFilter}는
-     * 스냅샷이 이미 타입별 버킷({@code activeMainTagIds}/{@code activeOption1TagIds}/
-     * {@code activeOption2TagIds})으로 쪼개져 있어 "메인 자리에 온 id가 실제로 MAIN인가"를
-     * 구조적으로 확인하지만, 여기 EXISTS는 {@code t.id}와 {@code t.active}만 본다. 따라서
-     * <b>타입이 어긋난 입력</b>(메인 자리에 OPTION 태그 id 등)에서는 캐시가 0건, db가 매칭이 되어
-     * 두 모드가 갈린다.
+     * <p><b>북마크 검색 경로와의 차이 — 태그 타입을 여기서는 검사하지 않는다.</b>
+     * {@code PlaceTagMatcher}는 엔티티의 {@code Tag.getType()}을 직접 보고 "메인 자리에 온 id가
+     * 실제로 MAIN인가"를 확인하지만, 여기 EXISTS는 {@code t.id}와 {@code t.active}만 본다. 따라서
+     * <b>타입이 어긋난 입력</b>(메인 자리에 OPTION 태그 id 등)에서는 북마크 검색이 0건,
+     * 목록이 매칭이 되어 두 경로가 갈린다.
      *
      * <p>그럼에도 타입 검사를 더하지 않는 이유는, 상위 {@code TagValidator.validatePlaceTagConditions}가
      * 이미 그 조합을 400으로 막아 서비스에 도달하는 입력에는 타입 위반이 없기 때문이다. 여기서 또
      * 검사하면 인덱스를 타는 EXISTS에 tags 컬럼 조건이 하나 더 붙어 B의 비용만 늘고, 막는 것은
-     * 이미 막힌 입력이다. 대신 <b>A/B diff 게이트를 돌릴 때 요청 태그 조합이 타입 규약을 지키는지가
-     * 전제</b>이며, 이를 측정 문서에 남길 것.
+     * 이미 막힌 입력이다. 즉 위의 갈림은 <b>상위 검증이 통과시키지 않는 입력에서만</b> 관측된다.
      */
     private void appendTagFilters(
             StringBuilder sql, boolean useMainTag, boolean useSubA, boolean useSubB) {
