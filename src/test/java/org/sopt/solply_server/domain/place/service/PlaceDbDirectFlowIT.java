@@ -92,6 +92,9 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
     /** users.nickname UNIQUE — 원본 사슬 IT('사슬IT유저')·배치 IT('배치테스트유저')와 겹치지 않는 접두사 */
     private static final String USER_NICKNAME_PREFIX = "db직행IT유저";
 
+    /** 태그 필터 배선 검증용 태그의 이름 접두사 — 뒷정리가 이것으로 되찾는다 */
+    private static final String TAG_NAME_PREFIX = "db직행IT태그";
+
     // 점수가 전부 ≈인 것은 감쇠항 POW(0.5, 경과/90)이 "기준시각 1분 전"에도 미세하게 걸리기 때문이다
     // (실측: C=5.999968, A=3.999979). 90일 전 북마크만 정확히 절반이라 B는 딱 떨어진다.
     private long townId;
@@ -191,6 +194,79 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
 
         // place_stats 행이 없는 신규 장소는 0건으로 읽는다 (INNER JOIN이면 여기서 사라진다)
         assertThat(previewOf(page2, lOld).bookmarkCount()).isZero();
+    }
+
+    /**
+     * <b>북마크 검색 — 정렬 축이 두 개다.</b> {@code latest}는 <em>내가 북마크한 순서</em>이고
+     * {@code popular}는 <em>장소 점수 순서</em>다. 둘이 같은 답을 내는 픽스처로는 어느 한쪽이
+     * 통째로 빠져도 그린이므로, 두 순서가 <b>반드시 달라지게</b> 세운다:
+     *
+     * <pre>
+     *   장소   점수(배치)   내 북마크 시각        latest 순위   popular 순위
+     *   A      ≈4.0        기준 +60분 (가장 최근)     1            2
+     *   C      ≈6.0        기준 +30분                 2            1
+     *   B       2.5        기준 −90일 (가장 오래)     3            3
+     * </pre>
+     *
+     * <p>A·B는 setUp에서 온 것이고(B는 배치 전 북마크, C는 배치 후 직접 INSERT),
+     * A만 이 테스트가 더한다 — 세 장소의 북마크 시각이 전부 갈리게 만드는 마지막 조각이다.
+     *
+     * <p><b>페이징은 적용하지 않는다.</b> 유저당 상한이 작다는 전제 위의 계약이라
+     * size를 줘도 잘리지 않고 nextCursor는 항상 null이다. 목록 경로의 규칙을 이 경로에
+     * 잘못 이식하면 여기서 즉시 깨진다.
+     */
+    @Test
+    void 북마크_검색_최신순은_내가_북마크한_순서다() {
+        insertBookmark(me, placeA, CALCULATED_AT.plusMinutes(60));
+
+        PlaceFilterGetResponse response =
+                placeService.getPlaces(me, bookmarkRequest(PlaceSortType.LATEST, null, 2));
+
+        assertThat(ids(response)).containsExactly(placeA, placeC, placeB);
+        // size=2를 줘도 3건이 그대로 나온다 — 이 경로는 페이징을 타지 않는다
+        assertThat(response.nextCursor()).isNull();
+        // 전부 내 북마크라 여부는 구조적으로 확정 — 조회 없이 true여야 한다
+        assertThat(response.places()).allMatch(PlacePreviewDto::isBookmarked);
+        // 표시 카운트는 place_stats 값 그대로 (C는 배치 후 직접 INSERT라 0)
+        assertThat(previewOf(response, placeA).bookmarkCount()).isEqualTo(4);
+        assertThat(previewOf(response, placeB).bookmarkCount()).isEqualTo(5);
+        assertThat(previewOf(response, placeC).bookmarkCount()).isZero();
+    }
+
+    /**
+     * 같은 픽스처에 정렬만 바꾼다 — 순서가 위와 달라야 한다(C가 A를 앞선다).
+     * 규칙은 목록 경로 {@code findPopularRows}의 ORDER BY와 같은 (점수 DESC, id ASC)이며,
+     * 점수 정렬이 빠지면 북마크 최신순([A, C, B])이 그대로 나와 즉시 드러난다.
+     */
+    @Test
+    void 북마크_검색_인기순은_점수_내림차순이다() {
+        insertBookmark(me, placeA, CALCULATED_AT.plusMinutes(60));
+
+        PlaceFilterGetResponse response =
+                placeService.getPlaces(me, bookmarkRequest(PlaceSortType.POPULAR, null, null));
+
+        assertThat(ids(response)).containsExactly(placeC, placeA, placeB);   // ≈6.0 > ≈4.0 > 2.5
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    /**
+     * 태그 필터가 이 경로에도 걸린다 — 요청의 태그가 {@code PlaceTagMatcher}까지 실제로
+     * 전달되는지가 검증 대상이다(의미론 자체는 {@code PlaceTagMatcherTest}의 몫).
+     * 배선이 끊기면 필터가 무시돼 세 장소가 전부 나온다.
+     *
+     * <p>태그를 붙이는 대상을 <b>점수 1위가 아닌 placeA</b>로 고르는 것이 핵심이다 —
+     * 1위에 붙이면 "필터가 빠졌는데 정렬 덕분에 맨 앞이 맞는" 상태와 구분이 안 된다.
+     */
+    @Test
+    void 북마크_검색에도_태그_필터가_적용된다() {
+        insertBookmark(me, placeA, CALCULATED_AT.plusMinutes(60));
+        long mainTagId = createMainTag();
+        linkTag(placeA, mainTagId);
+
+        PlaceFilterGetResponse response =
+                placeService.getPlaces(me, bookmarkRequest(PlaceSortType.POPULAR, mainTagId, null));
+
+        assertThat(ids(response)).containsExactly(placeA);
     }
 
     /**
@@ -338,6 +414,12 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
                 town, false, null, null, null, PlaceSortType.LATEST, cursor, size);
     }
 
+    /** 북마크 검색은 커서를 발급하지 않으므로 인자에도 두지 않는다 (size는 무시됨을 보이려고 남긴다) */
+    private PlaceFilterGetRequest bookmarkRequest(PlaceSortType sort, Long mainTagId, Integer size) {
+        return new PlaceFilterGetRequest(
+                townId, true, mainTagId, null, null, sort, null, size);
+    }
+
     private List<Long> ids(PlaceFilterGetResponse response) {
         return response.places().stream().map(PlacePreviewDto::placeId).toList();
     }
@@ -366,11 +448,33 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
     // 만들므로, 인스턴스 필드면 두 번째 테스트의 setUp이 같은 nickname을 또 넣어 UNIQUE에 걸린다
     private static int userSeq = 0;
 
+    /** tags.name에 UNIQUE는 없지만, 뒷정리가 이름으로 되찾으므로 회차마다 갈라 둔다 (userSeq와 같은 이유로 static) */
+    private static int tagSeq = 0;
+
     private long createUser() {
         String nickname = USER_NICKNAME_PREFIX + (++userSeq);
         jdbcTemplate.update("INSERT INTO users (role, nickname) VALUES ('USER', ?)", nickname);
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM users WHERE nickname = ?", Long.class, nickname);
+    }
+
+    /**
+     * 태그 필터 배선 검증용 MAIN 태그. {@code TagValidator.validatePlaceTagConditions}가
+     * active·usage=PLACE·type=MAIN을 요구하므로 셋 다 맞춰 심는다 (서브 태그가 없으면 거기서 통과).
+     * 이름 접두사는 {@code @AfterAll}이 되찾는 유일한 기준점이다.
+     */
+    private long createMainTag() {
+        String name = TAG_NAME_PREFIX + (++tagSeq);
+        jdbcTemplate.update("""
+                INSERT INTO tags (name, type, parent_id, active, tag_usage)
+                VALUES (?, 'MAIN', NULL, true, 'PLACE')""", name);
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM tags WHERE name = ?", Long.class, name);
+    }
+
+    private void linkTag(long placeId, long tagId) {
+        jdbcTemplate.update(
+                "INSERT INTO place_tag (place_id, tag_id) VALUES (?, ?)", placeId, tagId);
     }
 
     private void insertBookmark(long userId, long placeId, LocalDateTime createdAt) {
@@ -427,7 +531,10 @@ class PlaceDbDirectFlowIT extends MySqlContainerSupport {
             // courses는 towns를 FK로 참조하므로 towns보다 먼저 지운다. town_id 기준이라
             // 우연히 같은 id를 갖는 시드 코스는 건드리지 않는다.
             st.executeUpdate("DELETE FROM courses WHERE town_id IN (" + myTowns + ")");
+            // place_tag는 places FK가 ON DELETE CASCADE라 places 삭제로 함께 사라진다(V7).
+            // 남는 것은 tags 행 자체뿐이라 그것만 이름으로 되찾아 지운다.
             st.executeUpdate("DELETE FROM places WHERE town_id IN (" + myTowns + ")");
+            st.executeUpdate("DELETE FROM tags WHERE name LIKE '" + TAG_NAME_PREFIX + "%'");
             st.executeUpdate(
                     "DELETE FROM users WHERE nickname LIKE '" + USER_NICKNAME_PREFIX + "%'");
             st.executeUpdate(

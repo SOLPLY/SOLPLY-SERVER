@@ -95,7 +95,17 @@ public class Place extends BaseTimeEntity {
     private List<String> checkpoints = new ArrayList<>();
 
 
-    @BatchSize(size = 20)
+    /**
+     * 목록 응답의 썸네일이 여기서 온다({@code getThumbnailFileKey}). 배치 크기를 목록 경로의
+     * 페이지 최대치({@code MAX_PAGE_SIZE} = 50)에 맞춰, 지연 로딩이 <b>페이지당 정확히 1회</b>로
+     * 고정됨을 코드에 못박는다 — 20이면 50건 페이지가 3회로 쪼개진다.
+     *
+     * <p><b>요청당 statements는 이 값으로 줄지 않는다.</b> 목록 경로의 +2(placeTags fetch join이
+     * 붙은 장소 조회 + 이 컬렉션)를 +1로 합치자던 후속(perf 문서 §7.2)은 <b>실현 불가로
+     * 재분류한다</b>: placeTags·placeImageInfos가 둘 다 List bag이라 이중 fetch join이
+     * {@code MultipleBagFetchException}이고, 컬렉션 타입을 바꾸는 것은 이 경로만의 문제가 아니다.
+     */
+    @BatchSize(size = 50)
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "place_images", joinColumns = @JoinColumn(name = "place_id"))
     @OrderBy("displayOrder ASC") // displayOrder가 낮은 순서로 DB 내에서 정렬

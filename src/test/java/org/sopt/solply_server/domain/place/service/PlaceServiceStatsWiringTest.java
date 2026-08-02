@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -13,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +32,7 @@ import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
+import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
@@ -37,6 +40,7 @@ import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryR
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
+import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownHierarchyResolver;
 import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.util.EntityLoader;
@@ -84,6 +88,37 @@ class PlaceServiceStatsWiringTest {
         Set.of(), Set.of(), Set.of(), LocalDateTime.of(2026, 1, 1, 0, 0), TOWN_ID);
   }
 
+  /**
+   * 목록 경로가 후보를 얻는 곳(캐시 스냅샷). <b>북마크 검색 경로는 이것을 쓰지 않으므로</b>
+   * {@code @BeforeEach}가 아니라 목록 경로 테스트에서만 세운다 — 공통 스텁으로 두면
+   * strict stubs가 "쓰이지 않은 스텁"으로 북마크 검색 케이스를 떨어뜨린다.
+   */
+  private void givenCachedPlace() {
+    given(townPlacesCache.getPlaces(TOWN_ID)).willReturn(List.of(place(1L)));
+  }
+
+  /**
+   * 북마크 검색 경로가 조립 재료로 쓰는 장소 — 내 북마크 id 목록 → 엔티티 fetch → 앱 조립.
+   * 이 경로가 실제로 읽는 필드만 세운다. 태그 게터를 세우지 않는 것은 의도다:
+   * 요청에 메인 태그가 없으면 {@code PlaceTagMatcher}가 즉시 원본을 돌려주므로 호출되지 않는다.
+   */
+  private void givenBookmarkedPlace() {
+    Town town = mock(Town.class);
+    given(town.getId()).willReturn(TOWN_ID);
+
+    Place place = mock(Place.class);
+    given(place.getId()).willReturn(1L);
+    given(place.isActive()).willReturn(true);
+    given(place.getName()).willReturn("장소1");
+    given(place.getThumbnailFileKey()).willReturn("key1");
+    given(place.getMainTag()).willReturn(Optional.empty());
+    given(place.getTown()).willReturn(town);
+
+    given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
+        .willReturn(List.of(1L));
+    given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
+  }
+
   /** place_stats가 들고 있는 카운트 (배치가 센 값 + 그 뒤 도달한 증분) */
   private void givenStatsCount(int bookmarkCount) {
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(
@@ -93,7 +128,6 @@ class PlaceServiceStatsWiringTest {
   @BeforeEach
   void givenOnePlaceInTown() {
     given(townHierarchyResolver.resolveLeafTownIds(TOWN_ID)).willReturn(List.of(TOWN_ID));
-    given(townPlacesCache.getPlaces(TOWN_ID)).willReturn(List.of(place(1L)));
     given(imageUrlProvider.getImageUrl(anyString())).willReturn("https://img/1");
   }
 
@@ -113,6 +147,7 @@ class PlaceServiceStatsWiringTest {
   @Test
   @DisplayName("내가 북마크한 장소도 place_stats 카운트를 가공 없이 응답한다")
   void keepsStatsCountEvenWhenBookmarkedByMe() {
+    givenCachedPlace();
     givenStatsCount(100);
     given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, true));
@@ -126,6 +161,7 @@ class PlaceServiceStatsWiringTest {
   @Test
   @DisplayName("내가 북마크하지 않았으면 미북마크로 응답한다")
   void marksUnbookmarkedWhenNotMine() {
+    givenCachedPlace();
     givenStatsCount(100);
     given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, false));
@@ -143,6 +179,7 @@ class PlaceServiceStatsWiringTest {
   @Test
   @DisplayName("place_stats에 행이 없는 장소는 카운트 0으로 응답한다")
   void readsZeroWhenNoStatsRow() {
+    givenCachedPlace();
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(List.of());
     given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
         .willReturn(Map.of(1L, true));
@@ -161,9 +198,8 @@ class PlaceServiceStatsWiringTest {
   @Test
   @DisplayName("북마크 검색 경로는 북마크 여부를 다시 조회하지 않는다")
   void doesNotQueryBookmarksOnBookmarkSearchPath() {
+    givenBookmarkedPlace();
     givenStatsCount(100);
-    given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
-        .willReturn(List.of(1L));
 
     PlacePreviewDto preview = getPlaces(true).places().get(0);
 
@@ -185,9 +221,9 @@ class PlaceServiceStatsWiringTest {
   void readsPlaceStatsExactlyOncePerPath(PlaceSortType sort, boolean bookmarkSearch) {
     givenStatsCount(100);
     if (bookmarkSearch) {
-      given(placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(USER_ID, List.of(TOWN_ID)))
-          .willReturn(List.of(1L));
+      givenBookmarkedPlace();
     } else {
+      givenCachedPlace();
       given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
           .willReturn(Map.of(1L, true));
     }

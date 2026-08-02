@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.service;
 
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -33,6 +34,7 @@ import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryR
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.PlaceListPaginator;
+import org.sopt.solply_server.domain.place.util.PlaceTagMatcher;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
@@ -157,7 +159,13 @@ public class PlaceService {
     List<Long> leafTownIds = townHierarchyResolver.resolveLeafTownIds(request.townId());
     PlaceSortType sort = request.sortOrDefault();
 
-    if (!Boolean.TRUE.equals(request.isBookmarkSearch()) && "db".equals(popularReadMode)) {
+    // 북마크 검색은 모드와 무관하게 DB 조립이다 — 캐시 스냅샷을 더는 쓰지 않으므로
+    // 캐시 분기보다 먼저 갈라놓는다.
+    if (Boolean.TRUE.equals(request.isBookmarkSearch())) {
+      return bookmarkSearchResponse(userId, leafTownIds, request, sort);
+    }
+
+    if ("db".equals(popularReadMode)) {
       return listFromDb(userId, leafTownIds, request, sort);
     }
 
@@ -167,10 +175,6 @@ public class PlaceService {
             .flatMap(id -> townPlacesCache.getPlaces(id).stream())
             .toList(),
         request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
-
-    if (Boolean.TRUE.equals(request.isBookmarkSearch())) {
-      return bookmarkSearchResponse(userId, leafTownIds, filtered, sort);
-    }
 
     // 인기순은 정렬 키가 필요하므로 페이징 "전에" 후보 전체를 읽는다 (IN 조회 1회).
     // LATEST는 정렬 키가 스냅샷 안에 있어 여기서는 읽지 않고, 페이지가 확정된 뒤 그 항목만 읽는다.
@@ -366,29 +370,71 @@ public class PlaceService {
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
 
-  /** 북마크 검색: 내 북마크만, latest = 내 북마크 최신순 / popular = 누적 북마크순. 페이징 미적용 */
+  /**
+   * 북마크 검색: 내 북마크만, latest = 내 북마크 최신순 / popular = 점수순. 페이징 미적용.
+   *
+   * <p><b>목록 경로와 달리 정렬을 DB에 맡기지 않는다.</b> 상한이 "한 사용자가 이 동네들에서
+   * 북마크한 수"라 애초에 작고, {@code orderedIds}가 실어 오는 <em>북마크 최신순</em>은 SQL로
+   * 재현하려면 bookmarks와 다시 조인해야 하는데 그건 페이징도 없는 경로에 쿼리를 하나 더 얹는
+   * 일이다. 그래서 id 목록을 받아 엔티티를 채우고 앱에서 조립한다.
+   *
+   * <p><b>순서 계약.</b> {@code orderedIds}의 순서(= 북마크 최신순)를 그대로 보존해 재조립한다 —
+   * 캐시 시절 {@code sortByBookmarkedOrder}가 하던 일과 같은 계약이다. POPULAR일 때만 그 위에
+   * 점수 정렬을 덮는데, 규칙(점수 DESC, id ASC)은 목록 경로
+   * {@code PlaceListDbQueryRepository#findPopularRows}의 ORDER BY와 <b>같아야 한다</b> —
+   * 같은 "인기순"이 경로마다 다른 순서를 내면 그것을 잡아 줄 타입이 없다.
+   *
+   * <p>비활성 장소 제외는 {@code getBookmarkedPlaceIdsForTowns}의 SQL
+   * ({@code AND p.active = true})이 이미 하고 있다. 아래 {@code filter(Place::isActive)}는
+   * 그 계약이 조용히 바뀌었을 때를 대비한 이중 가드다 — 캐시 시절 이 책임은 스냅샷 로더에 있었고,
+   * 로더가 사라지므로 이 경로가 스스로 지킨다는 것을 코드에 남긴다.
+   */
   private PlaceFilterGetResponse bookmarkSearchResponse(
-      Long userId, List<Long> leafTownIds, List<CachedPlace> filtered, PlaceSortType sort) {
+      Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
 
     List<Long> orderedIds = placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(userId, leafTownIds);
-    List<CachedPlace> mine = sortByBookmarkedOrder(filtered, orderedIds);
+    if (orderedIds.isEmpty()) {
+      return PlaceFilterGetResponse.of(List.of(), null);
+    }
+
+    Map<Long, Place> byId = placeRepository.findPlacesWithTagsByIds(orderedIds).stream()
+        .collect(Collectors.toMap(Place::getId, Function.identity()));
+
+    List<Place> mine = PlaceTagMatcher.filter(
+        orderedIds.stream()
+            .map(byId::get)
+            .filter(Objects::nonNull)
+            .filter(Place::isActive)
+            .toList(),
+        request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
 
     // 뷰 조회는 정렬 분기 밖에 둔다 — LATEST도 표시 카운트를 여기서 얻으므로, 어느 정렬이든
     // 이 경로의 place_stats 조회는 1회다. 목록이 페이징 없이 확정돼 있어 이 시점에 읽어도 된다.
-    Map<Long, PlaceStatsView> statsViews =
-        statsViewMap(mine.stream().map(CachedPlace::id).toList());
+    Map<Long, PlaceStatsView> statsViews = statsViewMap(mine.stream().map(Place::getId).toList());
 
-    // 정렬 규칙을 손으로 다시 적지 않고 페이지네이터의 비교자를 재사용한다 — 여기만 규칙이
-    // 어긋나면 같은 "인기순"이 경로마다 다른 순서를 내고, 그것을 잡아줄 타입이 없다.
     if (sort == PlaceSortType.POPULAR) {
+      Map<Long, Double> scores = scoreMap(statsViews);
+      // 점수가 없는 장소는 0점 — place_stats에 행이 없다는 뜻이고 실제 활동이 0이므로 0이 정답이다
       mine = mine.stream()
-          .sorted(PlaceListPaginator.comparatorOf(PlaceSortType.POPULAR, scoreMap(statsViews)))
+          .sorted(Comparator.comparingDouble((Place p) -> scores.getOrDefault(p.getId(), 0.0))
+              .reversed()
+              .thenComparing(Place::getId))
           .toList();
     }
 
     // 이 목록은 전부 내 북마크라 여부가 구조적으로 확정이다 — 여부 조회를 하지 않는다.
     List<PlacePreviewDto> previews = mine.stream()
-        .map(cp -> toPreview(cp, true, statsViews.get(cp.id())))
+        .map(p -> {
+          PlaceStatsView stats = statsViews.get(p.getId());
+          return PlacePreviewDto.of(
+              p.getId(),
+              p.getName(),
+              imageUrlProvider.getImageUrl(p.getThumbnailFileKey()),
+              TagViewUtils.getActiveNameOrNull(p.getMainTag().orElse(null)),
+              true,
+              p.getTown().getId(),
+              stats == null ? 0L : stats.bookmarkCount());
+        })
         .toList();
     return PlaceFilterGetResponse.of(previews, null);
   }
@@ -435,19 +481,5 @@ public class PlaceService {
   private static Map<Long, Double> scoreMap(Map<Long, PlaceStatsView> views) {
     return views.values().stream()
         .collect(Collectors.toMap(PlaceStatsView::placeId, PlaceStatsView::score));
-  }
-
-  /** 북마크 검색: 필터링된 장소를 북마크 최신순(orderedIds 순서)으로 재배열 */
-  private List<CachedPlace> sortByBookmarkedOrder(
-      List<CachedPlace> filtered, List<Long> bookmarkedOrderedIds) {
-    if (bookmarkedOrderedIds.isEmpty()) {
-      return List.of();
-    }
-    Map<Long, CachedPlace> byId = filtered.stream()
-        .collect(Collectors.toMap(CachedPlace::id, Function.identity()));
-    return bookmarkedOrderedIds.stream()
-        .map(byId::get)
-        .filter(Objects::nonNull)
-        .toList();
   }
 }
