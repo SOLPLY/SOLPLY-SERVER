@@ -121,6 +121,10 @@ dependencies {
 	implementation 'org.springframework.retry:spring-retry'
 	implementation 'org.springframework:spring-aspects'
 
+	// ✅ ShedLock — @Scheduled의 다중 인스턴스 중복 실행 방지 (JDBC 락, V27 shedlock 테이블)
+	implementation 'net.javacrumbs.shedlock:shedlock-spring:6.3.1'
+	implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:6.3.1'
+
 	// ✅ 개발 편의
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
