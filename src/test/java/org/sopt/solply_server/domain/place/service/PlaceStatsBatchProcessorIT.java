@@ -470,15 +470,16 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * town_id·active는 places에서 비정규화해 오는 값이고, 낡으면 순위가 아니라 노출 대상 자체가
-     * 틀린다(V24·PlaceStats 주석 참고). Flyway 시드에 비활성 장소가 없어 이 테스트가 없으면
-     * active = false 경로가 한 번도 실행되지 않는다.
+     * town_id는 places에서 비정규화해 오는 값이고, 낡으면 순위가 아니라 소속이 틀린다
+     * (V24·PlaceStats 주석 참고). 정렬 인덱스의 선행 컬럼이라 배치가 이 값을 놓치면
+     * 목록 경로가 통째로 어긋난다.
+     *
+     * <p><b>{@code active} 축은 V26에서 사라졌다 (2026-08-02).</b> 여기에 있던
+     * "비활성 장소를 만들어 active=false 복사 경로를 태운다"는 절차도 함께 걷어냈다 —
+     * 활성 여부의 진실은 이제 {@code places.active} 하나이고, 조회의 조인 가드가 그것을 본다.
      */
     @Test
-    void 장소의_town_id와_active를_그대로_복사한다() {
-        em.createNativeQuery("UPDATE places SET active = false WHERE id = :id")
-                .setParameter("id", placeA)
-                .executeUpdate();
+    void 장소의_town_id를_그대로_복사한다() {
         long expectedTownId = ((Number) em.createNativeQuery(
                 "SELECT town_id FROM places WHERE id = :id")
                 .setParameter("id", placeA)
@@ -486,11 +487,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
         runBatch();
 
-        PlaceStats deactivated = statsOf(placeA);
-        assertThat(deactivated.isActive()).isFalse();
-        assertThat(deactivated.getTownId()).isEqualTo(expectedTownId);
-        // 손대지 않은 장소는 active가 그대로 true여야 한다 (전부 false로 미는 실수 방지)
-        assertThat(statsOf(placeB).isActive()).isTrue();
+        assertThat(statsOf(placeA).getTownId()).isEqualTo(expectedTownId);
     }
 
     /**
@@ -648,9 +645,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         clearStats();
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, active, popular_score, bookmark_count,
+                    (place_id, town_id, popular_score, bookmark_count,
                      review_count, avg_rating, calculated_at)
-                SELECT p.id, p.town_id, p.active, 777.000000, 0, 0, NULL, :calculatedAt
+                SELECT p.id, p.town_id, 777.000000, 0, 0, NULL, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
@@ -738,7 +735,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         em.createNativeQuery("SET SESSION group_concat_max_len = 1000000").executeUpdate();
         Object result = em.createNativeQuery("""
                 SELECT GROUP_CONCAT(
-                           CONCAT_WS('|', place_id, town_id, active, popular_score,
+                           CONCAT_WS('|', place_id, town_id, popular_score,
                                      bookmark_count, review_count,
                                      IFNULL(avg_rating, 'NULL'), calculated_at)
                            ORDER BY place_id SEPARATOR ';')

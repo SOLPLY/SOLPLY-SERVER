@@ -114,8 +114,9 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      *
      * <p><b>{@code VALUES(col)} 문법 — deprecated이며 경고가 실제로 뜬다.</b>
      * mysql:8.0(8.0.41) 실측 기준 이 문장 1회 실행마다
-     * {@code Warning 1287: 'VALUES function' is deprecated ...}이 <b>7건</b>(ON DUPLICATE KEY UPDATE의
-     * {@code VALUES(col)} 참조 개수만큼) 올라오고, 여기에 DOUBLE 점수를 {@code DECIMAL(18,6)}에
+     * {@code Warning 1287: 'VALUES function' is deprecated ...}이 <b>6건</b>(ON DUPLICATE KEY UPDATE의
+     * {@code VALUES(col)} 참조 개수만큼 — V26에서 {@code active}가 빠지며 7건에서 줄었다)
+     * 올라오고, 여기에 DOUBLE 점수를 {@code DECIMAL(18,6)}에
      * 넣으면서 잘리는 행마다 {@code Note 1265 Data truncated for column 'popular_score'}가 더 붙는다.
      * 후자는 행 수에 비례하므로 장소 6,000개면 최대 6,000건이다. INSERT 경로·UPDATE 경로 모두 동일.
      * 동작에는 영향이 없고(값은 정상 갱신된다) JDBC {@code SQLWarning}으로만 전달되지만,
@@ -143,11 +144,10 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
-            place_id, town_id, active, popular_score,
+            place_id, town_id, popular_score,
             bookmark_count, review_count, avg_rating, calculated_at)
         SELECT p.id,
                p.town_id,
-               p.active,
                COALESCE(b.score, 0) + COALESCE(r.score, 0),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
@@ -178,7 +178,6 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         ) r ON r.place_id = p.id
         ON DUPLICATE KEY UPDATE
             town_id        = VALUES(town_id),
-            active         = VALUES(active),
             popular_score  = VALUES(popular_score),
             bookmark_count = VALUES(bookmark_count),
             review_count   = VALUES(review_count),
@@ -211,9 +210,9 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
-            place_id, town_id, active, popular_score,
+            place_id, town_id, popular_score,
             bookmark_count, review_count, avg_rating, calculated_at)
-        SELECT p.id, p.town_id, p.active, 0, 1, 0, NULL, NULL
+        SELECT p.id, p.town_id, 0, 1, 0, NULL, NULL
         FROM places p WHERE p.id = :placeId
         ON DUPLICATE KEY UPDATE
             bookmark_count = bookmark_count + 1
@@ -241,9 +240,9 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
-            place_id, town_id, active, popular_score,
+            place_id, town_id, popular_score,
             bookmark_count, review_count, avg_rating, calculated_at)
-        SELECT p.id, p.town_id, p.active, 0, 0, 1, NULL, NULL
+        SELECT p.id, p.town_id, 0, 0, 1, NULL, NULL
         FROM places p WHERE p.id = :placeId
         ON DUPLICATE KEY UPDATE
             review_count = review_count + 1

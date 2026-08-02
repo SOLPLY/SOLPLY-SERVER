@@ -12,18 +12,23 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 인기순 복합 점수의 사전 집계 결과. 매일 02:00 배치가 원본에서 전량 재계산해 UPSERT한다.
- * 언제든 원본에서 복원 가능한 2급 데이터라 최대 24시간 stale을 수용한다.
+ * 인기순 복합 점수의 사전 집계 결과. 매시 30분 배치가 원본에서 전량 재계산해 UPSERT한다.
+ * 언제든 원본에서 복원 가능한 2급 데이터라 배치 간격만큼의 stale을 수용한다.
  *
- * <p>town_id·active는 정렬을 DB로 옮길 때 정렬 인덱스의 선행 컬럼이 되는 값이다.
- * 현재 읽기 경로는 place_id로만 조회하므로 이 두 컬럼을 사용하지 않으며, 배치만이 값을 채운다.
+ * <p>{@code town_id}는 정렬 인덱스 {@code idx_place_stats_town_score}의 선행 컬럼이다 —
+ * places와 JOIN한 조건으로는 그 인덱스가 정렬에 쓰이지 못하므로 비정규화해 온 값이며,
+ * 배치와 증분이 places에서 복사해 채운다.
  *
- * <p><b>주의 — 위의 "24시간 stale 수용"은 점수 컬럼에만 해당한다.</b> 점수가 낡으면 순위만
- * 흔들리지만, active/town_id가 낡으면 순위가 아니라 <em>노출 대상 자체가 틀린다</em>.
- * 플랜 C에서 idx_place_stats_town_score로 정렬할 때 이 두 값을 그대로 신뢰하면 비활성화된 장소가
- * 최대 하루 더 노출되고(동네 비활성화는 AdminPlaceRepository.updateActiveByTownId가 일괄 처리한다),
- * 동네를 옮긴 장소는 엉뚱한 동네에 낀다(Place.update(...)). 전환 시 places와 대조해 필터하거나
- * 어드민 변경 시 place_stats를 동기 갱신해야 한다.
+ * <p><b>주의 — 위의 "stale 수용"은 점수 컬럼에만 해당한다.</b> 점수가 낡으면 순위만 흔들리지만,
+ * town_id가 낡으면 순위가 아니라 <em>소속이 틀린다</em> — 동네를 옮긴 장소(Place.update)가
+ * 다음 배치까지 이전 동네 목록에 낀다. 쿼리로는 못 막고(막으려면 인덱스를 잃는다) 배치 간격이
+ * 곧 그 창의 상한이라, 매시 배치로 ≤1h까지 줄여 수용한다.
+ *
+ * <p><b>{@code active} 복제본은 V26에서 제거했다 (2026-08-02).</b> 활성 여부의 진실은
+ * {@code places.active} 하나이고 조회는 {@code JOIN places p ON p.active = 1} 가드가 즉시
+ * 반영한다. 여기 복제본의 실효는 인덱스 가지치기뿐이었는데 비활성 장소가 희소해 실익이 ~0인 반면,
+ * 낡은 {@code active=0}이 재활성화된 장소를 다음 배치까지 목록에서 실종시키는 비용은 실재했다.
+ * 복제본을 없애면 낡을 것도 없다 — 되살리지 말 것.
  *
  * <p>쓰기 API(세터·정적 팩토리)를 일부러 두지 않는다. 쓰기 경로는 둘뿐이고 모두 네이티브 쿼리다 —
  * <b>배치 전량 재계산(권위)</b>과 <b>이벤트 증분(회차 사이 카운트 패치)</b>. 배치가 항상 덮어쓰므로
@@ -50,7 +55,7 @@ import lombok.NoArgsConstructor;
         name = "place_stats",
         indexes = {
                 @Index(name = "idx_place_stats_town_score",
-                       columnList = "town_id, active, popular_score DESC, place_id")
+                       columnList = "town_id, popular_score DESC, place_id, bookmark_count")
         }
 )
 @Getter
@@ -63,9 +68,6 @@ public class PlaceStats {
 
     @Column(name = "town_id", nullable = false)
     private Long townId;
-
-    @Column(name = "active", nullable = false)
-    private boolean active;
 
     @Column(name = "popular_score", nullable = false, precision = 18, scale = 6)
     private BigDecimal popularScore;

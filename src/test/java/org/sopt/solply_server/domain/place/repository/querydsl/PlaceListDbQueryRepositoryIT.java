@@ -85,9 +85,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     @Test
     void 점수_내림차순_동점은_id_오름차순() {
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 4.0, 0);
-        insertStats(placeC, townId, true, 6.0, 0);
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 4.0, 0);
+        insertStats(placeC, townId, 6.0, 0);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
 
@@ -103,9 +103,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      */
     @Test
     void 커서_경계는_점수_미만_또는_동점_id_초과다() {
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 4.0, 0);
-        insertStats(placeC, townId, true, 6.0, 0);
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 4.0, 0);
+        insertStats(placeC, townId, 6.0, 0);
 
         List<PopularRow> rows = findPopular(4.0, placeA, NO_LIMIT);
 
@@ -116,9 +116,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     void 태그_필터는_EXISTS_의미론을_유지한다() {
         long mainTagId = createMainTag("db모드메인태그");
         linkTag(placeA, mainTagId);   // 메인 태그를 가진 장소는 A 하나뿐
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 6.0, 0);
-        insertStats(placeC, townId, true, 8.0, 0);
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 6.0, 0);
+        insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
                 List.of(townId), mainTagId, null, null, null, null, NO_LIMIT);
@@ -146,9 +146,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         linkTags(placeA, mainTagId, subA1);
         linkTags(placeB, mainTagId, subA2);
         linkTags(placeC, mainTagId);   // 메인만 있고 서브A는 없다 → 탈락
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 6.0, 0);
-        insertStats(placeC, townId, true, 8.0, 0);
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 6.0, 0);
+        insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
                 List.of(townId), mainTagId, List.of(subA1, subA2), null, null, null, NO_LIMIT);
@@ -171,9 +171,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         linkTags(placeA, mainTagId, subA);         // 둘 다 만족 → 통과
         linkTags(placeB, mainTagId);               // 서브A 불일치 → 탈락
         linkTags(placeC, otherMainTagId, subA);    // 메인 불일치 → 탈락
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 6.0, 0);
-        insertStats(placeC, townId, true, 8.0, 0);
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 6.0, 0);
+        insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
                 List.of(townId), mainTagId, List.of(subA), null, null, null, NO_LIMIT);
@@ -194,9 +194,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         long mainTagId = createMainTag("db모드메인무시");
         long subA = createSubTag("db모드서브A무시", "OPTION1", mainTagId);
         linkTags(placeA, mainTagId, subA);
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 6.0, 0);
-        insertStats(placeC, townId, true, 8.0, 0);
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 6.0, 0);
+        insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
                 List.of(townId), null, List.of(subA), null, null, null, NO_LIMIT);
@@ -221,9 +221,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         linkTags(placeA, mainTagId, subA, subB);   // 셋 다 만족 → 통과
         linkTags(placeB, mainTagId, subA);         // 서브B 불일치 → 탈락
         linkTags(placeC, mainTagId, subB);         // 서브A 불일치 → 탈락
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 6.0, 0);
-        insertStats(placeC, townId, true, 8.0, 0);
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 6.0, 0);
+        insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
                 List.of(townId), mainTagId, List.of(subA), List.of(subB), null, null, NO_LIMIT);
@@ -232,15 +232,15 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * 신선도 가드. place_stats의 active는 배치 산출물이라 최대 24시간 낡을 수 있으므로,
-     * 내려간 장소를 거르는 책임은 {@code JOIN places p ... AND p.active = 1}에 있다.
+     * 활성 가드. V26 이후 place_stats에는 active 복제본이 없으므로, 내려간 장소를 거르는 책임은
+     * <b>전적으로</b> {@code JOIN places p ... AND p.active = 1}에 있다 — 유일한 가드다.
      * 조인 가드를 지우면 점수가 가장 높은 placeC가 결과 맨 앞에 되살아난다.
      */
     @Test
-    void ps는_active인데_places가_비활성이면_제외된다() {
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, true, 2.0, 0);
-        insertStats(placeC, townId, true, 6.0, 0);   // ps는 여전히 active = true
+    void places가_비활성이면_ps_행이_있어도_제외된다() {
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 2.0, 0);
+        insertStats(placeC, townId, 6.0, 0);   // 통계 행은 그대로 남아 있다
         deactivatePlace(placeC);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
@@ -248,26 +248,10 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         assertThat(placeIdsOf(rows)).containsExactly(placeA, placeB);
     }
 
-    /**
-     * <b>반대 방향 — 낡은 {@code ps.active=0}은 장소를 지우지 못한다.</b> 활성 여부의 진실은
-     * {@code places.active} 하나이고, 조인 가드가 이미 그것을 즉시 반영한다. ps 쪽 복제본은
-     * 배치 산출물이라 최대 배치 간격만큼 낡는데, 그 낡은 값을 술어로 쓰면 <b>내렸다 다시 올린
-     * 장소가 다음 배치까지 목록에서 통째로 실종된다</b> (동네 일괄 재활성화
-     * {@code AdminPlaceService.activatePlacesByTownIds}가 실제 경로다).
-     *
-     * <p>가장 높은 점수 6.0을 낡은 행에 주는 것이 핵심이다 — {@code AND ps.active = 1}이 되살아나면
-     * 결과가 [A, C]로 쪼그라들어 <em>맨 앞</em>이 사라지므로 순서만 봐도 드러난다.
-     */
-    @Test
-    void 재활성화_직후_ps_active가_낡아도_결과에_포함된다() {
-        insertStats(placeA, townId, true, 4.0, 0);
-        insertStats(placeB, townId, false, 6.0, 0);   // places.active=1인데 ps.active만 낡은 세대
-        insertStats(placeC, townId, true, 2.0, 0);
-
-        List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
-
-        assertThat(placeIdsOf(rows)).containsExactly(placeB, placeA, placeC);
-    }
+    // 여기 있던 재활성화_직후_ps_active가_낡아도_결과에_포함된다()는 V26과 함께 삭제했다.
+    // 그 테스트는 "ps.active=0인데 places.active=1"이라는 상태를 심어야 성립하는데, V26이 컬럼
+    // 자체를 drop해 그 상태를 만들 방법이 없어졌다 — 회귀를 막는 주체가 테스트에서 스키마로
+    // 옮겨간 것이다. 술어를 되살리려면 마이그레이션부터 되돌려야 한다.
 
     /**
      * 표시 카운트는 정렬 쿼리가 함께 실어 오는 {@code ps.bookmark_count}다 (추가 조회 0).
@@ -276,7 +260,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      */
     @Test
     void 표시_카운트는_ps의_bookmark_count다() {
-        insertStats(placeA, townId, true, 4.0, 7);
+        insertStats(placeA, townId, 4.0, 7);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
 
@@ -327,7 +311,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      */
     @Test
     void LATEST_행도_bookmark_count를_place_stats에서_싣는다() {
-        insertStats(placeA, townId, true, 4.0, 9);   // placeD에는 일부러 행을 만들지 않는다
+        insertStats(placeA, townId, 4.0, 9);   // placeD에는 일부러 행을 만들지 않는다
 
         List<LatestRow> rows = findLatest(null, null, NO_LIMIT);
 
@@ -390,16 +374,14 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * place_stats에 행을 직접 심는다 — 정렬 쿼리는 배치 결과를 읽을 뿐이므로 배치를 돌릴 필요가 없다.
      * calculated_at은 정렬 쿼리가 읽지 않는 컬럼이라 아무 시각이나 무방하다(NOW(6)).
      */
-    private void insertStats(long placeId, long townId, boolean active, double score,
-            long bookmarkCount) {
+    private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
         em.createNativeQuery("""
-                INSERT INTO place_stats (place_id, town_id, active, popular_score,
+                INSERT INTO place_stats (place_id, town_id, popular_score,
                                          bookmark_count, review_count, avg_rating, calculated_at)
-                VALUES (:placeId, :townId, :active, :score, :cnt, 0, NULL, NOW(6))
+                VALUES (:placeId, :townId, :score, :cnt, 0, NULL, NOW(6))
                 """)
                 .setParameter("placeId", placeId)
                 .setParameter("townId", townId)
-                .setParameter("active", active)
                 .setParameter("score", score)
                 .setParameter("cnt", bookmarkCount)
                 .executeUpdate();

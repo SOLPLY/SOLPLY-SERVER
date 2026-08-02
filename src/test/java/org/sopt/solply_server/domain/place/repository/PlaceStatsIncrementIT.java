@@ -55,7 +55,6 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
 
     private long placeId;
     private long expectedTownId;
-    private boolean expectedActive;
 
     /**
      * Flyway V2 시드의 실제 장소 하나를 빌린다 (PlaceStatsRepositoryIT와 같은 관례).
@@ -67,13 +66,11 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
     @BeforeEach
     void setUp() {
         Object[] row = (Object[]) em.createNativeQuery(
-                "SELECT p.id, p.town_id, p.active FROM places p WHERE p.active = true "
+                "SELECT p.id, p.town_id FROM places p WHERE p.active = true "
                         + "ORDER BY p.id LIMIT 1")
                 .getSingleResult();
         placeId = ((Number) row[0]).longValue();
         expectedTownId = ((Number) row[1]).longValue();
-        // Connector/J의 tinyInt1isBit 설정에 따라 Boolean/Number가 갈린다 (PlaceStatsRepositoryIT와 동일)
-        expectedActive = row[2] instanceof Boolean b ? b : ((Number) row[2]).intValue() != 0;
 
         em.createNativeQuery("DELETE FROM place_stats").executeUpdate();
     }
@@ -86,9 +83,9 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
     private void givenBatchRow(int bookmarkCount, int reviewCount) {
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, active, popular_score, bookmark_count,
+                    (place_id, town_id, popular_score, bookmark_count,
                      review_count, avg_rating, calculated_at)
-                SELECT p.id, p.town_id, p.active, 12.500000, :bookmarkCount,
+                SELECT p.id, p.town_id, 12.500000, :bookmarkCount,
                        :reviewCount, 4.50, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
@@ -101,7 +98,7 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
     }
 
     @Test
-    void 행이_없으면_생성하며_places의_town_id와_active를_복사한다() {
+    void 행이_없으면_생성하며_places의_town_id를_복사한다() {
         int affected = placeStatsRepository.incrementBookmark(placeId);
 
         assertThat(affected).isEqualTo(1);   // MySQL은 INSERT를 1, UPDATE를 2로 센다
@@ -110,10 +107,9 @@ class PlaceStatsIncrementIT extends MySqlContainerSupport {
         assertThat(stats.getReviewCount()).isZero();
         assertThat(stats.getPopularScore()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(stats.getAvgRating()).isNull();
-        // town_id·active는 배치가 아니라 이 쿼리도 places에서 복사해야 한다 —
-        // 낡거나 틀리면 순위가 아니라 노출 대상 자체가 틀린다 (V24·PlaceStats 주석)
+        // town_id는 배치가 아니라 이 쿼리도 places에서 복사해야 한다 —
+        // 낡거나 틀리면 순위가 아니라 소속이 틀린다 (V24·PlaceStats 주석)
         assertThat(stats.getTownId()).isEqualTo(expectedTownId);
-        assertThat(stats.isActive()).isEqualTo(expectedActive);
     }
 
     /**

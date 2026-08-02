@@ -45,21 +45,18 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
     @Autowired
     EntityManager em;
 
-    /** 배치가 places에서 비정규화해 오는 세 값. 기댓값을 INSERT와 같은 출처에서 얻으려고 함께 읽는다. */
-    private record PlaceRow(long id, long townId, boolean active) {
+    /** 배치가 places에서 비정규화해 오는 값. 기댓값을 INSERT와 같은 출처에서 얻으려고 함께 읽는다. */
+    private record PlaceRow(long id, long townId) {
     }
 
     /** Flyway V2 시드에서 실제 존재하는 장소 하나를 빌려 쓴다 (BookmarkRepositoryIT와 같은 관례) */
     private PlaceRow anyPlace() {
         Object[] row = (Object[]) em.createNativeQuery(
-                "SELECT p.id, p.town_id, p.active FROM places p WHERE p.active = true ORDER BY p.id LIMIT 1")
+                "SELECT p.id, p.town_id FROM places p WHERE p.active = true ORDER BY p.id LIMIT 1")
                 .getSingleResult();
-        // active는 드라이버 설정에 따라 타입이 갈린다 — MySQL의 BOOLEAN은 TINYINT(1)이고,
-        // Connector/J는 tinyInt1isBit 기본값(true)에서 Boolean을, false면 Number를 돌려준다. 둘 다 받는다.
         return new PlaceRow(
                 ((Number) row[0]).longValue(),
-                ((Number) row[1]).longValue(),
-                row[2] instanceof Boolean b ? b : ((Number) row[2]).intValue() != 0);
+                ((Number) row[1]).longValue());
     }
 
     @Test
@@ -70,9 +67,9 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
 
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, active, popular_score, bookmark_count,
+                    (place_id, town_id, popular_score, bookmark_count,
                      review_count, avg_rating, calculated_at)
-                SELECT p.id, p.town_id, p.active, 12.5, 7, 2, 4.50, :calculatedAt
+                SELECT p.id, p.town_id, 12.5, 7, 2, 4.50, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("calculatedAt", calculatedAt)
@@ -85,10 +82,8 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         assertThat(found).hasSize(1);
         PlaceStats stats = found.get(0);
         assertThat(stats.getPlaceId()).isEqualTo(placeId);
-        // places에서 비정규화해 온 두 값. validate는 타입만 보고 값 왕복은 못 잡으므로 직접 대조한다.
-        // 특히 active는 MySQL BOOLEAN(TINYINT(1)) ↔ Java boolean 매핑이라 왕복 검증 가치가 있다.
+        // places에서 비정규화해 온 값. validate는 타입만 보고 값 왕복은 못 잡으므로 직접 대조한다.
         assertThat(stats.getTownId()).isEqualTo(place.townId());
-        assertThat(stats.isActive()).isEqualTo(place.active());
         assertThat(stats.getPopularScore()).isEqualByComparingTo(new BigDecimal("12.5"));
         assertThat(stats.getBookmarkCount()).isEqualTo(7);
         assertThat(stats.getReviewCount()).isEqualTo(2);
