@@ -1,0 +1,9 @@
+buffer_pool_read_requests  19673335
+buffer_pool_disk_reads     2
+buffer_pool_hit_rate       100.0000%
+innodb_data_reads          2
+innodb_data_writes         0
+innodb_data_fsyncs         0
+questions                  376320
+select_scan                146
+created_tmp_disk_tables    0
