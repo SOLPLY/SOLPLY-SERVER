@@ -70,8 +70,12 @@ public class PlaceService {
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
    * 유일한 소비자인 이곳으로 옮겼다.
+   *
+   * <p>기본값 10 (2026-08-03, 20에서 축소): 모바일 앱 화면에서 한 번에 소비되는 양 기준.
+   * 클라이언트가 size로 상한(50)까지 올릴 수 있으므로 기본값 축소는 하위호환이다.
+   * 부하 측정 시나리오는 비교 가능성 때문에 size=20을 명시해 쓴다 — 기본값과 무관.
    */
-  private static final int DEFAULT_PAGE_SIZE = 20;
+  private static final int DEFAULT_PAGE_SIZE = 10;
 
   /** {@code Place.placeImageInfos}의 {@code @BatchSize}가 이 값에 맞춰져 있다 — 함께 움직인다 */
   private static final int MAX_PAGE_SIZE = 50;
