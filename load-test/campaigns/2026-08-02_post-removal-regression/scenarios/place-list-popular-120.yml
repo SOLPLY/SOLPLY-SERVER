@@ -13,7 +13,7 @@
 config:
   target: "http://localhost:8082"
   payload:
-    path: "../data/users.csv"
+    path: "../../../data/users.csv"  # campaigns/<캠페인>/scenarios/ 기준 (실제 파일: load-test/data/users.csv)
     fields:
       - token
     order: random
