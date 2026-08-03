@@ -42,6 +42,8 @@ application-prod.yml
 !prometheus.dev.yml
 !prometheus.prod.yml
 !.github/ISSUE_TEMPLATE/*.yml
+# 부하 테스트 시나리오는 측정 재현의 근거라 추적한다 (2026-08-03 복원 — 전역 *.yml 차단의 예외)
+!load-test/**/*.yml
 !load-test/scenarios/*.yml
 !load-test/.gitignore
 !docker/docker-compose.bench.yml
