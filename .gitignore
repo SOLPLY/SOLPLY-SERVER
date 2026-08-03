@@ -85,6 +85,10 @@ reports/
 !load-test/reports/
 load-test/reports/*
 !load-test/reports/popular-v*.json
+# 캠페인 재구성(2026-08-03) 이후 경로 — campaigns/**/results/는 전부 추적이 규약인데
+# (load-test/README.md §1) 하위 reports/가 위 전역 규칙에 걸려 누락됐던 것을 복구
+!load-test/campaigns/**/results/reports/
+!load-test/campaigns/**/results/reports/**
 load-test/query-logs/
 load-test/node_modules/
 load-test/data/
