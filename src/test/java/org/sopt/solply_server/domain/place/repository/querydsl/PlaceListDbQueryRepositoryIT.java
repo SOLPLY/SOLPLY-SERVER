@@ -121,7 +121,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, null, null, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, null, null, false, null, null, NO_LIMIT);
 
         // B·C는 점수가 더 높아도 태그가 없으면 나오지 않는다 — 필터가 통째로 빠지면 여기서 3건이 된다
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
@@ -151,7 +151,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA1, subA2), null, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA1, subA2), null, false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeB, placeA);
     }
@@ -176,7 +176,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA), null, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA), null, false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
     }
@@ -199,7 +199,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), null, List.of(subA), null, null, null, NO_LIMIT);
+                List.of(townId), null, List.of(subA), null, false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeC, placeB, placeA);
     }
@@ -226,7 +226,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA), List.of(subB), null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA), List.of(subB), false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
     }
@@ -267,6 +267,88 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).placeId()).isEqualTo(placeA);
         assertThat(rows.get(0).bookmarkCount()).isEqualTo(7);
+    }
+
+    // === POPULAR: 직전 세대 ===
+
+    /**
+     * <b>세대 분기의 본체.</b> 커서가 직전 세대의 것이면 정렬 축은 {@code prev_popular_score}여야 한다.
+     *
+     * <p>두 세대의 순서를 <b>완전히 뒤집어</b> 세운다 — 현 세대는 B·C·A, 직전 세대는 A·B·C다.
+     * 이래야 "정렬 컬럼만 바꿨는지"를 순서 하나로 판정할 수 있다. 두 세대가 조금이라도 비슷하면
+     * 분기가 통째로 빠져도(늘 현 세대로 정렬해도) 부분적으로 맞는 답이 나와 회귀가 숨는다.
+     *
+     * <p>같은 픽스처에 현 세대 조회를 함께 걸어, 분기가 <em>양방향</em>으로 동작하는지 본다.
+     * prev 쪽만 확인하면 "항상 prev로 정렬"이라는 반대 방향 회귀가 살아남는다.
+     */
+    @Test
+    void 직전_세대_정렬은_prev_점수_순서를_따른다() {
+        insertStats(placeA, townId, 1.0, 0, 6.0);
+        insertStats(placeB, townId, 6.0, 0, 4.0);
+        insertStats(placeC, townId, 4.0, 0, 1.0);
+
+        assertThat(placeIdsOf(findPopular(null, null, NO_LIMIT)))
+                .containsExactly(placeB, placeC, placeA);
+        assertThat(placeIdsOf(findPrevPopular(null, null, NO_LIMIT)))
+                .containsExactly(placeA, placeB, placeC);
+    }
+
+    /**
+     * <b>{@code prev IS NULL}은 "그 세대에 이 장소가 없었다"</b>는 뜻이고, 직전 세대의 목록에
+     * 없던 장소를 그 세대의 결과에 끼워 넣는 것은 오답이다. 배치 이후 새로 생긴 장소가 그 경우다.
+     *
+     * <p>제외 대상 placeD에 <b>현 세대 최고점</b>을 주는 것이 핵심이다 — 술어가 빠지면 D가
+     * 결과에 나타나는데, MySQL은 {@code ORDER BY prev DESC}에서 NULL을 맨 뒤로 보내므로
+     * 순서만 보면 자연스러워 보인다. 그래서 순서가 아니라 <b>포함 여부</b>로 단언한다.
+     */
+    @Test
+    void 직전_세대에_없던_장소는_prev_정렬에서_빠진다() {
+        insertStats(placeA, townId, 1.0, 0, 6.0);
+        insertStats(placeB, townId, 2.0, 0, 4.0);
+        insertStats(placeD, townId, 99.0, 0, null);   // 배치 이후 생긴 신규 장소
+
+        List<PopularRow> rows = findPrevPopular(null, null, NO_LIMIT);
+
+        assertThat(placeIdsOf(rows)).containsExactly(placeA, placeB);
+        // 현 세대에서는 같은 장소가 정상적으로 맨 앞에 나온다 — 제외가 세대 분기의 성질임을 못 박는다
+        assertThat(placeIdsOf(findPopular(null, null, NO_LIMIT))).contains(placeD);
+    }
+
+    /**
+     * <b>정렬만 바꾸고 커서 술어를 안 바꾸면 페이징이 어긋난다.</b> 커서의 sortKey는 직전 세대의
+     * 점수인데 술어가 현 세대 컬럼을 비교하면, 두 세대의 값이 다른 만큼 경계가 엉뚱한 곳에 찍힌다.
+     *
+     * <p>그 어긋남이 <b>반드시 드러나게</b> 픽스처를 세운다: 커서는 placeA(prev 6.0) 다음이므로
+     * 정답은 [B, C]다. 술어가 현 세대 컬럼({@code popular_score})을 본다면 "현 점수 &lt; 6.0"이
+     * 되어 A(1.0)와 C(4.0)가 통과하고 B(6.0)가 탈락해 [C, A]가 나온다 — 항목도 순서도 다르다.
+     */
+    @Test
+    void 직전_세대_커서는_prev_점수로_경계를_잡는다() {
+        insertStats(placeA, townId, 1.0, 0, 6.0);
+        insertStats(placeB, townId, 6.0, 0, 4.0);
+        insertStats(placeC, townId, 4.0, 0, 1.0);
+
+        List<PopularRow> rows = findPrevPopular(6.0, placeA, NO_LIMIT);
+
+        assertThat(placeIdsOf(rows)).containsExactly(placeB, placeC);
+    }
+
+    /**
+     * <b>표시 카운트는 세대와 무관하게 현재 값이다.</b> 세대가 고정하는 것은 <em>순위</em>뿐이고,
+     * 화면의 북마크 수는 증분이 방금 올린 값이 즉시 보여야 한다(그게 증분을 만든 이유다).
+     * {@code bookmark_count}는 세대별 복사본이 없으므로 prev 정렬도 같은 컬럼을 싣는다 —
+     * 그 사실을 값으로 못 박아, 나중에 카운트까지 세대별로 나누려는 시도가 여기서 걸리게 한다.
+     */
+    @Test
+    void 직전_세대_정렬도_표시_카운트는_현재_값을_싣는다() {
+        insertStats(placeA, townId, 1.0, 7, 6.0);
+
+        List<PopularRow> rows = findPrevPopular(null, null, NO_LIMIT);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).bookmarkCount()).isEqualTo(7);
+        // 정렬 키로 실려 나오는 값은 prev 쪽이다 — 서비스가 다음 커서에 담을 값이라 축이 갈리면 안 된다
+        assertThat(rows.get(0).popularScore()).isEqualTo(6.0);
     }
 
     // === LATEST ===
@@ -350,7 +432,13 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {
         return repository.findPopularRows(
-                List.of(townId), null, null, null, cursorScore, cursorPlaceId, limit);
+                List.of(townId), null, null, null, false, cursorScore, cursorPlaceId, limit);
+    }
+
+    /** 위와 같은 조회를 <b>직전 세대</b> 축으로 건다 — 두 헬퍼의 차이는 세대 플래그 하나뿐이다 */
+    private List<PopularRow> findPrevPopular(Double cursorScore, Long cursorPlaceId, int limit) {
+        return repository.findPopularRows(
+                List.of(townId), null, null, null, true, cursorScore, cursorPlaceId, limit);
     }
 
     private List<LatestRow> findLatest(Long cursorSecond, Long cursorPlaceId, int limit) {
@@ -375,14 +463,24 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * calculated_at은 정렬 쿼리가 읽지 않는 컬럼이라 아무 시각이나 무방하다(NOW(6)).
      */
     private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
+        insertStats(placeId, townId, score, bookmarkCount, null);
+    }
+
+    /**
+     * 직전 세대 점수까지 심는 판. {@code prevScore}가 null이면 컬럼도 NULL —
+     * "직전 세대에 이 장소가 없었다"(배치 이후 생긴 신규 장소)를 뜻한다.
+     */
+    private void insertStats(
+            long placeId, long townId, double score, long bookmarkCount, Double prevScore) {
         em.createNativeQuery("""
-                INSERT INTO place_stats (place_id, town_id, popular_score,
+                INSERT INTO place_stats (place_id, town_id, popular_score, prev_popular_score,
                                          bookmark_count, review_count, avg_rating, calculated_at)
-                VALUES (:placeId, :townId, :score, :cnt, 0, NULL, NOW(6))
+                VALUES (:placeId, :townId, :score, :prevScore, :cnt, 0, NULL, NOW(6))
                 """)
                 .setParameter("placeId", placeId)
                 .setParameter("townId", townId)
                 .setParameter("score", score)
+                .setParameter("prevScore", prevScore)
                 .setParameter("cnt", bookmarkCount)
                 .executeUpdate();
     }

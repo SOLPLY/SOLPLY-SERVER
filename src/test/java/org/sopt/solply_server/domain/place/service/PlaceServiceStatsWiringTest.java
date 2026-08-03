@@ -124,8 +124,10 @@ class PlaceServiceStatsWiringTest {
     // UnfinishedStubbingException이 난다 — 반드시 먼저 만들어 둔다.
     Place place = placeEntity();
     if (sort == PlaceSortType.POPULAR) {
+      // 페이징 인자가 없으면 커서도 없으므로 세대 분기는 늘 현 세대(false)다 —
+      // 직전 세대 정렬은 커서가 있을 때만 성립한다(첫 페이지는 언제나 현 세대에서 발급된다).
       given(placeListDbQueryRepository.findPopularRows(
-          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+          List.of(TOWN_ID), null, null, null, false, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(new PopularRow(1L, 9.0, bookmarkCount)));
     } else {
       given(placeListDbQueryRepository.findLatestRows(
