@@ -5,6 +5,7 @@ import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
@@ -46,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlaceStatsBatchProcessor {
 
     private final PlaceStatsRepository placeStatsRepository;
+    private final PlaceStatsMetaRepository placeStatsMetaRepository;
     private final PlaceStatsProperties properties;
 
     /**
@@ -123,11 +125,26 @@ public class PlaceStatsBatchProcessor {
         return OptionalInt.of(upsert(calculatedAt));
     }
 
+    /**
+     * 점수 교체와 세대 기록은 <b>한 트랜잭션 안의 두 문장</b>이다 (V28).
+     *
+     * <p>{@code upsertAll}이 현 점수를 {@code prev_popular_score}로 밀어내며 새 세대로 덮고,
+     * {@code shiftGeneration}이 그 세대의 이름을 레지스터에 남긴다. 이 둘이 갈라지면 점수는
+     * 새 세대인데 메타는 옛 세대인(또는 그 반대인) 구간이 생기고, 그 구간에 발급된 커서는
+     * 존재하지 않는 좌표계를 가리킨다 — 조회가 prev 컬럼으로 정렬하는데 그 컬럼이 실제로는
+     * 직전 세대가 아닌 상태다. 그래서 두 진입점이 공유하는 이 메서드 안에 함께 둔다.
+     *
+     * <p><b>순서가 이것인 이유:</b> UPSERT가 실패하면 세대 기록도 롤백돼야 하는데, 반대로 두면
+     * 실패 경로에서 "기록만 남고 점수는 옛 세대"가 될 여지가 문장 사이에 생긴다(롤백이 덮어주긴
+     * 하지만 읽는 순서로도 인과가 드러나는 편이 낫다).
+     */
     private int upsert(LocalDateTime calculatedAt) {
-        return placeStatsRepository.upsertAll(
+        int affected = placeStatsRepository.upsertAll(
                 calculatedAt,
                 properties.getBookmarkWeight(),
                 properties.getReviewWeight(),
                 properties.getHalfLifeDays());
+        placeStatsMetaRepository.shiftGeneration(calculatedAt);
+        return affected;
     }
 }

@@ -5,16 +5,38 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.global.exception.BusinessException;
 
 class PlaceListCursorTest {
 
+    /** 세대·필터 지문이 검증 대상이 아닌 테스트가 쓰는 값. 두 값이 왕복에 섞이지 않게 서로 다르게 둔다. */
+    private static final long GENERATION = 1_754_000_000L;
+    private static final String FILTER_PRINT = "10|20|1,2|3";
+
+    private static PlaceListCursor cursor(double sortKey, long placeId) {
+        return new PlaceListCursor(
+                PlaceSortType.POPULAR, sortKey, placeId, GENERATION, FILTER_PRINT);
+    }
+
     @Test
     void 인코딩_후_디코딩하면_원본과_같다() {
-        PlaceListCursor cursor = new PlaceListCursor(PlaceSortType.POPULAR, 1234L, 56L);
+        PlaceListCursor cursor = cursor(1234L, 56L);
         assertThat(PlaceListCursor.decode(cursor.encode())).isEqualTo(cursor);
+    }
+
+    /**
+     * 세대와 필터 지문이 <b>따로</b> 왕복하는지 본다. record 전체 비교만 하면 두 필드를 뒤바꾸거나
+     * 한쪽을 다른 쪽으로 덮는 회귀가 통과할 수 있어(둘 다 원본에서 왔으므로) 값으로 하나씩 문다.
+     */
+    @Test
+    void 세대와_필터_지문도_왕복한다() {
+        PlaceListCursor decoded = PlaceListCursor.decode(cursor(9.5, 3L).encode());
+
+        assertThat(decoded.generation()).isEqualTo(GENERATION);
+        assertThat(decoded.filterPrint()).isEqualTo(FILTER_PRINT);
     }
 
     @Test
@@ -26,14 +48,14 @@ class PlaceListCursorTest {
     @Test
     void base64이지만_필드가_모자란_토큰은_예외를_던진다() {
         String bogus = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("v2:POPULAR:123".getBytes(StandardCharsets.UTF_8));
+                .encodeToString("v3:POPULAR:123:4".getBytes(StandardCharsets.UTF_8));
         assertThatThrownBy(() -> PlaceListCursor.decode(bogus))
                 .isInstanceOf(BusinessException.class);
     }
 
     @Test
     void 실수_점수를_왕복해도_값이_보존된다() {
-        PlaceListCursor cursor = new PlaceListCursor(PlaceSortType.POPULAR, 1234.567891, 56L);
+        PlaceListCursor cursor = cursor(1234.567891, 56L);
 
         PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
 
@@ -43,7 +65,7 @@ class PlaceListCursorTest {
 
     @Test
     void 음수_점수도_왕복한다() {
-        PlaceListCursor cursor = new PlaceListCursor(PlaceSortType.POPULAR, -42.5, 7L);
+        PlaceListCursor cursor = cursor(-42.5, 7L);
 
         assertThat(PlaceListCursor.decode(cursor.encode())).isEqualTo(cursor);
     }
@@ -54,7 +76,7 @@ class PlaceListCursorTest {
         double[] values = {1.0E10, 1.0E-9, 0.0, -0.0, Double.MAX_VALUE, Double.MIN_VALUE};
 
         for (double value : values) {
-            PlaceListCursor cursor = new PlaceListCursor(PlaceSortType.POPULAR, value, 1L);
+            PlaceListCursor cursor = cursor(value, 1L);
             PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
 
             // isEqualTo는 == 의미라 -0.0 == 0.0이 참이다. 그래서 부호를 죽이는 변이를 심어도
@@ -73,5 +95,83 @@ class PlaceListCursorTest {
 
         assertThatThrownBy(() -> PlaceListCursor.decode(v1Token))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    /**
+     * v2는 필드가 4개뿐이라 세대도 필터 지문도 없다. 받아들이면 그 둘을 <b>기본값으로 지어내야</b>
+     * 하는데, 지어낸 필터 지문은 어떤 요청과도 맞거나 어떤 요청과도 안 맞고 둘 다 조용한 오답이다.
+     * 운영 전이라 하위호환이 필요 없으므로 v2가 v1에 했던 것과 같이 거부한다.
+     */
+    @Test
+    void v2_토큰은_거부한다() {
+        String v2Token = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("v2:POPULAR:100.0:5".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> PlaceListCursor.decode(v2Token))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    // === 필터 지문 ===
+
+    /**
+     * <b>같은 필터의 지문은 하나여야 한다.</b> 클라이언트가 서브 태그를 다른 순서로 보내는 것은
+     * 흔한 일인데(체크박스 선택 순서 등), 지문이 갈리면 정상 스크롤이 INVALID_PLACE_CURSOR로 죽는다.
+     * 정렬해서 지문을 만드는 이유가 이것이다.
+     */
+    @Test
+    void 서브_태그_순서가_달라도_같은_지문이다() {
+        String print1 = PlaceListCursor.filterPrintOf(
+                1L, 2L, List.of(30L, 10L, 20L), List.of(5L, 4L));
+        String print2 = PlaceListCursor.filterPrintOf(
+                1L, 2L, List.of(10L, 20L, 30L), List.of(4L, 5L));
+
+        assertThat(print1).isEqualTo(print2);
+    }
+
+    /**
+     * 필터 축이 <b>하나라도 다르면</b> 지문이 달라야 한다. 네 축을 한 번에 세우지 않고 축마다
+     * 하나씩 흔드는 이유는, 어떤 축이 지문에서 통째로 빠져도 "일부는 다르니까" 통과하는 픽스처를
+     * 피하기 위해서다.
+     */
+    @Test
+    void 필터_축이_하나라도_다르면_지문이_다르다() {
+        String base = PlaceListCursor.filterPrintOf(1L, 2L, List.of(10L), List.of(20L));
+
+        assertThat(PlaceListCursor.filterPrintOf(9L, 2L, List.of(10L), List.of(20L)))
+                .isNotEqualTo(base);
+        assertThat(PlaceListCursor.filterPrintOf(1L, 9L, List.of(10L), List.of(20L)))
+                .isNotEqualTo(base);
+        assertThat(PlaceListCursor.filterPrintOf(1L, 2L, List.of(99L), List.of(20L)))
+                .isNotEqualTo(base);
+        assertThat(PlaceListCursor.filterPrintOf(1L, 2L, List.of(10L), List.of(99L)))
+                .isNotEqualTo(base);
+    }
+
+    /**
+     * 없는 축은 빈 문자열이고, {@code null}과 빈 리스트는 <b>같은 뜻</b>이다 — 둘 다 "이 축으로
+     * 거르지 않는다"이므로 지문이 갈리면 안 된다. 스프링이 쿼리 파라미터 부재를 null로도 빈
+     * 리스트로도 넘길 수 있어 실제로 밟는 경로다.
+     */
+    @Test
+    void 없는_축은_null이든_빈_리스트든_같은_지문이다() {
+        String withNulls = PlaceListCursor.filterPrintOf(1L, null, null, null);
+        String withEmpty = PlaceListCursor.filterPrintOf(1L, null, List.of(), List.of());
+
+        assertThat(withNulls).isEqualTo(withEmpty);
+        assertThat(withNulls).isEqualTo("1|||");
+    }
+
+    /**
+     * 지문은 커서 토큰의 <b>마지막</b> 필드다. 축이 전부 비면 {@code "1|||"}처럼 끝이 구분자로
+     * 끝나는데, {@code String.split}이 기본으로 <b>후행 빈 문자열을 버리는</b> 성질과 겹치면
+     * 필드 수가 모자라 보여 정상 커서가 거부된다. 실제로 밟는 경로라 왕복으로 못 박는다.
+     */
+    @Test
+    void 지문의_끝이_비어_있어도_왕복한다() {
+        String print = PlaceListCursor.filterPrintOf(1L, null, null, null);
+        PlaceListCursor cursor =
+                new PlaceListCursor(PlaceSortType.LATEST, 100.0, 5L, 0L, print);
+
+        assertThat(PlaceListCursor.decode(cursor.encode())).isEqualTo(cursor);
     }
 }

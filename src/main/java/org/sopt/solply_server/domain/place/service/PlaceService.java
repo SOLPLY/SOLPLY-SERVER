@@ -25,6 +25,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
@@ -66,6 +67,7 @@ public class PlaceService {
   private final TownHierarchyResolver townHierarchyResolver;
   private final PlaceListDbQueryRepository placeListDbQueryRepository;
   private final PlaceStatsRepository placeStatsRepository;
+  private final PlaceStatsMetaRepository placeStatsMetaRepository;
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -244,6 +246,12 @@ public class PlaceService {
    * 장소(마지막 배치 이후 새로 생긴 장소)는 인기순 결과에 아예 나오지 않는다. 이는 버그가 아니라
    * 정렬을 인덱스에 흡수시키는 대가이며, 창은 배치 간격(≤1h) 이내다. 근거는
    * {@code PlaceListDbQueryRepository#findPopularRows} javadoc.
+   *
+   * <p><b>커서 v3 — 좌표에 좌표계를 함께 싣는다 (2026-08-03).</b> 커서가 나르던 "정렬 키 X, id Y
+   * 다음"이라는 좌표는 그것이 <em>어느 좌표계</em>에서 찍혔는지를 말하지 않았고, 그래서 두 가지가
+   * 조용히 틀렸다: 스크롤 도중 배치가 돌면 점수가 통째로 갈려 페이지가 어긋났고, 커서를 다른 필터
+   * 요청에 쓰면 요청한 적 없는 페이지가 200으로 나갔다. v3는 <b>세대</b>와 <b>필터 지문</b>을
+   * 함께 실어 앞은 고정하고 뒤는 거부한다. 코덱 계약은 {@code PlaceListCursor} 참조.
    */
   private PlaceFilterGetResponse listPlaces(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
@@ -253,15 +261,23 @@ public class PlaceService {
         : (request.size() == null ? DEFAULT_PAGE_SIZE
             : Math.min(request.size(), MAX_PAGE_SIZE));
 
+    // leaf 확장 전 원본 파라미터로 만든다 — 사용자가 실제로 고른 것이 그것이고, 확장 결과는
+    // 동네 트리가 바뀌면 같은 요청에서도 달라진다 (PlaceListCursor#filterPrintOf 참조).
+    String filterPrint = PlaceListCursor.filterPrintOf(
+        request.townId(), request.mainTagId(),
+        request.subTagAIdList(), request.subTagBIdList());
+
     Double cursorScore = null;
     Long cursorSec = null;
     Long cursorPlaceId = null;
+    PlaceListCursor cursor = null;
     if (request.cursor() != null) {
-      PlaceListCursor cursor = PlaceListCursor.decode(request.cursor());
-      if (cursor.sort() != sort) {
+      cursor = PlaceListCursor.decode(request.cursor());
+      // 정렬 축이 다르면 sortKey의 뜻 자체가 다르고(점수 대 epoch 초), 필터가 다르면 이 커서가
+      // 가리키는 위치가 이 결과 집합 안에 없다. 둘 다 조용히 진행할 수 없는 상태다.
+      if (cursor.sort() != sort || !filterPrint.equals(cursor.filterPrint())) {
         throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
       }
-      // v2 코덱은 캐시 시절 그대로다 — 캐시 철거 배포 중에도 스크롤 도중의 커서가 살아남는다.
       // LATEST의 sortKey는 정수인 epoch 초라 long 좁힘이 값을 잃지 않는다
       // (2^53초 ≈ 2.8억 년, DATETIME 범위가 한참 못 미친다).
       if (sort == PlaceSortType.POPULAR) {
@@ -272,11 +288,13 @@ public class PlaceService {
       cursorPlaceId = cursor.placeId();
     }
 
+    PageGeneration generation = resolveGeneration(cursor, sort, paging);
+
     int fetchSize = paging ? pageSize + 1 : pageSize;
     List<DbListRow> rows = switch (sort) {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              cursorScore, cursorPlaceId, fetchSize).stream()
+              generation.usePrev(), cursorScore, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount()))
           .toList();
       // sortKey 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
@@ -327,9 +345,69 @@ public class PlaceService {
     String nextCursor = hasNext && !rows.isEmpty()
         ? new PlaceListCursor(sort,
             rows.get(rows.size() - 1).sortKey(),
-            rows.get(rows.size() - 1).placeId()).encode()
+            rows.get(rows.size() - 1).placeId(),
+            generation.generation(),
+            filterPrint).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
+  }
+
+  /**
+   * 이 페이지가 서 있는 랭킹 세대와, 그것이 <b>직전</b> 세대인지 여부.
+   *
+   * @param generation 발급할 커서에 실을 값. 스크롤 세션 내내 같아야 한다
+   * @param usePrev    true면 조회가 {@code prev_popular_score} 축으로 정렬한다
+   */
+  private record PageGeneration(long generation, boolean usePrev) {
+
+    static final PageGeneration NONE =
+        new PageGeneration(PlaceStatsMetaRepository.NO_GENERATION, false);
+  }
+
+  /**
+   * 커서의 세대를 판정한다. 규칙은 셋이다 — 현 세대면 그대로, 직전 세대면 prev 축,
+   * <b>그 외에는 오류가 아니라 현 세대로 강등</b>.
+   *
+   * <p><b>강등이 오류가 아닌 이유.</b> 두 세대 이상 지난 커서는 스크롤을 열어 둔 채 배치가 두 번
+   * 지나간 경우(배치 간격이 1시간이므로 2시간 이상 방치)다. 그 좌표계는 이미 어디에도 없지만,
+   * 여기서 400을 내면 "잠깐 놔뒀다가 스크롤을 이어갔더니 에러"가 된다. 강등하면 세대 고정
+   * <em>이전에</em> 이미 수용하던 동작(페이지 사이 소량 어긋남)으로 돌아갈 뿐이다.
+   * 필터 불일치를 거부하는 것과 성질이 다르다 — 그쪽은 사용자가 요청한 적 없는 결과를 주는
+   * 일이고, 이쪽은 사용자가 요청한 목록을 조금 덜 정확하게 주는 일이다.
+   *
+   * <p><b>직전 세대 비교에 {@code hasPrev()} 가드를 두는 이유.</b> "세대 없음"은 0으로 표현되는데,
+   * 메타가 도입되기 전이나 배치가 한 번밖에 안 돈 시점에는 {@code prev}도 0이다. 가드가 없으면
+   * 세대 0을 실은 커서가 "prev와 일치"로 판정돼, 전부 NULL인 prev 컬럼으로 정렬하는 <b>빈 페이지</b>를
+   * 받는다. 현 세대를 먼저 비교하는 순서도 같은 이유다.
+   *
+   * <p><b>세대는 커서에서 승계하고 다시 읽지 않는다 — 이 함정을 놓치지 말 것.</b> 페이지마다
+   * 현 세대를 재조회하면 세션 <em>중간에</em> 배치가 도는 순간 앞 페이지는 옛 세대, 뒤 페이지는 새
+   * 세대가 되어 정확히 이 기능이 막으려던 어긋남이 그대로 난다. 그래서 커서가 있으면 그 값이
+   * 곧 이 페이지의 세대이고, 메타는 "그것이 직전 세대인가"를 묻는 데만 쓴다.
+   *
+   * <p><b>메타를 읽지 않는 경로가 둘 있다.</b> (a) LATEST — {@code created_at}은 배치가 만지지
+   * 않는 불변 축이라 좌표계가 갈릴 일이 없다(설계 §7). (b) 페이징이 아닌 첫 페이지 — 커서를
+   * 아예 발급하지 않으므로 세대를 알아낼 이유가 없다. 즉 이 조회는 <b>커서를 쓰거나 만드는
+   * 인기순 요청에서만</b> 1회 발생한다.
+   */
+  private PageGeneration resolveGeneration(
+      PlaceListCursor cursor, PlaceSortType sort, boolean paging) {
+
+    if (sort != PlaceSortType.POPULAR) {
+      return PageGeneration.NONE;
+    }
+    if (cursor != null) {
+      PlaceStatsMetaRepository.Generations generations = placeStatsMetaRepository.findGenerations();
+      boolean usePrev = generations.hasPrev()
+          && cursor.generation() != generations.current()
+          && cursor.generation() == generations.prev();
+      return new PageGeneration(cursor.generation(), usePrev);
+    }
+    if (!paging) {
+      return PageGeneration.NONE;
+    }
+    // 첫 페이지는 언제나 현 세대에서 시작한다 — 그 세대가 이 스크롤 세션 내내 고정된다
+    return new PageGeneration(placeStatsMetaRepository.findGenerations().current(), false);
   }
 
   /**

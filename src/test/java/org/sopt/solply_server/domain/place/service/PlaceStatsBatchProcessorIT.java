@@ -8,9 +8,11 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.OptionalInt;
@@ -22,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.global.config.QueryDslConfig;
 import org.sopt.solply_server.support.MySqlContainerSupport;
@@ -42,7 +45,8 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class})
+@Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class,
+        PlaceStatsMetaRepository.class})
 class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     private static final double BOOKMARK_WEIGHT = 1.0;
@@ -51,6 +55,13 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /** 배치 기준 시각. 모든 픽스처의 created_at을 이 시각 기준 상대값으로 넣는다. */
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
+
+    /**
+     * 다음 회차의 기준 시각. 세대 경계를 보려면 두 회차의 {@code calculatedAt}이 <b>달라야</b> 한다 —
+     * 같은 값으로 두 번 돌리면 그것은 세대 교체가 아니라 같은 세대의 재실행이다(멱등성 테스트의 몫).
+     * 운영 간격과 같은 1시간을 준다.
+     */
+    private static final LocalDateTime NEXT_CALCULATED_AT = CALCULATED_AT.plusHours(1);
 
     @DynamicPropertySource
     static void ddlAuto(DynamicPropertyRegistry registry) {
@@ -270,8 +281,100 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         }
     }
 
+    /**
+     * 기준 시각을 지정해 돌린다. {@link #runBatch()}가 상수를 쓰는 것과 달리, 세대 교체를 보는
+     * 테스트는 두 회차의 기준 시각이 달라야 성립하므로 호출자가 정한다.
+     */
+    private int runBatchAt(LocalDateTime calculatedAt) {
+        return batchProcessor.recalculateAll(calculatedAt);
+    }
+
     private PlaceStats statsOf(long placeId) {
         return placeStatsRepository.findById(placeId).orElseThrow();
+    }
+
+    /**
+     * 세대 메타를 초기 상태(둘 다 NULL)로 되돌린다 — {@link #clearStats()}와 같은 이유다.
+     * 같은 클래스의 {@code 배치_트랜잭션은_READ_COMMITTED로_열린다}가 배치 결과를 <b>실제로 커밋</b>하므로
+     * 그 테스트가 먼저 돌면 메타에 값이 남아 "첫 배치 직후 prev는 NULL"이라는 단언이 성립하지 않는다.
+     * 이 UPDATE는 테스트 트랜잭션과 함께 롤백된다.
+     */
+    private void resetGenerationMeta() {
+        em.createNativeQuery("""
+                UPDATE place_stats_meta
+                   SET current_generation = NULL, prev_generation = NULL
+                 WHERE id = 1
+                """).executeUpdate();
+    }
+
+    /**
+     * 세대 메타 컬럼 하나를 읽는다. DATETIME(6)의 반환 타입은 드라이버·하이버네이트 조합에 따라
+     * {@code Timestamp}와 {@code LocalDateTime}으로 갈리므로 둘 다 받는다
+     * ({@code PlaceListDbQueryRepository.toLocalDateTime}과 같은 이유).
+     */
+    private LocalDateTime generationOf(String column) {
+        Object value = em.createNativeQuery(
+                "SELECT " + column + " FROM place_stats_meta WHERE id = 1").getSingleResult();
+        if (value == null) {
+            return null;
+        }
+        return value instanceof LocalDateTime ldt ? ldt : ((Timestamp) value).toLocalDateTime();
+    }
+
+    /**
+     * <b>세대 경계 봉합의 절반 — 점수 시프트.</b> 배치가 현 점수를 새 값으로 덮기 <em>전에</em>
+     * {@code prev_popular_score}로 밀어내야, 이전 세대에 발급된 커서가 그 세대의 순위를 계속 볼 수 있다.
+     *
+     * <p>2회차에서 점수가 <b>반드시 달라지게</b> 북마크를 하나 더 넣는 것이 핵심이다. 점수가 같으면
+     * 시프트가 통째로 빠져도(prev가 새 값으로 채워져도) 단언이 통과한다 — 그래서 prev가 1회차 값과
+     * 같다는 것과 현 점수가 그와 다르다는 것을 함께 문다.
+     *
+     * <p>INSERT 경로(1회차)에서는 prev가 NULL이어야 한다. "이전 세대에 존재하지 않던 장소"라는
+     * 컬럼의 뜻이 그것이고, INSERT 컬럼 목록에 prev를 넣으면 여기서 깨진다.
+     */
+    @Test
+    void 배치는_직전_세대의_점수를_prev로_밀어낸다() {
+        // 1회차가 INSERT 경로여야 "신규 행의 prev는 NULL"을 볼 수 있다. 같은 클래스의
+        // 배치_트랜잭션은_READ_COMMITTED로_열린다가 행을 실제로 커밋하므로(정리는 @AfterAll),
+        // 그것이 먼저 돌면 여기 1회차가 UPDATE 경로가 되어 prev에 그 커밋값이 들어간다.
+        clearStats();
+        insertBookmark(placeA, 0);
+
+        runBatchAt(CALCULATED_AT);
+
+        BigDecimal firstScore = statsOf(placeA).getPopularScore();
+        assertThat(statsOf(placeA).getPrevPopularScore()).isNull();
+
+        insertBookmark(placeA, 0);   // 2회차 점수를 1회차와 갈라놓는 조각
+        runBatchAt(NEXT_CALCULATED_AT);
+
+        PlaceStats after = statsOf(placeA);
+        assertThat(after.getPrevPopularScore()).isEqualByComparingTo(firstScore);
+        assertThat(after.getPopularScore()).isNotEqualByComparingTo(firstScore);
+    }
+
+    /**
+     * <b>세대 경계 봉합의 나머지 절반 — 식별자.</b> 조회 경로가 "이 커서는 어느 세대의 것인가"를
+     * 판정하려면 현 세대와 직전 세대가 어딘가에 <em>기록</em>돼 있어야 한다. 배치가 그것을
+     * UPSERT와 <b>같은 트랜잭션에서</b> 민다 — 갈라지면 점수는 새 세대인데 메타는 옛 세대인
+     * (또는 그 반대인) 구간이 생기고, 그 구간의 커서는 존재하지 않는 좌표계를 가리킨다.
+     *
+     * <p>1회차 직후 prev가 NULL인 것은 "직전 세대가 없다"는 정확한 표현이다. 이 값으로 강등
+     * 판정이 갈리므로(현 세대도 직전 세대도 아니면 강등) 센티널을 채우지 않는다.
+     */
+    @Test
+    void 배치는_세대_메타를_현재에서_이전으로_밀어_갱신한다() {
+        resetGenerationMeta();
+
+        runBatchAt(CALCULATED_AT);
+
+        assertThat(generationOf("current_generation")).isEqualTo(CALCULATED_AT);
+        assertThat(generationOf("prev_generation")).isNull();
+
+        runBatchAt(NEXT_CALCULATED_AT);
+
+        assertThat(generationOf("current_generation")).isEqualTo(NEXT_CALCULATED_AT);
+        assertThat(generationOf("prev_generation")).isEqualTo(CALCULATED_AT);
     }
 
     @Test
@@ -603,6 +706,14 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
+            // 세대 메타도 함께 되돌린다. 커밋한 배치가 여기에 자기 회차의 calculatedAt을 남기는데,
+            // 그대로 두면 뒤따르는 IT가 "아직 배치가 안 돈" 상태를 전제할 수 없다.
+            // place_stats처럼 DELETE하지 않는 것은 이것이 1행 레지스터이기 때문이다(V28의 CHECK).
+            st.executeUpdate("""
+                    UPDATE place_stats_meta
+                       SET current_generation = NULL, prev_generation = NULL
+                     WHERE id = 1
+                    """);
         }
     }
 

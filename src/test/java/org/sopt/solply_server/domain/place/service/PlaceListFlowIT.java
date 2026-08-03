@@ -1,11 +1,13 @@
 package org.sopt.solply_server.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +18,9 @@ import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
+import org.sopt.solply_server.domain.place.util.PlaceListCursor;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -186,6 +191,122 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         // place_stats 행이 없는 신규 장소는 0건으로 읽는다 (INNER JOIN이면 여기서 사라진다)
         assertThat(previewOf(page2, lOld).bookmarkCount()).isZero();
+    }
+
+    // === 커서 v3: 세대와 필터 지문 ===
+
+    /**
+     * <b>첫 페이지가 발급하는 커서는 현 세대의 것이다.</b> setUp이 {@code CALCULATED_AT}으로 배치를
+     * 돌렸으므로 그 시각이 곧 현 세대의 이름이고, 커서에는 그것의 epoch 초가 실린다.
+     *
+     * <p>이 값이 없거나 틀리면 다음 페이지가 어느 점수 컬럼으로 정렬해야 할지 판정할 근거가 사라진다 —
+     * 세대 고정 전체가 이 한 값 위에 서 있다.
+     */
+    @Test
+    void 첫_페이지가_발급하는_커서는_현_세대를_싣는다() {
+        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
+
+        assertThat(PlaceListCursor.decode(page1.nextCursor()).generation())
+                .isEqualTo(CALCULATED_AT.toEpochSecond(ZoneOffset.UTC));
+    }
+
+    /**
+     * <b>세대는 스크롤 세션 내내 승계된다 — 페이지마다 다시 읽지 않는다.</b>
+     *
+     * <p>페이지마다 현 세대를 재조회하면 세션 <em>중간에</em> 배치가 도는 순간 앞 페이지는 옛 세대,
+     * 뒤 페이지는 새 세대가 되어 정확히 이 기능이 막으려던 어긋남이 그대로 난다. 커서가 세대를
+     * 실어 나르는 이유가 이것이므로, 받은 값을 그대로 넘기는지 값으로 못 박는다.
+     *
+     * <p>size=1이라 세 장소가 세 페이지로 갈리고, 2페이지도 뒤에 placeB가 남아 커서를 발급한다.
+     */
+    @Test
+    void 다음_커서는_받은_커서의_세대를_승계한다() {
+        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 1));
+        long issuedGeneration = PlaceListCursor.decode(page1.nextCursor()).generation();
+
+        PlaceFilterGetResponse page2 =
+                placeService.getPlaces(me, popularRequest(page1.nextCursor(), 1));
+
+        assertThat(PlaceListCursor.decode(page2.nextCursor()).generation())
+                .isEqualTo(issuedGeneration);
+    }
+
+    /**
+     * <b>커서를 다른 필터 조합에 재사용하면 명시적 오류다.</b>
+     *
+     * <p>지문 검증이 없으면 서버는 아무 불평 없이 "새 필터에서 정렬 키 X 아래"를 돌려준다 —
+     * 요청한 적 없는 페이지가 200으로 나가고, 클라이언트는 자기가 무엇을 받았는지 알 방법이 없다.
+     * 커서를 권위로 삼아 <em>옛 필터</em> 결과를 주는 선택지도 있었지만 그것 역시 조용한 오답이라
+     * 기각했다(설계 §5).
+     *
+     * <p>동네 축과 태그 축을 함께 흔드는 이유는 지문이 <b>축마다</b> 제 몫을 하는지 보기 위해서다 —
+     * 한 축만 검증하면 나머지 축이 지문에서 통째로 빠져도 통과한다.
+     */
+    @Test
+    void 커서를_다른_필터_요청에_재사용하면_거부한다() {
+        String cursor = placeService.getPlaces(me, popularRequest(null, 2)).nextCursor();
+        long otherTownId = createTown(TOWN_NAME_PREFIX + "다른");
+        long mainTagId = createMainTag();
+
+        PlaceFilterGetRequest otherTown = new PlaceFilterGetRequest(
+                otherTownId, false, null, null, null, PlaceSortType.POPULAR, cursor, 2);
+        PlaceFilterGetRequest otherTag = new PlaceFilterGetRequest(
+                townId, false, mainTagId, null, null, PlaceSortType.POPULAR, cursor, 2);
+
+        assertThatThrownBy(() -> placeService.getPlaces(me, otherTown))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PLACE_CURSOR);
+        assertThatThrownBy(() -> placeService.getPlaces(me, otherTag))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PLACE_CURSOR);
+    }
+
+    /**
+     * <b>현 세대도 직전 세대도 아닌 커서는 오류가 아니라 강등이다.</b> 스크롤을 열어 둔 채 두 세대가
+     * 지나간 경우(배치 간격이 1시간이므로 2시간 이상 방치)인데, 그 커서가 가리키던 좌표계는 이미
+     * 어디에도 없다. 여기서 400을 내면 "오래 놔뒀다가 스크롤을 이어갔더니 에러"가 되므로,
+     * 현 세대로 강등해 정상 응답한다 — 세대 고정 이전에 이미 수용하던 동작(페이지 사이 소량 어긋남)과
+     * 같은 수준으로 되돌아갈 뿐이다.
+     *
+     * <p>결과가 정상 스크롤의 2페이지와 <b>같아야</b> 한다는 것이 "현 세대로 강등"의 정의다.
+     * 강등 대신 prev 컬럼으로 정렬하면 이 픽스처에서는 prev가 전부 NULL이라 빈 페이지가 나온다 —
+     * 그 회귀가 여기서 잡힌다.
+     */
+    @Test
+    void 두_세대_이상_지난_커서는_현_세대로_강등돼_정상_응답한다() {
+        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
+        PlaceListCursor issued = PlaceListCursor.decode(page1.nextCursor());
+        String staleCursor = new PlaceListCursor(
+                issued.sort(), issued.sortKey(), issued.placeId(),
+                issued.generation() - 86_400L,   // 하루 전 — 어느 세대와도 맞지 않는다
+                issued.filterPrint()).encode();
+
+        PlaceFilterGetResponse page2 = placeService.getPlaces(me, popularRequest(staleCursor, 2));
+
+        assertThat(ids(page2)).containsExactly(placeB);
+    }
+
+    /**
+     * <b>LATEST의 세대는 0이다.</b> {@code created_at}은 배치가 만지지 않는 불변 축이라 좌표계가
+     * 갈릴 일이 없고, 세대를 실으면 "배치가 돌 때마다 최신순 커서가 강등된다"는 뜻 없는 동작이 붙는다.
+     * 필터 지문 검증은 정렬과 무관하게 동일하게 적용된다.
+     */
+    @Test
+    void 최신순_커서의_세대는_0이고_필터_지문은_그대로_검증된다() {
+        long latestTownId = createTown(LATEST_TOWN_NAME + "세대");
+        createPlace(latestTownId, "db직행세대1", PLACE_CREATED_AT);
+        createPlace(latestTownId, "db직행세대2", PLACE_CREATED_AT);
+
+        String cursor =
+                placeService.getPlaces(me, latestRequest(latestTownId, null, 1)).nextCursor();
+
+        assertThat(PlaceListCursor.decode(cursor).generation()).isZero();
+        assertThatThrownBy(() -> placeService.getPlaces(me, latestRequest(townId, cursor, 1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PLACE_CURSOR);
     }
 
     /**
@@ -508,6 +629,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
+            // 배치는 place_stats뿐 아니라 세대 레지스터도 민다(V28). 값을 남기면 뒤 클래스가
+            // "아직 배치가 안 돈" 상태를 전제할 수 없다. 1행 레지스터라 DELETE가 아니라 UPDATE다.
+            st.executeUpdate("""
+                    UPDATE place_stats_meta
+                       SET current_generation = NULL, prev_generation = NULL
+                     WHERE id = 1
+                    """);
             st.executeUpdate(
                     "DELETE FROM bookmarks WHERE target_type = 'PLACE' AND target_id IN ("
                             + myPlaces + ")");

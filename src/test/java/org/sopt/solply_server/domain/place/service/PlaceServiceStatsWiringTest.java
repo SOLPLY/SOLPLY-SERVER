@@ -31,6 +31,7 @@ import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
@@ -91,6 +92,12 @@ class PlaceServiceStatsWiringTest {
   @Mock private TownHierarchyResolver townHierarchyResolver;
   @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
   @Mock private PlaceStatsRepository placeStatsRepository;
+  /**
+   * 이 파일의 요청은 전부 페이징이 아니라(cursor·size 없음) 커서를 발급하지 않으므로 세대를
+   * 알아낼 이유가 없다 — 스텁 없이 두는 것이 곧 "이 경로는 메타를 읽지 않는다"는 단언이다.
+   * 읽기 시작하면 스텁 없는 목이 null을 돌려줘 NPE로 즉시 드러난다.
+   */
+  @Mock private PlaceStatsMetaRepository placeStatsMetaRepository;
 
   @InjectMocks private PlaceService placeService;
 
@@ -124,8 +131,10 @@ class PlaceServiceStatsWiringTest {
     // UnfinishedStubbingException이 난다 — 반드시 먼저 만들어 둔다.
     Place place = placeEntity();
     if (sort == PlaceSortType.POPULAR) {
+      // 페이징 인자가 없으면 커서도 없으므로 세대 분기는 늘 현 세대(false)다 —
+      // 직전 세대 정렬은 커서가 있을 때만 성립한다(첫 페이지는 언제나 현 세대에서 발급된다).
       given(placeListDbQueryRepository.findPopularRows(
-          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+          List.of(TOWN_ID), null, null, null, false, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(new PopularRow(1L, 9.0, bookmarkCount)));
     } else {
       given(placeListDbQueryRepository.findLatestRows(

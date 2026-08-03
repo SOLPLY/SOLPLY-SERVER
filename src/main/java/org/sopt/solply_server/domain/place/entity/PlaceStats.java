@@ -55,7 +55,9 @@ import lombok.NoArgsConstructor;
         name = "place_stats",
         indexes = {
                 @Index(name = "idx_place_stats_town_score",
-                       columnList = "town_id, popular_score DESC, place_id, bookmark_count")
+                       columnList = "town_id, popular_score DESC, place_id, bookmark_count"),
+                @Index(name = "idx_place_stats_town_prev_score",
+                       columnList = "town_id, prev_popular_score DESC, place_id, bookmark_count")
         }
 )
 @Getter
@@ -71,6 +73,27 @@ public class PlaceStats {
 
     @Column(name = "popular_score", nullable = false, precision = 18, scale = 6)
     private BigDecimal popularScore;
+
+    /**
+     * <b>직전 배치 세대</b>의 {@code popular_score}. 배치가 현 점수를 새 값으로 덮기 직전에
+     * 이 컬럼으로 밀어낸다(V28).
+     *
+     * <p><b>왜 한 벌을 더 드는가.</b> 커서는 "점수 X, id Y 다음"이라는 좌표인데, 스크롤 세션
+     * 도중 배치가 돌면 그 좌표계가 통째로 갈려 다음 페이지가 항목을 흘리거나 겹친다. 커서에
+     * 세대 식별자를 실어 두고 그 세대의 점수 컬럼으로 정렬하면 세션 내내 좌표계가 고정된다.
+     * 증분은 카운트만 만지므로(점수는 배치 전용) 세대 <em>안쪽</em>은 원래 정적이었다 —
+     * 이 컬럼이 봉합하는 것은 세대 <b>경계</b>뿐이다.
+     *
+     * <p><b>NULL의 뜻은 "이전 세대에 이 장소가 없었다"</b>이며, prev 정렬은 그 행을 제외한다.
+     * 0으로 채우면 배치 이후 생긴 신규 장소가 이전 세대 목록 꼬리에 유령으로 낀다.
+     *
+     * <p>주 사용자는 네이티브 쿼리다 — 밀어내는 쪽은
+     * {@code PlaceStatsRepository#upsertAll}의 {@code ON DUPLICATE KEY UPDATE},
+     * 읽는 쪽은 {@code PlaceListDbQueryRepository#findPopularRows}의 세대 분기다.
+     * 여기 필드는 스키마 정합 검증(ddl-auto=validate)과 테스트 단언용이다.
+     */
+    @Column(name = "prev_popular_score", precision = 18, scale = 6)
+    private BigDecimal prevPopularScore;
 
     @Column(name = "bookmark_count", nullable = false)
     private int bookmarkCount;

@@ -112,6 +112,20 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * {@code binlog_format = ROW}, {@code log_bin = 1}임을 확인했으므로 현재는 안전하다.
      * 운영 DB의 {@code @@binlog_format}이 STATEMENT/MIXED로 바뀌면 이 배치가 통째로 실패한다.
      *
+     * <p><b>{@code prev_popular_score} 시프트 — 대입 <em>순서</em>가 계약이다 (V28).</b>
+     * {@code ON DUPLICATE KEY UPDATE}의 대입은 MySQL이 <b>좌에서 우로</b> 평가하고, 오른쪽에 쓴
+     * 컬럼 이름은 그 시점까지 갱신된 값을 가리킨다. 그래서 {@code prev_popular_score = popular_score}가
+     * {@code popular_score = VALUES(popular_score)}보다 <b>반드시 먼저</b> 와야 직전 세대 값이 잡힌다 —
+     * 순서를 뒤집으면 prev에 새 값이 들어가 두 컬럼이 같아지고, 세대 고정이 조용히 무의미해진다
+     * (테스트는 {@code 배치는_직전_세대의_점수를_prev로_밀어낸다}가 문다).
+     * INSERT 컬럼 목록에는 prev를 넣지 않는다 — 신규 행의 prev는 NULL, 즉 "이전 세대에 없던 장소"다.
+     *
+     * <p>이 시프트는 <b>멱등성 주장의 예외</b>다. 같은 {@code calculatedAt}으로 두 번 돌리면
+     * 점수·카운트는 그대로지만 prev가 현 점수로 덮여 진짜 직전 세대 값을 잃는다. 재실행이
+     * 세대를 하나 "태우는" 셈인데, 그 결과 상태({@code prev == popular_score})는 그 자체로
+     * 정합적이라(어느 커서든 같은 순서를 본다) 수용한다. 위 멱등성 문장이 말하는 "결과"는
+     * 원본에서 재계산되는 값들이고, prev는 재계산이 아니라 <em>이력</em>이라 성질이 다르다.
+     *
      * <p><b>{@code VALUES(col)} 문법 — deprecated이며 경고가 실제로 뜬다.</b>
      * mysql:8.0(8.0.41) 실측 기준 이 문장 1회 실행마다
      * {@code Warning 1287: 'VALUES function' is deprecated ...}이 <b>6건</b>(ON DUPLICATE KEY UPDATE의
@@ -177,12 +191,13 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             GROUP BY pr.place_id
         ) r ON r.place_id = p.id
         ON DUPLICATE KEY UPDATE
-            town_id        = VALUES(town_id),
-            popular_score  = VALUES(popular_score),
-            bookmark_count = VALUES(bookmark_count),
-            review_count   = VALUES(review_count),
-            avg_rating     = VALUES(avg_rating),
-            calculated_at  = VALUES(calculated_at)
+            prev_popular_score = popular_score,
+            town_id            = VALUES(town_id),
+            popular_score      = VALUES(popular_score),
+            bookmark_count     = VALUES(bookmark_count),
+            review_count       = VALUES(review_count),
+            avg_rating         = VALUES(avg_rating),
+            calculated_at      = VALUES(calculated_at)
         """, nativeQuery = true)
     int upsertAll(
             @Param("calculatedAt") LocalDateTime calculatedAt,

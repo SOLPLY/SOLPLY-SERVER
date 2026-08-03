@@ -18,11 +18,15 @@ import org.springframework.stereotype.Repository;
  * 같은 랭킹 소스를 써서 응답이 동일해야 한다는 성질이 벤치의 검증 장치였다. 판정은 B였고
  * ({@code docs/perf/2026-08-01-cache-vs-db-direct.md}) 캐시는 철거됐다.
  *
- * <p><b>커서 계약.</b> {@code PlaceListCursor} v2를 그대로 쓴다 — 코덱이 캐시 시절과 같으므로
- * 철거 배포 중 스크롤하던 클라이언트의 커서도 거부되지 않는다. sortKey는 POPULAR이 popular_score의
- * double, LATEST가 createdAt의 epoch 초(UTC)이고, 정렬 규칙은 POPULAR (점수 DESC, id ASC) /
+ * <p><b>커서 계약.</b> {@code PlaceListCursor} v3를 쓴다. sortKey는 POPULAR이 점수 컬럼의 double,
+ * LATEST가 createdAt의 epoch 초(UTC)이고, 정렬 규칙은 POPULAR (점수 DESC, id ASC) /
  * LATEST (생성일 DESC, id DESC)다. 발급하는 쪽({@code PlaceService})과 해석하는 쪽(여기)이
  * 한 쌍이라 한쪽만 바꾸면 페이징이 조용히 어긋난다.
+ *
+ * <p>v3에서 POPULAR의 "점수 컬럼"이 <b>커서 세대에 따라 갈린다</b> — 현 세대는
+ * {@code popular_score}, 직전 세대는 {@code prev_popular_score}다. 어느 쪽인지 <em>판정</em>하는
+ * 것은 서비스이고 여기는 {@code usePrevGeneration}으로 받기만 한다 (근거는
+ * {@link #findPopularRows} javadoc).
  *
  * <p>태그 필터 의미론은 북마크 검색의 {@code PlaceTagMatcher}와 같다 (타입 내 OR, 타입 간 AND,
  * 메인 태그가 없으면 서브 태그는 무시).
@@ -129,33 +133,76 @@ public class PlaceListDbQueryRepository {
      * <p>LATEST는 기준 테이블이 places라 이 예외가 없다 — 같은 파일 안에서 두 정렬의 기준 테이블이
      * 비대칭인 것은 의도된 것이다. 신규 장소야말로 최신순 맨 앞에 와야 할 대상이기 때문이다.
      *
-     * @param cursorScore   커서의 sortKey(popular_score). null이면 첫 페이지
+     * <p><b>세대 분기 (V28).</b> {@code usePrevGeneration}이 참이면 정렬 축이
+     * {@code prev_popular_score}로 바뀐다 — SELECT·ORDER BY·커서 술어 <b>셋 다</b>다.
+     * 셋을 함께 바꾸는 것이 계약이다: 정렬만 바꾸면 커서의 sortKey(직전 세대 점수)를 현 세대
+     * 컬럼과 비교하게 되어 경계가 엉뚱한 곳에 찍히고, SELECT를 안 바꾸면 서비스가 다음 커서에
+     * 현 세대 값을 담아 다음 페이지에서 같은 어긋남이 난다.
+     * 인덱스도 짝이 있다 — {@code idx_place_stats_town_prev_score}(V28)가 현 세대의
+     * {@code idx_place_stats_town_score}와 같은 역할을 한다. mysql:8.0 · 장소 6,300 · 동네 350
+     * (동네당 18, prev NULL 5%) EXPLAIN 실측(2026-08-03):
+     * <table>
+     *   <caption>세대별 접근 경로</caption>
+     *   <tr><th>조회</th><th>key</th><th>type</th><th>Extra</th></tr>
+     *   <tr><td>동네 1개 · 현 세대</td><td>idx_place_stats_town_score</td><td>ref</td>
+     *       <td>Using index</td></tr>
+     *   <tr><td>동네 1개 · 직전 세대</td><td>idx_place_stats_town_prev_score</td><td>range</td>
+     *       <td>Using index</td></tr>
+     *   <tr><td>시(leaf 18) · 직전 세대 + 커서</td><td>idx_place_stats_town_prev_score</td>
+     *       <td>range (171행)</td><td>Using index; Using filesort</td></tr>
+     * </table>
+     * 셋 다 커버링이라 클러스터드 인덱스로 되돌아가지 않는다. prev 쪽이 {@code ref}가 아니라
+     * {@code range}인 것은 {@code IS NOT NULL} 술어가 붙기 때문이고, 스캔 대상은 여전히 그
+     * town들의 행뿐이다. 시 단위의 filesort는 현 세대와 같은 이유로 남는다(다중 range라 각 range가
+     * 각자 정렬돼 있을 뿐 전역 정렬이 아니다 — 위 ① 참조).
+     *
+     * <p>{@code AND ps.prev_popular_score IS NOT NULL}은 필터가 아니라 <b>의미론</b>이다.
+     * NULL은 "직전 세대에 이 장소가 없었다"(배치 이후 생긴 신규 장소)는 뜻이라, 그 세대의
+     * 목록에 끼워 넣는 것이 오답이다. 술어 없이도 MySQL은 {@code ORDER BY ... DESC}에서 NULL을
+     * 맨 뒤로 보내 겉보기엔 자연스럽지만, 페이지 꼬리에 <em>그 세대에 존재하지 않던</em> 장소가 붙는다.
+     *
+     * <p><b>표시 카운트는 세대와 무관하게 현재 값이다.</b> {@code bookmark_count}는 어느 세대로
+     * 정렬하든 같은 컬럼에서 읽는다 — 세대가 고정하는 것은 <em>순위</em>뿐이고, 화면의 북마크 수는
+     * 증분이 방금 올린 값이 즉시 보여야 한다(그것이 증분을 만든 이유다). 카운트를 세대별로 얼리면
+     * 스크롤 중인 사용자에게만 숫자가 최대 1시간 묵는데, 순위와 달리 카운트는 페이지 사이에
+     * 흔들려도 항목을 흘리거나 겹치게 하지 않으므로 얼릴 이유가 없다.
+     *
+     * @param usePrevGeneration true면 직전 세대({@code prev_popular_score}) 축으로 정렬한다.
+     *                          커서 세대 판정은 호출자({@code PlaceService})의 몫이다
+     * @param cursorScore   커서의 sortKey — 세대에 맞는 점수 컬럼의 값. null이면 첫 페이지
      * @param cursorPlaceId 커서의 장소 id. null이면 첫 페이지
      */
     @SuppressWarnings("unchecked")
     public List<PopularRow> findPopularRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
-            Double cursorScore, Long cursorPlaceId, int limit) {
+            boolean usePrevGeneration, Double cursorScore, Long cursorPlaceId, int limit) {
 
         boolean useMainTag = mainTagId != null;
         boolean useSubA = useMainTag && subTagAIds != null && !subTagAIds.isEmpty();
         boolean useSubB = useMainTag && subTagBIds != null && !subTagBIds.isEmpty();
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
+        // 점수 컬럼 이름을 한 번만 정하고 세 자리(SELECT·커서 술어·ORDER BY)에 같은 값을 흘린다.
+        // 자리마다 따로 쓰면 한 곳만 고치는 실수가 조용히 통과한다.
+        String scoreColumn = usePrevGeneration ? "ps.prev_popular_score" : "ps.popular_score";
+
         StringBuilder sql = new StringBuilder("""
-                SELECT ps.place_id, ps.popular_score, ps.bookmark_count
+                SELECT ps.place_id, %s, ps.bookmark_count
                 FROM place_stats ps
                 JOIN places p ON p.id = ps.place_id AND p.active = 1
                 WHERE ps.town_id IN (:townIds)
-                """);
+                """.formatted(scoreColumn));
+        if (usePrevGeneration) {
+            sql.append("  AND ps.prev_popular_score IS NOT NULL\n");
+        }
         appendTagFilters(sql, useMainTag, useSubA, useSubB);
         if (useCursor) {
             sql.append("""
-                      AND (ps.popular_score < :cursorScore
-                           OR (ps.popular_score = :cursorScore AND ps.place_id > :cursorPlaceId))
-                    """);
+                      AND (%1$s < :cursorScore
+                           OR (%1$s = :cursorScore AND ps.place_id > :cursorPlaceId))
+                    """.formatted(scoreColumn));
         }
-        sql.append("ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT :limitSize");
+        sql.append("ORDER BY %s DESC, ps.place_id ASC LIMIT :limitSize".formatted(scoreColumn));
 
         Query query = em.createNativeQuery(sql.toString())
                 .setParameter("townIds", townIds)
