@@ -508,6 +508,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
+            // 배치는 place_stats뿐 아니라 세대 레지스터도 민다(V28). 값을 남기면 뒤 클래스가
+            // "아직 배치가 안 돈" 상태를 전제할 수 없다. 1행 레지스터라 DELETE가 아니라 UPDATE다.
+            st.executeUpdate("""
+                    UPDATE place_stats_meta
+                       SET current_generation = NULL, prev_generation = NULL
+                     WHERE id = 1
+                    """);
             st.executeUpdate(
                     "DELETE FROM bookmarks WHERE target_type = 'PLACE' AND target_id IN ("
                             + myPlaces + ")");
