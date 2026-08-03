@@ -323,7 +323,10 @@ public class PlaceService {
     String nextCursor = hasNext && !rows.isEmpty()
         ? new PlaceListCursor(sort,
             rows.get(rows.size() - 1).sortKey(),
-            rows.get(rows.size() - 1).placeId()).encode()
+            rows.get(rows.size() - 1).placeId(),
+            0L,
+            PlaceListCursor.filterPrintOf(request.townId(), request.mainTagId(),
+                request.subTagAIdList(), request.subTagBIdList())).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
