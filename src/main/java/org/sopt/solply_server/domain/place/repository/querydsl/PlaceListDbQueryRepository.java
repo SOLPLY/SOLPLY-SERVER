@@ -85,6 +85,34 @@ public class PlaceListDbQueryRepository {
      * 적었으나 실측으로 뒤집혔다. 이 변경을 A/B 측정 직후가 아니라 캐시 제거와 함께 넣은 이유는,
      * 측정이 끝난 조건을 바꾸면 그 판정의 근거가 흔들리기 때문이다.
      *
+     * <p><b>조인이 {@code STRAIGHT_JOIN}인 이유 — 커서가 붙으면 옵티마이저가 조인 순서를
+     * 뒤집는다 (2026-08-04 실측, 캠페인 {@code 2026-08-04_saturation-amplification}).</b>
+     * 커서 술어의 {@code ps.place_id > :cursorPlaceId}가 조인 등식({@code p.id = ps.place_id})을
+     * 타고 {@code p.id > :cursorPlaceId}로 전파되면서 places 주도 플랜이 후보로 생기는데,
+     * 옵티마이저가 {@code p.active = 1}의 선택도를 기본 추정치 10%로 계산해(실제는 거의 100%)
+     * 그쪽 비용을 실제의 1/10로 본다(cost 880 vs 991). 실행은 정반대다 —
+     * {@code idx_places_town_active} 전량 스캔(어느 시를 조회하든 전국 6,342 엔트리) + 행마다
+     * ps PK 되짚기 + Using temporary + filesort. 포화 때만이 아니라 <b>커서 요청이면 항상</b>
+     * 이 플랜이라, 부하 믹스에서 요청의 17%(스크롤 2페이지)가 행 읽기의 76%를 차지했다.
+     *
+     * <p>{@code STRAIGHT_JOIN}이 고정하는 것은 "ps가 주도 테이블"뿐이다 — 그것은 이 경로의
+     * 존재 이유(위 인덱스가 필터·정렬·커버링을 흡수)라 옵티마이저에게 맡길 이유가 없는 유일한
+     * 자유도이고, <b>인덱스 선택은 옵티마이저에 남는다</b>(세대별 인덱스도 스스로 고른다).
+     * 기각한 대안 둘:
+     * <ul>
+     *   <li><b>FORCE INDEX 상시화</b> — 같은 플랜을 얻고 효과도 실측됐지만(캠페인 조건 ③ A/B,
+     *       500 지점 처리량 2.7배) 인덱스 이름에 코드가 결합되고, 이름이 틀리면 쿼리가 통째로
+     *       에러이며, 미래의 더 나은 인덱스도 배제한다.</li>
+     *   <li><b>파생 테이블로 ps 선별을 먼저 끝내는 재구성</b> — LIMIT을 파생 테이블 안에 두면
+     *       바깥 {@code p.active} 필터가 행을 떨궈 페이지가 모자랄 수 있고, 그 순간 서비스의
+     *       {@code hasNext(= rows > pageSize)} 판정이 거짓이 되어 <b>뒤가 남았는데 스크롤이
+     *       끝난다</b>(정합성 회귀). LIMIT 없이 머지만 차단하면 요청당 임시테이블 실체화가
+     *       되돌아온다 — DISTINCT 제거(2026-08-04)로 지운 비용의 복원.</li>
+     * </ul>
+     * EXPLAIN 재검증(2026-08-04, 캠페인과 동일한 고정 파라미터): 현/직전 세대 커서 모두
+     * ps 주도 range(1,799행, 커버링)로 복귀, town·city·tag 케이스는 플랜 불변 —
+     * {@code load-test/campaigns/2026-08-04_saturation-amplification/results/explain/post-fix-straight-join.txt}.
+     *
      * <p><b>술어를 ps 컬럼으로 잡고 신선도는 조인으로 거르는 이유.</b> town_id는 places에서
      * 비정규화해 온 값이라 배치 간격만큼 낡을 수 있다(V24 주석). 그럼에도 WHERE를 ps 쪽에 거는 것은
      * places와 JOIN한 조건으로는 위 인덱스가 정렬에 쓰이지 못해 이 경로의 존재 이유가 사라지기
@@ -189,7 +217,7 @@ public class PlaceListDbQueryRepository {
         StringBuilder sql = new StringBuilder("""
                 SELECT ps.place_id, %s, ps.bookmark_count
                 FROM place_stats ps
-                JOIN places p ON p.id = ps.place_id AND p.active = 1
+                STRAIGHT_JOIN places p ON p.id = ps.place_id AND p.active = 1
                 WHERE ps.town_id IN (:townIds)
                 """.formatted(scoreColumn));
         if (usePrevGeneration) {
