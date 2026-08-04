@@ -35,6 +35,7 @@
 
 ## 스킬
 - `/review-plan` — 현재 플랜을 GPT 추론 모델에 전송하여 리스크·개선점을 검토받고 한국어로 요약 반환 (필수: `OPENAI_API_KEY`)
+- `load-test` — 부하 테스트 계획·실행·기록. **측정 전에 증명할 주장(문제·가설·선택·주장·성공조건)을 확인받는 게이트를 강제한다.** 성능 측정·벤치마크·A/B 비교 요청 시 자동 발동
 
 ## 세션 관리
 - **시작 시:** [TODO.md](./TODO.md)를 읽고 현재 상태를 파악한다.
@@ -45,4 +46,6 @@
 - 아키텍처 및 패키지 구조: [docs/architecture.md](docs/architecture.md)
 - 코드 컨벤션 및 GitHub 규칙: [docs/conventions.md](docs/conventions.md)
 - GitHub 워크플로우 상세: [docs/github-workflow.md](docs/github-workflow.md)
+- 부하 테스트 방법론: [docs/perf/load-test-guide.md](docs/perf/load-test-guide.md)
+- 부하 테스트 디렉터리 지도: [load-test/README.md](load-test/README.md)
 - 현재 작업 목록: [TODO.md](./TODO.md)

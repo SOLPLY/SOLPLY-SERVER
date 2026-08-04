@@ -1,0 +1,55 @@
+==================== 시점: pre-load / 02:46:53 ====================
+################################################################
+# [pre-load] city-nocursor (leaf 18개, 커서 없음)   (2026-08-04 02:46:53)
+################################################################
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------+------+----------+------------------------------------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                        | key_len | ref                         | rows | filtered | Extra                                    |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------+------+----------+------------------------------------------+
+|  1 | SIMPLE      | ps    | NULL       | range  | PRIMARY,idx_place_stats_town_score,idx_place_stats_town_prev_score | idx_place_stats_town_score | 8       | NULL                        | 1800 |   100.00 | Using where; Using index; Using filesort |
+|  1 | SIMPLE      | p     | NULL       | eq_ref | PRIMARY                                                            | PRIMARY                    | 8       | solply_bench_db.ps.place_id |    1 |    10.00 | Using where                              |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------+------+----------+------------------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 21 row(s)  (cost=992 rows=21)\n    -> Nested loop inner join  (cost=992 rows=180)\n        -> Sort: ps.popular_score DESC, ps.place_id  (cost=362 rows=1800)\n            -> Filter: (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318))  (cost=362 rows=1800)\n                -> Covering index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=362 rows=1800)\n        -> Filter: (p.`active` = 1)  (cost=0.25 rows=0.1)\n            -> Single-row index lookup on p using PRIMARY (id=ps.place_id)  (cost=0.25 rows=1)\n
+
+################################################################
+# [pre-load] city-cursor   (leaf 18개, 대표 커서)   (2026-08-04 02:46:53)
+################################################################
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+----------------------+------+----------+-----------------------------------------------------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                    | key_len | ref                  | rows | filtered | Extra                                                     |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+----------------------+------+----------+-----------------------------------------------------------+
+|  1 | SIMPLE      | p     | NULL       | index  | PRIMARY                                                            | idx_places_town_active | 9       | NULL                 | 6342 |    10.00 | Using where; Using index; Using temporary; Using filesort |
+|  1 | SIMPLE      | ps    | NULL       | eq_ref | PRIMARY,idx_place_stats_town_score,idx_place_stats_town_prev_score | PRIMARY                | 8       | solply_bench_db.p.id |    1 |    11.45 | Using where                                               |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+----------------------+------+----------+-----------------------------------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 21 row(s)\n    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 21 row(s) per chunk\n        -> Stream results  (cost=880 rows=72.6)\n            -> Nested loop inner join  (cost=880 rows=72.6)\n                -> Filter: (p.`active` = 1)  (cost=658 rows=634)\n                    -> Index scan on p using idx_places_town_active  (cost=658 rows=6342)\n                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.popular_score < 11662.295015) or ((ps.popular_score = 11662.295015) and (p.id > 10503))))  (cost=0.25 rows=0.115)\n                    -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1)\n
+
+################################################################
+# [pre-load] town-nocursor (동네 1개=301)   (2026-08-04 02:46:53)
+################################################################
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------+------+----------+-------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                        | key_len | ref                         | rows | filtered | Extra       |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------+------+----------+-------------+
+|  1 | SIMPLE      | ps    | NULL       | ref    | PRIMARY,idx_place_stats_town_score,idx_place_stats_town_prev_score | idx_place_stats_town_score | 8       | const                       |  100 |   100.00 | Using index |
+|  1 | SIMPLE      | p     | NULL       | eq_ref | PRIMARY                                                            | PRIMARY                    | 8       | solply_bench_db.ps.place_id |    1 |    10.00 | Using where |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------+------+----------+-------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 21 row(s)  (cost=45.4 rows=10)\n    -> Nested loop inner join  (cost=45.4 rows=10)\n        -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=10.4 rows=100)\n        -> Filter: (p.`active` = 1)  (cost=0.25 rows=0.1)\n            -> Single-row index lookup on p using PRIMARY (id=ps.place_id)  (cost=0.25 rows=1)\n
+
+################################################################
+# [pre-load] tag-filter    (동네 305 + mainTag 3)   (2026-08-04 02:46:53)
+################################################################
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------------+------+----------+-------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                        | key_len | ref                               | rows | filtered | Extra       |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------------+------+----------+-------------+
+|  1 | SIMPLE      | t     | NULL       | const  | PRIMARY,idx_tag_id_type                                            | PRIMARY                    | 8       | const                             |    1 |   100.00 | NULL        |
+|  1 | SIMPLE      | ps    | NULL       | ref    | PRIMARY,idx_place_stats_town_score,idx_place_stats_town_prev_score | idx_place_stats_town_score | 8       | const                             |  100 |   100.00 | Using index |
+|  1 | SIMPLE      | pt    | NULL       | eq_ref | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | uk_place_tag_place_tag     | 16      | solply_bench_db.ps.place_id,const |    1 |   100.00 | Using index |
+|  1 | SIMPLE      | p     | NULL       | eq_ref | PRIMARY                                                            | PRIMARY                    | 8       | solply_bench_db.ps.place_id       |    1 |    10.00 | Using where |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------------+---------+-----------------------------------+------+----------+-------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 21 row(s)  (cost=155 rows=10)\n    -> Nested loop inner join  (cost=155 rows=10)\n        -> Nested loop inner join  (cost=120 rows=100)\n            -> Covering index lookup on ps using idx_place_stats_town_score (town_id=305)  (cost=10.4 rows=100)\n            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=3)  (cost=1 rows=1)\n        -> Filter: (p.`active` = 1)  (cost=0.25 rows=0.1)\n            -> Single-row index lookup on p using PRIMARY (id=ps.place_id)  (cost=0.25 rows=1)\n
+

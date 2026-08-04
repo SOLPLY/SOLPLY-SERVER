@@ -118,3 +118,4 @@ load-test/bench/results/*
 load-test/bench/results/metrics/*
 # 예외: 인기순 벤치 서버 측 지표 (docs/perf/2026-07-place-popular-sort-benchmark.md §3·§4 근거)
 !load-test/bench/results/metrics/popular-v*
+load-test/campaigns/**/bench/node_modules

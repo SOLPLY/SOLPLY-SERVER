@@ -1,0 +1,107 @@
+# 읽기 전용 목표 부하 300 req/s (캠페인 ① 단일 지점) — 사전 등록: ../README.md
+# 직전 캠페인(2026-08-02) 믹스에서 bookmark-toggle 10%를 제거하고 읽기 4종을 재정규화했다
+# (36/18/18/18 → 40/20/20/20). 근거: 산정표상 피크 쓰기 ≈ 0.5%라 10%는 30배 과대 대표이고,
+# 중복 가드 결함(수정 전)의 예외 로깅이 앱 CPU를 오염시키므로 읽기 한계 질문에서 차단한다.
+# phases는 단독 정의한다 — Artillery `environments`는 phase 배열을 원소 단위로
+# 병합해 기본 프로파일이 잔존하는 버그가 있다 (#381 측정 실패 원인).
+config:
+  target: "http://localhost:8082"
+  payload:
+    # campaigns/<캠페인>/scenarios/ 기준 (실제 파일: load-test/data/users.csv)
+    path: "../../../data/users.csv"
+    fields:
+      - token
+    order: random
+    skipHeader: true
+  phases:
+    - name: "Warm up"
+      duration: 30
+      arrivalRate: 20
+    - name: "Ramp up"
+      duration: 30
+      arrivalRate: 30
+      rampTo: 300
+    - name: "Sustained load"
+      duration: 120
+      arrivalRate: 300
+  plugins:
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+
+scenarios:
+  # 동네 단위 인기순 첫 페이지 — 서울 leaf(301~318) 편중을 그대로 반영. 홈 기본 진입
+  - name: "popular-town"
+    weight: 40
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: "{{ $randomNumber(301, 318) }}"
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "GET /api/places (popular town)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # 시 단위 (서울 전체 = leaf 18개 합집합) — filesort가 남는 비싼 경로, 원인 가설의 용의자
+  - name: "popular-city"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "GET /api/places (popular city)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # 태그 필터 조합 — 같은 쿼리에 EXISTS 서브쿼리가 붙는 변형 (필터 부하 대표)
+  - name: "popular-tag-filter"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: "{{ $randomNumber(301, 318) }}"
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            mainTagId: "{{ $randomNumber(1, 6) }}"
+            size: 20
+          name: "GET /api/places (popular tag)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # 무한 스크롤: 1페이지 → nextCursor로 2페이지
+  # 다중 인스턴스에서 두 요청이 다른 인스턴스로 갈 수 있다 — 커서 정합성 검증 경로
+  - name: "popular-scroll"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "GET /api/places (scroll p1)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          capture:
+            json: "$.data.nextCursor"
+            as: "nextCursor"
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+            cursor: "{{ nextCursor }}"
+          name: "GET /api/places (scroll p2)"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          ifTrue: "nextCursor"
