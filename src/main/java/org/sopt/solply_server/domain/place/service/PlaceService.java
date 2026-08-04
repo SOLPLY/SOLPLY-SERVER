@@ -39,7 +39,6 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownHierarchyResolver;
-import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
@@ -61,10 +60,10 @@ public class PlaceService {
   private final ImageUrlProvider imageUrlProvider;
   private final TagValidator tagValidator;
   private final PlaceBookmarkFacade placeBookmarkFacade;
-  private final TownValidator townValidator;
+  /** 존재 검증까지 함께 맡는다 — {@code TownValidator}를 따로 두지 않는 근거는 resolver javadoc */
+  private final TownHierarchyResolver townHierarchyResolver;
   private final EntityLoader entityLoader;
   private final PlaceReviewRepository placeReviewRepository;
-  private final TownHierarchyResolver townHierarchyResolver;
   private final PlaceListDbQueryRepository placeListDbQueryRepository;
   private final PlaceStatsRepository placeStatsRepository;
   private final PlaceStatsMetaRepository placeStatsMetaRepository;
@@ -146,14 +145,15 @@ public class PlaceService {
       throw new JwtTokenException(ErrorCode.UNAUTHORIZED_USER);
     }
 
-    townValidator.validateTownId(request.townId());
+    // 존재 검증과 leaf 확장이 한 문장이다 — 근거는 TownRepository#findSelfAndActiveChildIds.
+    // 검증이 태그 검증보다 앞이라는 순서는 유지한다(동네가 없으면 태그 오류보다 그것이 먼저다).
+    List<Long> leafTownIds = townHierarchyResolver.resolveLeafTownIdsOrThrow(request.townId());
 
     if (request.mainTagId() != null) {
       tagValidator.validatePlaceTagConditions(
           request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
     }
 
-    List<Long> leafTownIds = townHierarchyResolver.resolveLeafTownIds(request.townId());
     PlaceSortType sort = request.sortOrDefault();
 
     if (Boolean.TRUE.equals(request.isBookmarkSearch())) {
@@ -314,8 +314,11 @@ public class PlaceService {
     }
 
     List<Long> pageIds = rows.stream().map(DbListRow::placeId).toList();
+    // 병합 함수 (a, b) -> a 는 방어다. 컬렉션 페치 조인은 태그 수만큼 루트를 펼치고, 그 중복을
+    // 지우는 주체는 SQL DISTINCT가 아니라 하이버네이트의 루트 중복 제거다(6부터 항상 켜짐).
+    // 그 동작에 의존하지 않고 여기서 닫아 둔다 — 같은 id면 같은 인스턴스라 어느 쪽을 남겨도 같다.
     Map<Long, Place> placesById = placeRepository.findPlacesWithTagsByIds(pageIds).stream()
-        .collect(Collectors.toMap(Place::getId, Function.identity()));
+        .collect(Collectors.toMap(Place::getId, Function.identity(), (a, b) -> a));
     Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
 
     // 표시 카운트는 row가 실어 온 place_stats 값 그대로다 — 응답을 만들면서 더하거나 빼지 않는다.
@@ -437,8 +440,9 @@ public class PlaceService {
       return PlaceFilterGetResponse.of(List.of(), null);
     }
 
+    // 병합 함수의 근거는 목록 경로와 같다 (findPlacesWithTagsByIds javadoc 참조)
     Map<Long, Place> byId = placeRepository.findPlacesWithTagsByIds(orderedIds).stream()
-        .collect(Collectors.toMap(Place::getId, Function.identity()));
+        .collect(Collectors.toMap(Place::getId, Function.identity(), (a, b) -> a));
 
     List<Place> mine = PlaceTagMatcher.filter(
         orderedIds.stream()

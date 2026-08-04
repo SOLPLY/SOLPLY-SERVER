@@ -42,7 +42,6 @@ import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.town.util.TownHierarchyResolver;
-import org.sopt.solply_server.domain.town.util.TownValidator;
 import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 
@@ -86,7 +85,6 @@ class PlaceServiceStatsWiringTest {
   @Mock private ImageUrlProvider imageUrlProvider;
   @Mock private TagValidator tagValidator;
   @Mock private PlaceBookmarkFacade placeBookmarkFacade;
-  @Mock private TownValidator townValidator;
   @Mock private EntityLoader entityLoader;
   @Mock private PlaceReviewRepository placeReviewRepository;
   @Mock private TownHierarchyResolver townHierarchyResolver;
@@ -162,7 +160,7 @@ class PlaceServiceStatsWiringTest {
 
   @BeforeEach
   void givenOneTown() {
-    given(townHierarchyResolver.resolveLeafTownIds(TOWN_ID)).willReturn(List.of(TOWN_ID));
+    given(townHierarchyResolver.resolveLeafTownIdsOrThrow(TOWN_ID)).willReturn(List.of(TOWN_ID));
     given(imageUrlProvider.getImageUrl(anyString())).willReturn("https://img/1");
   }
 

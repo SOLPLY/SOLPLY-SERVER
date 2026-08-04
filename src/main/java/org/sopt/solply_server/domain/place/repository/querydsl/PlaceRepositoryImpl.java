@@ -159,6 +159,19 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
      *
      * <p>{@code town}은 {@code nullable = false}라 inner join으로 충분하며, ToOne 페치 조인이라
      * {@code placeTags} 컬렉션 페치와 겹쳐도 곱집합이 늘지 않는다.
+     *
+     * <p><b>DISTINCT를 쓰지 않는다 (2026-08-03).</b> 여기 있던 {@code selectDistinct}가 지울 행은
+     * 구조적으로 없다 — 이 쿼리가 만드는 행의 유일성은 {@code (place, place_tag)} 조합이고,
+     * {@code place_tag}는 그 조합이 PK라 완전히 같은 행이 두 번 나올 수 없다. 태그가 2개인 장소가
+     * 2행으로 펼쳐지는 것은 컬렉션 페치 조인의 정상 동작이고 DISTINCT로 합쳐지지도 않는다
+     * (Hibernate 6부터 루트 중복 제거는 SQL DISTINCT와 무관하게 항상 적용된다 —
+     * {@code hibernate.query.passDistinctThrough}가 사라진 이유가 그것이다).
+     * 그런데 MySQL은 {@code SELECT DISTINCT} + 조인에 임시 테이블을 하나 깔았다 —
+     * 요청당 임시테이블 1개가 아무 행도 지우지 않는 값으로 지불되고 있었다.
+     *
+     * <p>루트 중복 제거를 하이버네이트 버전 동작에 의존하지 않기 위해, 호출부의
+     * {@code Collectors.toMap}에는 병합 함수를 둔다({@code PlaceService}의 두 호출부).
+     * 같은 id가 두 번 오더라도 같은 엔티티 인스턴스라 어느 쪽을 남겨도 결과가 같다.
      */
     @Override
     public List<Place> findPlacesWithTagsByIds(List<Long> ids) {
@@ -169,7 +182,7 @@ public class PlaceRepositoryImpl implements PlaceRepositoryCustom {
         QTag tag = QTag.tag;
 
         return queryFactory
-                .selectDistinct(place)
+                .select(place)
                 .from(place)
                 .join(place.town).fetchJoin()
                 .leftJoin(place.placeTags, placeTag).fetchJoin()

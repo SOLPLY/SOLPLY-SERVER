@@ -383,6 +383,43 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>태그가 2개 이상인 장소가 페이지에 있어도 응답은 1건이다.</b>
+     *
+     * <p>{@code findPlacesWithTagsByIds}가 {@code placeTags}를 컬렉션 페치 조인하므로 태그 2개인
+     * 장소는 SQL 행이 2개로 펼쳐진다. 여기 있던 {@code SELECT DISTINCT}는 그 2행을 합치지 못했고
+     * (행이 서로 달라 DISTINCT의 대상이 아니다) MySQL 임시 테이블만 하나 깔았으므로 걷어냈다
+     * (2026-08-03). 루트 중복 제거는 하이버네이트가 하고, 호출부의 {@code toMap}은 병합 함수로
+     * 그 동작에 의존하지 않는다 — 병합 함수가 빠지면 여기서 {@code IllegalStateException:
+     * Duplicate key}가 난다.
+     *
+     * <p>목록 경로와 북마크 검색 경로를 한 테스트에서 함께 걷는다 — {@code toMap} 호출부가 둘이고,
+     * 한쪽만 고치면 다른 쪽에서 같은 예외가 난다.
+     */
+    @Test
+    void 태그가_두_개인_장소도_목록과_북마크_검색에_한_번만_나온다() {
+        long mainTagId = createMainTag();
+        long optionTagId = createOptionTag();
+        linkTag(placeA, mainTagId);
+        linkTag(placeA, optionTagId);
+        String mainTagName = jdbcTemplate.queryForObject(
+                "SELECT name FROM tags WHERE id = ?", String.class, mainTagId);
+
+        PlaceFilterGetResponse page = placeService.getPlaces(me, popularRequest(null, 3));
+
+        // 3건 그대로 — placeA가 2행으로 왔지만 응답에는 한 번만 있다
+        assertThat(ids(page)).containsExactly(placeC, placeA, placeB);
+        // 태그가 두 개여도 대표 태그는 MAIN 하나로 확정된다
+        assertThat(previewOf(page, placeA).primaryTag()).isEqualTo(mainTagName);
+
+        // 같은 장소가 북마크 검색 경로에서도 1건이어야 한다 (다른 toMap 호출부)
+        insertBookmark(me, placeA, CALCULATED_AT.plusMinutes(60));
+        PlaceFilterGetResponse bookmarked =
+                placeService.getPlaces(me, bookmarkRequest(PlaceSortType.POPULAR, null, null));
+
+        assertThat(ids(bookmarked)).containsExactly(placeC, placeA, placeB);
+    }
+
+    /**
      * 표시 카운트는 place_stats 값 그대로다 — 조회 경로가 더하거나 빼지 않는다.
      * 목록 경로에서는 정렬 쿼리가 실어 온 {@code ps.bookmark_count}가 그 값이다.
      *
@@ -579,6 +616,19 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         jdbcTemplate.update("""
                 INSERT INTO tags (name, type, parent_id, active, tag_usage)
                 VALUES (?, 'MAIN', NULL, true, 'PLACE')""", name);
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM tags WHERE name = ?", Long.class, name);
+    }
+
+    /**
+     * 한 장소에 두 번째 태그를 달기 위한 OPTION1 태그. 태그 필터를 타지 않는 타입이라
+     * (요청의 태그 인자는 MAIN·서브 목록으로 갈린다) 순수하게 "행이 2개로 펼쳐지는" 조건만 만든다.
+     */
+    private long createOptionTag() {
+        String name = TAG_NAME_PREFIX + "옵션" + (++tagSeq);
+        jdbcTemplate.update("""
+                INSERT INTO tags (name, type, parent_id, active, tag_usage)
+                VALUES (?, 'OPTION1', NULL, true, 'PLACE')""", name);
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM tags WHERE name = ?", Long.class, name);
     }
