@@ -20,8 +20,13 @@ const ids = execSync(
 
 if (ids.length !== 1000) throw new Error(`expected 1000 ids, got ${ids.length} — 시드 먼저 실행`);
 
+// role 클레임 (2026-08-05, 22358cb): 발급 경로가 role을 싣게 되면서 인증이 DB 조회 없이
+// 끝나는 것이 정상 상태다. 클레임 없는 토큰은 레거시 폴백(+1 SQL)을 타므로, 부하용 토큰이
+// 폴백을 재지 않도록 여기도 함께 싣는다. 벤치 유저는 전원 일반 유저다.
+const ROLE = 'USER'; // UserRole.name()
+
 const tokens = ids.map((id) =>
-  jwt.sign({ type: 'access', platform: PLATFORM }, SECRET, {
+  jwt.sign({ type: 'access', platform: PLATFORM, role: ROLE }, SECRET, {
     algorithm: 'HS512',
     subject: String(id).trim(),
     expiresIn: '7d',
