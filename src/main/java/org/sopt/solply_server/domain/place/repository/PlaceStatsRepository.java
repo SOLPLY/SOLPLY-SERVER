@@ -15,8 +15,13 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 전체 장소의 인기순 복합 점수를 원본에서 재계산해 UPSERT한다.
      *
      * <pre>
-     * score = Σ북마크[W_B × 0.5^(경과일 / 반감기)] + Σ리뷰[W_R × (rating − 3) × 0.5^(경과일 / 반감기)]
+     * score = Σ북마크[W_B × 0.5^(경과일 / 반감기)] + Σ리뷰[W_R × (rating − 3)]
      * </pre>
+     *
+     * <p><b>감쇠가 북마크에만 걸리는 것은 의도적 비대칭이다.</b> 인기(북마크)는 최근 활동이라
+     * 감쇠하지만 평판(리뷰)은 시점 무관한 누적 판단이라 1건이 1표씩 그대로 들어간다 —
+     * 리뷰 항은 {@code W_R × 리뷰수 × (평균평점 − 3)}이 된다. 리뷰에 감쇠를 걸면 소수의 최근
+     * 저평점이 순위를 흔든다. 상세: {@code docs/design/2026-08-05-place-stats-version-rows.md} §0.
      *
      * <p><b>멱등성:</b> 감쇠 기준 시각을 파라미터로 받는다. 같은 {@code calculatedAt}으로
      * 몇 번을 실행하든 결과가 동일하다. NOW()를 쓰면 실행마다 값이 미세하게 달라져
@@ -28,7 +33,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 누르지 않았다면"이라는 사실상 성립하지 않는 조건부 주장이 된다. 상한을 지우지 말 것 —
      * 잃는 것은 성능이 아니라 이 문장의 참/거짓이다.
      *
-     * <p><b>상한이 없으면 감쇠가 아니라 증폭이 된다.</b> {@code created_at > calculatedAt}이면
+     * <p><b>상한이 없으면 북마크 축은 감쇠가 아니라 증폭이 된다.</b> {@code created_at > calculatedAt}이면
      * {@code TIMESTAMPDIFF}가 음수라 {@code POW(0.5, 음수) > 1}이 된다. 미래 시각 활동이 가중치보다
      * 큰 기여를 하는 셈이다 (실측: 오늘 북마크 4건이 {@code 4.00016}).
      *
@@ -148,10 +153,12 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * @param calculatedAt   감쇠 기준 시각이자 <b>집계 대상의 상한</b>. 이 시각 이후에 생긴 북마크·리뷰는
      *                       이번 세대에 반영되지 않는다. 호출자가 정해 넘기므로 같은 값이면 결과가 같다
      * @param bookmarkWeight 북마크 1건의 가중치. 감쇠 전 기여분이 그대로 이 값이다
-     * @param reviewWeight   리뷰 1건의 가중치. 실제 기여는 (rating − 3)이 곱해져 −2배 ~ +2배가 된다
-     * @param halfLifeDays   감쇠 반감기(일). 이 일수만큼 지난 활동의 기여가 절반이 된다.
+     * @param reviewWeight   리뷰 1건의 가중치. 실제 기여는 (rating − 3)이 곱해져 −2배 ~ +2배가 되고,
+     *                       감쇠는 걸리지 않으므로 리뷰가 얼마나 오래됐든 이 범위 그대로다
+     * @param halfLifeDays   감쇠 반감기(일). 이 일수만큼 지난 <b>북마크</b>의 기여가 절반이 된다
+     *                       (리뷰 항은 감쇠하지 않아 이 값을 타지 않는다).
      *                       <b>0을 넘기면 MySQL이 0으로 나눠 {@code NULL}을 만들고 COALESCE가 그것을
-     *                       0으로 삼켜 전 장소 점수가 조용히 0이 된다. 음수는 감쇠가 아니라 증폭이 된다.</b>
+     *                       0으로 삼켜 북마크 항이 조용히 통째로 0이 된다. 음수는 감쇠가 아니라 증폭이 된다.</b>
      *                       그래서 {@code PlaceStatsProperties}에서 {@code @Positive}로 부팅 시점에 막는다
      * @return 영향받은 행 수 (MySQL은 INSERT를 1, UPDATE를 2로 세므로 장소 수와 일치하지 않는다)
      */
@@ -183,9 +190,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             SELECT pr.place_id AS place_id,
                    COUNT(*) AS cnt,
                    AVG(pr.rating) AS avg_rating,
-                   SUM(:reviewWeight * (pr.rating - 3) * POW(0.5,
-                       TIMESTAMPDIFF(SECOND, pr.created_at, :calculatedAt)
-                           / 86400.0 / :halfLifeDays)) AS score
+                   SUM(:reviewWeight * (pr.rating - 3)) AS score
             FROM place_reviews pr
             WHERE pr.created_at <= :calculatedAt
             GROUP BY pr.place_id

@@ -400,9 +400,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     @Test
     void 평점은_3점을_중심으로_가감된다() {
-        insertReview(placeA, 5, 0);   // +3.0 * (5-3) * 1.0 = +6.0
-        insertReview(placeB, 3, 0);   //  3.0 * (3-3)       =  0.0
-        insertReview(placeC, 1, 0);   //  3.0 * (1-3) * 1.0 = -6.0
+        insertReview(placeA, 5, 0);   // +3.0 * (5-3) = +6.0
+        insertReview(placeB, 3, 0);   //  3.0 * (3-3) =  0.0
+        insertReview(placeC, 1, 0);   //  3.0 * (1-3) = -6.0
 
         runBatch();
 
@@ -411,16 +411,55 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(statsOf(placeC).getPopularScore().doubleValue()).isCloseTo(-6.0, within(0.000001));
     }
 
+    /**
+     * <b>리뷰 항에는 감쇠가 없다.</b> 같은 평점이면 언제 쓰인 리뷰든 기여가 같다 — 평판은
+     * 시점 무관한 누적 판단이라 1건이 1표씩 들어간다는 것이 공식의 주장이다.
+     *
+     * <p>감쇠가 살아 있으면 반감기(90일)만큼 지난 쪽만 절반으로 깎여 6.0 대 3.0으로 갈린다.
+     * 두 장소를 <em>서로</em> 비교하는 것이 핵심이다 — 절대값만 보면 가중치가 통째로 바뀌는
+     * 회귀와 구분되지 않는다.
+     */
+    @Test
+    void 리뷰_기여는_작성_시점과_무관하다() {
+        insertReview(placeA, 5, 0);    // 기준 시각 정각
+        insertReview(placeB, 5, 90);   // 반감기만큼 지난 리뷰
+
+        runBatch();
+
+        assertThat(statsOf(placeB).getPopularScore())
+                .isEqualByComparingTo(statsOf(placeA).getPopularScore());
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(6.0, within(0.000001));
+    }
+
+    /**
+     * 감쇠를 걷어내도 <b>저평점이 점수를 끌어내리는 성질은 유지</b>된다 (3점 중심화의 몫).
+     * 오히려 오래된 저평점이 더는 깎이지 않아 온전한 −2배로 들어온다.
+     *
+     * <p>감쇠가 남아 있으면 180일(반감기 2회)이 0.25로 깎여 −1.5, 합이 −0.5가 된다.
+     * 3점 중심화가 사라지면 리뷰가 점수를 <em>올려</em> 합이 양수가 된다. 둘 다 여기서 갈린다.
+     */
+    @Test
+    void 오래된_저평점_리뷰도_점수를_온전히_끌어내린다() {
+        insertBookmark(placeA, 0);      // +1.0
+        insertReview(placeA, 1, 180);   // 3.0 * (1-3) = -6.0 — 180일이 지나도 그대로
+
+        runBatch();
+
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(-5.0, within(0.000001));
+    }
+
     @Test
     void 북마크_점수와_리뷰_점수는_합산된다() {
         insertBookmark(placeA, 0);    // +1.0
-        insertBookmark(placeA, 90);   // +0.5
-        insertReview(placeA, 4, 90);  // +3.0 * (4-3) * 0.5 = +1.5
+        insertBookmark(placeA, 90);   // +0.5 (북마크는 감쇠한다)
+        insertReview(placeA, 4, 90);  // +3.0 * (4-3) = +3.0 (리뷰는 감쇠하지 않는다)
 
         runBatch();
 
         PlaceStats stats = statsOf(placeA);
-        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(3.0, within(0.000001));
+        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(4.5, within(0.000001));
         assertThat(stats.getBookmarkCount()).isEqualTo(2);
         assertThat(stats.getReviewCount()).isEqualTo(1);
         assertThat(stats.getAvgRating().doubleValue()).isCloseTo(4.0, within(0.005));
@@ -503,8 +542,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     /** 리뷰 축에도 같은 상한이 걸려 있어야 한다 — 점수·건수·평균 평점 셋 모두 영향을 받는다. */
     @Test
     void 기준시각_이후에_생긴_리뷰는_집계에_들어가지_않는다() {
-        insertReview(placeA, 5, 0);                       // +3.0 * (5-3) * 1.0 = +6.0
-        insertReviewAfterCalculatedAt(placeA, 1, 30);     // 무시돼야 한다 (반영되면 −6점대로 끌려간다)
+        insertReview(placeA, 5, 0);                       // +3.0 * (5-3) = +6.0
+        insertReviewAfterCalculatedAt(placeA, 1, 30);     // 무시돼야 한다 (반영되면 −6.0이 더해져 0점)
 
         runBatch();
 

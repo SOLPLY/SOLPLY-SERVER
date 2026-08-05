@@ -97,12 +97,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     /** 태그 필터 배선 검증용 태그의 이름 접두사 — 뒷정리가 이것으로 되찾는다 */
     private static final String TAG_NAME_PREFIX = "db직행IT태그";
 
-    // 점수가 전부 ≈인 것은 감쇠항 POW(0.5, 경과/90)이 "기준시각 1분 전"에도 미세하게 걸리기 때문이다
-    // (실측: C=5.999968, A=3.999979). 90일 전 북마크만 정확히 절반이라 B는 딱 떨어진다.
+    // 북마크 점수가 ≈인 것은 감쇠항 POW(0.5, 경과/90)이 "기준시각 1분 전"에도 미세하게 걸리기
+    // 때문이다 (실측: A=3.999979). 90일 전 북마크만 정확히 절반이라 B는 딱 떨어진다.
+    // C는 리뷰 항이라 감쇠가 없어 시점과 무관하게 정확히 6.0이다.
     private long townId;
     private long placeA;   // 기준시각 1분 전 남의 북마크 4건 → 점수 ≈ 4.0
     private long placeB;   // 90일 전 북마크 5건(남 4 + 나 1) → 점수 = 2.5 (정확히 절반)
-    private long placeC;   // 5점 리뷰 1건 → 점수 ≈ 6.0
+    private long placeC;   // 5점 리뷰 1건 → 점수 = 6.0
     private long me;       // 조회 주체 — 배치 "전"에 placeB를, 배치 "후"에 placeC를 북마크
 
     @BeforeEach
