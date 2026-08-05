@@ -674,16 +674,23 @@ Prometheus + Grafana가 붙어 있고 `application.yml`에
 
 ## A.4 실환경 대표성 — prod가 벤치보다 열악하다
 
-로컬을 "실서버보다 후한 환경"으로 착각하면 안 된다. 2026-07-30 기준 실측:
+로컬을 "실서버보다 후한 환경"으로 착각하면 안 된다. 2026-07-30 기준 실측
+(앱 인스턴스 행만 2026-08-05 토폴로지 변경을 반영했다):
 
 | | 로컬 벤치 | 실제 prod |
 |---|---|---|
-| 앱 인스턴스 | 2대 + nginx LB | **1대** (`prod-app`) |
+| 앱 인스턴스 | **1대** + nginx edge (2026-08-05 이전에는 2대 + LB) | **1대** (`prod-app`) |
 | 리소스 격리 | cgroup (앱 2vCPU/2G, DB 2vCPU/3G) | **제한 없음** — 전부 무제한 경쟁 |
-| 한 호스트에 함께 사는 것 | 앱2 + DB + Redis + LB | 앱 + DB + Redis + Prometheus + Grafana + **dev 스택 전체** + nginx + certbot |
+| 한 호스트에 함께 사는 것 | 앱 + DB + Redis + edge | 앱 + DB + Redis + Prometheus + Grafana + **dev 스택 전체** + nginx + certbot |
 | MySQL 버퍼풀 | `2G` 명시 | **기본값(128MB)** |
 | 앱 ↔ DB 네트워크 | docker bridge | **docker bridge (동일)** |
 | 배포 대상 | — | dev·prod가 **같은 EC2 한 대** (`CD.yml`의 `SERVER_PUBLIC_IP` 단일, 공용 `solply-net`) |
+
+> ⚠️ **2026-08-05부로 벤치도 앱 1대다.** 가용성 요구를 철회해 인스턴스를 줄였고 nginx는
+> 부하 분산이 아니라 edge로 남겼다(설계 `docs/design/2026-08-05-place-stats-version-rows.md` §6).
+> 프로세스 수가 처리량의 직접 인자이므로 **이 시점 이후 수치는 단일 프로세스 재기준선이고,
+> 기존 캠페인(2대 + LB)과 절대값을 비교하면 안 된다.** 역설적으로 이 변경은 벤치를 prod에
+> 더 가깝게 만든다 — 위 표의 첫 행이 이제 양쪽 다 1대다.
 
 두 가지 규칙이 따라 나온다.
 

@@ -1,14 +1,15 @@
 # 벤치마크 전용 환경 (#379 북마크 인덱스 → 인기순 정렬 벤치로 확장)
 # - MySQL: 2 CPU / 3G, 버퍼풀 2G. 전체 데이터(2,770M)는 안 들어가지만 Zipf 분포라
 #          hot working set만 상주해 hit rate 99.9999% (실측) — 증설 불필요
-# - 앱: bench-app-1/2 컨테이너 2대 + nginx LB(bench-lb) 구성. 호스트 bootRun(run-app.sh)은 디버깅용
-# - 부하는 항상 LB(localhost:8082)로 보낸다 — 개별 인스턴스 포트는 노출하지 않는다
+# - 앱: bench-app 컨테이너 1대. 호스트 bootRun(run-app.sh)은 디버깅용
+# - nginx(bench-lb)는 부하 분산이 아니라 **운영 경로 재현용 edge**다 — 진입점은 그대로 localhost:8082
+# - 부하는 항상 edge(localhost:8082)로 보낸다 — 앱 포트는 노출하지 않는다
 # 기동: ./gradlew bootJar && docker compose -f docker/docker-compose.bench.yml up -d --build
 #
 # ⚠️ --remove-orphans 금지: docker/ 안 compose 5개가 프로젝트명을 공유해 무관한 컨테이너까지 지운다
 # ⚠️ 환경변수 변경은 docker restart로 반영되지 않는다 — up -d --force-recreate 사용
 #
-# 컨테이너 배정 총합 7.5G / Docker VM 7.65G (앱 2G×2 + MySQL 3G + Redis 0.5G)
+# 컨테이너 배정 총합 5.5G / Docker VM 7.65G (앱 2G + MySQL 3G + Redis 0.5G)
 services:
   bench-mysql:
     container_name: solply-bench-mysql
@@ -30,7 +31,8 @@ services:
     # "DB가 병목이 되지 않게" 잡은 값인데, 캐시 도입 후 근거가 사라졌다.
     #   깨끗한 라운드 MySQL CPU 피크 31.5~41.6% (= 0.32~0.42코어) — 400% 배정 대비 활용률 10%
     #   요청당 MySQL CPU 2.01ms → 2 vCPU의 70%면 약 697 req/s. 병목은 여전히 앱(559 req/s)
-    # 컨테이너 배정 총합도 8.5G → 7.5G가 되어 Docker VM 용량(7.65G) 안에 들어온다.
+    # 컨테이너 배정 총합도 8.5G → 7.5G가 되어 Docker VM 용량(7.65G) 안에 들어온다
+    # (앱 1대 전환 후로는 5.5G).
     cpus: 2
     mem_limit: 3g
     volumes:
@@ -53,14 +55,17 @@ services:
         ipv4_address: 172.28.0.11
 
   # 부하 모델(DAU 2만, 예상 피크 22 req/s, 목표 120 req/s = 5.5배 헤드룸) 기준 실서버 체급 재현.
-  # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. 가용성을 위해 2대 + LB 구성이 고정 스펙이다.
-  # Little's law: 120 req/s × 30ms ≈ 동시 ~4
-  bench-app-1: &bench-app
-    container_name: solply-bench-app-1
+  # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. Little's law: 120 req/s × 30ms ≈ 동시 ~4
+  #
+  # 2026-08-05: 인스턴스 2대 + 부하 분산을 접었다 — 가용성 요구 철회(결제 없는 서비스라 잠깐의
+  # 중단 수용, DB까지 이중화해야 완결되는 논리라 반쪽 HA는 접는다. 설계 §6). 스펙(2 vCPU/2G)은
+  # 그대로 둔다 — 스펙까지 바꾸면 비교축이 둘이 되어 이후 측정의 해석이 불가능해진다.
+  bench-app:
+    container_name: solply-bench-app
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    environment: &bench-app-env
+    environment:
       SPRING_DATASOURCE_URL: "jdbc:mysql://bench-mysql:3306/solply_bench_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8"
       SPRING_DATASOURCE_USERNAME: solplyuser
       SPRING_DATASOURCE_PASSWORD: solplyuserpwd
@@ -90,18 +95,10 @@ services:
       bench-net:
         ipv4_address: 172.28.0.21
 
-  bench-app-2:
-    <<: *bench-app
-    container_name: solply-bench-app-2
-    environment:
-      <<: *bench-app-env
-    # 앵커가 networks까지 상속하므로 반드시 오버라이드한다 (같은 IP면 기동 실패)
-    networks:
-      bench-net:
-        ipv4_address: 172.28.0.22
-
-  # 부하는 항상 LB(8082)로 보낸다. 개별 인스턴스 직접 접근은 포트를 노출하지 않는다 —
-  # 실환경에서 클라이언트가 인스턴스를 지정할 수 없는 조건을 그대로 재현하기 위함.
+  # **LB가 아니라 edge다.** 프로세스 수와 edge는 다른 축이라, 가용성을 포기한 것이 edge의
+  # 역할(TLS 종단·보안 헤더·요청 제어·앱 비노출)을 포기할 근거가 되지 않는다 — 운영에도
+  # edge가 있으므로 벤치가 그 경로를 재현한다(설계 §6). 컨테이너 이름은 지난 캠페인의
+  # 샘플러·문서가 참조하므로 그대로 둔다.
   bench-lb:
     container_name: solply-bench-lb
     image: nginx:1.27-alpine
@@ -109,11 +106,13 @@ services:
       - "8082:80"
     volumes:
       - ./nginx-bench.conf:/etc/nginx/conf.d/default.conf:ro
+      # worker_connections·worker_rlimit_nofile은 main 컨텍스트라 conf.d 조각에 못 넣는다.
+      # 기본 1024가 500 req/s 측정에서 고갈돼 HTTP 500을 만들었으므로 메인 설정을 덮어쓴다.
+      - ./nginx-bench-main.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - bench-app-1
-      - bench-app-2
-    # nginx는 upstream 호스트명을 설정 파싱 시점에 해석한다. 두 앱 컨테이너가 아직
-    # 생성되지 않은 순간에 뜨면 [emerg] host not found로 즉시 죽으므로 자동 복구시킨다.
+      - bench-app
+    # nginx는 upstream 호스트명을 설정 파싱 시점에 해석한다. 앱 컨테이너가 아직 생성되지
+    # 않은 순간에 뜨면 [emerg] host not found로 즉시 죽으므로 자동 복구시킨다.
     restart: unless-stopped
     networks:
       bench-net:
@@ -127,7 +126,7 @@ volumes:
 # 그 IP를 캐시한다 (재해석은 nginx Plus의 `resolve` 파라미터 전용). Docker 기본 네트워크는
 # 컨테이너 재기동 시 IP를 재할당하므로, 앱만 재기동하면 nginx가 stale IP를 붙들고
 # 전 요청이 502가 된다 — 실제로 겪었고 원인 파악에 시간이 걸리는 종류의 함정이다.
-# 코드 변경마다 앱을 재기동하게 되므로 규율(= 앱 재기동 시 LB도 재기동)에 의존하지 않고
+# 코드 변경마다 앱을 재기동하게 되므로 규율(= 앱 재기동 시 edge도 재기동)에 의존하지 않고
 # 주소를 고정해 실패 모드 자체를 제거한다.
 networks:
   bench-net:
