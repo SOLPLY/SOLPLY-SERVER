@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
+import org.sopt.solply_server.domain.place.entity.PlaceStatsId;
 import org.sopt.solply_server.global.config.QueryDslConfig;
 import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,40 +61,66 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
                 ((Number) row[1]).longValue());
     }
 
+    /** 배치 한 회차의 버전. epoch 초 규약은 {@code PlaceStatsMetaRepository#toVersion}이 정한다. */
+    private static final long VERSION =
+            LocalDateTime.of(2026, 7, 30, 2, 0, 0).toEpochSecond(ZoneOffset.UTC);
+
     @Test
     void 네이티브로_삽입한_행을_엔티티로_읽을_수_있다() {
         PlaceRow place = anyPlace();
         long placeId = place.id();
-        LocalDateTime calculatedAt = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
-        em.createNativeQuery("""
-                INSERT INTO place_stats
-                    (place_id, town_id, popular_score, bookmark_count,
-                     review_count, avg_rating, calculated_at)
-                SELECT p.id, p.town_id, 12.5, 7, 2, 4.50, :calculatedAt
-                FROM places p WHERE p.id = :placeId
-                """)
-                .setParameter("calculatedAt", calculatedAt)
-                .setParameter("placeId", placeId)
-                .executeUpdate();
+        insertStats(placeId, VERSION);
         em.clear();
 
-        List<PlaceStats> found = placeStatsRepository.findAllById(List.of(placeId));
+        List<PlaceStats> found =
+                placeStatsRepository.findAllById(List.of(new PlaceStatsId(placeId, VERSION)));
 
         assertThat(found).hasSize(1);
         PlaceStats stats = found.get(0);
         assertThat(stats.getPlaceId()).isEqualTo(placeId);
+        assertThat(stats.getVersion()).isEqualTo(VERSION);
         // places에서 비정규화해 온 값. validate는 타입만 보고 값 왕복은 못 잡으므로 직접 대조한다.
         assertThat(stats.getTownId()).isEqualTo(place.townId());
         assertThat(stats.getPopularScore()).isEqualByComparingTo(new BigDecimal("12.5"));
         assertThat(stats.getBookmarkCount()).isEqualTo(7);
         assertThat(stats.getReviewCount()).isEqualTo(2);
         assertThat(stats.getAvgRating()).isEqualByComparingTo(new BigDecimal("4.50"));
-        assertThat(stats.getCalculatedAt()).isEqualTo(calculatedAt);
+    }
+
+    /**
+     * PK가 (place_id, version) 복합이므로 <b>같은 장소가 버전마다 한 행씩</b> 존재한다 —
+     * 이것이 버전 행 전환의 핵심 성질이고, PK가 place_id 하나로 되돌아가면 여기서 중복 키로 터진다.
+     */
+    @Test
+    void 같은_장소가_두_버전에_각각_행을_가진다() {
+        long placeId = anyPlace().id();
+
+        insertStats(placeId, VERSION);
+        insertStats(placeId, VERSION + 3600);
+        em.clear();
+
+        assertThat(placeStatsRepository.findAllById(List.of(
+                new PlaceStatsId(placeId, VERSION),
+                new PlaceStatsId(placeId, VERSION + 3600)))).hasSize(2);
     }
 
     @Test
     void 통계가_없는_장소는_빈_결과를_반환한다() {
-        assertThat(placeStatsRepository.findAllById(List.of(anyPlace().id()))).isEmpty();
+        assertThat(placeStatsRepository.findAllById(
+                List.of(new PlaceStatsId(anyPlace().id(), VERSION)))).isEmpty();
+    }
+
+    private void insertStats(long placeId, long version) {
+        em.createNativeQuery("""
+                INSERT INTO place_stats
+                    (place_id, version, town_id, popular_score,
+                     bookmark_count, review_count, avg_rating)
+                SELECT p.id, :version, p.town_id, 12.5, 7, 2, 4.50
+                FROM places p WHERE p.id = :placeId
+                """)
+                .setParameter("version", version)
+                .setParameter("placeId", placeId)
+                .executeUpdate();
     }
 }

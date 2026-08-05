@@ -91,11 +91,14 @@ class PlaceServiceStatsWiringTest {
   @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
   @Mock private PlaceStatsRepository placeStatsRepository;
   /**
-   * 이 파일의 요청은 전부 페이징이 아니라(cursor·size 없음) 커서를 발급하지 않으므로 세대를
-   * 알아낼 이유가 없다 — 스텁 없이 두는 것이 곧 "이 경로는 메타를 읽지 않는다"는 단언이다.
-   * 읽기 시작하면 스텁 없는 목이 null을 돌려줘 NPE로 즉시 드러난다.
+   * 인기순은 커서 유무와 무관하게 바인딩할 <b>버전</b>이 필요하므로 이 레지스터를 읽는다.
+   * LATEST와 북마크 검색은 읽지 않는다 — 스텁 없이 두는 것이 곧 그 단언이고, 읽기 시작하면
+   * 스텁 없는 목이 null을 돌려줘 NPE로 즉시 드러난다.
    */
   @Mock private PlaceStatsMetaRepository placeStatsMetaRepository;
+
+  /** 현 버전. 값 자체에 뜻은 없고 쿼리에 그대로 바인딩되는지만 본다 */
+  private static final long VERSION = 1_780_000_000L;
 
   @InjectMocks private PlaceService placeService;
 
@@ -129,10 +132,11 @@ class PlaceServiceStatsWiringTest {
     // UnfinishedStubbingException이 난다 — 반드시 먼저 만들어 둔다.
     Place place = placeEntity();
     if (sort == PlaceSortType.POPULAR) {
-      // 페이징 인자가 없으면 커서도 없으므로 세대 분기는 늘 현 세대(false)다 —
-      // 직전 세대 정렬은 커서가 있을 때만 성립한다(첫 페이지는 언제나 현 세대에서 발급된다).
+      // 커서가 없으면 버전은 늘 현 버전이다 — 직전 버전 서빙은 커서가 있을 때만 성립한다.
+      given(placeStatsMetaRepository.findGenerations())
+          .willReturn(new PlaceStatsMetaRepository.Generations(VERSION, 0L));
       given(placeListDbQueryRepository.findPopularRows(
-          List.of(TOWN_ID), null, null, null, false, null, null, NO_PAGING_FETCH_SIZE))
+          List.of(TOWN_ID), null, null, null, VERSION, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(new PopularRow(1L, 9.0, bookmarkCount)));
     } else {
       given(placeListDbQueryRepository.findLatestRows(
@@ -152,7 +156,7 @@ class PlaceServiceStatsWiringTest {
     given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
   }
 
-  /** 북마크 검색 경로의 카운트 출처 (배치가 센 값 + 그 뒤 도달한 증분) */
+  /** 북마크 검색 경로의 카운트 출처 — 배치가 현 버전에 센 값이다 */
   private void givenStatsView(int bookmarkCount) {
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(
         List.of(new PlaceStatsView(1L, BigDecimal.valueOf(12.5), bookmarkCount)));

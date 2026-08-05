@@ -29,19 +29,12 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * 장소 목록 <b>유일 경로</b>의 사슬 IT — 북마크·리뷰 INSERT → 배치 → 조회 → 정렬 → 커서 왕복 →
- * 이벤트 증분까지 걷는다. 조각별 테스트(배치 IT·쿼리 IT·커서 단위 테스트)는 이음새를 못 지키는데,
- * 이 기능의 실제 버그 2건(LATEST 커서 누락, 표시 이중 계산)이 전부 이음새에서 났다.
- * 리스너·{@code @Async}가 실제로 배선된 유일한 무대이기도 하다.
+ * 장소 목록 <b>유일 경로</b>의 사슬 IT — 북마크·리뷰 INSERT → 배치 → 조회 → 정렬 → 커서 왕복까지
+ * 걷는다. 조각별 테스트(배치 IT·쿼리 IT·커서 단위 테스트)는 이음새를 못 지키는데, 이 기능의 실제
+ * 버그 2건(LATEST 커서 누락, 표시 이중 계산)이 전부 이음새에서 났다.
  *
- * <p><b>한때 이 캐논을 두 파일이 나눠 통과했다.</b> 캐시 경로와 DB 직행 경로를 A/B로 재던 시절,
- * 이 파일의 쌍둥이({@code PlacePopularFlowIT})가 <b>같은 픽스처·같은 기대값</b>을 캐시 모드로
- * 걸었고 두 IT가 같은 답을 내는 것 자체가 모드 간 정합의 증명이었다. 2026-08-01 판정으로
- * 캐시가 사라지면서 쌍둥이도 함께 지웠다 — 이 파일이 그쪽 단언을 전부 포함하므로 잃은 검증은 없다.
- *
- * <p>덮는 정렬 축은 POPULAR·LATEST 둘이다. 캐시 시절 LATEST의 정렬 키는 스냅샷 안에 있어
- * 단위 테스트가 맡았지만, 지금은 DB가 서빙하므로 생성일 내림차순·id 타이브레이크·커서 왕복을
- * 여기서 사슬 수준으로 문다. 북마크 검색(페이징 없는 별도 조립)도 같은 무대에서 걷는다.
+ * <p>덮는 정렬 축은 POPULAR·LATEST 둘이고, 버전 고정(커서가 발급 당시 버전으로 계속 서빙)과
+ * 만료 계약도 여기서 사슬 수준으로 문다. 북마크 검색(페이징 없는 별도 조립)도 같은 무대에서 걷는다.
  *
  * <p><b>계약: 단언은 PlaceService 응답 DTO 수준으로만 한다.</b> 내부 표현(네이티브 SQL의 컬럼 순서,
  * 레포지토리 record 모양)이 바뀌는 리팩터링에서 이 파일은 수정 없이 그린이어야 한다.
@@ -70,7 +63,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private JdbcTemplate jdbcTemplate;
-    /** 증분 이벤트의 발행 주체. 리포지토리를 직접 부르면 "발행 가드"와 배선이 검증에서 빠진다. */
+    /** 실제 북마크 생성 경로. 리포지토리를 직접 부르면 서비스 층의 계약이 검증에서 빠진다. */
     @Autowired private BookmarkService bookmarkService;
 
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
@@ -126,7 +119,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         batchProcessor.recalculateAll(CALCULATED_AT);
 
-        // 내 북마크지만 배치 "이후"이고, 이벤트가 아니라 직접 INSERT라 증분도 없다 —
+        // 내 북마크지만 배치 "이후"라 이번 버전의 카운트에는 없다 —
         // place_stats는 0인데 isBookmarked는 true인 상태를 만든다.
         // 표시 보정이 되살아나면 이 조합에서만 카운트가 1로 부풀어 즉시 잡힌다.
         insertBookmark(me, placeC, CALCULATED_AT.plusMinutes(30));
@@ -292,28 +285,57 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>현 세대도 직전 세대도 아닌 커서는 오류가 아니라 강등이다.</b> 스크롤을 열어 둔 채 두 세대가
-     * 지나간 경우(배치 간격이 1시간이므로 2시간 이상 방치)인데, 그 커서가 가리키던 좌표계는 이미
-     * 어디에도 없다. 여기서 400을 내면 "오래 놔뒀다가 스크롤을 이어갔더니 에러"가 되므로,
-     * 현 세대로 강등해 정상 응답한다 — 세대 고정 이전에 이미 수용하던 동작(페이지 사이 소량 어긋남)과
-     * 같은 수준으로 되돌아갈 뿐이다.
+     * <b>전환(배치 1회) 후에도 발급 당시 버전으로 계속 서빙한다.</b> 스크롤 도중 배치가 돌아
+     * 점수가 통째로 갈려도 커서가 실은 버전의 행 집합이 그대로 남아 있으므로 순서가 유지된다 —
+     * 버전 행 전환이 사려던 것이 이 한 가지다.
      *
-     * <p>결과가 정상 스크롤의 2페이지와 <b>같아야</b> 한다는 것이 "현 세대로 강등"의 정의다.
-     * 강등 대신 prev 컬럼으로 정렬하면 이 픽스처에서는 prev가 전부 NULL이라 빈 페이지가 나온다 —
-     * 그 회귀가 여기서 잡힌다.
+     * <p>2회차에서 순서가 <b>반드시 뒤집히게</b> 세우는 것이 핵심이다. placeB에 북마크를 몰아
+     * 현 버전 1위로 올려 두면, 커서가 현 버전으로 서빙될 경우 2페이지가 [B]가 아니라 다른 답을
+     * 낸다. 두 버전이 비슷하면 버전 고정이 통째로 빠져도 우연히 맞는다.
      */
     @Test
-    void 두_세대_이상_지난_커서는_현_세대로_강등돼_정상_응답한다() {
+    void 전환_전_발급한_커서는_전환_후에도_직전_버전으로_서빙된다() {
+        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
+        assertThat(ids(page1)).containsExactly(placeC, placeA);   // ≈6.0 > ≈4.0
+
+        // 스크롤 도중 배치 1회 — placeB를 현 버전 1위로 올려 순서를 뒤집는다
+        for (int i = 0; i < 20; i++) {
+            insertBookmark(createUser(), placeB, CALCULATED_AT.plusMinutes(10));
+        }
+        batchProcessor.recalculateAll(CALCULATED_AT.plusHours(1));
+
+        PlaceFilterGetResponse page2 =
+                placeService.getPlaces(me, popularRequest(page1.nextCursor(), 2));
+
+        // 직전 버전 기준의 남은 항목 — B가 1위로 올라온 새 버전을 봤다면 여기가 달라진다
+        assertThat(ids(page2)).containsExactly(placeB);
+        assertThat(PlaceListCursor.decode(page1.nextCursor()).generation())
+                .isEqualTo(CALCULATED_AT.toEpochSecond(ZoneOffset.UTC));
+    }
+
+    /**
+     * <b>현 버전도 직전 버전도 아닌 커서는 만료 오류다 — 강등하지 않는다.</b>
+     *
+     * <p>강등은 과거 버전의 정렬 경계를 현 버전 점수 축에 그대로 갖다 대는 것이라 경계 부근의
+     * 누락·중복을 구조적으로 피할 수 없다. 클라이언트 계약은 "만료를 받으면 커서 없이 재요청"이고,
+     * 그 재요청이 정상 응답이라는 것까지 함께 문다 — 오류만 확인하면 "무조건 만료"라는 회귀가 산다.
+     */
+    @Test
+    void 두_버전_이상_지난_커서는_만료_오류이고_커서_없는_재요청은_정상이다() {
         PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
         PlaceListCursor issued = PlaceListCursor.decode(page1.nextCursor());
         String staleCursor = new PlaceListCursor(
                 issued.sort(), issued.sortKey(), issued.placeId(),
-                issued.generation() - 86_400L,   // 하루 전 — 어느 세대와도 맞지 않는다
+                issued.generation() - 86_400L,   // 하루 전 — 어느 버전과도 맞지 않는다
                 issued.filterPrint()).encode();
 
-        PlaceFilterGetResponse page2 = placeService.getPlaces(me, popularRequest(staleCursor, 2));
+        assertThatThrownBy(() -> placeService.getPlaces(me, popularRequest(staleCursor, 2)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
 
-        assertThat(ids(page2)).containsExactly(placeB);
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 2))))
+                .containsExactly(placeC, placeA);
     }
 
     /**
@@ -475,109 +497,49 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * 증분의 실제 이익 — 배치를 기다리지 않고 카운트가 는다. 배치값 4에서 1건을 더 누르면 5다.
+     * <b>카운트는 배치 전용이다 (증분 폐지, 설계 §5).</b> 방금 누른 북마크는 {@code isBookmarked}로
+     * 즉시 보이지만 <em>수</em>에는 다음 배치부터 반영된다 — 신선도 ≤1h를 수용한 결정이다.
      *
-     * <p>DB 값(5)과 응답 값(5)을 함께 단언한다. 응답이 6이면 조회 경로가 다시 뭔가를 더하고 있다는
-     * 뜻이고, DB가 4에서 멈추면 배선(발행·리스너)이 끊긴 것이다 — 두 실패가 값으로 구분된다.
+     * <p>고정 대기인 이유: 검증 대상이 "도달함"이 아니라 <b>"도달하지 않음"</b>이라 기다릴 조건이
+     * 없다. 500ms는 증분이 살아 있던 시절 수십 ms 안에 반영되던 것을 관측한 데서 잡은 여유다.
+     * 이벤트 발행은 그대로 남아 있으므로(다른 소비자가 붙을 수 있다) 소비자가 되살아나면 여기서 걸린다.
      *
-     * <p>무효화할 캐시 세대가 없으므로 증분이 DB에 닿는 순간이 곧 응답에 보이는 순간이다.
+     * <p>이어서 배치를 돌려 값이 실제로 5가 되는 것까지 본다 — 앞 단언만 두면 "배치도 카운트를
+     * 안 센다"는 회귀가 통과한다.
      */
     @Test
-    void 북마크는_배치를_기다리지_않고_증분으로_반영된다() throws Exception {
+    void 카운트는_배치_전용이라_북마크_직후에는_변하지_않는다() throws Exception {
         long userNew = createUser();
         assertThat(bookmarkCountInDb(placeA)).isEqualTo(4);   // 사전 조건을 값으로 못 박는다
 
         bookmarkService.create(userNew, BookmarkTargetType.PLACE, placeA);
-
-        awaitUntil(() -> bookmarkCountInDb(placeA) == 5);
-
-        PlacePreviewDto a = previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA);
-        assertThat(a.bookmarkCount()).isEqualTo(5);
-        assertThat(a.isBookmarked()).isTrue();
-    }
-
-    /**
-     * 취소 즉시 반영이 이 기능을 만든 이유고, 배치 재대사가 그 대가(유실·중복 드리프트)를 갚는 장치다.
-     *
-     * <p>배치값이 이미 5인 placeB를 쓰면 첫 {@code awaitUntil}이 증분 도달 전에 참이 되어 아무것도
-     * 검증하지 못한다. 배치값 4인 placeA로 4→5→4를 본다.
-     */
-    @Test
-    void 취소는_즉시_반영되고_배치_재실행은_증분_드리프트를_재대사한다() throws Exception {
-        long userNew = createUser();
-        bookmarkService.create(userNew, BookmarkTargetType.PLACE, placeA);
-        awaitUntil(() -> bookmarkCountInDb(placeA) == 5);
-
-        bookmarkService.delete(userNew, BookmarkTargetType.PLACE, placeA);
-
-        awaitUntil(() -> bookmarkCountInDb(placeA) == 4);   // 취소 즉시 반영 — 증분의 실이익
-
-        // 감분이 DB에 닿으면 그대로 응답이 된다. DB만 보면 조회 경로가 감분을 무시하고
-        // 다른 값을 싣는 회귀를 못 잡으므로 응답으로 한 번 더 확인한다.
-        PlacePreviewDto a =
-                previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA);
-        assertThat(a.bookmarkCount()).isEqualTo(4);
-        assertThat(a.isBookmarked()).isFalse();
-
-        // 재대사: 원본 기준으로 다시 세면 증분이 남긴 흔적과 무관하게 같은 값에 수렴한다
-        batchProcessor.recalculateAll(CALCULATED_AT.plusDays(1));
-        assertThat(bookmarkCountInDb(placeA)).isEqualTo(4);
-    }
-
-    /**
-     * {@code BookmarkService.create}의 {@code type == PLACE} 발행 가드를 문다.
-     * {@code bookmarks.target_id}는 PLACE와 COURSE가 숫자 공간을 공유하므로, 가드를 지우면
-     * 코스 북마크가 <b>같은 id의 장소</b> 카운트를 올린다.
-     *
-     * <p>{@code awaitUntil}이 아니라 고정 대기인 이유: 검증 대상이 "도달함"이 아니라
-     * <b>"도달하지 않음"</b>이라 기다릴 조건이 없다. 500ms는 같은 스위트의 증분이 수십 ms 안에
-     * 반영되는 것을 관측한 데서 잡은 여유다.
-     */
-    @Test
-    void 코스_북마크는_같은_id_장소의_카운트를_증분하지_않는다() throws Exception {
-        createCourseWithId(placeA);   // validatorRegistry가 존재를 검사하므로 실제 행이 필요하다
-        int before = bookmarkCountInDb(placeA);
-
-        bookmarkService.create(createUser(), BookmarkTargetType.COURSE, placeA);
         Thread.sleep(500);
 
-        assertThat(bookmarkCountInDb(placeA)).isEqualTo(before);
+
+        assertThat(bookmarkCountInDb(placeA)).isEqualTo(4);
+        PlacePreviewDto beforeBatch =
+                previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA);
+        assertThat(beforeBatch.bookmarkCount()).isEqualTo(4);
+        assertThat(beforeBatch.isBookmarked()).isTrue();   // 체크 표시는 즉시 반영된다
+
+        // 방금 만든 북마크의 created_at은 실제 현재 시각이라, 집계 상한이 그보다 뒤여야 세어진다
+        batchProcessor.recalculateAll(LocalDateTime.now().plusHours(1));
+
+        assertThat(bookmarkCountInDb(placeA)).isEqualTo(5);
+        assertThat(previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA)
+                .bookmarkCount()).isEqualTo(5);
     }
 
     // === helpers ===
 
-    /**
-     * {@code @Async} 증분이 반영될 때까지 폴링. 5초 타임아웃 — 실패 시 그 자체가 배선 단절의 증거다
-     * (리스너의 {@code @TransactionalEventListener}나 발행 한 줄이 빠지면 여기서 걸린다).
-     * awaitility를 새로 들이지 않는 것은 이 한 곳에서만 쓰기 때문이다.
-     */
-    private void awaitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 5_000;
-        while (!condition.getAsBoolean()) {
-            if (System.currentTimeMillis() > deadline) {
-                org.junit.jupiter.api.Assertions.fail("5초 내 비동기 증분 미반영");
-            }
-            Thread.sleep(50);
-        }
-    }
-
     /** place_stats의 원시 카운트. 행이 없으면 −1 (기대값과 절대 겹치지 않는 센티널) */
     private int bookmarkCountInDb(long placeId) {
-        List<Integer> rows = jdbcTemplate.queryForList(
-                "SELECT bookmark_count FROM place_stats WHERE place_id = ?", Integer.class, placeId);
+        List<Integer> rows = jdbcTemplate.queryForList("""
+                SELECT bookmark_count FROM place_stats
+                 WHERE place_id = ?
+                   AND version = (SELECT current_generation FROM place_stats_meta WHERE id = 1)
+                """, Integer.class, placeId);
         return rows.isEmpty() ? -1 : rows.get(0);
-    }
-
-    /**
-     * 장소와 <b>같은 id</b>의 코스를 만든다 — 그래야 target_id 혼동을 재현할 수 있다.
-     * courses.id는 AUTO_INCREMENT지만 명시 지정이 가능하다. 이미 그 id의 코스가 있으면
-     * (시드 데이터와 충돌한 경우) 그대로 두고 쓴다 — 뒷정리는 town_id 기준이라 남의 행을 지우지 않는다.
-     */
-    private void createCourseWithId(long id) {
-        jdbcTemplate.update("""
-                INSERT INTO courses (id, name, introduction, is_shared, town_id, active, created_at)
-                VALUES (?, 'db직행IT코스', 'db직행IT', true, ?, true, ?)
-                ON DUPLICATE KEY UPDATE id = id""", id, townId, PLACE_CREATED_AT);
     }
 
     private PlaceFilterGetRequest popularRequest(String cursor, Integer size) {
@@ -707,7 +669,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
-            // 배치는 place_stats뿐 아니라 세대 레지스터도 민다(V28). 값을 남기면 뒤 클래스가
+            // 배치는 place_stats뿐 아니라 버전 레지스터도 민다(V29). 값을 남기면 뒤 클래스가
             // "아직 배치가 안 돈" 상태를 전제할 수 없다. 1행 레지스터라 DELETE가 아니라 UPDATE다.
             st.executeUpdate("""
                     UPDATE place_stats_meta
@@ -717,8 +679,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
             st.executeUpdate(
                     "DELETE FROM bookmarks WHERE target_type = 'PLACE' AND target_id IN ("
                             + myPlaces + ")");
-            // 코스 북마크: createCourseWithId가 장소와 같은 id로 코스를 만들므로 target_id도 내 장소 id다.
-            // 남기면 뒤의 users DELETE가 fk_bookmarks_user에 걸려 뒷정리 전체가 실패한다.
+            // 코스 북마크도 내 장소 id 공간에 걸릴 수 있다 — 남기면 뒤의 users DELETE가
+            // fk_bookmarks_user에 걸려 뒷정리 전체가 실패한다.
             st.executeUpdate(
                     "DELETE FROM bookmarks WHERE target_type = 'COURSE' AND target_id IN ("
                             + myPlaces + ")");

@@ -63,6 +63,12 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     /** 페이지 크기를 넘길 일이 없는 넉넉한 한도 — "정렬 결과 전체"를 뜻한다 */
     private static final int NO_LIMIT = 100;
 
+    /** 현 버전(배치 한 회차)의 이름. 값 자체에 뜻은 없고 두 버전이 다르기만 하면 된다 */
+    private static final long VERSION = BASE.toEpochSecond(ZoneOffset.UTC);
+
+    /** 직전 버전 — 한 회차(1h) 앞이다 */
+    private static final long PREV_VERSION = VERSION - 3600;
+
     private long townId;
     private long placeA;   // BASE 1분 전 — 이 town에서 유일하게 오래된 장소
     private long placeB;   // 아래 셋은 created_at이 같은 초 (LATEST 타이브레이크 검증용)
@@ -71,6 +77,17 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     @BeforeEach
     void setUp() {
+        // LATEST는 카운트를 붙일 때 메타의 현 버전을 스칼라 서브쿼리로 지목한다 — 세워 두지 않으면
+        // 조인이 성립하지 않아 카운트가 전부 0이 된다. 테스트 트랜잭션과 함께 롤백된다.
+        em.createNativeQuery("""
+                UPDATE place_stats_meta
+                   SET current_generation = :current, prev_generation = :prev
+                 WHERE id = 1
+                """)
+                .setParameter("current", VERSION)
+                .setParameter("prev", PREV_VERSION)
+                .executeUpdate();
+
         townId = createTown();
         // id 오름차순 = a < b < c < d 가 되도록 생성 순서를 고정한다. POPULAR의 동점 타이브레이크는
         // id 오름차순, LATEST는 내림차순이라 두 규칙이 서로를 가려주지 못한다 — 순서가 뒤집히면
@@ -121,7 +138,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, null, null, false, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, null, null, VERSION, null, null, NO_LIMIT);
 
         // B·C는 점수가 더 높아도 태그가 없으면 나오지 않는다 — 필터가 통째로 빠지면 여기서 3건이 된다
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
@@ -151,7 +168,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA1, subA2), null, false, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA1, subA2), null, VERSION, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeB, placeA);
     }
@@ -176,7 +193,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA), null, false, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA), null, VERSION, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
     }
@@ -199,7 +216,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), null, List.of(subA), null, false, null, null, NO_LIMIT);
+                List.of(townId), null, List.of(subA), null, VERSION, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeC, placeB, placeA);
     }
@@ -226,7 +243,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA), List.of(subB), false, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA), List.of(subB), VERSION, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
     }
@@ -272,85 +289,87 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         assertThat(rows.get(0).bookmarkCount()).isEqualTo(7);
     }
 
-    // === POPULAR: 직전 세대 ===
+    // === POPULAR: 버전 ===
 
     /**
-     * <b>세대 분기의 본체.</b> 커서가 직전 세대의 것이면 정렬 축은 {@code prev_popular_score}여야 한다.
+     * <b>버전 분기의 본체.</b> 같은 장소들이 버전마다 다른 점수를 갖고, 조회는 바인딩한 버전의
+     * 행 집합만 본다.
      *
-     * <p>두 세대의 순서를 <b>완전히 뒤집어</b> 세운다 — 현 세대는 B·C·A, 직전 세대는 A·B·C다.
-     * 이래야 "정렬 컬럼만 바꿨는지"를 순서 하나로 판정할 수 있다. 두 세대가 조금이라도 비슷하면
-     * 분기가 통째로 빠져도(늘 현 세대로 정렬해도) 부분적으로 맞는 답이 나와 회귀가 숨는다.
+     * <p>두 버전의 순서를 <b>완전히 뒤집어</b> 세운다 — 현 버전은 B·C·A, 직전 버전은 A·B·C다.
+     * 이래야 "버전을 실제로 바인딩하는가"를 순서 하나로 판정할 수 있다. 두 버전이 조금이라도
+     * 비슷하면 바인딩이 통째로 빠져도 부분적으로 맞는 답이 나와 회귀가 숨는다.
      *
-     * <p>같은 픽스처에 현 세대 조회를 함께 걸어, 분기가 <em>양방향</em>으로 동작하는지 본다.
-     * prev 쪽만 확인하면 "항상 prev로 정렬"이라는 반대 방향 회귀가 살아남는다.
+     * <p>같은 픽스처에 현 버전 조회를 함께 걸어 분기가 <em>양방향</em>으로 동작하는지 본다.
+     * 한쪽만 확인하면 "항상 같은 버전으로 조회"라는 반대 방향 회귀가 살아남는다.
      */
     @Test
-    void 직전_세대_정렬은_prev_점수_순서를_따른다() {
-        insertStats(placeA, townId, 1.0, 0, 6.0);
-        insertStats(placeB, townId, 6.0, 0, 4.0);
-        insertStats(placeC, townId, 4.0, 0, 1.0);
+    void 조회는_바인딩한_버전의_행_집합만_본다() {
+        insertStats(placeA, townId, VERSION, 1.0, 0);
+        insertStats(placeB, townId, VERSION, 6.0, 0);
+        insertStats(placeC, townId, VERSION, 4.0, 0);
+        insertStats(placeA, townId, PREV_VERSION, 6.0, 0);
+        insertStats(placeB, townId, PREV_VERSION, 4.0, 0);
+        insertStats(placeC, townId, PREV_VERSION, 1.0, 0);
 
         assertThat(placeIdsOf(findPopular(null, null, NO_LIMIT)))
                 .containsExactly(placeB, placeC, placeA);
-        assertThat(placeIdsOf(findPrevPopular(null, null, NO_LIMIT)))
+        assertThat(placeIdsOf(findPopularAt(PREV_VERSION, null, null, NO_LIMIT)))
                 .containsExactly(placeA, placeB, placeC);
     }
 
     /**
-     * <b>{@code prev IS NULL}은 "그 세대에 이 장소가 없었다"</b>는 뜻이고, 직전 세대의 목록에
-     * 없던 장소를 그 세대의 결과에 끼워 넣는 것은 오답이다. 배치 이후 새로 생긴 장소가 그 경우다.
+     * <b>행이 없으면 그 버전에 없던 장소다 — 의미론이 구조에 내장돼 있다.</b> 컬럼 쌍 시절에는
+     * {@code prev IS NOT NULL}이라는 술어로 같은 뜻을 표현해야 했고, 빠뜨리면 그 세대에 존재하지
+     * 않던 장소가 페이지 꼬리에 붙었다. 지금은 술어 자체가 필요 없다.
      *
-     * <p>제외 대상 placeD에 <b>현 세대 최고점</b>을 주는 것이 핵심이다 — 술어가 빠지면 D가
-     * 결과에 나타나는데, MySQL은 {@code ORDER BY prev DESC}에서 NULL을 맨 뒤로 보내므로
-     * 순서만 보면 자연스러워 보인다. 그래서 순서가 아니라 <b>포함 여부</b>로 단언한다.
+     * <p>제외 대상 placeD에 <b>현 버전 최고점</b>을 주는 것이 핵심이다 — 버전 바인딩이 빠지면
+     * D가 직전 버전 결과에 나타난다. 순서가 아니라 <b>포함 여부</b>로 단언하는 이유다.
      */
     @Test
-    void 직전_세대에_없던_장소는_prev_정렬에서_빠진다() {
-        insertStats(placeA, townId, 1.0, 0, 6.0);
-        insertStats(placeB, townId, 2.0, 0, 4.0);
-        insertStats(placeD, townId, 99.0, 0, null);   // 배치 이후 생긴 신규 장소
+    void 그_버전에_행이_없는_장소는_결과에_나오지_않는다() {
+        insertStats(placeA, townId, PREV_VERSION, 6.0, 0);
+        insertStats(placeB, townId, PREV_VERSION, 4.0, 0);
+        insertStats(placeD, townId, VERSION, 99.0, 0);   // 직전 회차 이후 생긴 신규 장소
 
-        List<PopularRow> rows = findPrevPopular(null, null, NO_LIMIT);
+        List<PopularRow> rows = findPopularAt(PREV_VERSION, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeA, placeB);
-        // 현 세대에서는 같은 장소가 정상적으로 맨 앞에 나온다 — 제외가 세대 분기의 성질임을 못 박는다
         assertThat(placeIdsOf(findPopular(null, null, NO_LIMIT))).contains(placeD);
     }
 
     /**
-     * <b>정렬만 바꾸고 커서 술어를 안 바꾸면 페이징이 어긋난다.</b> 커서의 sortKey는 직전 세대의
-     * 점수인데 술어가 현 세대 컬럼을 비교하면, 두 세대의 값이 다른 만큼 경계가 엉뚱한 곳에 찍힌다.
-     *
-     * <p>그 어긋남이 <b>반드시 드러나게</b> 픽스처를 세운다: 커서는 placeA(prev 6.0) 다음이므로
-     * 정답은 [B, C]다. 술어가 현 세대 컬럼({@code popular_score})을 본다면 "현 점수 &lt; 6.0"이
-     * 되어 A(1.0)와 C(4.0)가 통과하고 B(6.0)가 탈락해 [C, A]가 나온다 — 항목도 순서도 다르다.
+     * 커서 술어도 같은 버전의 점수와 비교돼야 한다. 커서는 placeA(직전 버전 6.0) 다음이므로
+     * 정답은 [B, C]다. 버전 바인딩이 빠져 현 버전 행이 섞이면 항목도 순서도 달라진다.
      */
     @Test
-    void 직전_세대_커서는_prev_점수로_경계를_잡는다() {
-        insertStats(placeA, townId, 1.0, 0, 6.0);
-        insertStats(placeB, townId, 6.0, 0, 4.0);
-        insertStats(placeC, townId, 4.0, 0, 1.0);
+    void 직전_버전_커서는_그_버전의_점수로_경계를_잡는다() {
+        insertStats(placeA, townId, VERSION, 1.0, 0);
+        insertStats(placeB, townId, VERSION, 6.0, 0);
+        insertStats(placeC, townId, VERSION, 4.0, 0);
+        insertStats(placeA, townId, PREV_VERSION, 6.0, 0);
+        insertStats(placeB, townId, PREV_VERSION, 4.0, 0);
+        insertStats(placeC, townId, PREV_VERSION, 1.0, 0);
 
-        List<PopularRow> rows = findPrevPopular(6.0, placeA, NO_LIMIT);
+        List<PopularRow> rows = findPopularAt(PREV_VERSION, 6.0, placeA, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeB, placeC);
     }
 
     /**
-     * <b>표시 카운트는 세대와 무관하게 현재 값이다.</b> 세대가 고정하는 것은 <em>순위</em>뿐이고,
-     * 화면의 북마크 수는 증분이 방금 올린 값이 즉시 보여야 한다(그게 증분을 만든 이유다).
-     * {@code bookmark_count}는 세대별 복사본이 없으므로 prev 정렬도 같은 컬럼을 싣는다 —
-     * 그 사실을 값으로 못 박아, 나중에 카운트까지 세대별로 나누려는 시도가 여기서 걸리게 한다.
+     * <b>표시 카운트도 버전 행의 값이다.</b> 컬럼 쌍 시절에는 카운트가 세대별 복사본이 없어
+     * "순위는 옛 세대, 카운트는 현재 값"이라는 비대칭이 있었는데, 버전 행에서는 행 하나가
+     * 그 회차의 스냅샷 전체라 그 비대칭이 사라진다 — 증분 폐지로 카운트도 배치 전용이 됐다.
      */
     @Test
-    void 직전_세대_정렬도_표시_카운트는_현재_값을_싣는다() {
-        insertStats(placeA, townId, 1.0, 7, 6.0);
+    void 버전_행은_그_버전의_카운트를_싣는다() {
+        insertStats(placeA, townId, VERSION, 1.0, 9);
+        insertStats(placeA, townId, PREV_VERSION, 6.0, 7);
 
-        List<PopularRow> rows = findPrevPopular(null, null, NO_LIMIT);
+        List<PopularRow> rows = findPopularAt(PREV_VERSION, null, null, NO_LIMIT);
 
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).bookmarkCount()).isEqualTo(7);
-        // 정렬 키로 실려 나오는 값은 prev 쪽이다 — 서비스가 다음 커서에 담을 값이라 축이 갈리면 안 된다
+        // 정렬 키로 실려 나오는 값도 그 버전의 것이다 — 서비스가 다음 커서에 담을 값이라 축이 갈리면 안 된다
         assertThat(rows.get(0).popularScore()).isEqualTo(6.0);
     }
 
@@ -434,14 +453,14 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     // === helpers ===
 
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {
-        return repository.findPopularRows(
-                List.of(townId), null, null, null, false, cursorScore, cursorPlaceId, limit);
+        return findPopularAt(VERSION, cursorScore, cursorPlaceId, limit);
     }
 
-    /** 위와 같은 조회를 <b>직전 세대</b> 축으로 건다 — 두 헬퍼의 차이는 세대 플래그 하나뿐이다 */
-    private List<PopularRow> findPrevPopular(Double cursorScore, Long cursorPlaceId, int limit) {
+    /** 위와 같은 조회를 <b>다른 버전</b>에 건다 — 두 헬퍼의 차이는 바인딩할 버전 하나뿐이다 */
+    private List<PopularRow> findPopularAt(
+            long version, Double cursorScore, Long cursorPlaceId, int limit) {
         return repository.findPopularRows(
-                List.of(townId), null, null, null, true, cursorScore, cursorPlaceId, limit);
+                List.of(townId), null, null, null, version, cursorScore, cursorPlaceId, limit);
     }
 
     private List<LatestRow> findLatest(Long cursorSecond, Long cursorPlaceId, int limit) {
@@ -462,28 +481,24 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * place_stats에 행을 직접 심는다 — 정렬 쿼리는 배치 결과를 읽을 뿐이므로 배치를 돌릴 필요가 없다.
-     * calculated_at은 정렬 쿼리가 읽지 않는 컬럼이라 아무 시각이나 무방하다(NOW(6)).
+     * 현 버전에 행을 직접 심는다 — 정렬 쿼리는 배치 결과를 읽을 뿐이므로 배치를 돌릴 필요가 없다.
      */
     private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
-        insertStats(placeId, townId, score, bookmarkCount, null);
+        insertStats(placeId, townId, VERSION, score, bookmarkCount);
     }
 
-    /**
-     * 직전 세대 점수까지 심는 판. {@code prevScore}가 null이면 컬럼도 NULL —
-     * "직전 세대에 이 장소가 없었다"(배치 이후 생긴 신규 장소)를 뜻한다.
-     */
+    /** 버전을 지정해 심는 판. 같은 장소가 버전마다 한 행씩 존재할 수 있다(복합 PK). */
     private void insertStats(
-            long placeId, long townId, double score, long bookmarkCount, Double prevScore) {
+            long placeId, long townId, long version, double score, long bookmarkCount) {
         em.createNativeQuery("""
-                INSERT INTO place_stats (place_id, town_id, popular_score, prev_popular_score,
-                                         bookmark_count, review_count, avg_rating, calculated_at)
-                VALUES (:placeId, :townId, :score, :prevScore, :cnt, 0, NULL, NOW(6))
+                INSERT INTO place_stats (place_id, version, town_id, popular_score,
+                                         bookmark_count, review_count, avg_rating)
+                VALUES (:placeId, :version, :townId, :score, :cnt, 0, NULL)
                 """)
                 .setParameter("placeId", placeId)
+                .setParameter("version", version)
                 .setParameter("townId", townId)
                 .setParameter("score", score)
-                .setParameter("prevScore", prevScore)
                 .setParameter("cnt", bookmarkCount)
                 .executeUpdate();
     }

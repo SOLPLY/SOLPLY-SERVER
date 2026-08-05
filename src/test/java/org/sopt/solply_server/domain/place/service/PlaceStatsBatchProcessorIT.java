@@ -12,8 +12,8 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
+import org.sopt.solply_server.domain.place.entity.PlaceStatsId;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.global.config.QueryDslConfig;
@@ -62,6 +63,10 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 운영 간격과 같은 1시간을 준다.
      */
     private static final LocalDateTime NEXT_CALCULATED_AT = CALCULATED_AT.plusHours(1);
+
+    /** 두 회차의 버전. 규약(epoch 초, UTC 간주)은 {@code PlaceStatsMetaRepository#toVersion}이 정한다 */
+    private static final long VERSION = CALCULATED_AT.toEpochSecond(ZoneOffset.UTC);
+    private static final long NEXT_VERSION = NEXT_CALCULATED_AT.toEpochSecond(ZoneOffset.UTC);
 
     @DynamicPropertySource
     static void ddlAuto(DynamicPropertyRegistry registry) {
@@ -289,8 +294,17 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         return batchProcessor.recalculateAll(calculatedAt);
     }
 
+    /** 현 회차({@link #CALCULATED_AT}) 버전의 행 */
     private PlaceStats statsOf(long placeId) {
-        return placeStatsRepository.findById(placeId).orElseThrow();
+        return statsOf(placeId, VERSION);
+    }
+
+    private PlaceStats statsOf(long placeId, long version) {
+        return placeStatsRepository.findById(new PlaceStatsId(placeId, version)).orElseThrow();
+    }
+
+    private boolean existsStats(long placeId, long version) {
+        return placeStatsRepository.findById(new PlaceStatsId(placeId, version)).isPresent();
     }
 
     /**
@@ -307,74 +321,60 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 """).executeUpdate();
     }
 
-    /**
-     * 세대 메타 컬럼 하나를 읽는다. DATETIME(6)의 반환 타입은 드라이버·하이버네이트 조합에 따라
-     * {@code Timestamp}와 {@code LocalDateTime}으로 갈리므로 둘 다 받는다
-     * ({@code PlaceListDbQueryRepository.toLocalDateTime}과 같은 이유).
-     */
-    private LocalDateTime generationOf(String column) {
+    /** 버전 메타 컬럼 하나. BIGINT라 드라이버가 어떤 Number로 주든 받는다 (없으면 null) */
+    private Long generationOf(String column) {
         Object value = em.createNativeQuery(
                 "SELECT " + column + " FROM place_stats_meta WHERE id = 1").getSingleResult();
-        if (value == null) {
-            return null;
-        }
-        return value instanceof LocalDateTime ldt ? ldt : ((Timestamp) value).toLocalDateTime();
+        return value == null ? null : ((Number) value).longValue();
+    }
+
+    private long versionRowCount(long version) {
+        return ((Number) em.createNativeQuery(
+                "SELECT COUNT(*) FROM place_stats WHERE version = :version")
+                .setParameter("version", version)
+                .getSingleResult()).longValue();
     }
 
     /**
-     * <b>세대 경계 봉합의 절반 — 점수 시프트.</b> 배치가 현 점수를 새 값으로 덮기 <em>전에</em>
-     * {@code prev_popular_score}로 밀어내야, 이전 세대에 발급된 커서가 그 세대의 순위를 계속 볼 수 있다.
+     * <b>한 회차의 계약 셋 — 새 버전 적재 · 메타 시프트 · 옛 버전 청소.</b> 셋이 한 트랜잭션에
+     * 있어야 커서가 가리키는 버전이 항상 실재한다.
      *
-     * <p>2회차에서 점수가 <b>반드시 달라지게</b> 북마크를 하나 더 넣는 것이 핵심이다. 점수가 같으면
-     * 시프트가 통째로 빠져도(prev가 새 값으로 채워져도) 단언이 통과한다 — 그래서 prev가 1회차 값과
-     * 같다는 것과 현 점수가 그와 다르다는 것을 함께 문다.
+     * <p>3회차까지 도는 이유: 2회차만으로는 청소가 통째로 빠져도 그린이다(지울 옛 버전이 아직
+     * 없다). 3회차에서 1회차 버전이 사라지고 2·3회차 것만 남는 것이 보관 2버전의 정의다.
      *
-     * <p>INSERT 경로(1회차)에서는 prev가 NULL이어야 한다. "이전 세대에 존재하지 않던 장소"라는
-     * 컬럼의 뜻이 그것이고, INSERT 컬럼 목록에 prev를 넣으면 여기서 깨진다.
+     * <p>회차마다 북마크를 더해 점수를 갈라 두면 "새 버전을 만든 게 아니라 같은 행을 덮었다"는
+     * 회귀가 값으로도 드러난다.
      */
     @Test
-    void 배치는_직전_세대의_점수를_prev로_밀어낸다() {
-        // 1회차가 INSERT 경로여야 "신규 행의 prev는 NULL"을 볼 수 있다. 같은 클래스의
-        // 배치_트랜잭션은_READ_COMMITTED로_열린다가 행을 실제로 커밋하므로(정리는 @AfterAll),
-        // 그것이 먼저 돌면 여기 1회차가 UPDATE 경로가 되어 prev에 그 커밋값이 들어간다.
+    void 배치는_새_버전을_적재하고_메타를_밀고_옛_버전을_지운다() {
         clearStats();
+        resetGenerationMeta();
         insertBookmark(placeA, 0);
 
         runBatchAt(CALCULATED_AT);
 
-        BigDecimal firstScore = statsOf(placeA).getPopularScore();
-        assertThat(statsOf(placeA).getPrevPopularScore()).isNull();
+        assertThat(generationOf("current_generation")).isEqualTo(VERSION);
+        assertThat(generationOf("prev_generation")).isNull();
+        assertThat(versionRowCount(VERSION)).isEqualTo(activePlaceCount());
+        BigDecimal firstScore = statsOf(placeA, VERSION).getPopularScore();
 
         insertBookmark(placeA, 0);   // 2회차 점수를 1회차와 갈라놓는 조각
         runBatchAt(NEXT_CALCULATED_AT);
 
-        PlaceStats after = statsOf(placeA);
-        assertThat(after.getPrevPopularScore()).isEqualByComparingTo(firstScore);
-        assertThat(after.getPopularScore()).isNotEqualByComparingTo(firstScore);
-    }
+        assertThat(generationOf("current_generation")).isEqualTo(NEXT_VERSION);
+        assertThat(generationOf("prev_generation")).isEqualTo(VERSION);
+        // 두 버전이 나란히 산다 — 1회차 값이 그대로 남아 있어야 그 커서가 계속 서빙된다
+        assertThat(statsOf(placeA, VERSION).getPopularScore()).isEqualByComparingTo(firstScore);
+        assertThat(statsOf(placeA, NEXT_VERSION).getPopularScore())
+                .isNotEqualByComparingTo(firstScore);
 
-    /**
-     * <b>세대 경계 봉합의 나머지 절반 — 식별자.</b> 조회 경로가 "이 커서는 어느 세대의 것인가"를
-     * 판정하려면 현 세대와 직전 세대가 어딘가에 <em>기록</em>돼 있어야 한다. 배치가 그것을
-     * UPSERT와 <b>같은 트랜잭션에서</b> 민다 — 갈라지면 점수는 새 세대인데 메타는 옛 세대인
-     * (또는 그 반대인) 구간이 생기고, 그 구간의 커서는 존재하지 않는 좌표계를 가리킨다.
-     *
-     * <p>1회차 직후 prev가 NULL인 것은 "직전 세대가 없다"는 정확한 표현이다. 이 값으로 강등
-     * 판정이 갈리므로(현 세대도 직전 세대도 아니면 강등) 센티널을 채우지 않는다.
-     */
-    @Test
-    void 배치는_세대_메타를_현재에서_이전으로_밀어_갱신한다() {
-        resetGenerationMeta();
+        long thirdVersion = PlaceStatsMetaRepository.toVersion(CALCULATED_AT.plusHours(2));
+        runBatchAt(CALCULATED_AT.plusHours(2));
 
-        runBatchAt(CALCULATED_AT);
-
-        assertThat(generationOf("current_generation")).isEqualTo(CALCULATED_AT);
-        assertThat(generationOf("prev_generation")).isNull();
-
-        runBatchAt(NEXT_CALCULATED_AT);
-
-        assertThat(generationOf("current_generation")).isEqualTo(NEXT_CALCULATED_AT);
-        assertThat(generationOf("prev_generation")).isEqualTo(CALCULATED_AT);
+        // 보관은 2버전 — 1회차가 통째로 죽는다
+        assertThat(versionRowCount(VERSION)).isZero();
+        assertThat(versionRowCount(NEXT_VERSION)).isEqualTo(activePlaceCount());
+        assertThat(versionRowCount(thirdVersion)).isEqualTo(activePlaceCount());
     }
 
     @Test
@@ -643,25 +643,34 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
         runBatch();
 
-        assertThat(placeStatsRepository.findById(placeC)).isEmpty();
-        assertThat(placeStatsRepository.findById(placeA)).isPresent();
+        assertThat(existsStats(placeC, VERSION)).isFalse();
+        assertThat(existsStats(placeA, VERSION)).isTrue();
     }
 
     /**
-     * <b>불변식의 나머지 절반 — 삭제.</b> 필터만 있으면 비활성화 <em>이전에</em> 만들어진 행이
-     * 낡은 점수로 영구히 남는다(UPSERT가 건드리지 않으므로 창이 닫히지 않는다).
+     * <b>불변식의 나머지 절반 — 잔행은 옛 버전이 죽을 때 함께 사라진다.</b> 비활성 장소를 골라
+     * 지우는 삭제가 따로 필요 없는 이유다(설계 §3).
+     *
+     * <p><b>직전 버전에는 계속 남는 것이 오답이 아니다.</b> 그 버전에 고정된 스크롤에는 보여야
+     * 하고, 그것이 스냅샷의 올바른 의미다. 비활성화가 실제로 사라지는 시점은 그 버전이 보관
+     * 밖으로 밀려나는 <b>두 회차 뒤</b>다.
      */
     @Test
-    void 배치는_비활성_장소의_잔행을_지운다() {
+    void 옛_버전이_죽으면_비활성_장소의_잔행도_함께_사라진다() {
         clearStats();
         runBatch();
-        assertThat(placeStatsRepository.findById(placeC)).isPresent();   // 잔행을 만들어 둔다
+        assertThat(existsStats(placeC, VERSION)).isTrue();   // 잔행을 만들어 둔다
 
         setActive(placeC, false);
         runBatchAt(NEXT_CALCULATED_AT);
 
-        assertThat(placeStatsRepository.findById(placeC)).isEmpty();
-        assertThat(placeStatsRepository.findById(placeA)).isPresent();
+        assertThat(existsStats(placeC, NEXT_VERSION)).isFalse();   // 새 버전에는 없다
+        assertThat(existsStats(placeC, VERSION)).isTrue();         // 직전 버전 스냅샷에는 남는다
+
+        runBatchAt(CALCULATED_AT.plusHours(2));
+
+        assertThat(versionRowCount(VERSION)).isZero();
+        assertThat(existsStats(placeA, NEXT_VERSION)).isTrue();
     }
 
     /**
@@ -673,12 +682,12 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         clearStats();
         setActive(placeC, false);
         runBatch();
-        assertThat(placeStatsRepository.findById(placeC)).isEmpty();
+        assertThat(existsStats(placeC, VERSION)).isFalse();
 
         setActive(placeC, true);
         runBatchAt(NEXT_CALCULATED_AT);
 
-        assertThat(placeStatsRepository.findById(placeC)).isPresent();
+        assertThat(existsStats(placeC, NEXT_VERSION)).isTrue();
     }
 
     /** 테스트 트랜잭션과 함께 롤백되므로 시드 장소의 상태를 영구히 바꾸지 않는다 */
@@ -852,13 +861,13 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         clearStats();
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, popular_score, bookmark_count,
-                     review_count, avg_rating, calculated_at)
-                SELECT p.id, p.town_id, 777.000000, 0, 0, NULL, :calculatedAt
+                    (place_id, version, town_id, popular_score,
+                     bookmark_count, review_count, avg_rating)
+                SELECT p.id, :version, p.town_id, 777.000000, 0, 0, NULL
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
-                .setParameter("calculatedAt", CALCULATED_AT)
+                .setParameter("version", VERSION)
                 .executeUpdate();
         insertBookmark(placeA, 0);   // 재계산이 돌면 점수가 777이 아니라 1.0이 된다
 
@@ -949,10 +958,10 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         em.createNativeQuery("SET SESSION group_concat_max_len = 1000000").executeUpdate();
         Object result = em.createNativeQuery("""
                 SELECT GROUP_CONCAT(
-                           CONCAT_WS('|', place_id, town_id, popular_score,
+                           CONCAT_WS('|', place_id, version, town_id, popular_score,
                                      bookmark_count, review_count,
-                                     IFNULL(avg_rating, 'NULL'), calculated_at)
-                           ORDER BY place_id SEPARATOR ';')
+                                     IFNULL(avg_rating, 'NULL'))
+                           ORDER BY version, place_id SEPARATOR ';')
                 FROM place_stats
                 """).getSingleResult();
         em.clear();

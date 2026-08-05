@@ -288,13 +288,13 @@ public class PlaceService {
       cursorPlaceId = cursor.placeId();
     }
 
-    PageGeneration generation = resolveGeneration(cursor, sort, paging);
+    long version = resolveVersion(cursor, sort);
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
     List<DbListRow> rows = switch (sort) {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              generation.usePrev(), cursorScore, cursorPlaceId, fetchSize).stream()
+              version, cursorScore, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount()))
           .toList();
       // sortKey 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
@@ -349,68 +349,50 @@ public class PlaceService {
         ? new PlaceListCursor(sort,
             rows.get(rows.size() - 1).sortKey(),
             rows.get(rows.size() - 1).placeId(),
-            generation.generation(),
+            version,
             filterPrint).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
 
   /**
-   * 이 페이지가 서 있는 랭킹 세대와, 그것이 <b>직전</b> 세대인지 여부.
+   * 이 요청이 서빙할 랭킹 <b>버전</b>. 인기순 쿼리가 {@code WHERE ps.version = :version}으로
+   * 바인딩하고, 발급하는 커서에도 같은 값이 실린다.
    *
-   * @param generation 발급할 커서에 실을 값. 스크롤 세션 내내 같아야 한다
-   * @param usePrev    true면 조회가 {@code prev_popular_score} 축으로 정렬한다
+   * <p>규칙은 셋이다 — 커서의 버전이 현·직전 중 하나면 그 값, <b>어느 쪽도 아니면 만료 오류</b>,
+   * 커서가 없으면 현 버전(첫 페이지는 언제나 현 버전에서 시작해 세션 내내 고정된다).
+   *
+   * <p><b>강등이 아니라 만료인 이유.</b> 강등은 과거 버전의 정렬 경계를 현 버전 점수 축에 그대로
+   * 갖다 대는 것이라 경계 부근의 누락·중복을 구조적으로 피할 수 없다. "묵은 커서가 오류 없이
+   * 대충 이어진다"보다 "명시적으로 만료를 알리고 첫 페이지부터"가 정직한 계약이고, 2시간 넘게
+   * 방치된 스크롤이라는 희귀 케이스에 지불하는 비용으로 적절하다. 클라이언트 계약: 만료
+   * 응답을 받으면 커서 없이 재요청한다.
+   *
+   * <p><b>버전은 커서에서 승계하고 다시 읽지 않는다 — 이 함정을 놓치지 말 것.</b> 페이지마다 현
+   * 버전을 재조회하면 세션 <em>중간에</em> 배치가 도는 순간 앞뒤 페이지가 다른 버전을 보게 되어
+   * 정확히 이 기능이 막으려던 어긋남이 난다.
+   *
+   * <p><b>{@code hasPrev()} 가드와 현 버전 우선 비교 순서를 유지할 것.</b> "버전 없음"이 0으로
+   * 표현되므로, 가드가 없으면 버전 0을 실은 커서가 "prev와 일치"로 판정된다.
+   *
+   * <p>LATEST는 메타를 읽지 않는다 — {@code created_at}은 배치가 만지지 않는 불변 축이라 버전이
+   * 필요 없고, 커서에도 0이 실린다.
    */
-  private record PageGeneration(long generation, boolean usePrev) {
-
-    static final PageGeneration NONE =
-        new PageGeneration(PlaceStatsMetaRepository.NO_GENERATION, false);
-  }
-
-  /**
-   * 커서의 세대를 판정한다. 규칙은 셋이다 — 현 세대면 그대로, 직전 세대면 prev 축,
-   * <b>그 외에는 오류가 아니라 현 세대로 강등</b>.
-   *
-   * <p><b>강등이 오류가 아닌 이유.</b> 두 세대 이상 지난 커서는 스크롤을 열어 둔 채 배치가 두 번
-   * 지나간 경우(배치 간격이 1시간이므로 2시간 이상 방치)다. 그 좌표계는 이미 어디에도 없지만,
-   * 여기서 400을 내면 "잠깐 놔뒀다가 스크롤을 이어갔더니 에러"가 된다. 강등하면 세대 고정
-   * <em>이전에</em> 이미 수용하던 동작(페이지 사이 소량 어긋남)으로 돌아갈 뿐이다.
-   * 필터 불일치를 거부하는 것과 성질이 다르다 — 그쪽은 사용자가 요청한 적 없는 결과를 주는
-   * 일이고, 이쪽은 사용자가 요청한 목록을 조금 덜 정확하게 주는 일이다.
-   *
-   * <p><b>직전 세대 비교에 {@code hasPrev()} 가드를 두는 이유.</b> "세대 없음"은 0으로 표현되는데,
-   * 메타가 도입되기 전이나 배치가 한 번밖에 안 돈 시점에는 {@code prev}도 0이다. 가드가 없으면
-   * 세대 0을 실은 커서가 "prev와 일치"로 판정돼, 전부 NULL인 prev 컬럼으로 정렬하는 <b>빈 페이지</b>를
-   * 받는다. 현 세대를 먼저 비교하는 순서도 같은 이유다.
-   *
-   * <p><b>세대는 커서에서 승계하고 다시 읽지 않는다 — 이 함정을 놓치지 말 것.</b> 페이지마다
-   * 현 세대를 재조회하면 세션 <em>중간에</em> 배치가 도는 순간 앞 페이지는 옛 세대, 뒤 페이지는 새
-   * 세대가 되어 정확히 이 기능이 막으려던 어긋남이 그대로 난다. 그래서 커서가 있으면 그 값이
-   * 곧 이 페이지의 세대이고, 메타는 "그것이 직전 세대인가"를 묻는 데만 쓴다.
-   *
-   * <p><b>메타를 읽지 않는 경로가 둘 있다.</b> (a) LATEST — {@code created_at}은 배치가 만지지
-   * 않는 불변 축이라 좌표계가 갈릴 일이 없다(설계 §7). (b) 페이징이 아닌 첫 페이지 — 커서를
-   * 아예 발급하지 않으므로 세대를 알아낼 이유가 없다. 즉 이 조회는 <b>커서를 쓰거나 만드는
-   * 인기순 요청에서만</b> 1회 발생한다.
-   */
-  private PageGeneration resolveGeneration(
-      PlaceListCursor cursor, PlaceSortType sort, boolean paging) {
-
+  private long resolveVersion(PlaceListCursor cursor, PlaceSortType sort) {
     if (sort != PlaceSortType.POPULAR) {
-      return PageGeneration.NONE;
+      return PlaceStatsMetaRepository.NO_GENERATION;
     }
-    if (cursor != null) {
-      PlaceStatsMetaRepository.Generations generations = placeStatsMetaRepository.findGenerations();
-      boolean usePrev = generations.hasPrev()
-          && cursor.generation() != generations.current()
-          && cursor.generation() == generations.prev();
-      return new PageGeneration(cursor.generation(), usePrev);
+    PlaceStatsMetaRepository.Generations generations = placeStatsMetaRepository.findGenerations();
+    if (cursor == null) {
+      return generations.current();
     }
-    if (!paging) {
-      return PageGeneration.NONE;
+    if (cursor.generation() == generations.current()) {
+      return generations.current();
     }
-    // 첫 페이지는 언제나 현 세대에서 시작한다 — 그 세대가 이 스크롤 세션 내내 고정된다
-    return new PageGeneration(placeStatsMetaRepository.findGenerations().current(), false);
+    if (generations.hasPrev() && cursor.generation() == generations.prev()) {
+      return generations.prev();
+    }
+    throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
   }
 
   /**
