@@ -227,36 +227,41 @@ public class PlaceListDbQueryRepository {
      * 두 호출부 모두 상수 문자열이다. 여기에 요청에서 온 값을 흘리는 순간 SQL 조립이 되므로
      * 그러지 말 것 (태그 id들은 지금처럼 {@code :mainTagId} 같은 바인딩 파라미터로만 들어온다).
      *
-     * <p><b>북마크 검색 경로와의 차이 — 태그 타입을 여기서는 검사하지 않는다.</b>
-     * {@code PlaceTagMatcher}는 엔티티의 {@code Tag.getType()}을 직접 보고 "메인 자리에 온 id가
-     * 실제로 MAIN인가"를 확인하지만, 여기 EXISTS는 {@code t.id}와 {@code t.active}만 본다. 따라서
-     * <b>타입이 어긋난 입력</b>(메인 자리에 OPTION 태그 id 등)에서는 북마크 검색이 0건,
-     * 목록이 매칭이 되어 두 경로가 갈린다.
+     * <p><b>⚠️ 여기서 {@code tags}를 조인하지 말 것.</b> 요청에 실린 태그 id의 존재·활성·타입은
+     * 상위 {@code TagValidator.validatePlaceTagConditions}가 이미 검증해 400/404로 막는다
+     * ({@code PlaceService#getPlaces}). 그러니 SQL의 재검사는 중복인데, 값이 공짜가 아니라
+     * <b>플랜을 망가뜨린다</b> — {@code t.active = 1}은 인덱스도 통계도 없어 옵티마이저가 통과율을
+     * 기본 추측값 10%로 잡고, EXISTS마다 그 추측이 곱해져 태그 쪽 결과를 <b>1,000배 과소평가</b>한다.
+     * 그러면 주도 테이블이 {@code place_tag}로 뒤집혀 정렬 인덱스와 조기 종료를 함께 잃는다
+     * (실측: {@code docs/perf/2026-08-06-tag-filter-join-order.md}).
      *
-     * <p>그럼에도 타입 검사를 더하지 않는 이유는, 상위 {@code TagValidator.validatePlaceTagConditions}가
-     * 이미 그 조합을 400으로 막아 서비스에 도달하는 입력에는 타입 위반이 없기 때문이다. 여기서 또
-     * 검사하면 인덱스를 타는 EXISTS에 tags 컬럼 조건이 하나 더 붙어 B의 비용만 늘고, 막는 것은
-     * 이미 막힌 입력이다. 즉 위의 갈림은 <b>상위 검증이 통과시키지 않는 입력에서만</b> 관측된다.
+     * <p>{@code pt.tag_id}가 곧 태그 id이고 {@code fk_place_tag_tag}가 그 행의 존재를 보장하므로
+     * 조인은 애초에 정보를 보태지도 않았다.
+     *
+     * <p><b>북마크 검색 경로와의 차이 — 타입·활성을 여기서는 검사하지 않는다.</b>
+     * {@code PlaceTagMatcher}는 엔티티의 {@code Tag}를 직접 보고 타입과 활성을 확인한다. 따라서
+     * <b>타입이 어긋나거나 비활성인 태그 id</b>가 오면 북마크 검색은 0건, 목록은 매칭이 되어 두 경로가
+     * 갈린다. 그 갈림은 <b>상위 검증이 통과시키지 않는 입력에서만</b> 관측된다.
      */
     private void appendTagFilters(
             StringBuilder sql, String placeIdColumn,
             boolean useMainTag, boolean useSubA, boolean useSubB) {
         if (useMainTag) {
             sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
-                                   WHERE pt.place_id = %s AND t.id = :mainTagId AND t.active = 1)
+                      AND EXISTS (SELECT 1 FROM place_tag pt
+                                   WHERE pt.place_id = %s AND pt.tag_id = :mainTagId)
                     """.formatted(placeIdColumn));
         }
         if (useSubA) {
             sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
-                                   WHERE pt.place_id = %s AND t.id IN (:subTagAIds) AND t.active = 1)
+                      AND EXISTS (SELECT 1 FROM place_tag pt
+                                   WHERE pt.place_id = %s AND pt.tag_id IN (:subTagAIds))
                     """.formatted(placeIdColumn));
         }
         if (useSubB) {
             sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
-                                   WHERE pt.place_id = %s AND t.id IN (:subTagBIds) AND t.active = 1)
+                      AND EXISTS (SELECT 1 FROM place_tag pt
+                                   WHERE pt.place_id = %s AND pt.tag_id IN (:subTagBIds))
                     """.formatted(placeIdColumn));
         }
     }
