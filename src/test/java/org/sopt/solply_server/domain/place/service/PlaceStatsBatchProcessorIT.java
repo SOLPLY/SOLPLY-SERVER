@@ -51,8 +51,25 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
 class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     private static final double BOOKMARK_WEIGHT = 1.0;
-    private static final double REVIEW_WEIGHT = 3.0;
+    private static final double REVIEW_WEIGHT = 2.0;
     private static final double HALF_LIFE_DAYS = 90.0;
+    private static final int MIN_REVIEW_COUNT = 5;
+
+    /**
+     * 북마크 1건(감쇠 없음)의 점수 = {@code ln(1 + 1)}. 로그 압축 이전에는 그냥 1.0이었다.
+     *
+     * <p>상수로 뽑아 두는 이유는 이 값이 <b>여러 테스트에 흩어진 같은 사실</b>이기 때문이다 —
+     * 배율을 조정할 때 리터럴 0.693147을 찾아 다니면 반드시 하나를 놓친다.
+     */
+    private static final double ONE_FRESH_BOOKMARK = Math.log(2);
+
+    /**
+     * <b>리뷰 픽스처는 두 장소 이상에 걸쳐 넣어야 한다.</b> 조정 평점의 기준 {@code C}가 전체
+     * 리뷰의 평균이라, 리뷰를 한 장소에만 넣으면 {@code C}가 그 장소의 평균과 같아져
+     * 리뷰 항 기여가 <em>항상 0</em>이 된다. 그러면 리뷰 축을 검증한다고 믿는 테스트가
+     * 실제로는 아무것도 보지 않는다 (실측으로 확인하고 픽스처를 다시 짰다).
+     */
+    private static final double SCORE_TOLERANCE = 0.000001;
 
     /** 배치 기준 시각. 모든 픽스처의 created_at을 이 시각 기준 상대값으로 넣는다. */
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
@@ -286,6 +303,17 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         }
     }
 
+    /** {@link #runBatch(double)}의 {@code m}판. 설정 빈을 잠시 바꿔 넣고 되돌리는 이유도 같다. */
+    private int runBatchWithMinReviewCount(int minReviewCount) {
+        int original = properties.getMinReviewCount();
+        properties.setMinReviewCount(minReviewCount);
+        try {
+            return batchProcessor.recalculateAll(CALCULATED_AT);
+        } finally {
+            properties.setMinReviewCount(original);
+        }
+    }
+
     /**
      * 기준 시각을 지정해 돌린다. {@link #runBatch()}가 상수를 쓰는 것과 달리, 세대 교체를 보는
      * 테스트는 두 회차의 기준 시각이 달라야 성립하므로 호출자가 정한다.
@@ -378,37 +406,63 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     @Test
-    void 오늘_생긴_북마크는_감쇠_없이_가중치_그대로_반영된다() {
+    void 오늘_생긴_북마크는_감쇠_없이_로그_압축만_거친다() {
         insertBookmark(placeA, 0);
 
         runBatch();
 
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(1.0, within(0.000001));
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
         assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(1);
     }
 
+    /**
+     * <b>반감기의 의미는 로그 압축 뒤에도 그대로다 — 90일 지난 북마크 2건 = 오늘 북마크 1건.</b>
+     *
+     * <p>점수 절대값이 아니라 <em>두 장소를 견주는</em> 형태인 것이 핵심이다. 로그가 씌워지면서
+     * "절반만 반영"이 더는 점수의 절반이 아니게 됐고({@code ln(1.5) ≠ ln(2)/2}),
+     * 그렇다고 {@code ln(1.5)}라는 리터럴만 박아 두면 그 숫자가 반감기에서 나왔다는 사실이
+     * 코드에서 사라진다. 감쇠 합이 같으면 점수가 같다는 등식이라야 반감기를 직접 겨눈다.
+     *
+     * <p>반감기가 빠지면 2건 쪽이 {@code ln(3)}으로 떠올라 깨진다.
+     */
     @Test
-    void 반감기_90일_전_북마크는_절반만_반영된다() {
-        insertBookmark(placeA, 90);
+    void 반감기가_지난_북마크는_절반의_무게로_합산된다() {
+        insertBookmark(placeA, 0);      // 감쇠 합 1.0
+        insertBookmark(placeB, 90);     // 감쇠 합 0.5 + 0.5 = 1.0
+        insertBookmark(placeB, 90);
 
         runBatch();
 
+        assertThat(statsOf(placeB).getPopularScore())
+                .isEqualByComparingTo(statsOf(placeA).getPopularScore());
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(0.5, within(0.000001));
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
     }
 
+    /**
+     * <b>중심이 상수 3점이 아니라 전체 평균 {@code C}다.</b> 여기서는 세 리뷰(5·3·1)의 평균이
+     * 정확히 3.0이라 옛 공식과 부호가 같지만, 크기는 베이지안 보정에 눌려 훨씬 작다 —
+     * 리뷰 1건은 {@code m=5}에 5:1로 밀려 편차의 1/6만 남긴다.
+     *
+     * <p>세 장소에 나눠 넣는 것이 이 테스트의 전제다. 한 장소에 몰면 {@code C}가 그 장소의
+     * 평균과 같아져 셋 다 0이 된다.
+     */
     @Test
-    void 평점은_3점을_중심으로_가감된다() {
-        insertReview(placeA, 5, 0);   // +3.0 * (5-3) = +6.0
-        insertReview(placeB, 3, 0);   //  3.0 * (3-3) =  0.0
-        insertReview(placeC, 1, 0);   //  3.0 * (1-3) = -6.0
+    void 평점은_전체_평균을_중심으로_가감된다() {
+        insertReview(placeA, 5, 0);   // C = (5+3+1)/3 = 3.0
+        insertReview(placeB, 3, 0);
+        insertReview(placeC, 1, 0);
 
         runBatch();
 
-        assertThat(statsOf(placeA).getPopularScore().doubleValue()).isCloseTo(6.0, within(0.000001));
-        assertThat(statsOf(placeB).getPopularScore().doubleValue()).isCloseTo(0.0, within(0.000001));
-        assertThat(statsOf(placeC).getPopularScore().doubleValue()).isCloseTo(-6.0, within(0.000001));
+        // 조정평점 = (5 + 5×3)/(1+5) = 3.3333 → (3.3333 − 3.0) × 2
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(0.666667, within(SCORE_TOLERANCE));
+        assertThat(statsOf(placeB).getPopularScore().doubleValue())
+                .isCloseTo(0.0, within(SCORE_TOLERANCE));
+        assertThat(statsOf(placeC).getPopularScore().doubleValue())
+                .isCloseTo(-0.666667, within(SCORE_TOLERANCE));
     }
 
     /**
@@ -423,57 +477,93 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     void 리뷰_기여는_작성_시점과_무관하다() {
         insertReview(placeA, 5, 0);    // 기준 시각 정각
         insertReview(placeB, 5, 90);   // 반감기만큼 지난 리뷰
+        // placeC의 2점은 C를 4.0으로 끌어내려 위 둘의 기여가 0이 되는 것을 막는다.
+        // 이것이 없으면 C = 5.0이 되어 두 점수가 "같다"는 단언이 0 = 0으로 공허하게 통과한다.
+        insertReview(placeC, 2, 0);
 
         runBatch();
 
         assertThat(statsOf(placeB).getPopularScore())
                 .isEqualByComparingTo(statsOf(placeA).getPopularScore());
+        // 조정평점 = (5 + 5×4)/(1+5) = 4.1667 → (4.1667 − 4.0) × 2
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(6.0, within(0.000001));
+                .isCloseTo(0.333333, within(SCORE_TOLERANCE));
     }
 
     /**
-     * 감쇠를 걷어내도 <b>저평점이 점수를 끌어내리는 성질은 유지</b>된다 (3점 중심화의 몫).
-     * 오히려 오래된 저평점이 더는 깎이지 않아 온전한 −2배로 들어온다.
+     * <b>저평점이 점수를 끌어내리는 성질은 중심화가 3점에서 {@code C}로 바뀐 뒤에도 유지된다.</b>
+     * 리뷰에는 감쇠가 없으므로 180일이 지나도 페널티가 깎이지 않는다.
      *
-     * <p>감쇠가 남아 있으면 180일(반감기 2회)이 0.25로 깎여 −1.5, 합이 −0.5가 된다.
-     * 3점 중심화가 사라지면 리뷰가 점수를 <em>올려</em> 합이 양수가 된다. 둘 다 여기서 갈린다.
+     * <p>북마크만 있을 때({@link #ONE_FRESH_BOOKMARK})와 견주는 형태인 것이 핵심이다.
+     * 중심화가 사라지면 리뷰가 점수를 <em>올려</em> 그 기준선 위로 올라간다.
      */
     @Test
-    void 오래된_저평점_리뷰도_점수를_온전히_끌어내린다() {
-        insertBookmark(placeA, 0);      // +1.0
-        insertReview(placeA, 1, 180);   // 3.0 * (1-3) = -6.0 — 180일이 지나도 그대로
+    void 오래된_저평점_리뷰도_점수를_끌어내린다() {
+        insertBookmark(placeA, 0);
+        insertReview(placeA, 1, 180);   // 180일이 지나도 감쇠하지 않는다
+        insertReview(placeB, 5, 0);     // C = (1+5)/2 = 3.0
 
         runBatch();
 
-        assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(-5.0, within(0.000001));
+        double score = statsOf(placeA).getPopularScore().doubleValue();
+        assertThat(score).isLessThan(ONE_FRESH_BOOKMARK);
+        // ln(2) + ((1 + 5×3)/(1+5) − 3.0) × 2 = 0.693147 − 0.666667
+        assertThat(score).isCloseTo(0.026481, within(SCORE_TOLERANCE));
     }
 
     @Test
     void 북마크_점수와_리뷰_점수는_합산된다() {
-        insertBookmark(placeA, 0);    // +1.0
-        insertBookmark(placeA, 90);   // +0.5 (북마크는 감쇠한다)
-        insertReview(placeA, 4, 90);  // +3.0 * (4-3) = +3.0 (리뷰는 감쇠하지 않는다)
+        insertBookmark(placeA, 0);    // 감쇠 합 1.0
+        insertBookmark(placeA, 90);   // + 0.5 (북마크는 감쇠한다)
+        insertReview(placeA, 4, 90);  // 리뷰는 감쇠하지 않는다
+        insertReview(placeB, 2, 0);   // C = (4+2)/2 = 3.0
 
         runBatch();
 
         PlaceStats stats = statsOf(placeA);
-        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(4.5, within(0.000001));
+        // ln(1 + 1.5) + ((4 + 5×3)/(1+5) − 3.0) × 2 = 0.916291 + 0.333333
+        assertThat(stats.getPopularScore().doubleValue())
+                .isCloseTo(1.249624, within(SCORE_TOLERANCE));
         assertThat(stats.getBookmarkCount()).isEqualTo(2);
         assertThat(stats.getReviewCount()).isEqualTo(1);
         assertThat(stats.getAvgRating().doubleValue()).isCloseTo(4.0, within(0.005));
     }
 
+    /**
+     * <b>리뷰가 단 한 건도 없으면 {@code C}가 NULL이다.</b> {@code COALESCE(AVG(rating), 3.0)}가
+     * 없으면 여기서 전 장소의 점수가 NULL이 되고 {@code NOT NULL} 컬럼이라 배치 자체가 터진다 —
+     * 0점이 아니라 <em>예외</em>로 실패하므로 이 테스트가 그 폴백을 지킨다.
+     */
     @Test
     void 활동이_없는_장소는_0점_행으로_기록된다() {
         runBatch();
 
         PlaceStats stats = statsOf(placeA);
-        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(0.0, within(0.000001));
+        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(0.0, within(SCORE_TOLERANCE));
         assertThat(stats.getBookmarkCount()).isZero();
         assertThat(stats.getReviewCount()).isZero();
         assertThat(stats.getAvgRating()).isNull();
+    }
+
+    /**
+     * 위 테스트의 짝 — <b>남들에게 리뷰가 있어도</b> 내 리뷰가 0건이면 리뷰 항 기여가 정확히 0이다.
+     * 조정 평점이 {@code (0 + m·C)/(0 + m) = C}가 되어 중심화에서 상쇄되기 때문이고,
+     * 이것이 리뷰 없는 장소가 순위에서 벌도 상도 받지 않는 근거다.
+     *
+     * <p>중심화({@code − C})를 지우면 리뷰가 없는 장소가 {@code w₂ × C}만큼 공짜 점수를 받아
+     * 여기서 깨진다. 활동이 전무한 위 테스트로는 그 회귀가 잡히지 않는다 — 그때는 {@code C}가
+     * 폴백 상수라 어느 쪽이든 상수가 되기 때문이다.
+     */
+    @Test
+    void 리뷰가_없는_장소는_남의_리뷰에_영향받지_않는다() {
+        insertReview(placeB, 5, 0);
+        insertReview(placeC, 1, 0);
+
+        runBatch();
+
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(0.0, within(SCORE_TOLERANCE));
+        assertThat(statsOf(placeA).getReviewCount()).isZero();
     }
 
     @Test
@@ -536,21 +626,32 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         PlaceStats stats = statsOf(placeA);
         assertThat(stats.getBookmarkCount()).isEqualTo(1);
         // 증폭까지 잡으려면 점수를 정확히 봐야 한다 — 카운트만 보면 POW 쪽 회귀를 놓친다
-        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(1.0, within(0.000001));
+        assertThat(stats.getPopularScore().doubleValue())
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
     }
 
-    /** 리뷰 축에도 같은 상한이 걸려 있어야 한다 — 점수·건수·평균 평점 셋 모두 영향을 받는다. */
+    /**
+     * 리뷰 축에도 같은 상한이 걸려 있어야 한다 — 점수·건수·평균 평점 셋 모두 영향을 받는다.
+     *
+     * <p><b>placeB의 리뷰가 이 테스트를 성립시킨다.</b> 없으면 상한을 지켰을 때 {@code C = 5.0},
+     * 어겼을 때 {@code C = 3.0}이 되는데 <em>두 경우 모두 조정평점이 {@code C}와 같아져</em>
+     * 점수가 0으로 일치한다. 즉 점수 단언이 상한 위반을 구분하지 못한다.
+     * placeB가 {@code C}를 붙들어 두면 0.333333 대 0.0으로 갈린다.
+     */
     @Test
     void 기준시각_이후에_생긴_리뷰는_집계에_들어가지_않는다() {
-        insertReview(placeA, 5, 0);                       // +3.0 * (5-3) = +6.0
-        insertReviewAfterCalculatedAt(placeA, 1, 30);     // 무시돼야 한다 (반영되면 −6.0이 더해져 0점)
+        insertReview(placeA, 5, 0);
+        insertReview(placeB, 3, 0);                       // C를 고정하는 대조군
+        insertReviewAfterCalculatedAt(placeA, 1, 30);     // 무시돼야 한다
 
         runBatch();
 
         PlaceStats stats = statsOf(placeA);
         assertThat(stats.getReviewCount()).isEqualTo(1);
         assertThat(stats.getAvgRating().doubleValue()).isCloseTo(5.0, within(0.005));
-        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(6.0, within(0.000001));
+        // 유효 리뷰는 5·3 → C = 4.0. 조정평점 = (5 + 5×4)/6 = 4.1667
+        assertThat(stats.getPopularScore().doubleValue())
+                .isCloseTo(0.333333, within(SCORE_TOLERANCE));
     }
 
     /**
@@ -566,7 +667,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
         assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(1);
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(1.0, within(0.000001));
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
     }
 
     /**
@@ -581,19 +682,23 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         runBatch();
 
         PlaceStats before = statsOf(placeA);
-        assertThat(before.getPopularScore().doubleValue()).isCloseTo(1.0, within(0.000001));
+        assertThat(before.getPopularScore().doubleValue())
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
         assertThat(before.getBookmarkCount()).isEqualTo(1);
         assertThat(before.getReviewCount()).isZero();
         assertThat(before.getAvgRating()).isNull();
 
-        // 1회차 이후 원본이 늘었다 — 북마크 +1, 리뷰 +1(5점, 감쇠 없음 → +6.0)
+        // 1회차 이후 원본이 늘었다 — 북마크 +1, 리뷰 +1. placeB의 1점이 C를 3.0으로 붙든다
         insertBookmark(placeA, 0);
         insertReview(placeA, 5, 0);
+        insertReview(placeB, 1, 0);
 
         runBatch();
 
         PlaceStats after = statsOf(placeA);
-        assertThat(after.getPopularScore().doubleValue()).isCloseTo(8.0, within(0.000001));
+        // ln(1 + 2) + ((5 + 5×3)/(1+5) − 3.0) × 2 = 1.098612 + 0.666667
+        assertThat(after.getPopularScore().doubleValue())
+                .isCloseTo(1.765279, within(SCORE_TOLERANCE));
         assertThat(after.getBookmarkCount()).isEqualTo(2);
         assertThat(after.getReviewCount()).isEqualTo(1);
         assertThat(after.getAvgRating().doubleValue()).isCloseTo(5.0, within(0.005));
@@ -607,7 +712,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         runBatch();
 
         PlaceStats stats = statsOf(placeA);
-        assertThat(stats.getPopularScore().doubleValue()).isCloseTo(1.0, within(0.000001));
+        assertThat(stats.getPopularScore().doubleValue())
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
         assertThat(stats.getBookmarkCount()).isEqualTo(1);
     }
 
@@ -709,9 +815,61 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
         runBatch(45.0);   // 반감기를 45일로 주면 45일 전 활동이 정확히 절반이 된다
 
-        // 반감기 90일이었다면 0.5^(45/90) = 0.7071이 나온다
+        // ln(1 + 0.5). 반감기 90일이었다면 0.5^(45/90) = 0.7071 → ln(1.7071) = 0.534800
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(0.5, within(0.000001));
+                .isCloseTo(0.405465, within(SCORE_TOLERANCE));
+    }
+
+    /**
+     * {@code m}도 반감기와 같은 이유로 설정 주입 경로를 따로 본다 — 다른 테스트가 전부 5 하나만
+     * 써서 SQL에 5가 하드코딩돼 있어도 통과한다.
+     *
+     * <p>{@code m = 1}이면 리뷰 1건짜리 장소의 자기 평점이 절반까지 반영돼 기여가 두 배 넘게 뛴다
+     * ({@code m = 5}일 때 0.666667 → {@code m = 1}일 때 2.0).
+     */
+    @Test
+    void 최소_리뷰_수_설정값이_실제_계산에_반영된다() {
+        insertReview(placeA, 5, 0);
+        insertReview(placeB, 1, 0);   // C = 3.0
+
+        runBatchWithMinReviewCount(1);
+
+        // 조정평점 = (5 + 1×3)/(1+1) = 4.0 → (4.0 − 3.0) × 2
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(2.0, within(SCORE_TOLERANCE));
+    }
+
+    /**
+     * <b>로그 압축이 두 축의 자릿수를 맞춘다는 주장을 값으로 못 박는다.</b> 북마크가 11배 많은
+     * 장소를, 리뷰가 충분히 쌓인 고평점 장소가 앞선다.
+     *
+     * <p>로그 압축이 빠지면 A가 {@code 11 − 1.0 = 10.0}, B가 {@code 1 + 1.0 = 2.0}으로 갈려
+     * A의 압승이 된다 — 즉 이 테스트는 {@code LN}을 지우는 회귀를 직접 겨눈다.
+     *
+     * <p><b>리뷰를 5건씩 넣는 것이 이 테스트의 전제다.</b> 1건이면 {@code m = 5}에 5:1로 눌려
+     * 기여가 ±0.333에 그쳐 북마크 11배 차이(약 1.79)를 넘지 못한다. 그것이 오답이 아니라
+     * 베이지안 평균의 의도다 — 표본이 적은 평점은 순위를 움직일 자격이 없다.
+     */
+    @Test
+    void 리뷰가_쌓이면_평점이_북마크_열한_배_차이를_뒤집는다() {
+        for (int i = 0; i < 11; i++) {
+            insertBookmark(placeA, 0);
+        }
+        insertBookmark(placeB, 0);
+        for (int i = 0; i < 5; i++) {
+            insertReview(placeA, 3, 0);
+            insertReview(placeB, 5, 0);   // C = (3×5 + 5×5)/10 = 4.0
+        }
+
+        runBatch();
+
+        double scoreA = statsOf(placeA).getPopularScore().doubleValue();
+        double scoreB = statsOf(placeB).getPopularScore().doubleValue();
+        assertThat(scoreB).isGreaterThan(scoreA);
+        // A: ln(12) + ((15 + 5×4)/10 − 4.0) × 2 = 2.484907 − 1.0
+        assertThat(scoreA).isCloseTo(1.484907, within(SCORE_TOLERANCE));
+        // B: ln(2)  + ((25 + 5×4)/10 − 4.0) × 2 = 0.693147 + 1.0
+        assertThat(scoreB).isCloseTo(1.693147, within(SCORE_TOLERANCE));
     }
 
     @Test
@@ -719,6 +877,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(properties.getBookmarkWeight()).isEqualTo(BOOKMARK_WEIGHT);
         assertThat(properties.getReviewWeight()).isEqualTo(REVIEW_WEIGHT);
         assertThat(properties.getHalfLifeDays()).isEqualTo(HALF_LIFE_DAYS);
+        assertThat(properties.getMinReviewCount()).isEqualTo(MIN_REVIEW_COUNT);
     }
 
     /**
@@ -848,7 +1007,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(affected).hasValue((int) placeCount);
         assertThat(placeStatsRepository.count()).isEqualTo(placeCount);
         assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(1.0, within(0.000001));
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
     }
 
     /**
@@ -869,7 +1028,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 .setParameter("placeId", placeA)
                 .setParameter("version", VERSION)
                 .executeUpdate();
-        insertBookmark(placeA, 0);   // 재계산이 돌면 점수가 777이 아니라 1.0이 된다
+        insertBookmark(placeA, 0);   // 재계산이 돌면 점수가 777이 아니라 ln(2)가 된다
 
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();

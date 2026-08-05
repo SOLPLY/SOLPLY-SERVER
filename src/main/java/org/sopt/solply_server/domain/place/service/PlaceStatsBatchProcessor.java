@@ -104,7 +104,8 @@ public class PlaceStatsBatchProcessor {
                 calculatedAt,
                 properties.getBookmarkWeight(),
                 properties.getReviewWeight(),
-                properties.getHalfLifeDays());
+                properties.getHalfLifeDays(),
+                properties.getMinReviewCount());
         placeStatsMetaRepository.shiftGeneration(version);
         placeStatsRepository.deleteVersionsOtherThan(version, previous);
         return affected;

@@ -90,13 +90,17 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     /** 태그 필터 배선 검증용 태그의 이름 접두사 — 뒷정리가 이것으로 되찾는다 */
     private static final String TAG_NAME_PREFIX = "db직행IT태그";
 
-    // 북마크 점수가 ≈인 것은 감쇠항 POW(0.5, 경과/90)이 "기준시각 1분 전"에도 미세하게 걸리기
-    // 때문이다 (실측: A=3.999979). 90일 전 북마크만 정확히 절반이라 B는 딱 떨어진다.
-    // C는 리뷰 항이라 감쇠가 없어 시점과 무관하게 정확히 6.0이다.
+    // 점수는 ln(1 + 감쇠합) + 2 × (조정평점 − 전체평균)이고, 여기서 전체평균 C는 3.0이다
+    // (5점 5건 + 1점 5건). 북마크 쪽이 ≈인 것은 감쇠항이 "기준시각 1분 전"에도 미세하게
+    // 걸리기 때문이다(실측: A의 감쇠합 3.999979).
+    //
+    // ⚠️ 리뷰를 두 장소에 나눠 넣는 것은 취향이 아니라 필수다. 조정 평점의 기준 C가 전체 리뷰의
+    // 평균이라, 리뷰가 한 장소에만 있으면 C가 그 장소의 평균과 같아져 리뷰 항이 통째로 0이 된다.
+    // 실제로 이 픽스처는 placeC에 5점 1건만 있었고, 그 상태에서 placeC가 꼴찌로 떨어졌다.
     private long townId;
-    private long placeA;   // 기준시각 1분 전 남의 북마크 4건 → 점수 ≈ 4.0
-    private long placeB;   // 90일 전 북마크 5건(남 4 + 나 1) → 점수 = 2.5 (정확히 절반)
-    private long placeC;   // 5점 리뷰 1건 → 점수 = 6.0
+    private long placeA;   // 기준시각 1분 전 남의 북마크 4건 → 점수 ≈ 1.609434
+    private long placeB;   // 90일 전 북마크 5건(남 4 + 나 1) + 1점 리뷰 5건 → 점수 ≈ −0.747237
+    private long placeC;   // 5점 리뷰 5건 → 점수 = 2.0
     private long me;       // 조회 주체 — 배치 "전"에 placeB를, 배치 "후"에 placeC를 북마크
 
     @BeforeEach
@@ -112,7 +116,12 @@ class PlaceListFlowIT extends MySqlContainerSupport {
             insertBookmark(user, placeA, CALCULATED_AT.minusMinutes(1));
             insertBookmark(user, placeB, CALCULATED_AT.minusDays(90));
         }
-        insertReview(createUser(), placeC, 5, CALCULATED_AT.minusMinutes(1));
+        // placeB의 1점 리뷰가 전체 평균 C를 3.0으로 붙든다 — 없으면 C가 placeC의 평균과
+        // 같아져 placeC의 리뷰 항이 0이 되고, 리뷰만으로 1위라는 이 픽스처의 전제가 무너진다.
+        for (int i = 0; i < 5; i++) {
+            insertReview(createUser(), placeC, 5, CALCULATED_AT.minusMinutes(1));
+            insertReview(createUser(), placeB, 1, CALCULATED_AT.minusMinutes(1));
+        }
 
         // 내 북마크지만 배치 "이전" — 배치가 이미 센 쪽이다 (placeB 카운트 5의 다섯 번째)
         insertBookmark(me, placeB, CALCULATED_AT.minusDays(90));
@@ -130,13 +139,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     void 인기순은_점수_내림차순이고_커서_페이징은_항목을_흘리지도_겹치지도_않는다() {
         PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
 
-        assertThat(ids(page1)).containsExactly(placeC, placeA);   // ≈6.0 > ≈4.0
+        assertThat(ids(page1)).containsExactly(placeC, placeA);   // 2.0 > ≈1.609
         assertThat(page1.nextCursor()).isNotNull();
 
         PlaceFilterGetResponse page2 =
                 placeService.getPlaces(me, popularRequest(page1.nextCursor(), 2));
 
-        assertThat(ids(page2)).containsExactly(placeB);           // 2.5
+        assertThat(ids(page2)).containsExactly(placeB);           // ≈−0.747
         assertThat(page2.nextCursor()).isNull();
         // 전 페이지 합집합 = 전체, 교집합 = 공집합 (누락 0 · 중복 0)
         assertThat(ids(page1)).doesNotContainAnyElementsOf(ids(page2));
@@ -296,7 +305,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     @Test
     void 전환_전_발급한_커서는_전환_후에도_직전_버전으로_서빙된다() {
         PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
-        assertThat(ids(page1)).containsExactly(placeC, placeA);   // ≈6.0 > ≈4.0
+        assertThat(ids(page1)).containsExactly(placeC, placeA);   // 2.0 > ≈1.609
 
         // 스크롤 도중 배치 1회 — placeB를 현 버전 1위로 올려 순서를 뒤집는다
         for (int i = 0; i < 20; i++) {
@@ -366,9 +375,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      *
      * <pre>
      *   장소   점수(배치)   내 북마크 시각        latest 순위   popular 순위
-     *   A      ≈4.0        기준 +60분 (가장 최근)     1            2
-     *   C      ≈6.0        기준 +30분                 2            1
-     *   B       2.5        기준 −90일 (가장 오래)     3            3
+     *   A      ≈1.609      기준 +60분 (가장 최근)     1            2
+     *   C       2.0        기준 +30분                 2            1
+     *   B      ≈−0.747     기준 −90일 (가장 오래)     3            3
      * </pre>
      *
      * <p>A·B는 setUp에서 온 것이고(B는 배치 전 북마크, C는 배치 후 직접 INSERT),
@@ -408,7 +417,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         PlaceFilterGetResponse response =
                 placeService.getPlaces(me, bookmarkRequest(PlaceSortType.POPULAR, null, null));
 
-        assertThat(ids(response)).containsExactly(placeC, placeA, placeB);   // ≈6.0 > ≈4.0 > 2.5
+        assertThat(ids(response)).containsExactly(placeC, placeA, placeB);   // 2.0 > ≈1.609 > ≈−0.747
         assertThat(response.nextCursor()).isNull();
     }
 
