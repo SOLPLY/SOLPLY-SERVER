@@ -9,7 +9,7 @@
 # ⚠️ --remove-orphans 금지: docker/ 안 compose 5개가 프로젝트명을 공유해 무관한 컨테이너까지 지운다
 # ⚠️ 환경변수 변경은 docker restart로 반영되지 않는다 — up -d --force-recreate 사용
 #
-# 컨테이너 배정 총합 5.5G / Docker VM 7.65G (앱 2G + MySQL 3G + Redis 0.5G)
+# 컨테이너 배정 총합 5G / Docker VM 7.65G (앱 2G + MySQL 3G)
 services:
   bench-mysql:
     container_name: solply-bench-mysql
@@ -32,7 +32,7 @@ services:
     #   깨끗한 라운드 MySQL CPU 피크 31.5~41.6% (= 0.32~0.42코어) — 400% 배정 대비 활용률 10%
     #   요청당 MySQL CPU 2.01ms → 2 vCPU의 70%면 약 697 req/s. 병목은 여전히 앱(559 req/s)
     # 컨테이너 배정 총합도 8.5G → 7.5G가 되어 Docker VM 용량(7.65G) 안에 들어온다
-    # (앱 1대 전환 후로는 5.5G).
+    # (앱 1대 전환 후 Redis까지 제거한 현재는 5G).
     cpus: 2
     mem_limit: 3g
     volumes:
@@ -40,19 +40,6 @@ services:
     networks:
       bench-net:
         ipv4_address: 172.28.0.10
-
-  bench-redis:
-    # 캐시-on baseline(#377 이전 커밋) 측정 전용. 현행 코드 측정에도 앱 기동 의존성으로 필요.
-    container_name: solply-bench-redis
-    image: redis:7
-    ports:
-      - "6382:6379"
-    command: [ "redis-server", "--requirepass", "solplyredispwd" ]
-    cpus: 1
-    mem_limit: 512m
-    networks:
-      bench-net:
-        ipv4_address: 172.28.0.11
 
   # 부하 모델(DAU 2만, 예상 피크 22 req/s, 목표 120 req/s = 5.5배 헤드룸) 기준 실서버 체급 재현.
   # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. Little's law: 120 req/s × 30ms ≈ 동시 ~4
@@ -69,9 +56,6 @@ services:
       SPRING_DATASOURCE_URL: "jdbc:mysql://bench-mysql:3306/solply_bench_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8"
       SPRING_DATASOURCE_USERNAME: solplyuser
       SPRING_DATASOURCE_PASSWORD: solplyuserpwd
-      SPRING_DATA_REDIS_HOST: bench-redis
-      SPRING_DATA_REDIS_PORT: "6379"
-      SPRING_DATA_REDIS_PASSWORD: solplyredispwd
       SERVER_PORT: "8082"
       SERVER_TOMCAT_THREADS_MAX: "50"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "10"
@@ -90,7 +74,6 @@ services:
     mem_limit: 2g
     depends_on:
       - bench-mysql
-      - bench-redis
     networks:
       bench-net:
         ipv4_address: 172.28.0.21
