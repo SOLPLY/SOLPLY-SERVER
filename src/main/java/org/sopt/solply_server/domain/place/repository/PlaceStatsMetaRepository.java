@@ -8,14 +8,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 /**
- * 랭킹 <b>버전</b> 레지스터. {@code place_stats_meta}(V29)의 1행을 읽고 민다.
+ * 랭킹 <b>버전</b>의 현재·직전 값을 담는 {@code place_stats_meta}(V29) 1행을 읽고 민다.
  *
  * <p>버전은 배치 한 회차이고, 그 회차의 {@code calculatedAt}을 epoch 초로 좁힌 값이 이름이다.
  * 커서는 발급 시점의 버전을 싣고 다니며 조회는 {@code WHERE ps.version = :version}으로 그 버전의
  * 행 집합만 본다 — 스크롤 도중 배치가 돌아도 사용자가 보던 순위가 유지된다.
  *
  * <p><b>엔티티가 아니라 네이티브 쿼리인 이유:</b> 이 테이블은 도메인 개념이 아니라 배치가 미는
- * 레지스터이고, 애플리케이션이 원하는 것은 행이 아니라 long 두 개다.
+ * 버전 값 1행이고, 애플리케이션이 원하는 것은 행이 아니라 long 두 개다.
  *
  * <p><b>슬라이스 테스트 주의:</b> {@code @Repository} 컴포넌트라 {@code @DataJpaTest}가 자동으로
  * 줍지 않는다 — 필요한 슬라이스는 {@code @Import}로 명시해야 한다.
@@ -34,7 +34,7 @@ public class PlaceStatsMetaRepository {
      */
     public static final long NO_GENERATION = 0L;
 
-    /** 1행 레지스터의 PK. V28의 {@code CHECK (id = 1)}이 다른 값을 막는다. */
+    /** 버전 값 1행의 PK. V28의 {@code CHECK (id = 1)}이 다른 값을 막는다. */
     private static final int SINGLETON_ID = 1;
 
     private final EntityManager em;
@@ -94,7 +94,7 @@ public class PlaceStatsMetaRepository {
      * 버전을 가리킨다.
      *
      * @param version 이번 회차의 버전 ({@link #toVersion})
-     * @return 영향 행 수. 레지스터 행이 있으면 1
+     * @return 영향 행 수. 메타 행이 있으면 1
      */
     public int shiftGeneration(long version) {
         return em.createNativeQuery("""

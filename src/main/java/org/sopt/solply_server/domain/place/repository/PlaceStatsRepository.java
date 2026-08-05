@@ -137,7 +137,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, PlaceSta
      * <p><b>현 버전을 메타에서 따로 읽지 않고 스칼라 서브쿼리로 접합하는 이유:</b> 따로 읽으면 이
      * 경로의 요청당 SQL이 1개 는다. PK 1행 조회라 비용은 상수이고 MySQL이 상수로 한 번만 평가한다.
      *
-     * <p>JPQL이 아닌 것은 {@code place_stats_meta}가 엔티티가 아니라 배치가 미는 레지스터라
+     * <p>JPQL이 아닌 것은 {@code place_stats_meta}가 엔티티가 아니라 배치가 미는 버전 값 1행이라
      * JPQL 서브쿼리의 대상이 될 수 없어서다. 그래서 매핑도 여기서 직접 한다.
      */
     default List<PlaceStatsView> findViewsByPlaceIds(List<Long> placeIds) {
