@@ -135,9 +135,14 @@ public class PlaceListDbQueryRepository {
      * 평점은 0으로 채우는 순간 "평점 0점"으로 읽힌다. 조인이 성립하지 않은 신규 장소도, 리뷰가
      * 아직 없는 장소도 null이 정답이라 그대로 흘려보낸다.
      *
-     * <p><b>이 정렬에 새 인덱스를 만들지 않는다.</b> 정렬 대상은 동네당 100건 안팎, 시 단위로 합쳐도
-     * 1,800건 수준(실측)이라 filesort 비용이 캐시 경로의 메모리 정렬과 같은 규모다. 인덱스를 더하면
-     * 쓰기 비용만 늘고 비교 대상 B의 성격("정렬을 DB에 맡긴다")도 흐려진다.
+     * <p><b>정렬은 {@code idx_places_town_active_created (town_id, active, created_at)}가 만든다
+     * — 역방향 스캔이다.</b> 세컨더리 인덱스 뒤에 PK가 오름차순으로 붙으므로 이 인덱스를 거꾸로 읽으면
+     * {@code created_at DESC, id DESC}가 그대로 나와 ORDER BY와 일치한다. {@code created_at}을
+     * <b>DESC로 선언하면 오히려 어긋난다</b>({@code created_at DESC, id ASC}가 되어 타이브레이크가
+     * 반대) — V31 주석에 실측 근거가 있다. SELECT가 places에서 만지는 컬럼을 모두 덮어 커버링이기도 하다.
+     *
+     * <p>다중 town은 town별로만 순서가 만들어져 filesort가 남는다. 정렬 대상이 커버링 엔트리
+     * (시 단위 ~1,800건)라 수용한다 — 인기순과 같은 성질이다.
      *
      * <p><b>커서를 {@code FROM_UNIXTIME}이 아니라 LocalDateTime 바인딩으로 비교하는 이유.</b>
      * {@code FROM_UNIXTIME}은 세션 {@code time_zone}을 타므로 커넥션 설정에 따라 경계가 통째로
