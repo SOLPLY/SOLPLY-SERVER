@@ -26,8 +26,9 @@ import lombok.NoArgsConstructor;
  * <p>쓰기 API(세터·정적 팩토리)를 두지 않는다. 쓰기 경로는 배치의 네이티브 UPSERT 하나이고,
  * 여기 필드는 스키마 정합 검증(ddl-auto=validate)과 테스트 단언용이다.
  *
- * <p>{@code avg_rating}·{@code review_count}는 현재 write-only다 — 점수를 계산하는 같은 스캔의
- * 부산물이라 저장 비용이 0이고, 장소 평균 평점 표시가 예정 용처다. 죽은 컬럼으로 오인해 지우지 말 것.
+ * <p>{@code avg_rating}·{@code review_count}는 목록의 평점·리뷰 수 표시가 읽는다(V30). 정렬에는
+ * 참여하지 않고 인덱스 말단에 실려 SELECT를 덮기만 한다. {@code avg_rating}이 NULL인 것은
+ * "리뷰가 없다"는 뜻이며 0점과 구분해야 한다 — 응답까지 NULL로 흘려보낸다.
  */
 @Entity
 @IdClass(PlaceStatsId.class)
@@ -35,7 +36,8 @@ import lombok.NoArgsConstructor;
         name = "place_stats",
         indexes = @Index(
                 name = "idx_place_stats_version_town_score",
-                columnList = "version, town_id, popular_score DESC, place_id, bookmark_count")
+                columnList = "version, town_id, popular_score DESC, place_id, "
+                        + "bookmark_count, review_count, avg_rating")
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

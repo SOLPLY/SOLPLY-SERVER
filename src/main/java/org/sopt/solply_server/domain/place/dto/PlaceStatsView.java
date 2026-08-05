@@ -6,15 +6,18 @@ import java.math.BigDecimal;
  * place_stats의 요청 경로 읽기 모델. 엔티티(PlaceStats)는 배치 UPSERT 전용이라 생성자를
  * 봉인해 뒀다 — 읽기 경로와 테스트는 이 뷰만 만진다.
  *
- * <p><b>지금 이 뷰의 소비자는 북마크 검색 하나다.</b> 목록 경로는 정렬 쿼리가 점수와 카운트를
- * 함께 실어 오므로 뷰를 거치지 않는다. 값은 <b>현 버전</b>의 행에서 온다 —
+ * <p><b>지금 이 뷰의 소비자는 북마크 검색 하나다.</b> 목록 경로는 정렬 쿼리가 점수와 표시값을
+ * 함께 실어 오므로 뷰를 거치지 않는다. 두 경로의 표시값이 같은 컬럼에서 와야 하므로 한쪽에
+ * 표시 항목을 더하면 다른 쪽도 함께 늘린다. 값은 <b>현 버전</b>의 행에서 온다 —
  * 어느 버전인지는 {@code PlaceStatsRepository#findViewsByPlaceIds}가 스칼라 서브쿼리로 지목한다.
  *
  */
 public record PlaceStatsView(
         Long placeId,
         BigDecimal popularScore,
-        int bookmarkCount
+        int bookmarkCount,
+        int reviewCount,
+        BigDecimal avgRating
 ) {
 
     /**

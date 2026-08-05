@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.service;
 
+import java.math.BigDecimal;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -231,7 +232,8 @@ public class PlaceService {
    * <p>레포지토리 쪽 record를 이 형태로 통일하지 않은 것은 의도다 — 그쪽은 "어떤 컬럼을 읽었는가"를
    * 그대로 드러내는 게 맞고, "정렬 키"라는 추상은 커서를 발급하는 이 경로의 관심사다.
    */
-  private record DbListRow(long placeId, double sortKey, long bookmarkCount) {}
+  private record DbListRow(long placeId, double sortKey, long bookmarkCount,
+                           long reviewCount, BigDecimal avgRating) {}
 
   /**
    * 장소 목록의 <b>유일한</b> 경로 — place_stats(인기순)/places(최신순) 정렬을 DB에 맡긴다.
@@ -295,7 +297,8 @@ public class PlaceService {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
               version, cursorScore, cursorPlaceId, fetchSize).stream()
-          .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount()))
+          .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount(),
+              r.reviewCount(), r.avgRating()))
           .toList();
       // sortKey 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
       // 다른 위치를 가리킨다. 레포지토리 쪽 역변환(LocalDateTime.ofEpochSecond)과 한 쌍이라
@@ -304,7 +307,8 @@ public class PlaceService {
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
               cursorSec, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(
-              r.placeId(), r.createdAt().toEpochSecond(ZoneOffset.UTC), r.bookmarkCount()))
+              r.placeId(), r.createdAt().toEpochSecond(ZoneOffset.UTC), r.bookmarkCount(),
+              r.reviewCount(), r.avgRating()))
           .toList();
     };
 
@@ -337,7 +341,9 @@ public class PlaceService {
               TagViewUtils.getActiveNameOrNull(p.getMainTag().orElse(null)),
               bookmarkStatus.getOrDefault(p.getId(), false),
               p.getTown().getId(),
-              row.bookmarkCount());
+              row.bookmarkCount(),
+              row.reviewCount(),
+              row.avgRating());
         })
         .toList();
 
@@ -459,7 +465,10 @@ public class PlaceService {
               TagViewUtils.getActiveNameOrNull(p.getMainTag().orElse(null)),
               true,
               p.getTown().getId(),
-              stats == null ? 0L : stats.bookmarkCount());
+              stats == null ? 0L : stats.bookmarkCount(),
+              stats == null ? 0L : stats.reviewCount(),
+              // 행이 없으면 평점도 없다 — 0으로 채우면 "평점 0점"이 된다 (PlacePreviewDto javadoc)
+              stats == null ? null : stats.avgRating());
         })
         .toList();
     return PlaceFilterGetResponse.of(previews, null);

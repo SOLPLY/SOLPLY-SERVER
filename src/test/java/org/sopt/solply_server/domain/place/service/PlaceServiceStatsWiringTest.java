@@ -100,6 +100,10 @@ class PlaceServiceStatsWiringTest {
   /** 현 버전. 값 자체에 뜻은 없고 쿼리에 그대로 바인딩되는지만 본다 */
   private static final long VERSION = 1_780_000_000L;
 
+  /** 표시용 평점·리뷰 수. 카운트와 구분되는 값이라야 실어 나르는 자리가 뒤바뀐 변이를 잡는다 */
+  private static final long REVIEW_COUNT = 12L;
+  private static final BigDecimal AVG_RATING = new BigDecimal("4.30");
+
   @InjectMocks private PlaceService placeService;
 
   /**
@@ -137,12 +141,14 @@ class PlaceServiceStatsWiringTest {
           .willReturn(new PlaceStatsMetaRepository.Generations(VERSION, 0L));
       given(placeListDbQueryRepository.findPopularRows(
           List.of(TOWN_ID), null, null, null, VERSION, null, null, NO_PAGING_FETCH_SIZE))
-          .willReturn(List.of(new PopularRow(1L, 9.0, bookmarkCount)));
+          .willReturn(List.of(
+              new PopularRow(1L, 9.0, bookmarkCount, REVIEW_COUNT, AVG_RATING)));
     } else {
       given(placeListDbQueryRepository.findLatestRows(
           List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(
-              new LatestRow(1L, LocalDateTime.of(2026, 1, 1, 0, 0), bookmarkCount)));
+              new LatestRow(1L, LocalDateTime.of(2026, 1, 1, 0, 0), bookmarkCount,
+                  REVIEW_COUNT, AVG_RATING)));
     }
     given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
   }
@@ -159,7 +165,8 @@ class PlaceServiceStatsWiringTest {
   /** 북마크 검색 경로의 카운트 출처 — 배치가 현 버전에 센 값이다 */
   private void givenStatsView(int bookmarkCount) {
     given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(
-        List.of(new PlaceStatsView(1L, BigDecimal.valueOf(12.5), bookmarkCount)));
+        List.of(new PlaceStatsView(
+            1L, BigDecimal.valueOf(12.5), bookmarkCount, (int) REVIEW_COUNT, AVG_RATING)));
   }
 
   @BeforeEach
@@ -282,5 +289,41 @@ class PlaceServiceStatsWiringTest {
 
     assertThat(preview.bookmarkCount()).isEqualTo(100L);
     verify(placeStatsRepository, times(1)).findViewsByPlaceIds(anyList());
+  }
+
+  /**
+   * 평점·리뷰 수도 카운트와 같은 출처(정렬 쿼리가 실어 온 place_stats 행)에서 온다 —
+   * 표시 항목이 늘었다고 조회가 늘지 않았음을 카운트와 함께 못 박는다.
+   */
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(PlaceSortType.class)
+  @DisplayName("목록 경로는 평점·리뷰 수도 정렬 쿼리가 실어 온 값으로 응답한다")
+  void listPathCarriesRatingAndReviewCount(PlaceSortType sort) {
+    givenListRow(sort, 42L);
+    given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
+        .willReturn(Map.of(1L, true));
+
+    PlacePreviewDto preview = getPlaces(false, sort).places().get(0);
+
+    assertThat(preview.reviewCount()).isEqualTo(REVIEW_COUNT);
+    assertThat(preview.avgRating()).isEqualByComparingTo(AVG_RATING);
+    verify(placeStatsRepository, never()).findViewsByPlaceIds(anyList());
+  }
+
+  /**
+   * <b>평점 없음은 0이 아니라 null이다.</b> 리뷰가 없거나(avg_rating NULL) 배치가 아직 닿지 않은
+   * 장소를 0으로 채우면 "평점 0점"이 되어 최하위 평가와 구분되지 않는다. 리뷰 <em>수</em>는
+   * 반대로 0이 정확한 답이라 0이어야 한다 — 두 컬럼의 빈 값 규칙이 다르다는 것이 요점이다.
+   */
+  @Test
+  @DisplayName("북마크 검색: place_stats에 행이 없으면 평점은 null, 리뷰 수는 0으로 응답한다")
+  void readsNullRatingWhenNoStatsRow() {
+    givenBookmarkedPlace();
+    given(placeStatsRepository.findViewsByPlaceIds(anyList())).willReturn(List.of());
+
+    PlacePreviewDto preview = getPlaces(true, PlaceSortType.POPULAR).places().get(0);
+
+    assertThat(preview.avgRating()).isNull();
+    assertThat(preview.reviewCount()).isZero();
   }
 }

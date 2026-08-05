@@ -145,13 +145,16 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, PlaceSta
                 .map(row -> new PlaceStatsView(
                         ((Number) row[0]).longValue(),
                         (BigDecimal) row[1],
-                        ((Number) row[2]).intValue()))
+                        ((Number) row[2]).intValue(),
+                        ((Number) row[3]).intValue(),
+                        (BigDecimal) row[4]))
                 .toList();
     }
 
     /** {@link #findViewsByPlaceIds}의 원시 행. 직접 부르지 말 것 — 매핑은 그쪽이 맡는다. */
     @Query(value = """
-        SELECT ps.place_id, ps.popular_score, ps.bookmark_count
+        SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+               ps.review_count, ps.avg_rating
         FROM place_stats ps
         WHERE ps.place_id IN (:placeIds)
           AND ps.version = (SELECT current_generation FROM place_stats_meta WHERE id = 1)

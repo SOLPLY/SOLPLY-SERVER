@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.repository.querydsl;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -29,14 +30,26 @@ public class PlaceListDbQueryRepository {
 
     private final EntityManager em;
 
-    public record PopularRow(long placeId, double popularScore, long bookmarkCount) {}
+    /**
+     * {@code avgRating}은 null을 유지한다 — "리뷰가 없다"와 "평점이 0이다"는 다른 말이고,
+     * 여기서 0으로 뭉개면 응답까지 그 구분이 사라진다.
+     */
+    public record PopularRow(long placeId, double popularScore, long bookmarkCount,
+                             long reviewCount, BigDecimal avgRating) {}
 
-    public record LatestRow(long placeId, LocalDateTime createdAt, long bookmarkCount) {}
+    public record LatestRow(long placeId, LocalDateTime createdAt, long bookmarkCount,
+                            long reviewCount, BigDecimal avgRating) {}
 
     /**
      * 인기순을 place_stats 단독으로 서빙한다 — {@code idx_place_stats_version_town_score}
-     * (version, town_id, popular_score DESC, place_id, bookmark_count)가 버전 파티션·필터·정렬·
-     * 타이브레이크를 흡수하고 끝의 {@code bookmark_count}가 커버링을 만든다 (V29).
+     * (version, town_id, popular_score DESC, place_id, bookmark_count, review_count, avg_rating)가
+     * 버전 파티션·필터·정렬·타이브레이크를 흡수하고, 말단 세 컬럼이 표시값까지 덮어 커버링을
+     * 만든다 (V29 → V30).
+     *
+     * <p><b>SELECT에 표시 컬럼을 더할 때는 인덱스 말단도 함께 늘린다.</b> 덮지 못한 컬럼이 하나라도
+     * 있으면 페이지 행마다 {@code PRIMARY (place_id, version)} 룩업이 붙는다. 세컨더리 엔트리가
+     * PK를 이미 들고 있어 등호 조회이긴 하나, 이 인덱스의 존재 이유가 "쿼리가 인덱스 안에서
+     * 끝난다"이므로 조용히 깨뜨리지 말 것 (V30 주석에 채택 근거).
      *
      * <p><b>불변식: 한 버전의 행 집합 = 그 회차 시점의 활성 장소.</b> 그래서 여기서 활성 여부를
      * 묻지 않는다. 지키는 주체는 배치이고({@code upsertAll}의 {@code WHERE p.active = 1} +
@@ -75,7 +88,8 @@ public class PlaceListDbQueryRepository {
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
-                SELECT ps.place_id, ps.popular_score, ps.bookmark_count
+                SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+                       ps.review_count, ps.avg_rating
                 FROM place_stats ps
                 WHERE ps.version = :version
                   AND ps.town_id IN (:townIds)
@@ -105,7 +119,9 @@ public class PlaceListDbQueryRepository {
             result.add(new PopularRow(
                     ((Number) row[0]).longValue(),
                     ((Number) row[1]).doubleValue(),
-                    ((Number) row[2]).longValue()));
+                    ((Number) row[2]).longValue(),
+                    ((Number) row[3]).longValue(),
+                    (BigDecimal) row[4]));
         }
         return result;
     }
@@ -114,6 +130,10 @@ public class PlaceListDbQueryRepository {
      * 최신순. <b>기준 테이블이 place_stats가 아니라 places다</b> — 배치가 아직 닿지 않은 신규 장소는
      * ps 행이 없는데, 신규 장소야말로 최신순의 맨 앞에 와야 할 대상이다. 그래서 카운트만
      * LEFT JOIN으로 붙이고 없으면 0으로 읽는다 (캐시 경로도 행이 없으면 0으로 표시한다).
+     *
+     * <p><b>{@code avg_rating}에만 COALESCE를 걸지 않는다.</b> 카운트는 없으면 0이 정확한 답이지만
+     * 평점은 0으로 채우는 순간 "평점 0점"으로 읽힌다. 조인이 성립하지 않은 신규 장소도, 리뷰가
+     * 아직 없는 장소도 null이 정답이라 그대로 흘려보낸다.
      *
      * <p><b>이 정렬에 새 인덱스를 만들지 않는다.</b> 정렬 대상은 동네당 100건 안팎, 시 단위로 합쳐도
      * 1,800건 수준(실측)이라 filesort 비용이 캐시 경로의 메모리 정렬과 같은 규모다. 인덱스를 더하면
@@ -150,7 +170,8 @@ public class PlaceListDbQueryRepository {
         boolean useCursor = cursorEpochSecond != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
-                SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0)
+                SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+                       COALESCE(ps.review_count, 0), ps.avg_rating
                 FROM places p
                 LEFT JOIN place_stats ps
                        ON ps.place_id = p.id
@@ -184,7 +205,9 @@ public class PlaceListDbQueryRepository {
             result.add(new LatestRow(
                     ((Number) row[0]).longValue(),
                     toLocalDateTime(row[1]),
-                    ((Number) row[2]).longValue()));
+                    ((Number) row[2]).longValue(),
+                    ((Number) row[3]).longValue(),
+                    (BigDecimal) row[4]));
         }
         return result;
     }
