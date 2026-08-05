@@ -232,20 +232,23 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * 활성 가드. V26 이후 place_stats에는 active 복제본이 없으므로, 내려간 장소를 거르는 책임은
-     * <b>전적으로</b> {@code JOIN places p ... AND p.active = 1}에 있다 — 유일한 가드다.
-     * 조인 가드를 지우면 점수가 가장 높은 placeC가 결과 맨 앞에 되살아난다.
+     * <b>이 쿼리는 활성 여부를 묻지 않는다.</b> "행이 있으면 활성"이라는 불변식을 배치가 지키므로
+     * (upsertAll의 {@code WHERE p.active = 1} + {@code deleteInactive}) 조회는 places를 되짚지 않는다.
+     * 여기서 검증하는 것은 그 <em>구조</em>다 — 가드가 몰래 되살아나면 placeC가 사라져 깨진다.
+     *
+     * <p>비활성화가 실제로 목록에서 사라지는 것은 배치 1회를 거친 뒤이며, 그 끝-끝 계약은
+     * {@code PlaceListFlowIT.비활성화된_장소는_배치_1회_뒤_인기순에서_사라진다}가 문다.
      */
     @Test
-    void places가_비활성이면_ps_행이_있어도_제외된다() {
+    void 조회는_활성_여부를_묻지_않는다_불변식은_배치가_지킨다() {
         insertStats(placeA, townId, 4.0, 0);
         insertStats(placeB, townId, 2.0, 0);
-        insertStats(placeC, townId, 6.0, 0);   // 통계 행은 그대로 남아 있다
+        insertStats(placeC, townId, 6.0, 0);   // 배치가 아직 지우지 않은 잔행
         deactivatePlace(placeC);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
 
-        assertThat(placeIdsOf(rows)).containsExactly(placeA, placeB);
+        assertThat(placeIdsOf(rows)).containsExactly(placeC, placeA, placeB);
     }
 
     // 여기 있던 재활성화_직후_ps_active가_낡아도_결과에_포함된다()는 V26과 함께 삭제했다.

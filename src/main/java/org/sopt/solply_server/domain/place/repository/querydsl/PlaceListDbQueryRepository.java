@@ -85,52 +85,59 @@ public class PlaceListDbQueryRepository {
      * 적었으나 실측으로 뒤집혔다. 이 변경을 A/B 측정 직후가 아니라 캐시 제거와 함께 넣은 이유는,
      * 측정이 끝난 조건을 바꾸면 그 판정의 근거가 흔들리기 때문이다.
      *
-     * <p><b>조인이 {@code STRAIGHT_JOIN}인 이유 — 커서가 붙으면 옵티마이저가 조인 순서를
-     * 뒤집는다 (2026-08-04 실측, 캠페인 {@code 2026-08-04_saturation-amplification}).</b>
-     * 커서 술어의 {@code ps.place_id > :cursorPlaceId}가 조인 등식({@code p.id = ps.place_id})을
-     * 타고 {@code p.id > :cursorPlaceId}로 전파되면서 places 주도 플랜이 후보로 생기는데,
-     * 옵티마이저가 {@code p.active = 1}의 선택도를 기본 추정치 10%로 계산해(실제는 거의 100%)
-     * 그쪽 비용을 실제의 1/10로 본다(cost 880 vs 991). 실행은 정반대다 —
+     * <p><b>places 조인이 없다 — 불변식이 "place_stats에는 활성 장소만 있다"로 바뀌었다
+     * (2026-08-05 결정).</b> 직전까지 {@code STRAIGHT_JOIN places p ON p.id = ps.place_id AND
+     * p.active = 1}이 붙어 있었고, 그 조인이 하는 일은 <b>"내려간 장소 즉시 숨김" 하나뿐</b>이었다.
+     * 통계 테이블만으로 필터·정렬·커버링이 전부 끝나는 경로가 그 한 가지 때문에 매 요청 원본
+     * 테이블을 되짚는 구조라, 조인을 지우고 불변식 유지를 배치로 옮겼다.
+     *
+     * <p><b>불변식을 지키는 주체는 배치 한 회차이고, 두 문장이 한 짝이다.</b>
+     * {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#upsertAll}의
+     * {@code WHERE p.active = 1}이 비활성 장소에 행을 만들지 않고,
+     * {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#deleteInactive}가
+     * 이미 있던 잔행을 <b>같은 트랜잭션에서</b> 지운다. 하나만 있으면 불변식이 성립하지 않는다 —
+     * 필터만 있으면 비활성화 <em>이전에</em> 만들어진 행이 낡은 점수로 영구히 남고(창이 닫히지
+     * 않는다), 삭제만 있으면 다음 회차의 UPSERT가 그 행을 되살린다.
+     *
+     * <p><b>노출 창 ≤1h를 수용한다 (사용자 결정).</b> 어드민이 장소를 내려도 다음 배치(매시 :30)까지
+     * 최대 1시간은 목록에 남고, 다시 올려도 그만큼 안 보인다. 어드민 비활성화 경로에 동기
+     * DELETE 훅을 달면 창을 0으로 만들 수 있지만 비활성화는 드문 사건이라, 그 훅이 사 오는 것은
+     * "드문 사건의 한 시간"뿐인데 대가로 어드민 쓰기 경로가 통계 테이블에 결합된다. 재활성화도
+     * 대칭으로 수용한다 — 한쪽만 즉시 반영하면 방향에 따라 정합성 등급이 갈리는, 아래
+     * {@code ps.active} 복제본이 겪었던 그 비대칭이 형태만 바꿔 되돌아온다.
+     *
+     * <p><b>조인을 지우면서 플랜 플립이 <em>구조적으로</em> 불가능해졌다 — 이것이 두 번째 이유다.</b>
+     * 커서가 붙으면 옵티마이저가 조인 순서를 뒤집는 병리가 실측돼 있었다 (2026-08-04, 캠페인
+     * {@code load-test/campaigns/2026-08-04_saturation-amplification}). 커서 술어
+     * {@code ps.place_id > :cursorPlaceId}가 조인 등식({@code p.id = ps.place_id})을 타고
+     * {@code p.id > :cursorPlaceId}로 전파되면서 places 주도 플랜이 후보로 생기는데, 옵티마이저가
+     * {@code p.active = 1}의 선택도를 기본 추정치 10%로 계산해(실제는 거의 100%) 그쪽 비용을
+     * 실제의 1/10로 봤다(cost 880 vs 991). 실행은 정반대였다 —
      * {@code idx_places_town_active} 전량 스캔(어느 시를 조회하든 전국 6,342 엔트리) + 행마다
      * ps PK 되짚기 + Using temporary + filesort. 포화 때만이 아니라 <b>커서 요청이면 항상</b>
-     * 이 플랜이라, 부하 믹스에서 요청의 17%(스크롤 2페이지)가 행 읽기의 76%를 차지했다.
+     * 그 플랜이라, 부하 믹스에서 요청의 17%(스크롤 2페이지)가 행 읽기의 76%를 차지했다.
      *
-     * <p>{@code STRAIGHT_JOIN}이 고정하는 것은 "ps가 주도 테이블"뿐이다 — 그것은 이 경로의
-     * 존재 이유(위 인덱스가 필터·정렬·커버링을 흡수)라 옵티마이저에게 맡길 이유가 없는 유일한
-     * 자유도이고, <b>인덱스 선택은 옵티마이저에 남는다</b>(세대별 인덱스도 스스로 고른다).
-     * 기각한 대안 둘:
-     * <ul>
-     *   <li><b>FORCE INDEX 상시화</b> — 같은 플랜을 얻고 효과도 실측됐지만(캠페인 조건 ③ A/B,
-     *       500 지점 처리량 2.7배) 인덱스 이름에 코드가 결합되고, 이름이 틀리면 쿼리가 통째로
-     *       에러이며, 미래의 더 나은 인덱스도 배제한다.</li>
-     *   <li><b>파생 테이블로 ps 선별을 먼저 끝내는 재구성</b> — LIMIT을 파생 테이블 안에 두면
-     *       바깥 {@code p.active} 필터가 행을 떨궈 페이지가 모자랄 수 있고, 그 순간 서비스의
-     *       {@code hasNext(= rows > pageSize)} 판정이 거짓이 되어 <b>뒤가 남았는데 스크롤이
-     *       끝난다</b>(정합성 회귀). LIMIT 없이 머지만 차단하면 요청당 임시테이블 실체화가
-     *       되돌아온다 — DISTINCT 제거(2026-08-04)로 지운 비용의 복원.</li>
-     * </ul>
-     * EXPLAIN 재검증(2026-08-04, 캠페인과 동일한 고정 파라미터): 현/직전 세대 커서 모두
-     * ps 주도 range(1,799행, 커버링)로 복귀, town·city·tag 케이스는 플랜 불변 —
-     * {@code load-test/campaigns/2026-08-04_saturation-amplification/results/explain/post-fix-straight-join.txt}.
+     * <p>그때의 처방은 {@code STRAIGHT_JOIN}이었다 — 조인 순서만 고정하고 인덱스 선택은
+     * 옵티마이저에 남기는, 힌트로서는 가장 좁은 것이었다(FORCE INDEX 상시화는 인덱스 이름에
+     * 코드가 결합되고, 파생 테이블 재구성은 바깥 {@code p.active} 필터가 페이지를 떨궈
+     * {@code hasNext} 판정을 거짓으로 만들어 각각 기각). 그러나 그것은 <b>증상의 봉합</b>이었다.
+     * 단일 테이블 쿼리에는 조인 순서라는 자유도 자체가 없으므로 옵티마이저가 뒤집을 대상이
+     * 사라지고, 힌트도 함께 소멸한다 — 지금의 이 쿼리는 플립을 <em>이기는</em> 것이 아니라
+     * 플립이 존재할 수 없는 모양이다. 커서 술어가 전파될 등식도 남아 있지 않다.
      *
-     * <p><b>술어를 ps 컬럼으로 잡고 신선도는 조인으로 거르는 이유.</b> town_id는 places에서
-     * 비정규화해 온 값이라 배치 간격만큼 낡을 수 있다(V24 주석). 그럼에도 WHERE를 ps 쪽에 거는 것은
-     * places와 JOIN한 조건으로는 위 인덱스가 정렬에 쓰이지 못해 이 경로의 존재 이유가 사라지기
-     * 때문이다.
+     * <p><b>술어를 ps 컬럼으로 잡는 이유.</b> town_id는 places에서 비정규화해 온 값이라
+     * 배치 간격만큼 낡을 수 있다(V24 주석). 그럼에도 WHERE를 ps 쪽에 거는 것은 places와 JOIN한
+     * 조건으로는 위 인덱스가 정렬에 쓰이지 못해 이 경로의 존재 이유가 사라지기 때문이다.
+     * 조인이 사라진 지금은 선택지가 아니라 유일한 형태다.
      *
-     * <p><b>active 축은 술어에서 빠졌다 — 진실은 {@code places.active} 하나다 (2026-08-02 결정).</b>
-     * 이전에는 {@code AND ps.active = 1}이 함께 걸려 있었고, 조인 가드
-     * ({@code JOIN places p ON ... AND p.active = 1})는 <b>내려간 장소</b>만 즉시 거르는 한쪽 방향
-     * 가드였다. 그래서 반대 방향에 구멍이 있었다 — {@code p.active=1}인데 {@code ps.active=0}인
-     * 상태, 즉 내렸던 장소나 동네를 <em>다시 올린</em> 직후 다음 배치 전까지 그 장소가 목록에서
-     * 통째로 실종됐다. 가상의 경로가 아니다: {@code AdminPlaceService.activatePlacesByTownIds}가
-     * {@code updateActiveByTownId(townIds, true)}로 동네 단위 일괄 재활성화를 한다.
-     *
-     * <p>ps 쪽 술어를 지운 근거는 <b>실익과 비용의 비대칭</b>이다. 즉시 숨김은 원래 조인 가드의
-     * 몫이었으므로 {@code ps.active}의 실효는 인덱스 스캔 가지치기 하나뿐이었는데, 비활성 장소가
-     * 희소해 그 이득은 ~0이다 (그리고 "프리픽스에 active가 있어 이득"이라는 주장은 비활성 행이
-     * 많이 존재함을 전제한 순환 논리였다). 반면 낡음의 비용 — 재활성화 누락 — 은 실재했다.
-     * 복제본을 없애면 낡을 것도 없다. V26이 컬럼 자체를 drop해 이 판단을 스키마로 굳힌다.
+     * <p><b>active 복제본을 되살리지 말 것 (2026-08-02 결정, 지금도 유효하다).</b> 한때
+     * {@code ps.active} 컬럼이 있어 {@code AND ps.active = 1}이 함께 걸려 있었다. 진실이 두 곳에
+     * 있으면 한쪽이 낡는데, 실제로 재활성화 직후({@code p.active=1}인데 {@code ps.active=0})
+     * 그 장소가 목록에서 통째로 실종되는 구멍이 있었다 —
+     * {@code AdminPlaceService.activatePlacesByTownIds}가
+     * {@code updateActiveByTownId(townIds, true)}로 동네 단위 일괄 재활성화를 하므로 가상의
+     * 경로가 아니었다. V26이 컬럼을 drop해 그 판단을 스키마로 굳혔다. 지금의 불변식은 "행의
+     * 존재 자체가 활성"이라 복제본이 들어설 자리도 없다.
      *
      * <p><b>남는 구멍은 하나 — 동네 이동이다.</b> 동네를 옮긴 장소가 다음 배치까지 이전 동네에
      * 나타난다. 이는 순위가 아니라 소속의 문제이고, 쿼리로는 못 막는다(막으려면 술어를 places로
@@ -155,8 +162,9 @@ public class PlaceListDbQueryRepository {
      * 않는다 — 그 순간 {@code idx_place_stats_town_score}가 정렬에 쓰이지 못해 이 경로의 존재 이유
      * (정렬을 인덱스가 흡수한다)가 통째로 사라진다. 즉 이것은 버그가 아니라 <b>대가</b>이고,
      * 대가의 크기는 "활동 0인 장소가 인기순 꼬리에서 다음 배치까지 빠진다"이다.
-     * 배치가 전 장소에 행을 남기므로(부팅 최초 적재 + 매시 30분 전량 재계산) 구멍은 마지막 배치
-     * 이후 <em>새로 생긴</em> 장소로 한정되고 창은 ≤1h다.
+     * 배치가 전 <b>활성</b> 장소에 행을 남기므로(부팅 최초 적재 + 매시 30분 전량 재계산) 구멍은
+     * 마지막 배치 이후 <em>새로 생긴</em> 장소로 한정되고 창은 ≤1h다. 비활성 장소에 행이 없는 것은
+     * 구멍이 아니라 위 불변식 그 자체다 — 이 쿼리가 활성 여부를 묻지 않는 근거이기도 하다.
      *
      * <p>LATEST는 기준 테이블이 places라 이 예외가 없다 — 같은 파일 안에서 두 정렬의 기준 테이블이
      * 비대칭인 것은 의도된 것이다. 신규 장소야말로 최신순 맨 앞에 와야 할 대상이기 때문이다.
@@ -217,13 +225,12 @@ public class PlaceListDbQueryRepository {
         StringBuilder sql = new StringBuilder("""
                 SELECT ps.place_id, %s, ps.bookmark_count
                 FROM place_stats ps
-                STRAIGHT_JOIN places p ON p.id = ps.place_id AND p.active = 1
                 WHERE ps.town_id IN (:townIds)
                 """.formatted(scoreColumn));
         if (usePrevGeneration) {
             sql.append("  AND ps.prev_popular_score IS NOT NULL\n");
         }
-        appendTagFilters(sql, useMainTag, useSubA, useSubB);
+        appendTagFilters(sql, "ps.place_id", useMainTag, useSubA, useSubB);
         if (useCursor) {
             sql.append("""
                       AND (%1$s < :cursorScore
@@ -293,7 +300,7 @@ public class PlaceListDbQueryRepository {
                 WHERE p.town_id IN (:townIds)
                   AND p.active = 1
                 """);
-        appendTagFilters(sql, useMainTag, useSubA, useSubB);
+        appendTagFilters(sql, "p.id", useMainTag, useSubA, useSubB);
         if (useCursor) {
             sql.append("""
                       AND (p.created_at < :cursorCreatedAt
@@ -326,7 +333,17 @@ public class PlaceListDbQueryRepository {
     /**
      * 태그 EXISTS 블록. 두 정렬이 같은 문자열을 <b>공유</b>해야 "정렬 축만 다르고 필터 의미론은 같다"가
      * 구조적으로 보장된다 — 복사해 두면 한쪽만 고치는 실수가 조용히 통과한다.
-     * 기준 별칭이 {@code p}인 것은 두 쿼리 모두 places를 {@code p}로 두기 때문이다.
+     *
+     * <p><b>장소 id 컬럼을 별칭째 파라미터로 받는 이유 — 공유를 지키기 위해서다.</b> 예전에는 두 쿼리
+     * 모두 places를 {@code p}로 뒀기에 {@code p.id}를 문자열에 박아 둘 수 있었다. 인기순에서 places
+     * 조인이 사라지면서({@link #findPopularRows} javadoc) 그 별칭이 한쪽에만 존재하게 됐는데,
+     * 그때 선택지는 둘이었다 — 블록을 복사해 정렬별로 갈라 두거나, 다른 <em>한 조각</em>만
+     * 파라미터로 빼고 템플릿은 한 벌로 남기거나. 갈라 두면 위 문단의 구조적 보장이 그대로
+     * 사라지므로 후자를 택했다. 인기순은 {@code "ps.place_id"}, 최신순은 {@code "p.id"}를 넘긴다.
+     *
+     * <p>이 인자는 <b>호출자가 주는 컬럼 표현식 리터럴</b>이라 사용자 입력이 닿지 않는다 —
+     * 두 호출부 모두 상수 문자열이다. 여기에 요청에서 온 값을 흘리는 순간 SQL 조립이 되므로
+     * 그러지 말 것 (태그 id들은 지금처럼 {@code :mainTagId} 같은 바인딩 파라미터로만 들어온다).
      *
      * <p><b>북마크 검색 경로와의 차이 — 태그 타입을 여기서는 검사하지 않는다.</b>
      * {@code PlaceTagMatcher}는 엔티티의 {@code Tag.getType()}을 직접 보고 "메인 자리에 온 id가
@@ -340,24 +357,25 @@ public class PlaceListDbQueryRepository {
      * 이미 막힌 입력이다. 즉 위의 갈림은 <b>상위 검증이 통과시키지 않는 입력에서만</b> 관측된다.
      */
     private void appendTagFilters(
-            StringBuilder sql, boolean useMainTag, boolean useSubA, boolean useSubB) {
+            StringBuilder sql, String placeIdColumn,
+            boolean useMainTag, boolean useSubA, boolean useSubB) {
         if (useMainTag) {
             sql.append("""
                       AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
-                                   WHERE pt.place_id = p.id AND t.id = :mainTagId AND t.active = 1)
-                    """);
+                                   WHERE pt.place_id = %s AND t.id = :mainTagId AND t.active = 1)
+                    """.formatted(placeIdColumn));
         }
         if (useSubA) {
             sql.append("""
                       AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
-                                   WHERE pt.place_id = p.id AND t.id IN (:subTagAIds) AND t.active = 1)
-                    """);
+                                   WHERE pt.place_id = %s AND t.id IN (:subTagAIds) AND t.active = 1)
+                    """.formatted(placeIdColumn));
         }
         if (useSubB) {
             sql.append("""
                       AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
-                                   WHERE pt.place_id = p.id AND t.id IN (:subTagBIds) AND t.active = 1)
-                    """);
+                                   WHERE pt.place_id = %s AND t.id IN (:subTagBIds) AND t.active = 1)
+                    """.formatted(placeIdColumn));
         }
     }
 

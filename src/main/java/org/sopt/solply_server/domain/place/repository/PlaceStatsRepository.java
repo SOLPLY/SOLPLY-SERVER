@@ -195,6 +195,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             WHERE pr.created_at <= :calculatedAt
             GROUP BY pr.place_id
         ) r ON r.place_id = p.id
+        WHERE p.active = 1
         ON DUPLICATE KEY UPDATE
             prev_popular_score = popular_score,
             town_id            = VALUES(town_id),
@@ -209,6 +210,23 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             @Param("bookmarkWeight") double bookmarkWeight,
             @Param("reviewWeight") double reviewWeight,
             @Param("halfLifeDays") double halfLifeDays);
+
+    /**
+     * 비활성 장소의 잔행을 지운다. <b>{@link #upsertAll}의 {@code WHERE p.active = 1}과 한 짝이다</b> —
+     * 필터만 있으면 비활성화 <em>이전에</em> 만들어진 행이 낡은 점수로 영구히 남고, 삭제만 있으면
+     * 다음 회차의 UPSERT가 그 행을 되살린다. 둘이 같은 트랜잭션에 있어야
+     * "place_stats에는 활성 장소만 있다"는 불변식이 성립하고, 인기순 쿼리가 places 조인 없이
+     * 서빙될 수 있다. 근거: {@code docs/design/2026-08-05-place-stats-version-rows.md} §3.
+     *
+     * @return 지운 행 수
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        DELETE ps FROM place_stats ps
+        JOIN places p ON p.id = ps.place_id
+        WHERE p.active = 0
+        """, nativeQuery = true)
+    int deleteInactive();
 
     /**
      * 북마크 생성 증분 — {@code bookmark_count}만 +1. 행이 없으면(배치가 아직 안 닿은 신규 장소)

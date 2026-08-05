@@ -137,6 +137,10 @@ public class PlaceStatsBatchProcessor {
      * <p><b>순서가 이것인 이유:</b> UPSERT가 실패하면 세대 기록도 롤백돼야 하는데, 반대로 두면
      * 실패 경로에서 "기록만 남고 점수는 옛 세대"가 될 여지가 문장 사이에 생긴다(롤백이 덮어주긴
      * 하지만 읽는 순서로도 인과가 드러나는 편이 낫다).
+     *
+     * <p>{@code deleteInactive}가 사이에 끼는 이유는 조회의 불변식("place_stats에는 활성 장소만")이
+     * UPSERT의 {@code WHERE p.active = 1}과 이 삭제 <b>둘</b>로만 성립하기 때문이다 —
+     * 근거는 {@link PlaceStatsRepository#deleteInactive} javadoc.
      */
     private int upsert(LocalDateTime calculatedAt) {
         int affected = placeStatsRepository.upsertAll(
@@ -144,6 +148,7 @@ public class PlaceStatsBatchProcessor {
                 properties.getBookmarkWeight(),
                 properties.getReviewWeight(),
                 properties.getHalfLifeDays());
+        placeStatsRepository.deleteInactive();
         placeStatsMetaRepository.shiftGeneration(calculatedAt);
         return affected;
     }

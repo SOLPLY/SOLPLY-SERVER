@@ -633,6 +633,64 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>불변식의 절반 — 필터.</b> 비활성 장소는 새 회차에 아예 들어가지 않는다.
+     * 이것이 인기순 쿼리가 places 조인 없이 서빙되는 근거다(설계 §3).
+     */
+    @Test
+    void 배치는_비활성_장소에_행을_만들지_않는다() {
+        clearStats();
+        setActive(placeC, false);
+
+        runBatch();
+
+        assertThat(placeStatsRepository.findById(placeC)).isEmpty();
+        assertThat(placeStatsRepository.findById(placeA)).isPresent();
+    }
+
+    /**
+     * <b>불변식의 나머지 절반 — 삭제.</b> 필터만 있으면 비활성화 <em>이전에</em> 만들어진 행이
+     * 낡은 점수로 영구히 남는다(UPSERT가 건드리지 않으므로 창이 닫히지 않는다).
+     */
+    @Test
+    void 배치는_비활성_장소의_잔행을_지운다() {
+        clearStats();
+        runBatch();
+        assertThat(placeStatsRepository.findById(placeC)).isPresent();   // 잔행을 만들어 둔다
+
+        setActive(placeC, false);
+        runBatchAt(NEXT_CALCULATED_AT);
+
+        assertThat(placeStatsRepository.findById(placeC)).isEmpty();
+        assertThat(placeStatsRepository.findById(placeA)).isPresent();
+    }
+
+    /**
+     * 재활성화도 대칭이다 — 삭제가 영구 배제가 아니라 <b>그 회차의 상태 반영</b>임을 못 박는다.
+     * 삭제를 "지운 뒤 다시 안 만든다"로 구현하면 여기서 깨진다.
+     */
+    @Test
+    void 재활성화한_장소는_다음_배치에_복귀한다() {
+        clearStats();
+        setActive(placeC, false);
+        runBatch();
+        assertThat(placeStatsRepository.findById(placeC)).isEmpty();
+
+        setActive(placeC, true);
+        runBatchAt(NEXT_CALCULATED_AT);
+
+        assertThat(placeStatsRepository.findById(placeC)).isPresent();
+    }
+
+    /** 테스트 트랜잭션과 함께 롤백되므로 시드 장소의 상태를 영구히 바꾸지 않는다 */
+    private void setActive(long placeId, boolean active) {
+        em.createNativeQuery("UPDATE places SET active = :active WHERE id = :id")
+                .setParameter("active", active)
+                .setParameter("id", placeId)
+                .executeUpdate();
+        em.clear();
+    }
+
+    /**
      * 다른 테스트가 전부 반감기 90일 하나만 써서, SQL에 90이 하드코딩돼 있어도 전부 통과한다.
      * 설정값이 실제로 쿼리까지 전달되는지 보려면 다른 반감기가 하나는 있어야 한다.
      */
@@ -772,8 +830,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     void 비어_있으면_최초_적재가_모든_장소를_채운다() {
         clearStats();
         insertBookmark(placeA, 0);
-        long placeCount = ((Number) em.createNativeQuery("SELECT COUNT(*) FROM places")
-                .getSingleResult()).longValue();
+        long placeCount = activePlaceCount();
 
         OptionalInt affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
 
@@ -864,14 +921,21 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(view.bookmarkCount()).isEqualTo(2);
     }
 
+    /** "모든 장소"가 아니라 <b>모든 활성 장소</b>다 — 그 차이가 곧 조회의 불변식이다 */
     @Test
-    void 배치는_모든_장소에_대해_행을_남긴다() {
-        long placeCount = ((Number) em.createNativeQuery("SELECT COUNT(*) FROM places")
-                .getSingleResult()).longValue();
+    void 배치는_모든_활성_장소에_대해_행을_남긴다() {
+        clearStats();
+        setActive(placeC, false);
+        long activeCount = activePlaceCount();
 
         runBatch();
 
-        assertThat(placeStatsRepository.count()).isEqualTo(placeCount);
+        assertThat(placeStatsRepository.count()).isEqualTo(activeCount);
+    }
+
+    private long activePlaceCount() {
+        return ((Number) em.createNativeQuery("SELECT COUNT(*) FROM places WHERE active = 1")
+                .getSingleResult()).longValue();
     }
 
     /**

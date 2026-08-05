@@ -194,6 +194,33 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         assertThat(previewOf(page2, lOld).bookmarkCount()).isZero();
     }
 
+    /**
+     * <b>비활성화는 즉시 숨김이 아니라 배치가 지운다.</b> 인기순 쿼리에서 places 조인이 사라졌으므로
+     * ("행이 있으면 활성"이 불변식) 어드민이 장소를 내려도 다음 배치까지는 목록에 남는다 —
+     * ≤1h 노출 창을 수용한 결정이다(설계 §3). 재활성화도 대칭이다.
+     *
+     * <p>배치 1회로 <b>사라지는 것</b>과 그 다음 1회로 <b>돌아오는 것</b>을 함께 문다.
+     * 삭제만 있고 필터가 없으면 첫 단언이, 필터만 있고 삭제가 없으면(잔행이 남아) 역시 첫 단언이 깨진다.
+     */
+    @Test
+    void 비활성화된_장소는_배치_1회_뒤_인기순에서_사라진다() {
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
+
+        jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeC);
+        // 비활성화 직후에는 아직 보인다 — 창의 존재 자체가 계약이다
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
+
+        batchProcessor.recalculateAll(CALCULATED_AT.plusHours(1));
+
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
+                .containsExactly(placeA, placeB);
+
+        jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeC);
+        batchProcessor.recalculateAll(CALCULATED_AT.plusHours(2));
+
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
+    }
+
     // === 커서 v3: 세대와 필터 지문 ===
 
     /**
