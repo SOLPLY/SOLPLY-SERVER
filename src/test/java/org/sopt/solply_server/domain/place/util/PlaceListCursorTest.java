@@ -12,13 +12,11 @@ import org.sopt.solply_server.global.exception.BusinessException;
 
 class PlaceListCursorTest {
 
-    /** 세대·필터 지문이 검증 대상이 아닌 테스트가 쓰는 값. 두 값이 왕복에 섞이지 않게 서로 다르게 둔다. */
-    private static final long GENERATION = 1_754_000_000L;
+    /** 필터 지문이 검증 대상이 아닌 테스트가 쓰는 값. 네 축이 전부 채워진 형태다. */
     private static final String FILTER_PRINT = "10|20|1,2|3";
 
     private static PlaceListCursor cursor(double sortKey, long placeId) {
-        return new PlaceListCursor(
-                PlaceSortType.POPULAR, sortKey, placeId, GENERATION, FILTER_PRINT);
+        return new PlaceListCursor(PlaceSortType.POPULAR, sortKey, placeId, FILTER_PRINT);
     }
 
     @Test
@@ -28,14 +26,16 @@ class PlaceListCursorTest {
     }
 
     /**
-     * 세대와 필터 지문이 <b>따로</b> 왕복하는지 본다. record 전체 비교만 하면 두 필드를 뒤바꾸거나
-     * 한쪽을 다른 쪽으로 덮는 회귀가 통과할 수 있어(둘 다 원본에서 왔으므로) 값으로 하나씩 문다.
+     * 네 필드가 <b>따로</b> 왕복하는지 본다. record 전체 비교만 하면 정렬키와 id를 뒤바꾸거나
+     * 지문을 다른 필드로 덮는 회귀가 통과할 수 있어(전부 원본에서 왔으므로) 값으로 하나씩 문다.
      */
     @Test
-    void 세대와_필터_지문도_왕복한다() {
+    void 정렬축_정렬키_id_지문이_각각_왕복한다() {
         PlaceListCursor decoded = PlaceListCursor.decode(cursor(9.5, 3L).encode());
 
-        assertThat(decoded.generation()).isEqualTo(GENERATION);
+        assertThat(decoded.sort()).isEqualTo(PlaceSortType.POPULAR);
+        assertThat(decoded.sortKey()).isEqualTo(9.5);
+        assertThat(decoded.placeId()).isEqualTo(3L);
         assertThat(decoded.filterPrint()).isEqualTo(FILTER_PRINT);
     }
 
@@ -48,7 +48,7 @@ class PlaceListCursorTest {
     @Test
     void base64이지만_필드가_모자란_토큰은_예외를_던진다() {
         String bogus = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("v3:POPULAR:123:4".getBytes(StandardCharsets.UTF_8));
+                .encodeToString("v4:POPULAR:123:4".getBytes(StandardCharsets.UTF_8));
         assertThatThrownBy(() -> PlaceListCursor.decode(bogus))
                 .isInstanceOf(BusinessException.class);
     }
@@ -98,9 +98,8 @@ class PlaceListCursorTest {
     }
 
     /**
-     * v2는 필드가 4개뿐이라 세대도 필터 지문도 없다. 받아들이면 그 둘을 <b>기본값으로 지어내야</b>
-     * 하는데, 지어낸 필터 지문은 어떤 요청과도 맞거나 어떤 요청과도 안 맞고 둘 다 조용한 오답이다.
-     * 운영 전이라 하위호환이 필요 없으므로 v2가 v1에 했던 것과 같이 거부한다.
+     * v2는 필드가 4개뿐이라 필터 지문이 없다. 받아들이면 지문을 <b>지어내야</b> 하는데, 지어낸
+     * 지문은 어떤 요청과도 맞거나 어떤 요청과도 안 맞고 둘 다 조용한 오답이다.
      */
     @Test
     void v2_토큰은_거부한다() {
@@ -108,6 +107,22 @@ class PlaceListCursorTest {
                 .encodeToString("v2:POPULAR:100.0:5".getBytes(StandardCharsets.UTF_8));
 
         assertThatThrownBy(() -> PlaceListCursor.decode(v2Token))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    /**
+     * <b>v3는 필드 수가 v4와 하나 차이라 가장 위험하다.</b> 세대(5번째)가 지문 자리로 밀려
+     * {@code "1754000000"}이 지문으로 읽히는데, 버전 문자열 검사가 없으면 그것이 <em>정상 커서로
+     * 디코딩</em>돼 상위의 지문 대조까지 내려간다. 거기서 어차피 오류가 나지만, 그때는
+     * "필터가 다르다"는 엉뚱한 진단이 붙는다 — 코덱에서 끊어야 원인이 남는다.
+     */
+    @Test
+    void v3_토큰은_거부한다() {
+        String v3Token = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("v3:POPULAR:100.0:5:1754000000:10|20|1,2|3"
+                        .getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> PlaceListCursor.decode(v3Token))
                 .isInstanceOf(BusinessException.class);
     }
 
@@ -170,7 +185,7 @@ class PlaceListCursorTest {
     void 지문의_끝이_비어_있어도_왕복한다() {
         String print = PlaceListCursor.filterPrintOf(1L, null, null, null);
         PlaceListCursor cursor =
-                new PlaceListCursor(PlaceSortType.LATEST, 100.0, 5L, 0L, print);
+                new PlaceListCursor(PlaceSortType.LATEST, 100.0, 5L, print);
 
         assertThat(PlaceListCursor.decode(cursor.encode())).isEqualTo(cursor);
     }

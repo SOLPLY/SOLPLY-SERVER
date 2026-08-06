@@ -45,13 +45,14 @@ class PrincipalDetailsServiceIT extends MySqlContainerSupport {
     /**
      * 베이스의 {@code datasource}와 이름이 겹치면 상위 메서드를 숨겨 데이터소스 설정이 사라진다.
      *
-     * <p>{@code place-stats.cron}을 끄는 이유는 {@code PlaceListFlowIT}과 같다 — 실제 앱을 띄우므로
+     * <p>{@code place-stats}의 두 cron을 끄는 이유는 {@code PlaceListFlowIT}과 같다 — 실제 앱을 띄우므로
      * 배치 {@code @Scheduled}가 등록되고, 스위트 도중 돌면 다른 IT가 의존하는 place_stats를 덮는다.
      */
     @DynamicPropertySource
     static void authProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
-        registry.add("solply.place-stats.cron", () -> "-");
+        registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.score-cron", () -> "-");
         registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
                 SqlStatementProbe.class::getName);
     }

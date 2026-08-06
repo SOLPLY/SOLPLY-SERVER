@@ -2,12 +2,14 @@ package org.sopt.solply_server.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,8 +35,13 @@ import org.springframework.test.context.DynamicPropertySource;
  * 걷는다. 조각별 테스트(배치 IT·쿼리 IT·커서 단위 테스트)는 이음새를 못 지키는데, 이 기능의 실제
  * 버그 2건(LATEST 커서 누락, 표시 이중 계산)이 전부 이음새에서 났다.
  *
- * <p>덮는 정렬 축은 POPULAR·LATEST 둘이고, 버전 고정(커서가 발급 당시 버전으로 계속 서빙)과
- * 만료 계약도 여기서 사슬 수준으로 문다. 북마크 검색(페이징 없는 별도 조립)도 같은 무대에서 걷는다.
+ * <p>덮는 정렬 축은 POPULAR·LATEST 둘이고, 커서 왕복·필터 지문 거부도 여기서 사슬 수준으로 문다.
+ * 북마크 검색(페이징 없는 별도 조립)도 같은 무대에서 걷는다.
+ *
+ * <p><b>두 배치를 항상 함께 돌리는 것이 이 파일의 픽스처 규약이다.</b> 카운트 회차가 행을 만들고
+ * 점수 회차가 그 행을 채점하므로, 하나만 돌리면 "행은 있는데 전부 0점"이 되어 순위 단언이 통째로
+ * id 순으로 흐른다. 두 배치가 서로의 칸을 침범하지 않는다는 것은
+ * {@code PlaceStatsBatchProcessorIT}의 소유권 테스트가 따로 문다.
  *
  * <p><b>계약: 단언은 PlaceService 응답 DTO 수준으로만 한다.</b> 내부 표현(네이티브 SQL의 컬럼 순서,
  * 레포지토리 record 모양)이 바뀌는 리팩터링에서 이 파일은 수정 없이 그린이어야 한다.
@@ -47,17 +54,17 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * {@code @DynamicPropertySource}는 static이라 같은 이름이면 상위/동명 메서드를 <em>숨겨</em>
      * 설정이 통째로 사라진다.
      *
-     * <p><b>배치 스케줄을 꺼야 하는 이유.</b> {@code @SpringBootTest}는 실제 앱을 띄우므로
-     * {@code PlaceStatsFacade.recalculatePlaceStats}의 {@code @Scheduled}가 그대로 등록된다.
-     * 매시 30분 배치라 스위트가 어느 시간대에 돌든 그 순간을 지나면 스케줄러가
-     * {@code recalculateAll(now())}를 돌려 픽스처가 의존하는 place_stats를 통째로 다른 세대로
-     * 덮어쓴다. {@code "-"}는 스프링이 "등록하지 않음"으로 해석하는 센티널이다
-     * ({@code Scheduled.CRON_DISABLED}).
+     * <p><b>배치 스케줄 둘을 모두 꺼야 하는 이유.</b> {@code @SpringBootTest}는 실제 앱을 띄우므로
+     * {@code PlaceStatsFacade}의 {@code @Scheduled} 둘이 그대로 등록된다. 카운트는 매시 30분이라
+     * 스위트가 어느 시간대에 돌든 그 순간을 지나면 스케줄러가 {@code now()} 기준으로 배치를 돌려
+     * 픽스처가 의존하는 place_stats를 덮어쓴다. {@code "-"}는 스프링이 "등록하지 않음"으로
+     * 해석하는 센티널이다 ({@code Scheduled.CRON_DISABLED}).
      */
     @DynamicPropertySource
     static void listFlowProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
-        registry.add("solply.place-stats.cron", () -> "-");
+        registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.score-cron", () -> "-");
     }
 
     @Autowired private PlaceService placeService;
@@ -126,9 +133,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         // 내 북마크지만 배치 "이전" — 배치가 이미 센 쪽이다 (placeB 카운트 5의 다섯 번째)
         insertBookmark(me, placeB, CALCULATED_AT.minusDays(90));
 
-        batchProcessor.recalculateAll(CALCULATED_AT);
+        runBothBatches(CALCULATED_AT);
 
-        // 내 북마크지만 배치 "이후"라 이번 버전의 카운트에는 없다 —
+        // 내 북마크지만 배치 "이후"라 이번 회차의 카운트에는 없다 —
         // place_stats는 0인데 isBookmarked는 true인 상태를 만든다.
         // 표시 보정이 되살아나면 이 조합에서만 카운트가 1로 부풀어 즉시 잡힌다.
         insertBookmark(me, placeC, CALCULATED_AT.plusMinutes(30));
@@ -197,68 +204,155 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>비활성화는 즉시 숨김이 아니라 배치가 지운다.</b> 인기순 쿼리에서 places 조인이 사라졌으므로
-     * ("행이 있으면 활성"이 불변식) 어드민이 장소를 내려도 다음 배치까지는 목록에 남는다 —
-     * ≤1h 노출 창을 수용한 결정이다(설계 §3). 재활성화도 대칭이다.
+     * <b>비활성화는 즉시 숨김이 아니라 카운트 배치가 지운다.</b> 인기순 쿼리에서 places 조인이
+     * 사라졌으므로("행이 있으면 활성"이 불변식) 어드민이 장소를 내려도 다음 카운트 배치까지는
+     * 목록에 남는다 — ≤1h 노출 창을 수용한 결정이다. 재활성화도 대칭이다.
+     *
+     * <p><b>여기서 카운트 배치만 돌리는 것이 핵심이다.</b> 잔행 삭제는 카운트 회차의 책임이고
+     * ({@code deleteStaleRows}), 점수 회차는 행을 만들지도 지우지도 않는다. 두 배치를 함께
+     * 돌리면 어느 쪽이 지웠는지 구분되지 않아 그 책임 분담이 검증에서 빠진다.
      *
      * <p>배치 1회로 <b>사라지는 것</b>과 그 다음 1회로 <b>돌아오는 것</b>을 함께 문다.
      * 삭제만 있고 필터가 없으면 첫 단언이, 필터만 있고 삭제가 없으면(잔행이 남아) 역시 첫 단언이 깨진다.
      */
     @Test
-    void 비활성화된_장소는_배치_1회_뒤_인기순에서_사라진다() {
+    void 비활성화된_장소는_카운트_배치_1회_뒤_인기순에서_사라진다() {
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
 
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeC);
         // 비활성화 직후에는 아직 보인다 — 창의 존재 자체가 계약이다
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
 
-        batchProcessor.recalculateAll(CALCULATED_AT.plusHours(1));
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
                 .containsExactly(placeA, placeB);
 
+        // 재활성화는 대칭이 아니다 — 카운트 배치가 행을 되살리지만 그 행은 미채점이라
+        // 인기순에는 아직 안 나온다. 점수 배치까지 돌아야 복귀한다(아래 테스트가 그 계약을 문다).
         jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeC);
-        batchProcessor.recalculateAll(CALCULATED_AT.plusHours(2));
+        runBothBatches(CALCULATED_AT.plusHours(2));
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
     }
 
-    // === 커서 v3: 세대와 필터 지문 ===
-
     /**
-     * <b>첫 페이지가 발급하는 커서는 현 세대의 것이다.</b> setUp이 {@code CALCULATED_AT}으로 배치를
-     * 돌렸으므로 그 시각이 곧 현 세대의 이름이고, 커서에는 그것의 epoch 초가 실린다.
+     * <b>신규 장소는 카운트 배치만으로는 인기순에 오르지 않는다 — 점수 배치를 기다린다.</b>
      *
-     * <p>이 값이 없거나 틀리면 다음 페이지가 어느 점수 컬럼으로 정렬해야 할지 판정할 근거가 사라진다 —
-     * 세대 고정 전체가 이 한 값 위에 서 있다.
+     * <p>인기순은 {@code score_calculated_at IS NOT NULL}인 행만 본다. 카운트 배치가 만든 행의
+     * {@code popular_score}는 컬럼 기본값 0인데 그 0은 "0점"이 아니라 "아직 점수가 없다"이고,
+     * 순위에 섞으면 유효한 음수 점수 위로 올라간다(그 순위 자체는 쿼리 IT가 값으로 문다).
+     * 여기서는 <b>사슬 전체가 그 결정을 지키는지</b>를 본다 — 배치 → 조회 → 응답까지.
+     *
+     * <p><b>같은 무대에서 표시 카운트는 정상이어야 한다.</b> 인기순에서 빼는 것과 "통계가 아예
+     * 없는 것처럼 보이는 것"은 다른 말이고, 후자면 이 결정이 사용자에게 손해가 된다.
+     * 최신순은 기준 테이블이 places라 이 술어를 타지 않으므로 신규 장소가 맨 앞에 뜨고 카운트도
+     * 실린다 — 두 정렬의 비대칭이 여기서 값으로 드러난다.
      */
     @Test
-    void 첫_페이지가_발급하는_커서는_현_세대를_싣는다() {
-        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
+    void 신규_장소는_점수_배치_전까지_인기순에서_빠지고_최신순_카운트에는_나온다() {
+        long newPlace = createPlace(townId, "db직행신규", CALCULATED_AT.plusMinutes(5));
+        insertBookmark(createUser(), newPlace, CALCULATED_AT.plusMinutes(10));
 
-        assertThat(PlaceListCursor.decode(page1.nextCursor()).generation())
-                .isEqualTo(CALCULATED_AT.toEpochSecond(ZoneOffset.UTC));
+        // 카운트 배치만 — 행은 생기지만 채점되지 않는다
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
+                .doesNotContain(newPlace);
+        // 같은 시점의 최신순에는 맨 앞에 뜨고, 카운트 배치가 센 값이 그대로 실린다
+        PlaceFilterGetResponse latest = placeService.getPlaces(me, latestRequest(townId, null, 10));
+        assertThat(ids(latest)).startsWith(newPlace);
+        assertThat(previewOf(latest, newPlace).bookmarkCount()).isEqualTo(1);
+
+        // 점수 배치가 돌면 비로소 인기순에 합류한다
+        batchProcessor.recalculateScores(CALCULATED_AT.plusHours(1));
+
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
+                .contains(newPlace);
     }
 
     /**
-     * <b>세대는 스크롤 세션 내내 승계된다 — 페이지마다 다시 읽지 않는다.</b>
+     * <b>미채점 0이 유효한 음수 점수를 제치지 않는다 — 사슬 수준의 확인.</b>
      *
-     * <p>페이지마다 현 세대를 재조회하면 세션 <em>중간에</em> 배치가 도는 순간 앞 페이지는 옛 세대,
-     * 뒤 페이지는 새 세대가 되어 정확히 이 기능이 막으려던 어긋남이 그대로 난다. 커서가 세대를
-     * 실어 나르는 이유가 이것이므로, 받은 값을 그대로 넘기는지 값으로 못 박는다.
+     * <p>픽스처의 placeB는 1점 리뷰 5건이 붙어 점수가 <em>음수</em>({@code ≈−0.747})다. 신규 장소를
+     * 카운트 배치로만 올려 두면 그 행의 {@code popular_score}는 0이라, 술어가 없을 경우 응답 순서가
+     * {@code [C, A, 신규, B]}가 되어 <b>아무 평가도 없는 장소가 평판 나쁜 장소를 앞선다</b>.
+     * 술어가 있으면 신규 장소는 아예 목록에 없고 꼬리는 placeB 그대로다.
      *
-     * <p>size=1이라 세 장소가 세 페이지로 갈리고, 2페이지도 뒤에 placeB가 남아 커서를 발급한다.
+     * <p>꼬리를 값으로 확인하는 것이 요점이다 — 포함 여부만 보면 "신규가 빠졌다"는 알아도
+     * 그것이 <em>음수 위로 올라가는 것</em>을 막았는지는 말해주지 못한다.
      */
     @Test
-    void 다음_커서는_받은_커서의_세대를_승계한다() {
-        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 1));
-        long issuedGeneration = PlaceListCursor.decode(page1.nextCursor()).generation();
+    void 미채점_신규_장소가_음수_점수_장소를_앞서지_않는다() {
+        long newPlace = createPlace(townId, "db직행음수대조", CALCULATED_AT.plusMinutes(5));
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+
+        List<Long> ranked = ids(placeService.getPlaces(me, popularRequest(null, 10)));
+
+        assertThat(ranked).containsExactly(placeC, placeA, placeB);
+        assertThat(ranked).doesNotContain(newPlace);
+        // 꼬리가 음수 점수 장소다 — 미채점 0이 끼어들면 여기가 newPlace로 바뀐다
+        assertThat(ranked.get(ranked.size() - 1)).isEqualTo(placeB);
+    }
+
+    // === 커서 v4: 좌표와 필터 지문 ===
+
+    /**
+     * <b>커서는 좌표(정렬 키 + id)와 지문만 싣는다.</b> v3까지 있던 세대 필드가 사라졌으므로,
+     * 다음 페이지가 참조하는 것은 발급 당시의 <em>순위 좌표</em>뿐이다.
+     *
+     * <p>발급된 커서의 정렬 키가 <b>앞 페이지 마지막 항목의 점수</b>와 같아야 다음 페이지의 경계가
+     * 성립한다 — 값이 어긋나면 항목이 흘리거나 겹치는데 그것은 200 응답이라 조용하다.
+     */
+    @Test
+    void 커서는_앞_페이지_마지막_항목의_좌표를_싣는다() {
+        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
+        assertThat(ids(page1)).containsExactly(placeC, placeA);   // 2.0 > ≈1.609
+
+        PlaceListCursor issued = PlaceListCursor.decode(page1.nextCursor());
+
+        assertThat(issued.sort()).isEqualTo(PlaceSortType.POPULAR);
+        assertThat(issued.placeId()).isEqualTo(placeA);
+        // placeA의 점수 ≈1.609434 — 커서가 placeC(2.0)의 좌표를 실으면 placeA가 다음 페이지에 중복된다
+        assertThat(issued.sortKey()).isCloseTo(1.609434, within(0.00001));
+    }
+
+    /**
+     * <b>배치가 돌아 점수가 갈려도 커서는 거부되지 않는다 — 새 좌표계 위에서 이어진다.</b>
+     * v3까지는 이 상황에서 세대가 어긋나 {@code EXPIRED_PLACE_CURSOR}가 나갔다. 인기 점수를
+     * 새벽 1회로 내리면서 이 창을 수용하기로 했으므로, 이제는 <b>200으로 이어지는 것</b>이 계약이다.
+     *
+     * <p><b>수용한 대가를 값으로 남긴다 — placeA가 두 페이지에 겹쳐 나온다.</b> 커서가 실은 좌표는
+     * 발급 당시 placeA의 점수(≈1.609434)인데, 2회차에서 한 시간치 감쇠가 더 걸려 placeA의 새 점수가
+     * 그보다 <em>미세하게 작아진다</em>(≈1.609412). 그러면 "점수 &lt; 커서" 경계에 placeA 자신이
+     * 걸려 다시 실려 나온다. 오류가 아니라 조용한 중복이고, 새벽 배치라 마주칠 확률이 희박하다는
+     * 것이 수용 근거다.
+     *
+     * <p>placeB에 북마크를 몰아 넣는 것은 2회차 순위를 실제로 흔들기 위해서다 — 두 회차가 똑같으면
+     * "좌표계가 갈렸다"는 전제 자체가 성립하지 않아 이 테스트가 아무것도 보지 않는다.
+     * (그래도 placeB가 1위가 되지는 않는다. 1점 리뷰 5건의 페널티가 −2.0으로 붙어 있다.)
+     */
+    @Test
+    void 배치가_돌아_점수가_갈려도_커서는_만료되지_않고_새_좌표계로_이어진다() {
+        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
+        assertThat(ids(page1)).containsExactly(placeC, placeA);
+
+        // 스크롤 도중 회차 1번 — placeB에 북마크 20건을 몰아 순위를 실제로 흔든다
+        for (int i = 0; i < 20; i++) {
+            insertBookmark(createUser(), placeB, CALCULATED_AT.plusMinutes(10));
+        }
+        runBothBatches(CALCULATED_AT.plusHours(1));
 
         PlaceFilterGetResponse page2 =
-                placeService.getPlaces(me, popularRequest(page1.nextCursor(), 1));
+                placeService.getPlaces(me, popularRequest(page1.nextCursor(), 2));
 
-        assertThat(PlaceListCursor.decode(page2.nextCursor()).generation())
-                .isEqualTo(issuedGeneration);
+        // 오류가 아니다 — 새 좌표계에서 "점수 ≈1.609434 아래"를 정직하게 돌려준다.
+        // placeA가 그 경계 아래로 내려앉아 1페이지에 이어 또 나온다(수용한 중복).
+        assertThat(ids(page2)).containsExactly(placeA, placeB);
+        assertThat(ids(page1)).containsAnyElementsOf(ids(page2));
+        // 커서 없는 재요청은 새 순서를 그대로 준다 — 클라이언트의 복구 경로가 막히지 않았다
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 3))))
+                .containsExactly(placeC, placeA, placeB);
     }
 
     /**
@@ -294,74 +388,42 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>전환(배치 1회) 후에도 발급 당시 버전으로 계속 서빙한다.</b> 스크롤 도중 배치가 돌아
-     * 점수가 통째로 갈려도 커서가 실은 버전의 행 집합이 그대로 남아 있으므로 순서가 유지된다 —
-     * 버전 행 전환이 사려던 것이 이 한 가지다.
-     *
-     * <p>2회차에서 순서가 <b>반드시 뒤집히게</b> 세우는 것이 핵심이다. placeB에 북마크를 몰아
-     * 현 버전 1위로 올려 두면, 커서가 현 버전으로 서빙될 경우 2페이지가 [B]가 아니라 다른 답을
-     * 낸다. 두 버전이 비슷하면 버전 고정이 통째로 빠져도 우연히 맞는다.
+     * <b>손으로 지어낸 커서 토큰은 거부된다.</b> 필드가 하나 모자란 v3 형태를 그대로 흘려보내면
+     * 세대 값이 지문 자리로 밀려 들어와 "필터가 다르다"는 엉뚱한 진단이 붙는다 — 코덱에서 끊는
+     * 것이 정직하다. 사슬 수준에서 그 응답 코드까지 확인한다.
      */
     @Test
-    void 전환_전_발급한_커서는_전환_후에도_직전_버전으로_서빙된다() {
-        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
-        assertThat(ids(page1)).containsExactly(placeC, placeA);   // 2.0 > ≈1.609
+    void 옛_버전의_커서_토큰은_유효하지_않은_커서로_거부한다() {
+        String v3Token = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                ("v3:POPULAR:2.0:" + placeC + ":1754000000:" + townId + "|||")
+                        .getBytes(StandardCharsets.UTF_8));
 
-        // 스크롤 도중 배치 1회 — placeB를 현 버전 1위로 올려 순서를 뒤집는다
-        for (int i = 0; i < 20; i++) {
-            insertBookmark(createUser(), placeB, CALCULATED_AT.plusMinutes(10));
-        }
-        batchProcessor.recalculateAll(CALCULATED_AT.plusHours(1));
-
-        PlaceFilterGetResponse page2 =
-                placeService.getPlaces(me, popularRequest(page1.nextCursor(), 2));
-
-        // 직전 버전 기준의 남은 항목 — B가 1위로 올라온 새 버전을 봤다면 여기가 달라진다
-        assertThat(ids(page2)).containsExactly(placeB);
-        assertThat(PlaceListCursor.decode(page1.nextCursor()).generation())
-                .isEqualTo(CALCULATED_AT.toEpochSecond(ZoneOffset.UTC));
-    }
-
-    /**
-     * <b>현 버전도 직전 버전도 아닌 커서는 만료 오류다 — 강등하지 않는다.</b>
-     *
-     * <p>강등은 과거 버전의 정렬 경계를 현 버전 점수 축에 그대로 갖다 대는 것이라 경계 부근의
-     * 누락·중복을 구조적으로 피할 수 없다. 클라이언트 계약은 "만료를 받으면 커서 없이 재요청"이고,
-     * 그 재요청이 정상 응답이라는 것까지 함께 문다 — 오류만 확인하면 "무조건 만료"라는 회귀가 산다.
-     */
-    @Test
-    void 두_버전_이상_지난_커서는_만료_오류이고_커서_없는_재요청은_정상이다() {
-        PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
-        PlaceListCursor issued = PlaceListCursor.decode(page1.nextCursor());
-        String staleCursor = new PlaceListCursor(
-                issued.sort(), issued.sortKey(), issued.placeId(),
-                issued.generation() - 86_400L,   // 하루 전 — 어느 버전과도 맞지 않는다
-                issued.filterPrint()).encode();
-
-        assertThatThrownBy(() -> placeService.getPlaces(me, popularRequest(staleCursor, 2)))
+        assertThatThrownBy(() -> placeService.getPlaces(me, popularRequest(v3Token, 2)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
+                .isEqualTo(ErrorCode.INVALID_PLACE_CURSOR);
 
+        // 커서 없는 재요청은 정상이다 — 오류만 확인하면 "무조건 거부"라는 회귀가 산다
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 2))))
                 .containsExactly(placeC, placeA);
     }
 
     /**
-     * <b>LATEST의 세대는 0이다.</b> {@code created_at}은 배치가 만지지 않는 불변 축이라 좌표계가
-     * 갈릴 일이 없고, 세대를 실으면 "배치가 돌 때마다 최신순 커서가 강등된다"는 뜻 없는 동작이 붙는다.
-     * 필터 지문 검증은 정렬과 무관하게 동일하게 적용된다.
+     * <b>필터 지문 검증은 정렬과 무관하게 동일하게 적용된다.</b> 지문은 배치 주기와 상관없는
+     * 구멍(다른 필터 요청에 커서를 재사용)을 막는 장치라, 세대를 걷어낸 뒤에도 두 정렬 모두에 남는다.
      */
     @Test
-    void 최신순_커서의_세대는_0이고_필터_지문은_그대로_검증된다() {
-        long latestTownId = createTown(LATEST_TOWN_NAME + "세대");
-        createPlace(latestTownId, "db직행세대1", PLACE_CREATED_AT);
-        createPlace(latestTownId, "db직행세대2", PLACE_CREATED_AT);
+    void 최신순_커서의_필터_지문도_그대로_검증된다() {
+        long latestTownId = createTown(LATEST_TOWN_NAME + "지문");
+        createPlace(latestTownId, "db직행지문1", PLACE_CREATED_AT);
+        createPlace(latestTownId, "db직행지문2", PLACE_CREATED_AT);
 
         String cursor =
                 placeService.getPlaces(me, latestRequest(latestTownId, null, 1)).nextCursor();
 
-        assertThat(PlaceListCursor.decode(cursor).generation()).isZero();
+        // 발급 지문은 요청한 동네의 것이다 — 다른 동네 요청에 그대로 쓰면 거부된다
+        assertThat(PlaceListCursor.decode(cursor).filterPrint())
+                .isEqualTo(latestTownId + "|||");
         assertThatThrownBy(() -> placeService.getPlaces(me, latestRequest(townId, cursor, 1)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
@@ -506,15 +568,16 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>카운트는 배치 전용이다 (증분 폐지, 설계 §5).</b> 방금 누른 북마크는 {@code isBookmarked}로
-     * 즉시 보이지만 <em>수</em>에는 다음 배치부터 반영된다 — 신선도 ≤1h를 수용한 결정이다.
+     * <b>카운트는 배치 전용이다 (증분 폐지).</b> 방금 누른 북마크는 {@code isBookmarked}로
+     * 즉시 보이지만 <em>수</em>에는 다음 카운트 배치부터 반영된다 — 신선도 ≤1h를 수용한 결정이다.
      *
      * <p>고정 대기인 이유: 검증 대상이 "도달함"이 아니라 <b>"도달하지 않음"</b>이라 기다릴 조건이
      * 없다. 500ms는 증분이 살아 있던 시절 수십 ms 안에 반영되던 것을 관측한 데서 잡은 여유다.
-     * 이벤트 발행은 그대로 남아 있으므로(다른 소비자가 붙을 수 있다) 소비자가 되살아나면 여기서 걸린다.
+     * 발행측 이벤트까지 걷어낸 지금은 되살아날 경로가 리스너 <em>와</em> 발행 둘 다인데,
+     * 어느 쪽이든 부활하면 여기서 걸린다.
      *
-     * <p>이어서 배치를 돌려 값이 실제로 5가 되는 것까지 본다 — 앞 단언만 두면 "배치도 카운트를
-     * 안 센다"는 회귀가 통과한다.
+     * <p>이어서 카운트 배치를 돌려 값이 실제로 5가 되는 것까지 본다 — 앞 단언만 두면 "배치도
+     * 카운트를 안 센다"는 회귀가 통과한다.
      */
     @Test
     void 카운트는_배치_전용이라_북마크_직후에는_변하지_않는다() throws Exception {
@@ -532,7 +595,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         assertThat(beforeBatch.isBookmarked()).isTrue();   // 체크 표시는 즉시 반영된다
 
         // 방금 만든 북마크의 created_at은 실제 현재 시각이라, 집계 상한이 그보다 뒤여야 세어진다
-        batchProcessor.recalculateAll(LocalDateTime.now().plusHours(1));
+        batchProcessor.recalculateCounts(LocalDateTime.now().plusHours(1));
 
         assertThat(bookmarkCountInDb(placeA)).isEqualTo(5);
         assertThat(previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA)
@@ -541,13 +604,20 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
     // === helpers ===
 
+    /**
+     * 한 회차 = 카운트 + 점수. 픽스처는 늘 둘을 함께 돌린다 (클래스 javadoc의 규약).
+     * 순서가 카운트 → 점수인 것은 점수 회차가 <b>이미 있는 행만</b> 갱신하기 때문이다.
+     */
+    private void runBothBatches(LocalDateTime calculatedAt) {
+        batchProcessor.recalculateCounts(calculatedAt);
+        batchProcessor.recalculateScores(calculatedAt);
+    }
+
     /** place_stats의 원시 카운트. 행이 없으면 −1 (기대값과 절대 겹치지 않는 센티널) */
     private int bookmarkCountInDb(long placeId) {
-        List<Integer> rows = jdbcTemplate.queryForList("""
-                SELECT bookmark_count FROM place_stats
-                 WHERE place_id = ?
-                   AND version = (SELECT current_generation FROM place_stats_meta WHERE id = 1)
-                """, Integer.class, placeId);
+        List<Integer> rows = jdbcTemplate.queryForList(
+                "SELECT bookmark_count FROM place_stats WHERE place_id = ?",
+                Integer.class, placeId);
         return rows.isEmpty() ? -1 : rows.get(0);
     }
 
@@ -658,7 +728,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 이 IT는 롤백되지 않으므로(@SpringBootTest는 기본 커밋) 만든 행을 직접 지운다.
      * 픽스처 역추적의 기준점은 towns.name — 거기서 places, 그 places의 bookmarks·place_reviews로 내려간다.
      *
-     * <p><b>place_stats만 전량 삭제하는 이유.</b> {@code recalculateAll}은 내 장소가 아니라
+     * <p><b>place_stats만 전량 삭제하는 이유.</b> 카운트 회차는 내 장소가 아니라
      * <b>모든 장소</b>에 행을 남긴다. 그 행들을 남겨두면 place_stats가 비어 있음을 전제로 하는
      * 다른 IT들이 깨진다 — 현재는 {@code PlaceStatsRepositoryIT}가 그렇다. 배치가 만든 행은 전부
      * 이 테스트가 만든 것이므로 전량 삭제가 곧 "내가 만든 것만 삭제"다
@@ -678,13 +748,6 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
-            // 배치는 place_stats뿐 아니라 버전 레지스터도 민다(V29). 값을 남기면 뒤 클래스가
-            // "아직 배치가 안 돈" 상태를 전제할 수 없다. 1행 레지스터라 DELETE가 아니라 UPDATE다.
-            st.executeUpdate("""
-                    UPDATE place_stats_meta
-                       SET current_generation = NULL, prev_generation = NULL
-                     WHERE id = 1
-                    """);
             st.executeUpdate(
                     "DELETE FROM bookmarks WHERE target_type = 'PLACE' AND target_id IN ("
                             + myPlaces + ")");

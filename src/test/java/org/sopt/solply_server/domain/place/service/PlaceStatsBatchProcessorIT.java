@@ -13,7 +13,6 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -24,8 +23,6 @@ import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
-import org.sopt.solply_server.domain.place.entity.PlaceStatsId;
-import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.global.config.QueryDslConfig;
 import org.sopt.solply_server.support.MySqlContainerSupport;
@@ -44,10 +41,16 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 
+/**
+ * 집계 배치 두 회차의 계약을 실제 MySQL로 못 박는다 — 공식·상한·멱등성·원자성·소유권.
+ *
+ * <p><b>대부분의 테스트가 {@link #runBatch()}(카운트 + 점수)를 쓰는 이유.</b> 점수 회차는 이미
+ * 존재하는 행만 갱신하므로 카운트 회차 없이 단독으로는 아무 일도 하지 않는다. 두 회차가 서로의
+ * 칸을 침범하지 않는다는 것은 소유권 테스트 두 건이 <b>한쪽만 돌려서</b> 따로 문다.
+ */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class,
-        PlaceStatsMetaRepository.class})
+@Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class})
 class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     private static final double BOOKMARK_WEIGHT = 1.0;
@@ -74,16 +77,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     /** 배치 기준 시각. 모든 픽스처의 created_at을 이 시각 기준 상대값으로 넣는다. */
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
-    /**
-     * 다음 회차의 기준 시각. 세대 경계를 보려면 두 회차의 {@code calculatedAt}이 <b>달라야</b> 한다 —
-     * 같은 값으로 두 번 돌리면 그것은 세대 교체가 아니라 같은 세대의 재실행이다(멱등성 테스트의 몫).
-     * 운영 간격과 같은 1시간을 준다.
-     */
+    /** 다음 회차의 기준 시각. 운영의 카운트 회차 간격과 같은 1시간을 준다. */
     private static final LocalDateTime NEXT_CALCULATED_AT = CALCULATED_AT.plusHours(1);
-
-    /** 두 회차의 버전. 규약(epoch 초, UTC 간주)은 {@code PlaceStatsMetaRepository#toVersion}이 정한다 */
-    private static final long VERSION = CALCULATED_AT.toEpochSecond(ZoneOffset.UTC);
-    private static final long NEXT_VERSION = NEXT_CALCULATED_AT.toEpochSecond(ZoneOffset.UTC);
 
     @DynamicPropertySource
     static void ddlAuto(DynamicPropertyRegistry registry) {
@@ -108,9 +103,10 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      *
      * <p><b>메서드명까지 박지 않고 접두사로 두는 이유.</b> 예전에는 {@code ".recalculateAll"}까지
      * 하드코딩했는데, 그러면 나중에 추가되는 트랜잭션 진입점이 이 프로브에서 <b>구조적으로 배제</b>돼
-     * 격리 계약이 검증되지 않은 채로 들어온다. 실제로 {@code recalculateIfEmpty}가 그 구멍으로
-     * 들어왔고, 거기서 {@code isolation}·{@code @Transactional}을 통째로 지우는 변이 2건이
-     * 전부 살아남았다(실측). 접두사로 넓히면 이 클래스가 여는 모든 트랜잭션이 프로브에 걸린다.
+     * 격리 계약이 검증되지 않은 채로 들어온다. 실제로 최초 적재 진입점이 그 구멍으로 들어왔고,
+     * 거기서 {@code isolation}·{@code @Transactional}을 통째로 지우는 변이 2건이 전부 살아남았다(실측).
+     * 접두사로 넓히면 이 클래스가 여는 모든 트랜잭션이 프로브에 걸린다 — 진입점이 넷으로 늘어난
+     * 지금은 그 값어치가 더 크다.
      */
     private static final String BATCH_TX_NAME_PREFIX =
             PlaceStatsBatchProcessor.class.getName() + ".";
@@ -131,14 +127,6 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 쌓인다. 좁히면 기록 대상이 "프로세서가 스스로 연 트랜잭션" 하나로 줄어든다 — 다른
      * 테스트들은 이미 열린 테스트 트랜잭션에 프로세서가 <em>참여</em>하므로 begin 자체가
      * 일어나지 않아 애초에 이 리스너를 타지 않는다.
-     *
-     * <p><b>실측 단서 — 이 필터는 테스트로 검출되지 않는다.</b> 필터를 제거해도 순차 실행에서는
-     * 14건이 전부 그린이었다. {@code @BeforeEach}의 {@code clear()}가 스프링의 테스트 트랜잭션
-     * begin <em>이후에</em> 돌아(스프링은 {@code beforeTestMethod}에서 트랜잭션을 열고 그 다음
-     * {@code @BeforeEach}를 부른다) 그 기록을 지워 버리기 때문이다. 그러므로 이 필터는 변이로
-     * 잡히는 장치가 아니라 {@code junit.jupiter.execution.parallel.enabled}를 켰을 때
-     * 무관한 트랜잭션이 섞여 드는 플레이크를 막는 <b>예방책</b>이다.
-     * 반면 {@code BATCH_TX_NAME_PREFIX} 상수 자체는 검증된다 — 틀리면 격리 테스트가 빈 리스트로 실패한다.
      */
     @TestConfiguration
     static class IsolationProbeConfig {
@@ -277,13 +265,22 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * 리포지토리를 직접 부르지 않고 프로세서를 거친다 — 설정 주입 경로(properties → SQL 파라미터)까지
-     * 함께 검증하기 위해서다. 가중치·반감기를 인자로 받지 않는 것은 프로세서가 그 값을
-     * {@link PlaceStatsProperties}에서 가져오기 때문이고, 기본값이 아래 상수와 같다는 것은
-     * {@code 기본_설정값은_설계에서_정한_가중치와_반감기다}가 못 박는다.
+     * 한 회차 = 카운트 + 점수. 리포지토리를 직접 부르지 않고 프로세서를 거치는 이유는 설정 주입
+     * 경로(properties → SQL 파라미터)까지 함께 검증하기 위해서다. 가중치·반감기를 인자로 받지
+     * 않는 것은 프로세서가 그 값을 {@link PlaceStatsProperties}에서 가져오기 때문이고, 기본값이
+     * 위 상수와 같다는 것은 {@code 기본_설정값은_설계에서_정한_가중치와_반감기다}가 못 박는다.
+     *
+     * <p>순서가 카운트 → 점수인 것은 계약이다 — 점수 회차는 이미 있는 행만 갱신한다.
      */
     private int runBatch() {
-        return batchProcessor.recalculateAll(CALCULATED_AT);
+        return runBatchAt(CALCULATED_AT);
+    }
+
+    /** 기준 시각을 지정해 한 회차를 돌린다. */
+    private int runBatchAt(LocalDateTime calculatedAt) {
+        int affected = batchProcessor.recalculateCounts(calculatedAt);
+        batchProcessor.recalculateScores(calculatedAt);
+        return affected;
     }
 
     /**
@@ -293,117 +290,164 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      *
      * <p>영속성 컨텍스트 정리는 @Modifying(clearAutomatically = true)가 이미 해준다.
      */
-    private int runBatch(double halfLifeDays) {
+    private void runBatch(double halfLifeDays) {
         double original = properties.getHalfLifeDays();
         properties.setHalfLifeDays(halfLifeDays);
         try {
-            return batchProcessor.recalculateAll(CALCULATED_AT);
+            runBatch();
         } finally {
             properties.setHalfLifeDays(original);
         }
     }
 
     /** {@link #runBatch(double)}의 {@code m}판. 설정 빈을 잠시 바꿔 넣고 되돌리는 이유도 같다. */
-    private int runBatchWithMinReviewCount(int minReviewCount) {
+    private void runBatchWithMinReviewCount(int minReviewCount) {
         int original = properties.getMinReviewCount();
         properties.setMinReviewCount(minReviewCount);
         try {
-            return batchProcessor.recalculateAll(CALCULATED_AT);
+            runBatch();
         } finally {
             properties.setMinReviewCount(original);
         }
     }
 
-    /**
-     * 기준 시각을 지정해 돌린다. {@link #runBatch()}가 상수를 쓰는 것과 달리, 세대 교체를 보는
-     * 테스트는 두 회차의 기준 시각이 달라야 성립하므로 호출자가 정한다.
-     */
-    private int runBatchAt(LocalDateTime calculatedAt) {
-        return batchProcessor.recalculateAll(calculatedAt);
-    }
-
-    /** 현 회차({@link #CALCULATED_AT}) 버전의 행 */
     private PlaceStats statsOf(long placeId) {
-        return statsOf(placeId, VERSION);
+        return placeStatsRepository.findById(placeId).orElseThrow();
     }
 
-    private PlaceStats statsOf(long placeId, long version) {
-        return placeStatsRepository.findById(new PlaceStatsId(placeId, version)).orElseThrow();
+    private boolean existsStats(long placeId) {
+        return placeStatsRepository.findById(placeId).isPresent();
     }
 
-    private boolean existsStats(long placeId, long version) {
-        return placeStatsRepository.findById(new PlaceStatsId(placeId, version)).isPresent();
-    }
+    // === 컬럼 소유권 — 두 회차가 서로를 덮지 않는다 ===
 
     /**
-     * 세대 메타를 초기 상태(둘 다 NULL)로 되돌린다 — {@link #clearStats()}와 같은 이유다.
-     * 같은 클래스의 {@code 배치_트랜잭션은_READ_COMMITTED로_열린다}가 배치 결과를 <b>실제로 커밋</b>하므로
-     * 그 테스트가 먼저 돌면 메타에 값이 남아 "첫 배치 직후 prev는 NULL"이라는 단언이 성립하지 않는다.
-     * 이 UPDATE는 테스트 트랜잭션과 함께 롤백된다.
-     */
-    private void resetGenerationMeta() {
-        em.createNativeQuery("""
-                UPDATE place_stats_meta
-                   SET current_generation = NULL, prev_generation = NULL
-                 WHERE id = 1
-                """).executeUpdate();
-    }
-
-    /** 버전 메타 컬럼 하나. BIGINT라 드라이버가 어떤 Number로 주든 받는다 (없으면 null) */
-    private Long generationOf(String column) {
-        Object value = em.createNativeQuery(
-                "SELECT " + column + " FROM place_stats_meta WHERE id = 1").getSingleResult();
-        return value == null ? null : ((Number) value).longValue();
-    }
-
-    private long versionRowCount(long version) {
-        return ((Number) em.createNativeQuery(
-                "SELECT COUNT(*) FROM place_stats WHERE version = :version")
-                .setParameter("version", version)
-                .getSingleResult()).longValue();
-    }
-
-    /**
-     * <b>한 회차의 계약 셋 — 새 버전 적재 · 메타 시프트 · 옛 버전 청소.</b> 셋이 한 트랜잭션에
-     * 있어야 커서가 가리키는 버전이 항상 실재한다.
+     * <b>카운트 회차는 점수 칸을 건드리지 않는다.</b> 매시 도는 회차가 점수를 덮으면 새벽에 계산한
+     * 값이 한 시간 만에 0으로 되돌아간다 — 인기순이 사실상 id 순이 되는데, 오류도 로그도 없다.
      *
-     * <p>3회차까지 도는 이유: 2회차만으로는 청소가 통째로 빠져도 그린이다(지울 옛 버전이 아직
-     * 없다). 3회차에서 1회차 버전이 사라지고 2·3회차 것만 남는 것이 보관 2버전의 정의다.
-     *
-     * <p>회차마다 북마크를 더해 점수를 갈라 두면 "새 버전을 만든 게 아니라 같은 행을 덮었다"는
-     * 회귀가 값으로도 드러난다.
+     * <p>점수를 <b>먼저</b> 세워 두고 카운트를 돌린 뒤 값이 그대로인지 보는 형태다. 반대로 하면
+     * "점수 회차가 나중에 덮어써서 우연히 맞는" 상태와 구분되지 않는다.
      */
     @Test
-    void 배치는_새_버전을_적재하고_메타를_밀고_옛_버전을_지운다() {
+    void 카운트_회차는_점수와_채점시각을_덮지_않는다() {
         clearStats();
-        resetGenerationMeta();
+        insertBookmark(placeA, 0);
+        runBatch();
+        BigDecimal scored = statsOf(placeA).getPopularScore();
+        LocalDateTime scoredAt = statsOf(placeA).getScoreCalculatedAt();
+        assertThat(scored.doubleValue()).isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
+
+        // 다음 회차 전에 북마크가 하나 더 늘었다 — 점수가 함께 갱신되면 값이 ln(3)으로 뛴다
+        insertBookmark(placeA, 0);
+        batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
+
+        PlaceStats after = statsOf(placeA);
+        assertThat(after.getBookmarkCount()).isEqualTo(2);              // 카운트는 갱신됐고
+        assertThat(after.getPopularScore()).isEqualByComparingTo(scored); // 점수는 그대로다
+        assertThat(after.getScoreCalculatedAt()).isEqualTo(scoredAt);
+    }
+
+    /**
+     * <b>점수 회차는 표시 카운트를 건드리지 않는다.</b> 위 테스트의 짝이다. 점수 SQL이 카운트까지
+     * 다시 쓰면 두 값의 신선도가 점수 쪽(≤24h)으로 끌려 내려가 표시 카운트가 하루씩 낡는다.
+     */
+    @Test
+    void 점수_회차는_표시_카운트와_카운트시각을_덮지_않는다() {
+        clearStats();
+        insertBookmark(placeA, 0);
+        insertReview(placeA, 5, 0);
+        insertReview(placeB, 1, 0);
+        batchProcessor.recalculateCounts(CALCULATED_AT);
+        PlaceStats counted = statsOf(placeA);
+        assertThat(counted.getBookmarkCount()).isEqualTo(1);
+
+        // 채점 전에 원본이 늘었다 — 점수 회차가 카운트까지 세면 아래 값들이 2·2로 뛴다
+        insertBookmark(placeA, 0);
+        insertReview(placeA, 5, 0);
+        batchProcessor.recalculateScores(NEXT_CALCULATED_AT);
+
+        PlaceStats after = statsOf(placeA);
+        assertThat(after.getBookmarkCount()).isEqualTo(1);
+        assertThat(after.getReviewCount()).isEqualTo(1);
+        assertThat(after.getAvgRating()).isEqualByComparingTo(counted.getAvgRating());
+        assertThat(after.getCountCalculatedAt()).isEqualTo(CALCULATED_AT);
+        // 점수 쪽은 실제로 갱신됐다 — 아무것도 안 한 상태와 구분한다
+        assertThat(after.getScoreCalculatedAt()).isEqualTo(NEXT_CALCULATED_AT);
+    }
+
+    /**
+     * <b>점수 회차는 행을 만들지 않는다.</b> 행의 주인은 카운트 회차 하나여야 잔행 판정
+     * ({@code count_calculated_at} 비교)이 성립한다. 점수 SQL을 INSERT로 바꾸면 여기서 깨진다.
+     */
+    @Test
+    void 점수_회차는_행을_새로_만들지_않는다() {
+        clearStats();
         insertBookmark(placeA, 0);
 
-        runBatchAt(CALCULATED_AT);
+        int affected = batchProcessor.recalculateScores(CALCULATED_AT);
 
-        assertThat(generationOf("current_generation")).isEqualTo(VERSION);
-        assertThat(generationOf("prev_generation")).isNull();
-        assertThat(versionRowCount(VERSION)).isEqualTo(activePlaceCount());
-        BigDecimal firstScore = statsOf(placeA, VERSION).getPopularScore();
-
-        insertBookmark(placeA, 0);   // 2회차 점수를 1회차와 갈라놓는 조각
-        runBatchAt(NEXT_CALCULATED_AT);
-
-        assertThat(generationOf("current_generation")).isEqualTo(NEXT_VERSION);
-        assertThat(generationOf("prev_generation")).isEqualTo(VERSION);
-        // 두 버전이 나란히 산다 — 1회차 값이 그대로 남아 있어야 그 커서가 계속 서빙된다
-        assertThat(statsOf(placeA, VERSION).getPopularScore()).isEqualByComparingTo(firstScore);
-        assertThat(statsOf(placeA, NEXT_VERSION).getPopularScore())
-                .isNotEqualByComparingTo(firstScore);
-
-        long thirdVersion = PlaceStatsMetaRepository.toVersion(CALCULATED_AT.plusHours(2));
-        runBatchAt(CALCULATED_AT.plusHours(2));
-
-        // 보관은 2버전 — 1회차가 통째로 죽는다
-        assertThat(versionRowCount(VERSION)).isZero();
-        assertThat(versionRowCount(NEXT_VERSION)).isEqualTo(activePlaceCount());
-        assertThat(versionRowCount(thirdVersion)).isEqualTo(activePlaceCount());
+        assertThat(affected).isZero();
+        assertThat(placeStatsRepository.count()).isZero();
     }
+
+    // === 잔행 청소 ===
+
+    /**
+     * <b>비활성화한 장소의 행은 카운트 회차 1회로 사라진다.</b> 버전 행 시절에는 옛 버전이 통째로
+     * 죽으면서 이 청소가 함께 일어났는데(V29), 버전이 사라진 지금은 {@code deleteStaleRows}가
+     * 유일한 경로다. <b>이 테스트가 없으면 어드민이 내린 장소가 인기순에 영구히 남는다.</b>
+     *
+     * <p>적재의 {@code WHERE p.active = 1}만 있고 삭제가 없으면 잔행이 남아 첫 단언이 깨지고,
+     * 삭제만 있고 필터가 없으면 다시 적재돼 역시 깨진다 — 둘이 짝이어야 성립한다.
+     */
+    @Test
+    void 비활성화한_장소의_잔행은_카운트_회차_1회로_사라진다() {
+        clearStats();
+        runBatch();
+        assertThat(existsStats(placeC)).isTrue();   // 잔행이 될 행을 만들어 둔다
+
+        setActive(placeC, false);
+        batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
+
+        assertThat(existsStats(placeC)).isFalse();
+        assertThat(existsStats(placeA)).isTrue();   // 활성 장소는 그대로 남는다
+    }
+
+    /**
+     * 재활성화도 대칭이다 — 삭제가 영구 배제가 아니라 <b>그 회차의 상태 반영</b>임을 못 박는다.
+     * 삭제를 "지운 뒤 다시 안 만든다"로 구현하면 여기서 깨진다.
+     */
+    @Test
+    void 재활성화한_장소는_다음_회차에_복귀한다() {
+        clearStats();
+        setActive(placeC, false);
+        runBatch();
+        assertThat(existsStats(placeC)).isFalse();
+
+        setActive(placeC, true);
+        batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
+
+        assertThat(existsStats(placeC)).isTrue();
+    }
+
+    /**
+     * <b>{@code count_calculated_at}은 회차마다 갱신된다.</b> 잔행 판정의 기준이 이 값이라,
+     * 갱신이 멈추면 다음 회차가 <em>자기가 방금 적재한 행까지</em> 전부 지운다.
+     * 값이 실제로 앞으로 나아가는지 두 회차에 걸쳐 본다.
+     */
+    @Test
+    void 카운트_회차는_기준시각을_행마다_갱신한다() {
+        clearStats();
+        batchProcessor.recalculateCounts(CALCULATED_AT);
+        assertThat(statsOf(placeA).getCountCalculatedAt()).isEqualTo(CALCULATED_AT);
+
+        batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
+
+        assertThat(statsOf(placeA).getCountCalculatedAt()).isEqualTo(NEXT_CALCULATED_AT);
+        assertThat(placeStatsRepository.count()).isEqualTo(activePlaceCount());
+    }
+
+    // === 공식 ===
 
     @Test
     void 오늘_생긴_북마크는_감쇠_없이_로그_압축만_거친다() {
@@ -566,6 +610,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(statsOf(placeA).getReviewCount()).isZero();
     }
 
+    // === 멱등성과 집계 상한 ===
+
     @Test
     void 같은_기준시각으로_두_번_실행하면_결과가_같다() {
         insertBookmark(placeA, 0);
@@ -588,7 +634,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 재실행은 며칠 뒤일 수도 있으므로 그 전제는 성립하지 않는다.
      *
      * <p>그래서 두 실행 <em>사이에</em> 기준 시각 이후의 활동을 넣고도 결과가 같은지 본다.
-     * 상한 조건({@code created_at <= :calculatedAt})을 지우면 여기서만 깨진다.
+     * 상한 조건({@code created_at <= :calculatedAt})을 <b>두 SQL 중 하나에서만</b> 지워도
+     * 여기서 깨진다 — 스냅샷이 카운트 칸과 점수 칸을 함께 싣기 때문이다.
      */
     @Test
     void 두_실행_사이에_기준시각_이후_활동이_들어와도_결과가_같다() {
@@ -609,12 +656,11 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * 배치 기준 시각 이후에 생긴 북마크는 이번 세대의 집계 대상이 아니다.
+     * 배치 기준 시각 이후에 생긴 북마크는 이번 회차의 집계 대상이 아니다.
      *
      * <p>이 상한이 없으면 {@code TIMESTAMPDIFF}가 음수가 되어 {@code POW(0.5, 음수) > 1} —
      * 감쇠가 아니라 증폭이다. 상한이 없을 때 아래 시나리오는 {@code 1.0}이 아니라
-     * {@code 2.0002...}가 나온다. 멱등성 주장도 이 상한 위에 서 있다
-     * ({@code 두_실행_사이에_기준시각_이후_활동이_들어와도_결과가_같다}).
+     * {@code 2.0002...}가 나온다. 멱등성 주장도 이 상한 위에 서 있다.
      */
     @Test
     void 기준시각_이후에_생긴_북마크는_집계에_들어가지_않는다() {
@@ -632,6 +678,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /**
      * 리뷰 축에도 같은 상한이 걸려 있어야 한다 — 점수·건수·평균 평점 셋 모두 영향을 받는다.
+     * 세 값이 <b>서로 다른 두 SQL</b>에서 나오므로(건수·평균은 카운트 회차, 점수는 점수 회차)
+     * 한 문장에서만 상한을 지운 회귀도 여기서 갈린다.
      *
      * <p><b>placeB의 리뷰가 이 테스트를 성립시킨다.</b> 없으면 상한을 지켰을 때 {@code C = 5.0},
      * 어겼을 때 {@code C = 3.0}이 되는데 <em>두 경우 모두 조정평점이 {@code C}와 같아져</em>
@@ -672,7 +720,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /**
      * 전량 재계산의 핵심 주장은 "이전 값이 무엇이든 원본 기준으로 덮어쓴다"이다.
-     * 나머지 테스트는 전부 place_stats가 빈 상태에서 시작해 INSERT 경로만 타고,
+     * 나머지 테스트는 대부분 place_stats가 빈 상태에서 시작해 INSERT 경로만 타고,
      * 멱등성 테스트는 입력이 같아 ON DUPLICATE KEY UPDATE에서 컬럼 하나가 통째로 빠져도 통과한다.
      * 이 테스트만이 UPDATE 분기에서 값이 실제로 새 값으로 바뀌는지 본다.
      */
@@ -720,11 +768,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     /**
      * town_id는 places에서 비정규화해 오는 값이고, 낡으면 순위가 아니라 소속이 틀린다
      * (V24·PlaceStats 주석 참고). 정렬 인덱스의 선행 컬럼이라 배치가 이 값을 놓치면
-     * 목록 경로가 통째로 어긋난다.
-     *
-     * <p><b>{@code active} 축은 V26에서 사라졌다 (2026-08-02).</b> 여기에 있던
-     * "비활성 장소를 만들어 active=false 복사 경로를 태운다"는 절차도 함께 걷어냈다 —
-     * 활성 여부의 진실은 이제 {@code places.active} 하나이고, 조회의 조인 가드가 그것을 본다.
+     * 목록 경로가 통째로 어긋난다. <b>카운트 회차의 소유 컬럼</b>이다.
      */
     @Test
     void 장소의_town_id를_그대로_복사한다() {
@@ -740,7 +784,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /**
      * <b>불변식의 절반 — 필터.</b> 비활성 장소는 새 회차에 아예 들어가지 않는다.
-     * 이것이 인기순 쿼리가 places 조인 없이 서빙되는 근거다(설계 §3).
+     * 이것이 인기순 쿼리가 places 조인 없이 서빙되는 근거다.
      */
     @Test
     void 배치는_비활성_장소에_행을_만들지_않는다() {
@@ -749,51 +793,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
         runBatch();
 
-        assertThat(existsStats(placeC, VERSION)).isFalse();
-        assertThat(existsStats(placeA, VERSION)).isTrue();
-    }
-
-    /**
-     * <b>불변식의 나머지 절반 — 잔행은 옛 버전이 죽을 때 함께 사라진다.</b> 비활성 장소를 골라
-     * 지우는 삭제가 따로 필요 없는 이유다(설계 §3).
-     *
-     * <p><b>직전 버전에는 계속 남는 것이 오답이 아니다.</b> 그 버전에 고정된 스크롤에는 보여야
-     * 하고, 그것이 스냅샷의 올바른 의미다. 비활성화가 실제로 사라지는 시점은 그 버전이 보관
-     * 밖으로 밀려나는 <b>두 회차 뒤</b>다.
-     */
-    @Test
-    void 옛_버전이_죽으면_비활성_장소의_잔행도_함께_사라진다() {
-        clearStats();
-        runBatch();
-        assertThat(existsStats(placeC, VERSION)).isTrue();   // 잔행을 만들어 둔다
-
-        setActive(placeC, false);
-        runBatchAt(NEXT_CALCULATED_AT);
-
-        assertThat(existsStats(placeC, NEXT_VERSION)).isFalse();   // 새 버전에는 없다
-        assertThat(existsStats(placeC, VERSION)).isTrue();         // 직전 버전 스냅샷에는 남는다
-
-        runBatchAt(CALCULATED_AT.plusHours(2));
-
-        assertThat(versionRowCount(VERSION)).isZero();
-        assertThat(existsStats(placeA, NEXT_VERSION)).isTrue();
-    }
-
-    /**
-     * 재활성화도 대칭이다 — 삭제가 영구 배제가 아니라 <b>그 회차의 상태 반영</b>임을 못 박는다.
-     * 삭제를 "지운 뒤 다시 안 만든다"로 구현하면 여기서 깨진다.
-     */
-    @Test
-    void 재활성화한_장소는_다음_배치에_복귀한다() {
-        clearStats();
-        setActive(placeC, false);
-        runBatch();
-        assertThat(existsStats(placeC, VERSION)).isFalse();
-
-        setActive(placeC, true);
-        runBatchAt(NEXT_CALCULATED_AT);
-
-        assertThat(existsStats(placeC, NEXT_VERSION)).isTrue();
+        assertThat(existsStats(placeC)).isFalse();
+        assertThat(existsStats(placeA)).isTrue();
     }
 
     /** 테스트 트랜잭션과 함께 롤백되므로 시드 장소의 상태를 영구히 바꾸지 않는다 */
@@ -880,10 +881,12 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(properties.getMinReviewCount()).isEqualTo(MIN_REVIEW_COUNT);
     }
 
+    // === 격리 수준 ===
+
     /**
-     * 배치 트랜잭션이 실제로 READ COMMITTED로 열리는지 서버에 직접 물어 확인한다.
+     * 카운트 회차 트랜잭션이 실제로 READ COMMITTED로 열리는지 서버에 직접 물어 확인한다.
      *
-     * <p><b>이 테스트만 {@code NOT_SUPPORTED}인 이유 — 반드시 읽을 것.</b> {@code @DataJpaTest}의
+     * <p><b>이 테스트들만 {@code NOT_SUPPORTED}인 이유 — 반드시 읽을 것.</b> {@code @DataJpaTest}의
      * 테스트 메서드는 이미 트랜잭션 안에서 돌고, 프로세서의 {@code @Transactional(REQUIRED)}은
      * 그 트랜잭션에 <em>참여</em>한다. 스프링은 참여 시 격리 수준 지정을 조용히 무시하므로
      * ({@code validateExistingTransaction} 기본 false) 나머지 테스트에서 프로세서를 불러 격리를
@@ -897,13 +900,26 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      *
      * <p><b>커밋이 불가피한 이유:</b> 격리 수준은 트랜잭션이 실제로 열려야만 관측되고, 그 트랜잭션을
      * 여는 주체가 프로세서 자신이어야 한다(테스트가 열면 검증 대상이 바뀐다). 프로세서는 커밋 여부를
-     * 호출자에게 위임하지 않으므로 롤백시킬 지점이 없다. 그래서 이 테스트만 배치 결과를
+     * 호출자에게 위임하지 않으므로 롤백시킬 지점이 없다. 그래서 이 테스트들만 배치 결과를
      * <b>실제로 커밋한다</b> — 뒷정리는 {@link #cleanUpCommittedStats()}가 맡는다.
      */
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void 배치_트랜잭션은_READ_COMMITTED로_열린다() {
-        batchProcessor.recalculateAll(CALCULATED_AT);
+    void 카운트_배치_트랜잭션은_READ_COMMITTED로_열린다() {
+        batchProcessor.recalculateCounts(CALCULATED_AT);
+
+        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED");
+    }
+
+    /**
+     * <b>점수 회차도 같은 계약을 진다.</b> 소스 테이블(bookmarks·place_reviews)을 훑는 것은
+     * 카운트 회차와 같으므로 RR이면 같은 next-key 락 장애가 재현된다. 회차를 가르면서
+     * 이 어노테이션이 한쪽에만 붙는 실수가 실재하는 위험이라 따로 문다.
+     */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void 점수_배치_트랜잭션도_READ_COMMITTED로_열린다() {
+        batchProcessor.recalculateScores(CALCULATED_AT);
 
         assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED");
     }
@@ -917,28 +933,26 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      *
      * <p>격리는 {@code afterBegin} 시점 — 즉 <b>가드 실행 이전</b>에 관측되므로, place_stats가
      * 비어 있든 이미 채워져 있든 이 단언은 동일하게 성립한다.
-     *
-     * <p>{@code NOT_SUPPORTED}인 이유와 커밋이 불가피한 이유는 위 테스트와 같다. 이 테스트도
-     * 테이블이 비어 있으면 결과를 실제로 커밋하므로 뒷정리는 {@link #cleanUpCommittedStats()}가 맡는다.
      */
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void 최초_적재_트랜잭션도_READ_COMMITTED로_열린다() {
-        batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+        batchProcessor.recalculateCountsIfEmpty(CALCULATED_AT);
+        batchProcessor.recalculateScoresIfNeverScored(CALCULATED_AT);
 
-        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED");
+        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED", "READ-COMMITTED");
     }
 
     /**
-     * 위 테스트의 짝. <b>이미 트랜잭션이 열려 있으면 프로세서는 새 트랜잭션을 열지 않고
+     * 위 테스트들의 짝. <b>이미 트랜잭션이 열려 있으면 프로세서는 새 트랜잭션을 열지 않고
      * 참여하며, 그때 격리 지정은 조용히 버려진다</b>는 사실을 못 박는다
      * ({@code validateExistingTransaction} 기본 false).
      *
-     * <p>{@code PlaceStatsBatchProcessor.recalculateAll} 이름의 트랜잭션이 한 번도 begin되지
-     * 않았다는 것이 곧 "참여했다"의 증거다. 프로세서를 {@code REQUIRES_NEW}로 바꾸면 이 단언이
-     * 깨진다 — 즉 전파 방식 변경을 눈치채는 장치다(실측 확인).
+     * <p>프로세서 이름의 트랜잭션이 한 번도 begin되지 않았다는 것이 곧 "참여했다"의 증거다.
+     * 프로세서를 {@code REQUIRES_NEW}로 바꾸면 이 단언이 깨진다 — 즉 전파 방식 변경을 눈치채는
+     * 장치다(실측 확인).
      *
-     * <p>이것이 나머지 12개 테스트가 격리 수준을 검증할 수 없는 이유이자,
+     * <p>이것이 나머지 테스트가 격리 수준을 검증할 수 없는 이유이자,
      * {@code PlaceStatsFacade}에 {@code @Transactional}을 붙이면 안 되는 이유다.
      */
     @Test
@@ -949,12 +963,10 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * {@code 배치_트랜잭션은_READ_COMMITTED로_열린다}가 커밋한 place_stats 행을 지운다.
+     * 격리 테스트들이 커밋한 place_stats 행을 지운다.
      *
-     * <p>지우지 않으면 같은 싱글턴 컨테이너를 쓰는 {@code PlaceStatsRepositoryIT}의
-     * <b>2건이 모두</b> 깨진다 — {@code 통계가_없는_장소는_빈_결과를_반환한다}는 빈 결과를 기대하고,
-     * {@code 네이티브로_삽입한_행을_엔티티로_읽을_수_있다}는 같은 place_id INSERT가 중복 키로 터진다.
-     * (실측: 클래스 실행 순서를 뒤집고 이 정리를 빼면 정확히 그 2건이 FAILED.)
+     * <p>지우지 않으면 같은 싱글턴 컨테이너를 쓰는 {@code PlaceStatsRepositoryIT}가 깨진다 —
+     * 그쪽은 빈 테이블을 전제하고, 같은 place_id INSERT가 중복 키로 터진다.
      *
      * <p><b>{@code @AfterEach}가 아니라 {@code @AfterAll}인 이유.</b> 스프링의
      * {@code TransactionalTestExecutionListener}는 테스트 트랜잭션을 {@code @AfterEach}
@@ -971,22 +983,14 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
-            // 세대 메타도 함께 되돌린다. 커밋한 배치가 여기에 자기 회차의 calculatedAt을 남기는데,
-            // 그대로 두면 뒤따르는 IT가 "아직 배치가 안 돈" 상태를 전제할 수 없다.
-            // place_stats처럼 DELETE하지 않는 것은 이것이 1행 레지스터이기 때문이다(V28의 CHECK).
-            st.executeUpdate("""
-                    UPDATE place_stats_meta
-                       SET current_generation = NULL, prev_generation = NULL
-                     WHERE id = 1
-                    """);
         }
     }
 
     /**
-     * place_stats를 비운다. 같은 클래스의 {@code 배치_트랜잭션은_READ_COMMITTED로_열린다}가 결과를
-     * <b>실제로 커밋</b>하고 정리는 {@link #cleanUpCommittedStats()}(@AfterAll)에서야 돌기 때문에,
-     * 그 테스트가 먼저 실행되면 뒤따르는 테스트에게 place_stats가 비어 보이지 않는다.
-     * 아래 최초 적재 테스트들은 "비었는가"가 곧 검증 대상이라 시작 상태를 직접 못 박아야 한다.
+     * place_stats를 비운다. 격리 테스트들이 결과를 <b>실제로 커밋</b>하고 정리는
+     * {@link #cleanUpCommittedStats()}(@AfterAll)에서야 돌기 때문에, 그 테스트가 먼저 실행되면
+     * 뒤따르는 테스트에게 place_stats가 비어 보이지 않는다. 아래 최초 적재 테스트들은
+     * "비었는가"가 곧 검증 대상이라 시작 상태를 직접 못 박아야 한다.
      *
      * <p>이 DELETE는 테스트 트랜잭션과 함께 롤백되므로 커밋된 행을 영구히 지우지 않는다.
      */
@@ -994,41 +998,44 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         em.createNativeQuery("DELETE FROM place_stats").executeUpdate();
     }
 
+    // === 최초 적재 ===
+
     @Test
-    void 비어_있으면_최초_적재가_모든_장소를_채운다() {
+    void 비어_있으면_카운트_최초_적재가_모든_활성_장소를_채운다() {
         clearStats();
         insertBookmark(placeA, 0);
         long placeCount = activePlaceCount();
 
-        OptionalInt affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+        OptionalInt affected = batchProcessor.recalculateCountsIfEmpty(CALCULATED_AT);
 
         // 빈 테이블이라 전부 INSERT 경로 → MySQL이 INSERT를 1로 세므로 영향 행 수 = 장소 수.
         // "재계산했고 영향 행 0"과 "건너뜀"이 다른 사실이라는 것을 값으로도 못 박는다.
         assertThat(affected).hasValue((int) placeCount);
         assertThat(placeStatsRepository.count()).isEqualTo(placeCount);
-        assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
+        assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(1);
+        // 카운트 회차는 채점하지 않는다 — 그 사실이 다음 단계(최초 채점)의 판정 근거다
+        assertThat(statsOf(placeA).getScoreCalculatedAt()).isNull();
     }
 
     /**
      * 가드가 실제로 재계산을 막는지 본다. 센티널 행을 하나 심어 두고, 최초 적재가 그것을
      * 덮어쓰지 않는지·다른 장소 행을 만들지 않는지 둘 다 확인한다.
-     * 가드를 제거하면 UPSERT가 전 장소를 채우고 센티널 점수를 실제 집계값으로 덮어써 둘 다 깨진다.
+     * 가드를 제거하면 UPSERT가 전 장소를 채우고 센티널 카운트를 실제 집계값으로 덮어써 둘 다 깨진다.
      */
     @Test
-    void 이미_채워져_있으면_최초_적재는_다시_돌지_않는다() {
+    void 이미_채워져_있으면_카운트_최초_적재는_다시_돌지_않는다() {
         clearStats();
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, version, town_id, popular_score,
-                     bookmark_count, review_count, avg_rating)
-                SELECT p.id, :version, p.town_id, 777.000000, 0, 0, NULL
+                    (place_id, town_id, popular_score, bookmark_count, review_count,
+                     avg_rating, count_calculated_at)
+                SELECT p.id, p.town_id, 777.000000, 777, 0, NULL, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
-                .setParameter("version", VERSION)
+                .setParameter("calculatedAt", CALCULATED_AT)
                 .executeUpdate();
-        insertBookmark(placeA, 0);   // 재계산이 돌면 점수가 777이 아니라 ln(2)가 된다
+        insertBookmark(placeA, 0);   // 재계산이 돌면 카운트가 777이 아니라 1이 된다
 
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -1037,15 +1044,14 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
         OptionalInt affected;
         try {
-            affected = batchProcessor.recalculateIfEmpty(CALCULATED_AT);
+            affected = batchProcessor.recalculateCountsIfEmpty(CALCULATED_AT);
         } finally {
             processorLogger.detachAppender(appender);
         }
 
         assertThat(affected).isEmpty();
         assertThat(placeStatsRepository.count()).isEqualTo(1);
-        assertThat(statsOf(placeA).getPopularScore().doubleValue())
-                .isCloseTo(777.0, within(0.000001));
+        assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(777);
         // 운영자가 "생략, 320행"(정상)과 "생략, 1행"(이상)을 구분할 수 있어야 한다 — 수치가
         // 로그에서 빠지면 생략 분기는 관측 불가능한 사건이 된다.
         assertThat(appender.list)
@@ -1056,12 +1062,65 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>행은 있는데 아무도 채점된 적 없는 상태가 최초 채점의 대상이다.</b> V32처럼 테이블을
+     * 재생성한 배포에서 카운트만 채워진 채 기동하면 정확히 이 상태가 된다.
+     *
+     * <p>가드가 {@code count() > 0}이었다면 여기서 채점이 건너뛰어져 <b>다음 새벽 01:00까지 전
+     * 장소가 0점</b>으로 서빙된다 — 점수가 정렬 축이라 인기순이 사실상 id 순이 되는데, 오류도
+     * 로그도 없다. 이 테스트가 그 회귀를 직접 겨눈다.
+     */
+    @Test
+    void 채점된_행이_하나도_없으면_최초_채점이_돈다() {
+        clearStats();
+        insertBookmark(placeA, 0);
+        batchProcessor.recalculateCounts(CALCULATED_AT);
+        assertThat(statsOf(placeA).getPopularScore().doubleValue()).isZero();
+
+        OptionalInt affected = batchProcessor.recalculateScoresIfNeverScored(CALCULATED_AT);
+
+        assertThat(affected).hasValue((int) activePlaceCount());
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
+        assertThat(statsOf(placeA).getScoreCalculatedAt()).isEqualTo(CALCULATED_AT);
+    }
+
+    /**
+     * 짝이 되는 가드. 이미 채점된 행이 하나라도 있으면 기동 채점은 돌지 않는다 —
+     * 매 배포가 전량 채점을 돌리면 {@code place_stats} 전 행 X 락을 그때마다 잡는다.
+     *
+     * <p>센티널 점수를 심어 두고 그 값이 살아남는지 보는 형태다. 가드가 사라지면 실제 집계값으로
+     * 덮여 즉시 드러난다.
+     */
+    @Test
+    void 이미_채점된_행이_있으면_최초_채점은_다시_돌지_않는다() {
+        clearStats();
+        insertBookmark(placeA, 0);
+        em.createNativeQuery("""
+                INSERT INTO place_stats
+                    (place_id, town_id, popular_score, bookmark_count, review_count,
+                     avg_rating, count_calculated_at, score_calculated_at)
+                SELECT p.id, p.town_id, 777.000000, 0, 0, NULL, :calculatedAt, :calculatedAt
+                FROM places p WHERE p.id = :placeId
+                """)
+                .setParameter("placeId", placeA)
+                .setParameter("calculatedAt", CALCULATED_AT)
+                .executeUpdate();
+        em.clear();
+
+        OptionalInt affected = batchProcessor.recalculateScoresIfNeverScored(CALCULATED_AT);
+
+        assertThat(affected).isEmpty();
+        assertThat(statsOf(placeA).getPopularScore().doubleValue())
+                .isCloseTo(777.0, within(SCORE_TOLERANCE));
+    }
+
+    /**
      * 요청 경로가 쓸 읽기 모델이 배치 결과를 손실 없이 실어 나르는지 본다.
      *
-     * <p>엔티티({@link PlaceStats})는 배치 UPSERT 전용이라 생성자를 봉인해 뒀으므로, 요청 경로는
-     * JPQL 생성자 표현식으로 뽑는 {@code PlaceStatsView}만 만진다. 그 변환 층이 컬럼을 뒤바꾸거나
-     * 값을 깎지 않는지는 <b>배치가 실제로 쓴 행</b>과 대조해야만 확인된다 — 그래서 네이티브 INSERT가
-     * 아니라 {@link #runBatch()}를 거친다.
+     * <p>엔티티({@link PlaceStats})는 배치 전용이라 생성자를 봉인해 뒀으므로, 요청 경로는
+     * {@code PlaceStatsView}만 만진다. 그 변환 층이 컬럼을 뒤바꾸거나 값을 깎지 않는지는
+     * <b>배치가 실제로 쓴 행</b>과 대조해야만 확인된다 — 그래서 네이티브 INSERT가 아니라
+     * {@link #runBatch()}를 거친다.
      *
      * <p>점수는 {@link #statsOf}가 읽은 엔티티 값과 대조한다. 상수 1.0을 쓰면 "뷰가 옮겼는가"가
      * 아니라 "배치 계산이 맞는가"를 또 한 번 보는 셈이고, 그건 이미 위쪽 테스트들의 몫이다.
@@ -1069,10 +1128,6 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * <p><b>북마크를 2건 넣는 이유 — 줄이지 말 것.</b> 1건이면 {@code bookmarkCount}가 1이 되는데
      * 시드 첫 장소의 id도 1이라({@code V2__create_initial_data.sql}) 두 컴포넌트의 기대값이
      * 우연히 같아진다. 그러면 이 둘을 뒤바꾸는 회귀를 <b>값으로는</b> 구분할 수 없다.
-     * 지금은 {@code Long}/{@code int} 타입 차이 덕에 하이버네이트가 부팅 시
-     * {@code SemanticException: Missing constructor}로 걸러 주지만(실측), 그건 record 컴포넌트
-     * 타입에 딸린 우연이지 이 테스트가 보장하는 성질이 아니다 — 나중에 둘 다 {@code long}이 되면
-     * 그 그물이 사라진다. 2건이면 기대값이 2와 1로 갈려 값만으로 구분된다.
      */
     @Test
     void 뷰_조회는_배치가_저장한_점수와_카운트를_그대로_돌려준다() {
@@ -1107,7 +1162,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * 전체 place_stats를 문자열로 직렬화 — 멱등성 비교용.
+     * 전체 place_stats를 문자열로 직렬화 — 멱등성 비교용. 두 회차의 소유 컬럼을 <b>함께</b> 싣는
+     * 것이 요점이다. 한쪽만 실으면 다른 쪽 SQL의 멱등성이 검증에서 통째로 빠진다.
      *
      * <p>GROUP_CONCAT은 max_len을 넘으면 <em>조용히 잘린다</em>. 잘린 두 문자열은 서로 같아서
      * 비교가 무의미하게 통과하고, place_stats가 비어 있으면 {@code "null"} 두 개를 비교하게 된다.
@@ -1117,10 +1173,12 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         em.createNativeQuery("SET SESSION group_concat_max_len = 1000000").executeUpdate();
         Object result = em.createNativeQuery("""
                 SELECT GROUP_CONCAT(
-                           CONCAT_WS('|', place_id, version, town_id, popular_score,
+                           CONCAT_WS('|', place_id, town_id, popular_score,
                                      bookmark_count, review_count,
-                                     IFNULL(avg_rating, 'NULL'))
-                           ORDER BY version, place_id SEPARATOR ';')
+                                     IFNULL(avg_rating, 'NULL'),
+                                     count_calculated_at,
+                                     IFNULL(score_calculated_at, 'NULL'))
+                           ORDER BY place_id SEPARATOR ';')
                 FROM place_stats
                 """).getSingleResult();
         em.clear();

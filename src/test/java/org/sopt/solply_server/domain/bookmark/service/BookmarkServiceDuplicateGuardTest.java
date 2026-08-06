@@ -19,14 +19,12 @@ import org.mockito.quality.Strictness;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
-import org.sopt.solply_server.domain.bookmark.service.event.PlaceBookmarkCreatedEvent;
 import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidator;
 import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidatorRegistry;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 
@@ -55,9 +53,6 @@ class BookmarkServiceDuplicateGuardTest {
 
     @Mock
     private EntityLoader entityLoader;
-
-    @Mock
-    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private BookmarkService bookmarkService;
@@ -96,19 +91,15 @@ class BookmarkServiceDuplicateGuardTest {
         assertThat(ErrorCode.ALREADY_BOOKMARKED_COURSE.getHttpStatus()).isEqualTo(HttpStatus.CONFLICT);
     }
 
-    /**
-     * 중복이면 저장도 이벤트도 없어야 한다. 이벤트가 새면 {@code place_stats} 북마크 수가
-     * 실제 행 수보다 부풀어 오르고, 배치가 돌기 전까지 잘못된 수치가 노출된다.
-     */
+    /** 중복이면 저장 자체가 없어야 한다 — 409를 던지고도 행이 하나 더 생기면 가드가 무의미하다. */
     @Test
-    void 중복이면_저장도_이벤트_발행도_하지_않는다() {
+    void 중복이면_저장하지_않는다() {
         givenAlreadyBookmarked(BookmarkTargetType.PLACE);
 
         assertThatThrownBy(() -> bookmarkService.create(USER_ID, BookmarkTargetType.PLACE, TARGET_ID))
                 .isInstanceOf(BusinessException.class);
 
         verify(bookmarkRepository, never()).saveAndFlush(any(Bookmark.class));
-        verify(eventPublisher, never()).publishEvent(any(PlaceBookmarkCreatedEvent.class));
     }
 
     /**
@@ -126,8 +117,6 @@ class BookmarkServiceDuplicateGuardTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.ALREADY_BOOKMARKED);
-
-        verify(eventPublisher, never()).publishEvent(any(PlaceBookmarkCreatedEvent.class));
     }
 
     /**
@@ -135,14 +124,13 @@ class BookmarkServiceDuplicateGuardTest {
      * {@code save}로 되돌리면 제약 위반이 커밋 시점(이 메서드 밖)으로 밀려 다시 500이 된다.
      */
     @Test
-    void 처음_등록하는_장소는_저장하고_증분_이벤트를_발행한다() {
+    void 처음_등록하는_장소는_저장한다() {
         given(bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(
                 USER_ID, BookmarkTargetType.PLACE, TARGET_ID)).willReturn(false);
 
         bookmarkService.create(USER_ID, BookmarkTargetType.PLACE, TARGET_ID);
 
         verify(bookmarkRepository).saveAndFlush(any(Bookmark.class));
-        verify(eventPublisher).publishEvent(any(PlaceBookmarkCreatedEvent.class));
     }
 
     /** 존재 검증은 중복 검사보다 먼저다 — 없는 장소를 중복이라고 답하면 안 된다. */

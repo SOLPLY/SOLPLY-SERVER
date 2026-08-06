@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 /**
  * 장소 목록을 DB에서 정렬·필터·페이징한다 — 목록 조회의 <b>유일한</b> 경로다.
  *
- * <p><b>커서 계약.</b> {@code PlaceListCursor} v3. sortKey는 POPULAR이 점수의 double,
+ * <p><b>커서 계약.</b> {@code PlaceListCursor} v4. sortKey는 POPULAR이 점수의 double,
  * LATEST가 createdAt의 epoch 초(UTC)이고, 정렬은 POPULAR (점수 DESC, id ASC) /
  * LATEST (생성일 DESC, id DESC)다. 발급하는 쪽({@code PlaceService})과 해석하는 쪽(여기)이
  * 한 쌍이라 한쪽만 바꾸면 페이징이 조용히 어긋난다.
@@ -41,25 +41,42 @@ public class PlaceListDbQueryRepository {
                             long reviewCount, BigDecimal avgRating) {}
 
     /**
-     * 인기순을 place_stats 단독으로 서빙한다 — {@code idx_place_stats_version_town_score}
-     * (version, town_id, popular_score DESC, place_id, bookmark_count, review_count, avg_rating)가
-     * 버전 파티션·필터·정렬·타이브레이크를 흡수하고, 말단 세 컬럼이 표시값까지 덮어 커버링을
-     * 만든다 (V29 → V30).
+     * 인기순을 place_stats 단독으로 서빙한다 — {@code idx_place_stats_town_score}
+     * (town_id, popular_score DESC, place_id, bookmark_count, review_count, avg_rating,
+     * score_calculated_at)가 필터·정렬·타이브레이크를 흡수하고, 말단 네 컬럼이 표시값과 채점
+     * 여부까지 덮어 커버링을 만든다 (V32).
      *
      * <p><b>SELECT에 표시 컬럼을 더할 때는 인덱스 말단도 함께 늘린다.</b> 덮지 못한 컬럼이 하나라도
-     * 있으면 페이지 행마다 {@code PRIMARY (place_id, version)} 룩업이 붙는다. 세컨더리 엔트리가
+     * 있으면 페이지 행마다 {@code PRIMARY (place_id)} 룩업이 붙는다. 세컨더리 엔트리가
      * PK를 이미 들고 있어 등호 조회이긴 하나, 이 인덱스의 존재 이유가 "쿼리가 인덱스 안에서
-     * 끝난다"이므로 조용히 깨뜨리지 말 것 (V30 주석에 채택 근거).
+     * 끝난다"이므로 조용히 깨뜨리지 말 것 (V30 주석에 채택 근거). 아래 {@code score_calculated_at}
+     * 술어도 같은 이유로 인덱스 말단에 실려 있다 — WHERE에만 있고 인덱스에 없으면 <b>걸러낼 행마다</b>
+     * 룩업이 붙는다.
      *
-     * <p><b>불변식: 한 버전의 행 집합 = 그 회차 시점의 활성 장소.</b> 그래서 여기서 활성 여부를
-     * 묻지 않는다. 지키는 주체는 배치이고({@code upsertAll}의 {@code WHERE p.active = 1} +
-     * {@code deleteVersionsOtherThan}) 대가는 노출 창 ≤1h다 — 비활성화도 재활성화도 다음 배치까지
-     * 반영되지 않는다.
+     * <p><b>불변식: 행이 있는 장소 = 마지막 카운트 배치 시점의 활성 장소.</b> 그래서 여기서 활성
+     * 여부를 묻지 않는다. 지키는 주체는 카운트 배치이고({@code upsertCounts}의
+     * {@code WHERE p.active = 1} + {@code deleteStaleRows}) 대가는 노출 창 ≤1h다 —
+     * 비활성화도 재활성화도 다음 카운트 배치까지 반영되지 않는다.
      *
      * <p><b>⚠️ ps 행이 없는 장소는 인기순에 나오지 않는다.</b> place_stats가 <em>기준 테이블</em>이라
-     * 마지막 배치 이후 새로 생긴 장소가 통째로 빠진다(창 ≤1h). 기준을 places로 뒤집으면 정렬
-     * 인덱스를 잃으므로 이것은 버그가 아니라 대가다. LATEST는 기준 테이블이 places라 이 예외가
+     * 마지막 카운트 배치 이후 새로 생긴 장소가 통째로 빠진다(창 ≤1h). 기준을 places로 뒤집으면
+     * 정렬 인덱스를 잃으므로 이것은 버그가 아니라 대가다. LATEST는 기준 테이블이 places라 이 예외가
      * 없다 — 신규 장소야말로 최신순 맨 앞에 와야 하기 때문이며, 두 정렬의 비대칭은 의도된 것이다.
+     *
+     * <p><b>⚠️ {@code score_calculated_at IS NOT NULL}을 지우지 말 것 — 인기순은 채점된 행만 본다.</b>
+     * 카운트 배치가 만든 신규 행의 {@code popular_score}는 컬럼 기본값 0인데, 그 0은 "점수가 0이다"가
+     * 아니라 <b>"아직 점수가 없다"</b>는 뜻이다. 술어를 지우면 그 행이 <em>유효한 음수 점수</em>보다
+     * 위에 끼어든다 — 저평점 리뷰가 쌓인 장소의 점수는 실제로 음수가 되므로(리뷰 축이
+     * {@code w₂ × (조정평점 − C)}라 {@code C} 아래면 음수), 아직 아무 평가도 받지 않은 신규 장소가
+     * 평판 나쁜 장소를 제치고 올라간다. 두 값의 의미가 다른데 컬럼 하나로는 구분되지 않으므로
+     * <b>{@code score_calculated_at}의 non-NULL이 유일한 판정 근거</b>다.
+     *
+     * <p>그래서 신규·재활성 장소는 <b>다음 인기점수 배치(새벽 01:00)까지 인기순에서 빠진다</b> —
+     * 창의 상한이 24시간이다. 표시 카운트는 그 사이에도 정상이다: 최신순은 기준 테이블이 places라
+     * 이 술어를 타지 않고, 카운트 배치가 이미 채운 값을 그대로 싣는다. "인기순에서 24시간 빠진다"와
+     * "잘못된 순위로 24시간 노출된다" 중 앞을 고른 결정이며, 인기점수를 새벽 배치 이후 값만
+     * 관리한다는 원칙의 직접적 귀결이다. <b>시간당 미채점 행만 따로 채점하는 패스를 추가하지 말 것</b> —
+     * 그 순간 "점수는 하루 1회"가 깨지고 커서 좌표계가 다시 매시간 갈린다.
      *
      * <p><b>다중 town 조회의 filesort는 수용한다.</b> 인덱스상 결과가 town별로 묶여 각 range 안에서만
      * 점수순이라 {@code town_id IN (...)}이 여러 개면 전역 점수순을 인덱스가 만들 수 없다.
@@ -70,17 +87,13 @@ public class PlaceListDbQueryRepository {
      * 비교하므로 경계의 등가가 양쪽에서 똑같이 판정된다. BigDecimal로 바인딩하면 오히려 자바가
      * 이미 뭉갠 값을 DB만 정확히 비교해 경계가 어긋난다.
      *
-     * <p>상세: {@code docs/design/2026-08-05-place-stats-version-rows.md} §4
-     *
-     * @param version       바인딩할 랭킹 버전. 커서가 있으면 커서의 것, 없으면 현 버전이다 —
-     *                      판정은 호출자({@code PlaceService#resolveVersion})의 몫이다
      * @param cursorScore   커서의 sortKey. null이면 첫 페이지
      * @param cursorPlaceId 커서의 장소 id. null이면 첫 페이지
      */
     @SuppressWarnings("unchecked")
     public List<PopularRow> findPopularRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
-            long version, Double cursorScore, Long cursorPlaceId, int limit) {
+            Double cursorScore, Long cursorPlaceId, int limit) {
 
         boolean useMainTag = mainTagId != null;
         boolean useSubA = useMainTag && subTagAIds != null && !subTagAIds.isEmpty();
@@ -91,8 +104,8 @@ public class PlaceListDbQueryRepository {
                 SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
                        ps.review_count, ps.avg_rating
                 FROM place_stats ps
-                WHERE ps.version = :version
-                  AND ps.town_id IN (:townIds)
+                WHERE ps.town_id IN (:townIds)
+                  AND ps.score_calculated_at IS NOT NULL
                 """);
         appendTagFilters(sql, "ps.place_id", useMainTag, useSubA, useSubB);
         if (useCursor) {
@@ -104,7 +117,6 @@ public class PlaceListDbQueryRepository {
         sql.append("ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT :limitSize");
 
         Query query = em.createNativeQuery(sql.toString())
-                .setParameter("version", version)
                 .setParameter("townIds", townIds)
                 .setParameter("limitSize", limit);
         bindTagFilters(query, mainTagId, subTagAIds, subTagBIds, useMainTag, useSubA, useSubB);
@@ -156,10 +168,10 @@ public class PlaceListDbQueryRepository {
      * 그래서 등호 분기의 타이브레이크({@code p.id < :cursorPlaceId})가 필수다 — 없으면 같은 초의
      * 장소들이 페이지 경계에서 조용히 누락된다.
      *
-     * <p><b>조인 조건의 버전 스칼라 서브쿼리를 지우지 말 것.</b> 지우면 보관 중인 두 버전이 모두
-     * 붙어 장소마다 행이 2개로 펼쳐진다. 메타를 따로 읽는 대신 같은 문장에 접합해 이 경로의
-     * 요청당 SQL 수를 유지한다 — PK 1행 조회라 MySQL이 상수로 한 번만 평가한다.
-     * 배치 전이라 현 버전이 NULL이면 조인이 성립하지 않아 카운트가 0이 되는데, 그것이 정확한 답이다.
+     * <p><b>조인이 PK 등호 하나로 끝난다 (V32).</b> 버전 행 시절에는 여기에 "현 버전은 무엇인가"를
+     * 묻는 스칼라 서브쿼리가 붙어 있었다 — 지우면 보관 중인 두 버전이 모두 붙어 장소마다 행이
+     * 2개로 펼쳐졌기 때문이다. 장소당 행이 하나로 돌아오면서 그 조건도, 조건이 읽던 레지스터도
+     * 함께 사라졌다.
      *
      * @param cursorEpochSecond 커서의 sortKey(생성일 epoch 초, UTC 기준). null이면 첫 페이지
      * @param cursorPlaceId     커서의 장소 id. null이면 첫 페이지
@@ -180,8 +192,6 @@ public class PlaceListDbQueryRepository {
                 FROM places p
                 LEFT JOIN place_stats ps
                        ON ps.place_id = p.id
-                      AND ps.version = (SELECT current_generation
-                                          FROM place_stats_meta WHERE id = 1)
                 WHERE p.town_id IN (:townIds)
                   AND p.active = 1
                 """);

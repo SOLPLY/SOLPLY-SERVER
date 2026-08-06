@@ -67,8 +67,9 @@ public enum ErrorCode {
     NOT_FOUND_PLACE(HttpStatus.NOT_FOUND, "PlACE-001", "존재하지 않는 장소입니다."),
     PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
     INVALID_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-003", "유효하지 않은 커서입니다."),
-    // 커서가 가리키던 랭킹 버전이 보관(현·직전 2개) 밖으로 밀려났다. 클라이언트는 커서 없이 재요청한다.
-    EXPIRED_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-004", "만료된 커서입니다. 처음부터 다시 조회해 주세요."),
+    // PLACE-004는 EXPIRED_PLACE_CURSOR였다. 커서가 랭킹 세대를 싣고 다니던 시절 "보관 밖으로
+    // 밀려난 세대"를 알리던 코드인데, 세대 자체가 사라져(V32) 발생할 수 없는 상태가 됐다.
+    // 번호를 재사용하지 않는다 — 이미 나간 클라이언트가 다른 뜻으로 알고 있을 수 있다.
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
 
 

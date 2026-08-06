@@ -10,14 +10,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
-import org.sopt.solply_server.domain.bookmark.service.event.PlaceBookmarkCreatedEvent;
-import org.sopt.solply_server.domain.bookmark.service.event.PlaceBookmarkDeletedEvent;
 import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidatorRegistry;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.EntityLoader;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,18 +28,14 @@ public class BookmarkService {
     private final BookmarkRepository bookmarkRepository;
     private final BookmarkTargetValidatorRegistry validatorRegistry;
     private final EntityLoader entityLoader;
-    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 북마크 생성. 이미 북마크한 대상이면 409로 거절한다.
      *
-     * <p>PLACE만 증분 이벤트를 발행한다. {@code place_stats}는 장소 전용 테이블인데
-     * {@code bookmarks.target_id}는 PLACE와 COURSE가 숫자 공간을 공유하므로,
-     * 이 가드를 지우면 코스 북마크가 <b>같은 id의 장소</b> 카운트를 올린다
-     * (배치 쪽 동일 계약: {@code 코스_북마크는_같은_id의_장소_점수에_섞이지_않는다}).
-     *
-     * <p>트랜잭션 안에서 publish해도 리스너는 {@code AFTER_COMMIT}에 돈다 — 이 트랜잭션이
-     * 롤백되면 증분도 일어나지 않는다.
+     * <p><b>여기서 이벤트를 발행하지 않는다 (2026-08-07).</b> 예전에는 {@code place_stats}
+     * 카운트를 준실시간으로 증분하는 리스너가 있었고 PLACE 북마크만 이벤트를 냈다. 증분을 폐지한
+     * 뒤로도 발행측만 남아 소비자 없는 이벤트를 계속 던지고 있었기에 함께 걷어냈다 —
+     * 카운트를 고치는 주체는 매시 카운트 배치 하나뿐이다.
      *
      * <p><b>중복 가드가 두 겹인 이유.</b> 앞의 exists 검사는 흔한 경우(이미 북마크한 대상을
      * 다시 누름)를 DB 예외 없이 걸러 준다. 하지만 같은 사용자의 동시 요청 둘은 검사를 <em>둘 다</em>
@@ -63,9 +56,6 @@ public class BookmarkService {
             log.debug("북마크 중복 등록(동시 요청) - userId={}, type={}, targetId={}", userId, type, targetId);
             throw new BusinessException(alreadyBookmarked(type));
         }
-        if (type == BookmarkTargetType.PLACE) {
-            eventPublisher.publishEvent(new PlaceBookmarkCreatedEvent(targetId));
-        }
     }
 
     /** 대상 종류별 중복 북마크 에러코드. 클라이언트가 장소/코스를 코드로 구분할 수 있도록 나눠 둔다. */
@@ -76,15 +66,12 @@ public class BookmarkService {
         };
     }
 
-    /** 북마크 삭제 (미존재 시 no-op). 실제로 지운 경우에만 PLACE 감분 이벤트를 발행한다. */
+    /** 북마크 삭제 (미존재 시 no-op). 존재 여부 검사가 없으면 없는 북마크에도 DELETE가 나간다. */
     @Transactional
     public void delete(Long userId, BookmarkTargetType type, Long targetId) {
         boolean existed = bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
         if (existed) {
             bookmarkRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-            if (type == BookmarkTargetType.PLACE) {
-                eventPublisher.publishEvent(new PlaceBookmarkDeletedEvent(targetId));
-            }
         } else {
             log.debug("삭제할 북마크가 존재하지 않음 - userId={}, type={}, targetId={}", userId, type, targetId);
         }

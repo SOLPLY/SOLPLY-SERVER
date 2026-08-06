@@ -31,7 +31,6 @@ import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
@@ -90,15 +89,6 @@ class PlaceServiceStatsWiringTest {
   @Mock private TownHierarchyResolver townHierarchyResolver;
   @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
   @Mock private PlaceStatsRepository placeStatsRepository;
-  /**
-   * 인기순은 커서 유무와 무관하게 바인딩할 <b>버전</b>이 필요하므로 이 레지스터를 읽는다.
-   * LATEST와 북마크 검색은 읽지 않는다 — 스텁 없이 두는 것이 곧 그 단언이고, 읽기 시작하면
-   * 스텁 없는 목이 null을 돌려줘 NPE로 즉시 드러난다.
-   */
-  @Mock private PlaceStatsMetaRepository placeStatsMetaRepository;
-
-  /** 현 버전. 값 자체에 뜻은 없고 쿼리에 그대로 바인딩되는지만 본다 */
-  private static final long VERSION = 1_780_000_000L;
 
   /** 표시용 평점·리뷰 수. 카운트와 구분되는 값이라야 실어 나르는 자리가 뒤바뀐 변이를 잡는다 */
   private static final long REVIEW_COUNT = 12L;
@@ -136,11 +126,8 @@ class PlaceServiceStatsWiringTest {
     // UnfinishedStubbingException이 난다 — 반드시 먼저 만들어 둔다.
     Place place = placeEntity();
     if (sort == PlaceSortType.POPULAR) {
-      // 커서가 없으면 버전은 늘 현 버전이다 — 직전 버전 서빙은 커서가 있을 때만 성립한다.
-      given(placeStatsMetaRepository.findGenerations())
-          .willReturn(new PlaceStatsMetaRepository.Generations(VERSION, 0L));
       given(placeListDbQueryRepository.findPopularRows(
-          List.of(TOWN_ID), null, null, null, VERSION, null, null, NO_PAGING_FETCH_SIZE))
+          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(
               new PopularRow(1L, 9.0, bookmarkCount, REVIEW_COUNT, AVG_RATING)));
     } else {

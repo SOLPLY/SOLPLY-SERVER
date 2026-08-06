@@ -25,13 +25,13 @@ import org.springframework.test.context.DynamicPropertySource;
 /**
  * 목록 요청이 발행하는 SQL <b>문장 수</b>를 값으로 못 박는다.
  *
- * <p>버전 행 전환에서 카운트를 읽는 경로들은 "현 버전"을 알아야 하는데, 메타를 <em>따로</em>
- * 읽으면 그 경로마다 요청당 SQL이 1개씩 는다. 그래서 스칼라 서브쿼리로 같은 문장에 접합했고
- * (설계 §4), 그 주장이 실제로 성립하는지는 문장 수로만 확인된다 — 결과값만 보는 테스트는
- * "값은 맞는데 쿼리가 하나 더 나가는" 회귀를 전부 통과시킨다.
+ * <p><b>이 파일이 지키는 주장은 "표시값을 얻는 데 추가 문장이 들지 않는다"이다.</b> 정렬 쿼리가
+ * 이미 읽고 있는 행에서 카운트·평점이 함께 실려 나오므로, 그 값을 다시 조회하는 순간 요청당 SQL이
+ * 하나 는다. 결과값만 보는 테스트는 "값은 맞는데 쿼리가 하나 더 나가는" 회귀를 전부 통과시킨다.
  *
- * <p>인기순만 메타를 1문장 읽는다. 바인딩할 버전을 알아야 하기 때문이며 이것은 접합으로 없앨 수
- * 있는 종류가 아니다(WHERE 절의 값이라 커서 판정에도 쓰인다).
+ * <p>버전 행 시절에는 여기에 {@code place_stats_meta}를 <b>몇 문장 읽는가</b>라는 축이 하나 더
+ * 있었다. 그 레지스터가 V32에서 사라졌으므로 지금 남은 것은 "메타를 읽는 문장이 아예 없다"는
+ * 사실이고, 아래 {@code metaReads()}가 그 0을 계속 지킨다 — 무엇이든 다시 읽기 시작하면 걸린다.
  *
  * <p>{@code @SpringBootTest}에 {@code @Transactional}을 붙이지 않는 것은 프로브가 문장 단위로
  * 기록해야 하기 때문이고, 그래서 만든 행은 {@code @AfterAll}에서 직접 지운다.
@@ -42,7 +42,8 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     @DynamicPropertySource
     static void sqlCountProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
-        registry.add("solply.place-stats.cron", () -> "-");
+        registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.score-cron", () -> "-");
         registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
                 SqlStatementProbe.class::getName);
     }
@@ -69,43 +70,32 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
             createPlace("SQL수IT장소" + i);
         }
         me = createUser();
-        batchProcessor.recalculateAll(CALCULATED_AT);
+        // 두 회차를 모두 돌린다 — 카운트가 행을 만들고 점수가 그 행을 채점한다.
+        // 점수 회차를 빼면 전 장소가 0점이라 인기순이 id 순으로 흐르고, 커서 페이지 단언이
+        // 검증하려던 "점수 경계"를 실제로는 밟지 않게 된다.
+        batchProcessor.recalculateCounts(CALCULATED_AT);
+        batchProcessor.recalculateScores(CALCULATED_AT);
     }
 
     /**
-     * <b>메타를 지목하는 문장이 따로 나가지 않는다.</b> 최신순은 카운트를 붙일 때만 현 버전이
-     * 필요하고, 그것을 LEFT JOIN 조건의 스칼라 서브쿼리로 접합했다 — 접합을 풀어 메타를 먼저
-     * 읽으면 이 단언이 깨진다.
+     * <b>어느 정렬도 버전 레지스터를 읽지 않는다.</b> 그 테이블 자체가 V32에서 사라졌으므로 이
+     * 단언이 깨지는 유일한 경로는 "장소당 여러 행"을 되살리는 변경이다 — 그러면 어느 행을 볼지
+     * 정하는 무언가를 다시 읽어야 한다.
      */
     @Test
-    void 최신순은_현_버전을_알기_위해_문장을_더_쓰지_않는다() {
+    void 두_정렬_모두_버전_레지스터를_읽지_않는다() {
         SqlStatementProbe.clear();
-
         placeService.getPlaces(me, request(PlaceSortType.LATEST, null));
+        assertThat(metaReads()).isZero();
 
-        assertThat(standaloneMetaReads()).isZero();
-        // 접합이 실제로 붙어 있다는 증거 — 지우면 두 버전이 모두 조인돼 행이 2배가 된다
-        assertThat(statementsReadingPlaceStats())
-                .singleElement().asString().containsIgnoringCase("place_stats_meta");
-    }
-
-    /**
-     * 인기순은 바인딩할 버전을 알아야 하므로 메타를 <b>정확히 1문장</b> 읽는다. 페이지마다 두 번
-     * 읽는(예: 커서 판정과 커서 발급에서 각각) 회귀가 여기서 잡힌다.
-     */
-    @Test
-    void 인기순은_버전_레지스터를_요청당_한_번만_읽는다() {
         SqlStatementProbe.clear();
-
         PlaceFilterGetResponse page1 = placeService.getPlaces(me, request(PlaceSortType.POPULAR, null));
-
-        assertThat(standaloneMetaReads()).isEqualTo(1);
+        assertThat(metaReads()).isZero();
 
         SqlStatementProbe.clear();
         placeService.getPlaces(me, request(PlaceSortType.POPULAR, page1.nextCursor()));
-
         // 커서 페이지도 같다 — 커서가 있다고 문장이 늘지 않는다
-        assertThat(standaloneMetaReads()).isEqualTo(1);
+        assertThat(metaReads()).isZero();
     }
 
     /** 목록 쿼리는 place_stats를 <b>한 문장</b>으로 읽는다 — 카운트를 위한 추가 조회가 없다 */
@@ -120,12 +110,25 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
         assertThat(statementsReadingPlaceStats()).hasSize(1);
     }
 
-    /** {@code place_stats_meta}만 읽는 <b>독립</b> 문장 — 접합된 서브쿼리는 여기 세지 않는다 */
-    private long standaloneMetaReads() {
+    /**
+     * 커서 페이지도 place_stats 문장이 1개다. 첫 페이지만 보면 "커서가 있으면 경계를 확인하려고
+     * 한 번 더 읽는" 회귀가 통과한다 — 페이징 경로를 따로 밟아야 잡힌다.
+     */
+    @Test
+    void 커서_페이지도_place_stats를_한_문장으로만_읽는다() {
+        PlaceFilterGetResponse page1 = placeService.getPlaces(me, request(PlaceSortType.POPULAR, null));
+        assertThat(page1.nextCursor()).isNotNull();
+
+        SqlStatementProbe.clear();
+        placeService.getPlaces(me, request(PlaceSortType.POPULAR, page1.nextCursor()));
+
+        assertThat(statementsReadingPlaceStats()).hasSize(1);
+    }
+
+    /** {@code place_stats_meta}를 언급하는 문장 — 있으면 안 된다(V32에서 테이블째 사라졌다) */
+    private long metaReads() {
         return SqlStatementProbe.sqls().stream()
                 .filter(sql -> sql.toLowerCase().contains("place_stats_meta"))
-                .filter(sql -> !sql.toLowerCase().contains("from place_stats "))
-                .filter(sql -> !sql.toLowerCase().contains("join place_stats"))
                 .count();
     }
 
@@ -170,11 +173,6 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
-            st.executeUpdate("""
-                    UPDATE place_stats_meta
-                       SET current_generation = NULL, prev_generation = NULL
-                     WHERE id = 1
-                    """);
             st.executeUpdate("DELETE FROM places WHERE town_id IN (" + myTowns + ")");
             st.executeUpdate(
                     "DELETE FROM users WHERE nickname LIKE '" + USER_NICKNAME_PREFIX + "%'");

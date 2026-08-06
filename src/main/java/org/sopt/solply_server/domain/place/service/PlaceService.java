@@ -26,7 +26,6 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
-import org.sopt.solply_server.domain.place.repository.PlaceStatsMetaRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
@@ -67,7 +66,6 @@ public class PlaceService {
   private final PlaceReviewRepository placeReviewRepository;
   private final PlaceListDbQueryRepository placeListDbQueryRepository;
   private final PlaceStatsRepository placeStatsRepository;
-  private final PlaceStatsMetaRepository placeStatsMetaRepository;
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -245,15 +243,15 @@ public class PlaceService {
    * "응답 diff 게이트" 같은 장치는 비교 대상이 사라지면서 함께 걷어냈다.
    *
    * <p><b>남은 성질 하나는 기억할 것 — POPULAR의 기준 테이블은 place_stats다.</b> 행이 없는
-   * 장소(마지막 배치 이후 새로 생긴 장소)는 인기순 결과에 아예 나오지 않는다. 이는 버그가 아니라
-   * 정렬을 인덱스에 흡수시키는 대가이며, 창은 배치 간격(≤1h) 이내다. 근거는
+   * 장소(마지막 카운트 배치 이후 새로 생긴 장소)는 인기순 결과에 아예 나오지 않는다. 이는 버그가
+   * 아니라 정렬을 인덱스에 흡수시키는 대가이며, 창은 카운트 배치 간격(≤1h) 이내다. 근거는
    * {@code PlaceListDbQueryRepository#findPopularRows} javadoc.
    *
-   * <p><b>커서 v3 — 좌표에 좌표계를 함께 싣는다 (2026-08-03).</b> 커서가 나르던 "정렬 키 X, id Y
-   * 다음"이라는 좌표는 그것이 <em>어느 좌표계</em>에서 찍혔는지를 말하지 않았고, 그래서 두 가지가
-   * 조용히 틀렸다: 스크롤 도중 배치가 돌면 점수가 통째로 갈려 페이지가 어긋났고, 커서를 다른 필터
-   * 요청에 쓰면 요청한 적 없는 페이지가 200으로 나갔다. v3는 <b>세대</b>와 <b>필터 지문</b>을
-   * 함께 실어 앞은 고정하고 뒤는 거부한다. 코덱 계약은 {@code PlaceListCursor} 참조.
+   * <p><b>커서 v4 — 좌표와 필터 지문 (2026-08-07).</b> v3까지는 여기에 랭킹 <b>세대</b>도 실었다.
+   * 스크롤 도중 배치가 돌면 점수가 통째로 갈려 페이지가 어긋나기 때문이었는데, 인기 점수 배치를
+   * 새벽 1회로 내리면서 그 창이 트래픽 최저 시각의 수 초로 줄어 세대를 걷어냈다. 남은 지문은
+   * 배치 주기와 무관한 구멍을 막는다 — 커서를 다른 필터 요청에 쓰면 요청한 적 없는 페이지가
+   * 200으로 나가던 것. 코덱 계약과 세대 제거 근거는 {@code PlaceListCursor} 참조.
    */
   private PlaceFilterGetResponse listPlaces(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
@@ -272,9 +270,8 @@ public class PlaceService {
     Double cursorScore = null;
     Long cursorSec = null;
     Long cursorPlaceId = null;
-    PlaceListCursor cursor = null;
     if (request.cursor() != null) {
-      cursor = PlaceListCursor.decode(request.cursor());
+      PlaceListCursor cursor = PlaceListCursor.decode(request.cursor());
       // 정렬 축이 다르면 sortKey의 뜻 자체가 다르고(점수 대 epoch 초), 필터가 다르면 이 커서가
       // 가리키는 위치가 이 결과 집합 안에 없다. 둘 다 조용히 진행할 수 없는 상태다.
       if (cursor.sort() != sort || !filterPrint.equals(cursor.filterPrint())) {
@@ -290,13 +287,11 @@ public class PlaceService {
       cursorPlaceId = cursor.placeId();
     }
 
-    long version = resolveVersion(cursor, sort);
-
     int fetchSize = paging ? pageSize + 1 : pageSize;
     List<DbListRow> rows = switch (sort) {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              version, cursorScore, cursorPlaceId, fetchSize).stream()
+              cursorScore, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount(),
               r.reviewCount(), r.avgRating()))
           .toList();
@@ -355,50 +350,9 @@ public class PlaceService {
         ? new PlaceListCursor(sort,
             rows.get(rows.size() - 1).sortKey(),
             rows.get(rows.size() - 1).placeId(),
-            version,
             filterPrint).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
-  }
-
-  /**
-   * 이 요청이 서빙할 랭킹 <b>버전</b>. 인기순 쿼리가 {@code WHERE ps.version = :version}으로
-   * 바인딩하고, 발급하는 커서에도 같은 값이 실린다.
-   *
-   * <p>규칙은 셋이다 — 커서의 버전이 현·직전 중 하나면 그 값, <b>어느 쪽도 아니면 만료 오류</b>,
-   * 커서가 없으면 현 버전(첫 페이지는 언제나 현 버전에서 시작해 세션 내내 고정된다).
-   *
-   * <p><b>강등이 아니라 만료인 이유.</b> 강등은 과거 버전의 정렬 경계를 현 버전 점수 축에 그대로
-   * 갖다 대는 것이라 경계 부근의 누락·중복을 구조적으로 피할 수 없다. "묵은 커서가 오류 없이
-   * 대충 이어진다"보다 "명시적으로 만료를 알리고 첫 페이지부터"가 정직한 계약이고, 2시간 넘게
-   * 방치된 스크롤이라는 희귀 케이스에 지불하는 비용으로 적절하다. 클라이언트 계약: 만료
-   * 응답을 받으면 커서 없이 재요청한다.
-   *
-   * <p><b>버전은 커서에서 승계하고 다시 읽지 않는다 — 이 함정을 놓치지 말 것.</b> 페이지마다 현
-   * 버전을 재조회하면 세션 <em>중간에</em> 배치가 도는 순간 앞뒤 페이지가 다른 버전을 보게 되어
-   * 정확히 이 기능이 막으려던 어긋남이 난다.
-   *
-   * <p><b>{@code hasPrev()} 가드와 현 버전 우선 비교 순서를 유지할 것.</b> "버전 없음"이 0으로
-   * 표현되므로, 가드가 없으면 버전 0을 실은 커서가 "prev와 일치"로 판정된다.
-   *
-   * <p>LATEST는 메타를 읽지 않는다 — {@code created_at}은 배치가 만지지 않는 불변 축이라 버전이
-   * 필요 없고, 커서에도 0이 실린다.
-   */
-  private long resolveVersion(PlaceListCursor cursor, PlaceSortType sort) {
-    if (sort != PlaceSortType.POPULAR) {
-      return PlaceStatsMetaRepository.NO_GENERATION;
-    }
-    PlaceStatsMetaRepository.Generations generations = placeStatsMetaRepository.findGenerations();
-    if (cursor == null) {
-      return generations.current();
-    }
-    if (cursor.generation() == generations.current()) {
-      return generations.current();
-    }
-    if (generations.hasPrev() && cursor.generation() == generations.prev()) {
-      return generations.prev();
-    }
-    throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
   }
 
   /**
@@ -475,11 +429,11 @@ public class PlaceService {
   }
 
   /**
-   * 요청 시점 place_stats 조회 — 정렬·표시가 보는 세대는 배치 세대 하나다.
-   * PK IN 조회 1회이고 후보 수(시 단위 병합 최대 ~1,800)에 선형이다.
+   * 요청 시점 place_stats 조회 — 장소당 행이 하나라 PK IN 조회 1회이고,
+   * 후보 수(시 단위 병합 최대 ~1,800)에 선형이다.
    *
-   * <p>배치가 아직 닿지 않은 장소는 <b>행 자체가 없다</b> — 결과 map에 키가 없는 것이 정상이며,
-   * 호출자가 그 경우의 기본값(0점 / 0건 / 기준시각 null)을 정한다.
+   * <p>카운트 배치가 아직 닿지 않은 장소는 <b>행 자체가 없다</b> — 결과 map에 키가 없는 것이
+   * 정상이며, 호출자가 그 경우의 기본값(0점 / 0건 / 평점 null)을 정한다.
    */
   private Map<Long, PlaceStatsView> statsViewMap(List<Long> placeIds) {
     if (placeIds.isEmpty()) {

@@ -43,7 +43,10 @@ import org.springframework.test.util.AopTestUtils;
 class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
 
     /** 락 이름 — 배포 단위 전체에서 유일해야 한다. {@code PlaceStatsFacade}와 반드시 같은 문자열. */
-    private static final String LOCK_NAME = "place-stats-recalculate";
+    private static final String COUNT_LOCK_NAME = "place-stats-count";
+
+    /** 점수 회차의 락. <b>카운트와 이름이 달라야 한다</b> — 같으면 서로의 회차를 잡아먹는다. */
+    private static final String SCORE_LOCK_NAME = "place-stats-score";
 
     /**
      * 메서드 이름은 베이스의 {@code datasource}와 반드시 달라야 한다({@code @DynamicPropertySource}는
@@ -57,7 +60,8 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
     @DynamicPropertySource
     static void schedulerLockProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
-        registry.add("solply.place-stats.cron", () -> "-");
+        registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.score-cron", () -> "-");
     }
 
     @Autowired private PlaceStatsFacade facade;
@@ -68,23 +72,31 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
      * 지점이라 호출은 언제나 2회이고, 갈리는 것은 <b>본문이 돌았는가</b>이기 때문이다.
      *
      * <p>부팅 시 최초 적재({@code ApplicationReadyEvent})도 이 빈을 부르지만 그쪽은
-     * {@code recalculateIfEmpty}라 아래 단언에 섞이지 않는다.
+     * {@code recalculate*IfEmpty}/{@code IfNeverScored}라 아래 단언에 섞이지 않는다.
      */
     @SpyBean private PlaceStatsBatchProcessor processor;
 
     /**
      * 락 이름까지 함께 못 박는다. 실행 횟수만 보면 <b>어떤</b> 이름으로 잠갔는지 알 수 없어,
      * 이름이 다른 배치와 겹치도록 바뀌어도(그러면 서로의 회차를 잡아먹는다) 그린이다.
+     *
+     * <p><b>두 회차를 한 테스트에서 함께 거는 이유는 이름 분리가 검증 대상이기 때문이다.</b>
+     * 카운트 배치가 락을 쥔 상태에서 점수 배치가 <em>돌아야</em> 한다 — 이름이 하나로 합쳐지면
+     * 점수 회차가 통째로 건너뛰어져 {@code times(1)} 단언이 {@code times(0)}로 깨진다.
+     * (같은 회차의 중복 호출이 건너뛰어지는 것과 정반대 방향의 단언이라 한 무대에서 봐야 한다.)
      */
     @Test
-    void 같은_회차의_두_번째_호출은_락을_잡지_못해_건너뛴다() {
-        facade.recalculatePlaceStats();
-        facade.recalculatePlaceStats();
+    void 같은_회차의_두_번째_호출은_락을_잡지_못해_건너뛰고_다른_회차는_제_락으로_돈다() {
+        facade.recalculatePlaceCounts();
+        facade.recalculatePlaceCounts();
+        facade.recalculatePopularScores();
 
-        verify(spiedProcessor(), times(1)).recalculateAll(any());
+        verify(spiedProcessor(), times(1)).recalculateCounts(any());
+        verify(spiedProcessor(), times(1)).recalculateScores(any());
 
-        List<String> lockNames = jdbcTemplate.queryForList("SELECT name FROM shedlock", String.class);
-        assertThat(lockNames).containsExactly(LOCK_NAME);
+        List<String> lockNames = jdbcTemplate.queryForList(
+                "SELECT name FROM shedlock ORDER BY name", String.class);
+        assertThat(lockNames).containsExactly(COUNT_LOCK_NAME, SCORE_LOCK_NAME);
     }
 
     /**
@@ -117,13 +129,6 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
                 Statement st = con.createStatement()) {
             st.executeUpdate("DELETE FROM place_stats");
             st.executeUpdate("DELETE FROM shedlock");
-            // 배치는 place_stats뿐 아니라 버전 레지스터도 민다(V29). 값을 남기면 뒤 클래스가
-            // "아직 배치가 안 돈" 상태를 전제할 수 없다. 1행 레지스터라 DELETE가 아니라 UPDATE다.
-            st.executeUpdate("""
-                    UPDATE place_stats_meta
-                       SET current_generation = NULL, prev_generation = NULL
-                     WHERE id = 1
-                    """);
         }
     }
 }
