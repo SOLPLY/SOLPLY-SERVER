@@ -1,0 +1,23 @@
+# RESTORED (2 vCPU 원복)  2026-08-06 15:33:43 KST
+## docker inspect (app)  <- BEFORE와 같아야 한다
+NanoCpus=2000000000 CpuQuota=0 CpuPeriod=0 CpuShares=0 Memory=2147483648 CpusetCpus=
+## cgroup cpu.max (app)
+200000 100000
+## cgroup cpu.max (mysql)
+200000 100000
+## docker inspect (mysql)
+NanoCpus=2000000000 Memory=3221225472
+## app env
+SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=10
+LOGGING_LEVEL_P6SPY=OFF
+JAVA_TOOL_OPTIONS=-Xmx1280m -XX:MaxMetaspaceSize=256m
+SPRING_APPLICATION_JSON={}
+SERVER_TOMCAT_THREADS_MAX=50
+SERVER_PORT=8082
+## StartedAt/RestartCount/OOM
+StartedAt=2026-08-05T20:17:34.005491087Z RestartCount=0 OOMKilled=false
+## JVM system_cpu_count
+system_cpu_count{application="solply-app"} 2.0
+## HTTP 정상 응답
+  popular-town: 200 0.029946s
+  city-tag3:    200 0.015241s

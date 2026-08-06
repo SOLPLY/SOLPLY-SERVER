@@ -1,0 +1,46 @@
+# JFR/jcmd 채취 가능성 조사 — 2026-08-06 16:05:13 KST
+# 결론: 외부 도구 설치·컨테이너 재기동 없이는 러닝 JVM에 JFR을 붙일 수 없다.
+
+## 1) 앱 이미지의 JDK 바이너리 (JRE 형상 — jcmd 없음)
+java
+jfr
+jrunscript
+jwebserver
+keytool
+rmiregistry
+
+## 2) java -version
+Picked up JAVA_TOOL_OPTIONS: -Xmx1280m -XX:MaxMetaspaceSize=256m
+openjdk version "21.0.11" 2026-04-21 LTS
+OpenJDK Runtime Environment Temurin-21.0.11+10 (build 21.0.11+10-LTS)
+OpenJDK 64-Bit Server VM Temurin-21.0.11+10 (build 21.0.11+10-LTS, mixed mode, sharing)
+
+## 3) jdk.attach 모듈 부재 (Attach API 경로 차단) — attach/jfr/management 관련 모듈 전량
+java.management@21.0.11
+java.management.rmi@21.0.11
+jdk.internal.vm.compiler.management@21.0.11
+jdk.jfr@21.0.11
+jdk.management@21.0.11
+jdk.management.agent@21.0.11
+jdk.management.jfr@21.0.11
+   -> jdk.attach 없음. jdk.jfr은 있으나 시작 트리거(jcmd/Attach API)가 없다.
+
+## 4) BusyBox nc는 유닉스 소켓(-U) 미지원 -> HotSpot attach 프로토콜을 셸로 구현 불가
+BusyBox v1.37.0 (2025-12-16 14:19:28 UTC) multi-call binary.
+
+Usage: nc [OPTIONS] HOST PORT  - connect
+nc [OPTIONS] -l -p PORT [HOST] [PORT]  - listen
+
+## 5) 셸 도구 유무
+jcmd=MISSING
+jattach=MISSING
+nc=/usr/bin/nc
+socat=MISSING
+python3=MISSING
+perl=MISSING
+
+## 남는 유일한 경로와 기각 사유
+  -XX:StartFlightRecording 은 JVM 기동 인자다 -> JAVA_TOOL_OPTIONS 변경 + 컨테이너 재생성 필요.
+  이번 진단의 측정 대상은 '지금 살아 있는 워밍업된 앱'이므로 재생성은 측정 형상을 바꾼다.
+  따라서 JFR ExecutionSample 기반 상위 stack/method/package는 산출하지 않는다.
+  (지표를 근거로 특정 작업의 CPU 비중을 추정하지 않는다 — 질문 5는 '미측정'으로 보고한다.)

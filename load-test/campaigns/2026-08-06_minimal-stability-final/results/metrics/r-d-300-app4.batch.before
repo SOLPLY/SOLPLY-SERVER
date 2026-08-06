@@ -1,0 +1,43 @@
+# before  2026-08-06 15:28:57 KST
++----+--------------------+-----------------+
+| id | current_generation | prev_generation |
++----+--------------------+-----------------+
+|  1 |         1786026600 |      1786024182 |
++----+--------------------+-----------------+
++------------+-----------------+
+| version    | rows_in_version |
++------------+-----------------+
+| 1786024182 |            6320 |
+| 1786026600 |            6320 |
++------------+-----------------+
++-------------------+------------+
+| distinct_versions | total_rows |
++-------------------+------------+
+|                 2 |      12640 |
++-------------------+------------+
++-------------------------+-------------------------+-------------------------+--------------+
+| name                    | lock_until              | locked_at               | locked_by    |
++-------------------------+-------------------------+-------------------------+--------------+
+| place-stats-recalculate | 2026-08-06 05:31:00.073 | 2026-08-06 05:30:00.073 | a113fcad107a |
++-------------------------+-------------------------+-------------------------+--------------+
+--- 앱 로그의 배치 줄 (최근 20) ---
+2026-08-06T05:30:00.180+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T05:30:00.180814002
+2026-08-06T05:30:05.026+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T05:30:00.180814002, affectedRows=6320, elapsed=4845ms
+2026-08-06T06:47:09.976+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T06:47:09.976204043
+2026-08-06T06:47:14.670+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T06:47:09.976204043, affectedRows=6320, elapsed=4694ms
+2026-08-06T07:30:00.100+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T07:30:00.100104177
+2026-08-06T07:30:04.794+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T07:30:00.100104177, affectedRows=6320, elapsed=4693ms
+2026-08-06T08:30:00.019+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T08:30:00.018636427
+2026-08-06T08:30:04.867+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T08:30:00.018636427, affectedRows=6320, elapsed=4848ms
+2026-08-06T09:43:38.451+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T09:43:38.450897676
+2026-08-06T09:43:43.238+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T09:43:38.450897676, affectedRows=6320, elapsed=4787ms
+2026-08-06T10:46:28.736+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T10:46:28.735624255
+2026-08-06T10:46:33.416+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T10:46:28.735624255, affectedRows=6320, elapsed=4681ms
+2026-08-06T11:30:00.036+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T11:30:00.036105588
+2026-08-06T11:30:04.786+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T11:30:00.036105588, affectedRows=6320, elapsed=4750ms
+2026-08-06T12:30:00.030+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T12:30:00.030329713
+2026-08-06T12:30:04.718+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T12:30:00.030329713, affectedRows=6320, elapsed=4687ms
+2026-08-06T13:49:42.831+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T13:49:42.828685629
+2026-08-06T13:49:48.968+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T13:49:42.828685629, affectedRows=6320, elapsed=6139ms
+2026-08-06T14:30:00.122+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 시작 - calculatedAt=2026-08-06T14:30:00.121528137
+2026-08-06T14:30:05.234+09:00  INFO 1 --- [   scheduling-1] o.s.s.d.p.s.facade.PlaceStatsFacade      : 인기순 점수 배치 완료 - calculatedAt=2026-08-06T14:30:00.121528137, affectedRows=6320, elapsed=5111ms

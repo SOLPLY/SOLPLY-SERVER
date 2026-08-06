@@ -1,0 +1,131 @@
+{
+  "aggregate": {
+    "counters": {
+      "vusers.created_by_name.latest-city-tag3-scroll": 1088,
+      "vusers.created": 7200,
+      "http.requests": 7200,
+      "vusers.created_by_name.popular-city-scroll": 1409,
+      "vusers.created_by_name.popular-city-tag3-scroll": 1821,
+      "vusers.created_by_name.popular-town": 1815,
+      "vusers.created_by_name.latest-town": 1067,
+      "plugins.metrics-by-endpoint.latest-city-tag3-p1.errors.ETIMEDOUT": 1088,
+      "errors.ETIMEDOUT": 7200,
+      "vusers.failed": 7200,
+      "plugins.metrics-by-endpoint.popular-city-p1.errors.ETIMEDOUT": 1409,
+      "plugins.metrics-by-endpoint.popular-city-tag3-p1.errors.ETIMEDOUT": 1821,
+      "plugins.metrics-by-endpoint.popular-town-p1.errors.ETIMEDOUT": 1815,
+      "plugins.metrics-by-endpoint.latest-town-p1.errors.ETIMEDOUT": 1067
+    },
+    "rates": {
+      "http.request_rate": 270
+    },
+    "firstCounterAt": 1786001665750,
+    "lastCounterAt": 1786001696176,
+    "firstMetricAt": 1786001665750,
+    "lastMetricAt": 1786001696176,
+    "period": 1786001690000,
+    "summaries": {},
+    "histograms": {}
+  },
+  "intermediate": [
+    {
+      "counters": {
+        "vusers.created_by_name.latest-city-tag3-scroll": 214,
+        "vusers.created": 1453,
+        "http.requests": 1451,
+        "vusers.created_by_name.popular-city-scroll": 296,
+        "vusers.created_by_name.popular-city-tag3-scroll": 348,
+        "vusers.created_by_name.popular-town": 362,
+        "vusers.created_by_name.latest-town": 233
+      },
+      "rates": {
+        "http.request_rate": 363
+      },
+      "http.request_rate": null,
+      "firstCounterAt": 1786001665750,
+      "lastCounterAt": 1786001669997,
+      "firstMetricAt": 1786001665750,
+      "lastMetricAt": 1786001669997,
+      "period": "1786001660000",
+      "summaries": {},
+      "histograms": {}
+    },
+    {
+      "counters": {
+        "vusers.created_by_name.popular-town": 899,
+        "vusers.created": 3600,
+        "http.requests": 3601,
+        "vusers.created_by_name.popular-city-tag3-scroll": 915,
+        "vusers.created_by_name.latest-city-tag3-scroll": 583,
+        "vusers.created_by_name.popular-city-scroll": 682,
+        "vusers.created_by_name.latest-town": 521,
+        "plugins.metrics-by-endpoint.latest-city-tag3-p1.errors.ETIMEDOUT": 213,
+        "errors.ETIMEDOUT": 1448,
+        "vusers.failed": 1448,
+        "plugins.metrics-by-endpoint.popular-city-p1.errors.ETIMEDOUT": 295,
+        "plugins.metrics-by-endpoint.popular-city-tag3-p1.errors.ETIMEDOUT": 348,
+        "plugins.metrics-by-endpoint.popular-town-p1.errors.ETIMEDOUT": 361,
+        "plugins.metrics-by-endpoint.latest-town-p1.errors.ETIMEDOUT": 231
+      },
+      "rates": {
+        "http.request_rate": 360
+      },
+      "http.request_rate": null,
+      "firstCounterAt": 1786001670002,
+      "lastCounterAt": 1786001679998,
+      "firstMetricAt": 1786001670002,
+      "lastMetricAt": 1786001679998,
+      "period": "1786001670000",
+      "summaries": {},
+      "histograms": {}
+    },
+    {
+      "counters": {
+        "vusers.created_by_name.popular-town": 554,
+        "vusers.created": 2147,
+        "http.requests": 2148,
+        "plugins.metrics-by-endpoint.popular-town-p1.errors.ETIMEDOUT": 900,
+        "errors.ETIMEDOUT": 3604,
+        "vusers.failed": 3604,
+        "vusers.created_by_name.popular-city-tag3-scroll": 558,
+        "vusers.created_by_name.latest-city-tag3-scroll": 291,
+        "plugins.metrics-by-endpoint.popular-city-tag3-p1.errors.ETIMEDOUT": 915,
+        "plugins.metrics-by-endpoint.latest-city-tag3-p1.errors.ETIMEDOUT": 583,
+        "plugins.metrics-by-endpoint.popular-city-p1.errors.ETIMEDOUT": 683,
+        "vusers.created_by_name.latest-town": 313,
+        "vusers.created_by_name.popular-city-scroll": 431,
+        "plugins.metrics-by-endpoint.latest-town-p1.errors.ETIMEDOUT": 523
+      },
+      "rates": {
+        "http.request_rate": 360
+      },
+      "http.request_rate": null,
+      "firstCounterAt": 1786001680000,
+      "lastCounterAt": 1786001689995,
+      "firstMetricAt": 1786001680000,
+      "lastMetricAt": 1786001689995,
+      "period": "1786001680000",
+      "summaries": {},
+      "histograms": {}
+    },
+    {
+      "counters": {
+        "plugins.metrics-by-endpoint.popular-town-p1.errors.ETIMEDOUT": 554,
+        "errors.ETIMEDOUT": 2148,
+        "vusers.failed": 2148,
+        "plugins.metrics-by-endpoint.popular-city-tag3-p1.errors.ETIMEDOUT": 558,
+        "plugins.metrics-by-endpoint.latest-city-tag3-p1.errors.ETIMEDOUT": 292,
+        "plugins.metrics-by-endpoint.latest-town-p1.errors.ETIMEDOUT": 313,
+        "plugins.metrics-by-endpoint.popular-city-p1.errors.ETIMEDOUT": 431
+      },
+      "rates": {},
+      "firstCounterAt": 1786001690001,
+      "lastCounterAt": 1786001696176,
+      "firstMetricAt": 1786001690001,
+      "lastMetricAt": 1786001696176,
+      "period": "1786001690000",
+      "summaries": {},
+      "histograms": {}
+    }
+  ]
+}
