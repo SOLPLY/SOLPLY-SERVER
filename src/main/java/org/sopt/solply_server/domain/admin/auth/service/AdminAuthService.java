@@ -107,7 +107,13 @@ public class AdminAuthService {
             throw new BusinessException(ErrorCode.INVALID_ADMIN_AUTH_CODE);
         }
 
-        TokenCollectionDto tokens = jwtTokenProvider.createTokenCollection(userId, platform);
+        // role 클레임은 발급 시점의 DB 값이다 — authCode에 실어 나르지 않는 것이 안전하다
+        // (권한을 외부에 왕복시키지 않는다). 어드민 로그인은 드물어 이 조회가 비용이 아니다.
+        UserRole role = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER))
+                .getRole();
+
+        TokenCollectionDto tokens = jwtTokenProvider.createTokenCollection(userId, platform, role);
         refreshTokenRepository.save(userId, tokens.refreshToken());
 
         return new AdminAuthTokenResponse(tokens.accessToken(), tokens.refreshToken());

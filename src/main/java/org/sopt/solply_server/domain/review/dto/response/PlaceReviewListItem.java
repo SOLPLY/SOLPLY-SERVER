@@ -14,7 +14,8 @@ public record PlaceReviewListItem(
     String content,
     LocalDate visitedAt,
     VisitTime visitTimeSlot,
-    List<String> imageUrls
+    List<String> imageUrls,
+    Integer rating
 ) {
   public static PlaceReviewListItem from(PlaceReview placeReview, ImageUrlProvider imageUrlProvider) {
     return new PlaceReviewListItem(
@@ -27,7 +28,8 @@ public record PlaceReviewListItem(
         placeReview.getVisitTimeSlot(),
         placeReview.getPlaceReviewImages().stream()
             .map(image -> imageUrlProvider.getImageUrl(image.getImageUrl()))
-            .toList()
+            .toList(),
+        placeReview.getRating()
     );
   }
 }

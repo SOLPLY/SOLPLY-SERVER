@@ -51,13 +51,20 @@ public class PlaceController {
 
     @Operation(
             summary = "장소 리스트 조회",
-            description = "동네, 장소 태그, 북마크 여부를 기반으로 장소를 필터링합니다.",
+            description = """
+                    동네(leaf) 또는 시 단위(하위 동네 합집합), 장소 태그, 북마크 여부, 정렬 기준으로 장소를 조회합니다.
+                    sort=latest 의미 — 일반 조회: 장소 등록 최신순 / 북마크 검색: 내 북마크 최신순.
+                    cursor·size 모두 미지정 시 페이징 없이 전체 반환(기존 동작). 북마크 검색은 페이징 미적용.
+                    """,
             parameters = {
-                    @Parameter(name = "townId", description = "동네 ID", required = true, example = "1"),
+                    @Parameter(name = "townId", description = "동네 또는 시 ID (시면 하위 동네 합집합 조회)", required = true, example = "1"),
                     @Parameter(name = "isBookmarkSearch", description = "북마크 검색 여부", required = true, example = "true"),
                     @Parameter(name = "mainTagId", description = "메인 태그 ID", example = "5"),
                     @Parameter(name = "subTagAIdList", description = "서브 태그(옵션1) ID 목록 (쉼표 구분)", example = "8,9,10"),
-                    @Parameter(name = "subTagBIdList", description = "서브 태그(옵션2) ID 목록 (쉼표 구분)", example = "11,12")
+                    @Parameter(name = "subTagBIdList", description = "서브 태그(옵션2) ID 목록 (쉼표 구분)", example = "11,12"),
+                    @Parameter(name = "sort", description = "정렬 기준 (latest 기본 | popular: 누적 북마크순)", example = "popular"),
+                    @Parameter(name = "cursor", description = "이전 응답의 nextCursor (무한 스크롤)"),
+                    @Parameter(name = "size", description = "페이지 크기 (1~50, cursor 지정 시 기본 20)")
             }
     )
     @GetMapping
@@ -66,14 +73,7 @@ public class PlaceController {
             @Parameter(hidden = true) @ModelAttribute @Validated PlaceFilterGetRequest placeFilterGetRequest) {
         return CustomApiResponse.success(
                 "장소 리스트 조회 성공",
-                placeService.getPlacesByTownAndTag(
-                        userId,
-                        placeFilterGetRequest.townId(),
-                        placeFilterGetRequest.isBookmarkSearch(),
-                        placeFilterGetRequest.mainTagId(),
-                        placeFilterGetRequest.subTagAIdList(),
-                        placeFilterGetRequest.subTagBIdList()
-                )
+                placeService.getPlaces(userId, placeFilterGetRequest)
         );
     }
 

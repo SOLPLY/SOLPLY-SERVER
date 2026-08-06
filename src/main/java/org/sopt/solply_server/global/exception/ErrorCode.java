@@ -66,6 +66,10 @@ public enum ErrorCode {
     // 장소 관련 (PLACE-xxx)
     NOT_FOUND_PLACE(HttpStatus.NOT_FOUND, "PlACE-001", "존재하지 않는 장소입니다."),
     PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
+    INVALID_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-003", "유효하지 않은 커서입니다."),
+    // PLACE-004는 EXPIRED_PLACE_CURSOR였다. 커서가 랭킹 세대를 싣고 다니던 시절 "보관 밖으로
+    // 밀려난 세대"를 알리던 코드인데, 세대 자체가 사라져(V32) 발생할 수 없는 상태가 됐다.
+    // 번호를 재사용하지 않는다 — 이미 나간 클라이언트가 다른 뜻으로 알고 있을 수 있다.
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
 
 
@@ -127,6 +131,7 @@ public enum ErrorCode {
    FORBIDDEN_PLACE_REVIEW_DELETE(HttpStatus.FORBIDDEN, "PLACE-REVIEW-006", "본인이 작성한 리뷰만 삭제할 수 있습니다."),
    FORBIDDEN_SELF_REVIEW_REPORT(HttpStatus.FORBIDDEN, "PLACE-REVIEW-007", "본인이 작성한 리뷰는 신고할 수 없습니다."),
    ALREADY_REPORTED_REVIEW(HttpStatus.CONFLICT, "PLACE-REVIEW-008", "이미 신고한 리뷰입니다."),
+   INVALID_PLACE_REVIEW_RATING(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-009", "평점은 1점 이상 5점 이하여야 합니다."),
     ;
 
 

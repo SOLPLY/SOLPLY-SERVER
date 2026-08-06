@@ -42,6 +42,8 @@ application-prod.yml
 !prometheus.dev.yml
 !prometheus.prod.yml
 !.github/ISSUE_TEMPLATE/*.yml
+# 부하 테스트 시나리오는 측정 재현의 근거라 추적한다 (2026-08-03 복원 — 전역 *.yml 차단의 예외)
+!load-test/**/*.yml
 !load-test/scenarios/*.yml
 !load-test/.gitignore
 !docker/docker-compose.bench.yml
@@ -78,7 +80,15 @@ Thumbs.db
 # ====================
 test-output/
 reports/
-load-test/reports/
+# 예외: 벤치마크 리포트는 문서(docs/perf/*)의 근거라 재현이 어려워 원본을 보존한다.
+# 'reports/'가 디렉터리째 제외하면 git이 내부를 탐색하지 않으므로, 디렉터리 제외를 먼저 푼다.
+!load-test/reports/
+load-test/reports/*
+!load-test/reports/popular-v*.json
+# 캠페인 재구성(2026-08-03) 이후 경로 — campaigns/**/results/는 전부 추적이 규약인데
+# (load-test/README.md §1) 하위 reports/가 위 전역 규칙에 걸려 누락됐던 것을 복구
+!load-test/campaigns/**/results/reports/
+!load-test/campaigns/**/results/reports/**
 load-test/query-logs/
 load-test/node_modules/
 load-test/data/
@@ -103,4 +113,9 @@ docs/superpowers/
 docs/claude-spec/
 
 # 벤치마크 로컬 산출물
-load-test/bench/results/
+load-test/bench/results/*
+!load-test/bench/results/metrics/
+load-test/bench/results/metrics/*
+# 예외: 인기순 벤치 서버 측 지표 (docs/perf/2026-07-place-popular-sort-benchmark.md §3·§4 근거)
+!load-test/bench/results/metrics/popular-v*
+load-test/campaigns/**/bench/node_modules

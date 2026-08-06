@@ -1,0 +1,449 @@
+================================================================
+# 라벨: rep3 / 채취: 2026-08-06 01:09:02 KST
+# 컨테이너: solply-bench-mysql / DB: solply_bench_db / 계정: solplyuser
+# version(current_generation) = 1785978240
+# 동네 1개 = 301 / 시 단위 = 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318
+# 태그: main=1 subA=(7,8,9,10) subB=(11,12,13,14,15,16)
+# 커서(동네) score=6584.197093 id=10009
+# 커서(시)   score=17550.157320 id=10201
+# LIMIT = 11 (기본 페이지 10 + hasNext 1)
+================================================================
+--- 데이터 규모 ---
++---------------+-----------+---------+------------------+
+| active_places | bookmarks | reviews | place_stats_rows |
++---------------+-----------+---------+------------------+
+|          6320 |  10400682 |  198191 |            12640 |
++---------------+-----------+---------+------------------+
++------------+----------+
+| version    | rows_cnt |
++------------+----------+
+| 1785978136 |     6320 |
+| 1785978240 |     6320 |
++------------+----------+
+--- 인덱스 ---
++-------------+------------+------------------------------------+--------------+----------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table       | Non_unique | Key_name                           | Seq_in_index | Column_name    | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++-------------+------------+------------------------------------+--------------+----------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| place_stats |          0 | PRIMARY                            |            1 | place_id       | A         |        6237 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          0 | PRIMARY                            |            2 | version        | A         |       12599 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          1 | idx_place_stats_version_town_score |            1 | version        | A         |           2 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          1 | idx_place_stats_version_town_score |            2 | town_id        | A         |         132 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          1 | idx_place_stats_version_town_score |            3 | popular_score  | D         |       12156 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          1 | idx_place_stats_version_town_score |            4 | place_id       | A         |       12599 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          1 | idx_place_stats_version_town_score |            5 | bookmark_count | A         |       12599 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          1 | idx_place_stats_version_town_score |            6 | review_count   | A         |       12599 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| place_stats |          1 | idx_place_stats_version_town_score |            7 | avg_rating     | A         |       12599 |     NULL |   NULL | YES  | BTREE      |         |               | YES     | NULL       |
++-------------+------------+------------------------------------+--------------+----------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+
+################################################################
+# [rep3] case1 town-first    (동네 1개 · 첫 페이지)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+------+------------------------------------+------------------------------------+---------+-------------+------+----------+-------------+
+| id | select_type | table | partitions | type | possible_keys                      | key                                | key_len | ref         | rows | filtered | Extra       |
++----+-------------+-------+------------+------+------------------------------------+------------------------------------+---------+-------------+------+----------+-------------+
+|  1 | SIMPLE      | ps    | NULL       | ref  | idx_place_stats_version_town_score | idx_place_stats_version_town_score | 16      | const,const |  100 |   100.00 | Using index |
++----+-------------+-------+------------+------+------------------------------------+------------------------------------+---------+-------------+------+----------+-------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)  (cost=10.4 rows=11)
+    -> Covering index lookup on ps using idx_place_stats_version_town_score (version=1785978240, town_id=301)  (cost=10.4 rows=100)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=10.4 rows=11) (actual time=0.0266..0.0287 rows=11 loops=1)
+    -> Covering index lookup on ps using idx_place_stats_version_town_score (version=1785978240, town_id=301)  (cost=10.4 rows=100) (actual time=0.0262..0.0277 rows=11 loops=1)
+
+
+################################################################
+# [rep3] case2 town-next     (동네 1개 · 다음 페이지)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301)
+  AND (ps.popular_score < 6584.197093
+       OR (ps.popular_score = 6584.197093 AND ps.place_id > 10009))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+-------+--------------------------------------------+------------------------------------+---------+------+------+----------+--------------------------+
+| id | select_type | table | partitions | type  | possible_keys                              | key                                | key_len | ref  | rows | filtered | Extra                    |
++----+-------------+-------+------------+-------+--------------------------------------------+------------------------------------+---------+------+------+----------+--------------------------+
+|  1 | SIMPLE      | ps    | NULL       | range | PRIMARY,idx_place_stats_version_town_score | idx_place_stats_version_town_score | 33      | NULL |   91 |   100.00 | Using where; Using index |
++----+-------------+-------+------------+-------+--------------------------------------------+------------------------------------+---------+------+------+----------+--------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)  (cost=18.6 rows=11)
+    -> Filter: ((ps.town_id = 301) and (ps.version = 1785978240) and ((ps.popular_score < 6584.197093) or ((ps.popular_score = 6584.197093) and (ps.place_id > 10009))))  (cost=18.6 rows=91)
+        -> Covering index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301 AND popular_score = 6584.197093 AND 10009 < place_id) OR (version = 1785978240 AND town_id = 301 AND 6584.197093 < popular_score)  (cost=18.6 rows=91)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=18.6 rows=11) (actual time=0.0296..0.0324 rows=11 loops=1)
+    -> Filter: ((ps.town_id = 301) and (ps.version = 1785978240) and ((ps.popular_score < 6584.197093) or ((ps.popular_score = 6584.197093) and (ps.place_id > 10009))))  (cost=18.6 rows=91) (actual time=0.0293..0.0317 rows=11 loops=1)
+        -> Covering index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301 AND popular_score = 6584.197093 AND 10009 < place_id) OR (version = 1785978240 AND town_id = 301 AND 6584.197093 < popular_score)  (cost=18.6 rows=91) (actual time=0.0267..0.028 rows=11 loops=1)
+
+
+################################################################
+# [rep3] case3 city-first    (시 단위 18개 · 첫 페이지)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+-------+------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+| id | select_type | table | partitions | type  | possible_keys                      | key                                | key_len | ref  | rows | filtered | Extra                                    |
++----+-------------+-------+------------+-------+------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+|  1 | SIMPLE      | ps    | NULL       | range | idx_place_stats_version_town_score | idx_place_stats_version_town_score | 16      | NULL | 1800 |   100.00 | Using where; Using index; Using filesort |
++----+-------------+-------+------------+-------+------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)  (cost=364 rows=11)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=364 rows=1800)
+        -> Filter: ((ps.version = 1785978240) and (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=364 rows=1800)
+            -> Covering index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301) OR (version = 1785978240 AND town_id = 302) OR (16 more)  (cost=364 rows=1800)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=364 rows=11) (actual time=0.677..0.678 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=364 rows=1800) (actual time=0.676..0.677 rows=11 loops=1)
+        -> Filter: ((ps.version = 1785978240) and (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=364 rows=1800) (actual time=0.03..0.49 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301) OR (version = 1785978240 AND town_id = 302) OR (16 more)  (cost=364 rows=1800) (actual time=0.0277..0.375 rows=1800 loops=1)
+
+
+################################################################
+# [rep3] case4 city-next     (시 단위 18개 · 다음 페이지)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND (ps.popular_score < 17550.157320
+       OR (ps.popular_score = 17550.157320 AND ps.place_id > 10201))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+-------+--------------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+| id | select_type | table | partitions | type  | possible_keys                              | key                                | key_len | ref  | rows | filtered | Extra                                    |
++----+-------------+-------+------------+-------+--------------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+|  1 | SIMPLE      | ps    | NULL       | range | PRIMARY,idx_place_stats_version_town_score | idx_place_stats_version_town_score | 33      | NULL | 1808 |   100.00 | Using where; Using index; Using filesort |
++----+-------------+-------+------------+-------+--------------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)  (cost=365 rows=11)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=365 rows=1808)
+        -> Filter: ((ps.version = 1785978240) and (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.popular_score < 17550.157320) or ((ps.popular_score = 17550.157320) and (ps.place_id > 10201))))  (cost=365 rows=1808)
+            -> Covering index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301 AND popular_score = 17550.157320 AND 10201 < place_id) OR (version = 1785978240 AND town_id = 301 AND 17550.157320 < popular_score) OR (34 more)  (cost=365 rows=1808)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=365 rows=11) (actual time=0.694..0.695 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=365 rows=1808) (actual time=0.694..0.694 rows=11 loops=1)
+        -> Filter: ((ps.version = 1785978240) and (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.popular_score < 17550.157320) or ((ps.popular_score = 17550.157320) and (ps.place_id > 10201))))  (cost=365 rows=1808) (actual time=0.031..0.51 rows=1790 loops=1)
+            -> Index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301 AND popular_score = 17550.157320 AND 10201 < place_id) OR (version = 1785978240 AND town_id = 301 AND 17550.157320 < popular_score) OR (34 more)  (cost=365 rows=1808) (actual time=0.0281..0.342 rows=1790 loops=1)
+
+
+################################################################
+# [rep3] case5 town-tag      (동네 1개 · 메인 태그)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id = 1 AND t.active = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------------------+---------+-----------------------------------+------+----------+-------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                                | key_len | ref                               | rows | filtered | Extra       |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------------------+---------+-----------------------------------+------+----------+-------------+
+|  1 | SIMPLE      | t     | NULL       | const  | PRIMARY,idx_tag_id_type                                            | PRIMARY                            | 8       | const                             |    1 |   100.00 | NULL        |
+|  1 | SIMPLE      | ps    | NULL       | ref    | PRIMARY,idx_place_stats_version_town_score                         | idx_place_stats_version_town_score | 16      | const,const                       |  100 |   100.00 | Using index |
+|  1 | SIMPLE      | pt    | NULL       | eq_ref | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | uk_place_tag_place_tag             | 16      | solply_bench_db.ps.place_id,const |    1 |   100.00 | Using index |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------------------+---------+-----------------------------------+------+----------+-------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)  (cost=81.1 rows=11)
+    -> Nested loop inner join  (cost=81.1 rows=100)
+        -> Covering index lookup on ps using idx_place_stats_version_town_score (version=1785978240, town_id=301)  (cost=10.4 rows=100)
+        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.608 rows=1)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=81.1 rows=11) (actual time=0.0287..0.0737 rows=11 loops=1)
+    -> Nested loop inner join  (cost=81.1 rows=100) (actual time=0.0284..0.0729 rows=11 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_version_town_score (version=1785978240, town_id=301)  (cost=10.4 rows=100) (actual time=0.018..0.023 rows=57 loops=1)
+        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.608 rows=1) (actual time=784e-6..789e-6 rows=0.193 loops=57)
+
+
+################################################################
+# [rep3] case6 city-tag3     (시 단위 18개 · 메인+서브A+서브B)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id = 1 AND t.active = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id IN (7,8,9,10) AND t.active = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id IN (11,12,13,14,15,16) AND t.active = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+--------------------------------------------------+------+----------+--------------------------------------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                    | key_len | ref                                              | rows | filtered | Extra                                      |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+--------------------------------------------------+------+----------+--------------------------------------------+
+|  1 | SIMPLE      | t     | NULL       | const  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | const                                            |    1 |   100.00 | Using temporary; Using filesort            |
+|  1 | SIMPLE      | t     | NULL       | range  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | NULL                                             |    4 |    10.00 | Using where; Start temporary               |
+|  1 | SIMPLE      | t     | NULL       | range  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | NULL                                             |    6 |    10.00 | Using where; Using join buffer (hash join) |
+|  1 | SIMPLE      | pt    | NULL       | ref    | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | idx_place_tag_tag_id   | 8       | solply_bench_db.t.id                             |  579 |   100.00 | NULL                                       |
+|  1 | SIMPLE      | pt    | NULL       | eq_ref | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | uk_place_tag_place_tag | 16      | solply_bench_db.pt.place_id,const                |    1 |   100.00 | Using index                                |
+|  1 | SIMPLE      | pt    | NULL       | eq_ref | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | uk_place_tag_place_tag | 16      | solply_bench_db.pt.place_id,solply_bench_db.t.id |    1 |   100.00 | Using index                                |
+|  1 | SIMPLE      | ps    | NULL       | eq_ref | PRIMARY,idx_place_stats_version_town_score                         | PRIMARY                | 16      | solply_bench_db.pt.place_id,const                |    1 |    50.00 | Using where; End temporary                 |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+--------------------------------------------------+------+----------+--------------------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk
+        -> Stream results  (cost=254 rows=6.95)
+            -> Remove duplicate (pt, ps) rows using temporary table (weedout)  (cost=254 rows=6.95)
+                -> Nested loop inner join  (cost=254 rows=6.95)
+                    -> Nested loop inner join  (cost=218 rows=13.9)
+                        -> Nested loop inner join  (cost=132 rows=13.9)
+                            -> Nested loop inner join  (cost=46.7 rows=13.9)
+                                -> Inner hash join (no condition)  (cost=2.9 rows=0.024)
+                                    -> Filter: ((t.`active` = 1) and (t.id in (11,12,13,14,15,16)))  (cost=2.8 rows=0.6)
+                                        -> Index range scan on t using PRIMARY over (id = 11) OR (id = 12) OR (4 more)  (cost=2.8 rows=6)
+                                    -> Hash
+                                        -> Filter: ((t.`active` = 1) and (t.id in (7,8,9,10)))  (cost=1.81 rows=0.4)
+                                            -> Index range scan on t using PRIMARY over (id = 7) OR (id = 8) OR (2 more)  (cost=1.81 rows=4)
+                                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=t.id)  (cost=418 rows=579)
+                            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=1)  (cost=0.608 rows=1)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=t.id)  (cost=0.608 rows=1)
+                    -> Filter: (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318))  (cost=0.25 rows=0.5)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=22.1..22.1 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=22.1..22.1 rows=11 loops=1)
+        -> Stream results  (cost=254 rows=6.95) (actual time=0.35..22 rows=211 loops=1)
+            -> Remove duplicate (pt, ps) rows using temporary table (weedout)  (cost=254 rows=6.95) (actual time=0.348..22 rows=211 loops=1)
+                -> Nested loop inner join  (cost=254 rows=6.95) (actual time=0.345..21.8 rows=615 loops=1)
+                    -> Nested loop inner join  (cost=218 rows=13.9) (actual time=0.145..19.4 rows=2874 loops=1)
+                        -> Nested loop inner join  (cost=132 rows=13.9) (actual time=0.144..12.3 rows=10536 loops=1)
+                            -> Nested loop inner join  (cost=46.7 rows=13.9) (actual time=0.14..4.29 rows=10536 loops=1)
+                                -> Inner hash join (no condition)  (cost=2.9 rows=0.024) (actual time=0.0174..0.0345 rows=24 loops=1)
+                                    -> Filter: ((t.`active` = 1) and (t.id in (11,12,13,14,15,16)))  (cost=2.8 rows=0.6) (actual time=0.00133..0.0133 rows=6 loops=1)
+                                        -> Index range scan on t using PRIMARY over (id = 11) OR (id = 12) OR (4 more)  (cost=2.8 rows=6) (actual time=0.00117..0.0101 rows=6 loops=1)
+                                    -> Hash
+                                        -> Filter: ((t.`active` = 1) and (t.id in (7,8,9,10)))  (cost=1.81 rows=0.4) (actual time=0.00696..0.00983 rows=4 loops=1)
+                                            -> Index range scan on t using PRIMARY over (id = 7) OR (id = 8) OR (2 more)  (cost=1.81 rows=4) (actual time=0.00533..0.00775 rows=4 loops=1)
+                                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=t.id)  (cost=418 rows=579) (actual time=0.0533..0.162 rows=439 loops=24)
+                            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=1)  (cost=0.608 rows=1) (actual time=653e-6..670e-6 rows=1 loops=10536)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=t.id)  (cost=0.608 rows=1) (actual time=601e-6..605e-6 rows=0.273 loops=10536)
+                    -> Filter: (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318))  (cost=0.25 rows=0.5) (actual time=772e-6..783e-6 rows=0.214 loops=2874)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1) (actual time=651e-6..669e-6 rows=1 loops=2874)
+
+
+################################################################
+# [rep3] case7 city-nolimit  (부록: 페이징 미요청 경로)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 2147483646
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+-------+------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+| id | select_type | table | partitions | type  | possible_keys                      | key                                | key_len | ref  | rows | filtered | Extra                                    |
++----+-------------+-------+------------+-------+------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+|  1 | SIMPLE      | ps    | NULL       | range | idx_place_stats_version_town_score | idx_place_stats_version_town_score | 16      | NULL | 1800 |   100.00 | Using where; Using index; Using filesort |
++----+-------------+-------+------------+-------+------------------------------------+------------------------------------+---------+------+------+----------+------------------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 2147483646 row(s)  (cost=364 rows=1800)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 2147483646 row(s) per chunk  (cost=364 rows=1800)
+        -> Filter: ((ps.version = 1785978240) and (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=364 rows=1800)
+            -> Covering index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301) OR (version = 1785978240 AND town_id = 302) OR (16 more)  (cost=364 rows=1800)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 2147483646 row(s)  (cost=364 rows=1800) (actual time=0.753..0.888 rows=1800 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 2147483646 row(s) per chunk  (cost=364 rows=1800) (actual time=0.753..0.821 rows=1800 loops=1)
+        -> Filter: ((ps.version = 1785978240) and (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=364 rows=1800) (actual time=0.044..0.48 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_version_town_score over (version = 1785978240 AND town_id = 301) OR (version = 1785978240 AND town_id = 302) OR (16 more)  (cost=364 rows=1800) (actual time=0.0268..0.352 rows=1800 loops=1)
+
+
+################################################################
+# [rep3] case8 city-tag1     (탐침: 시 단위 · 메인 태그만)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id = 1 AND t.active = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------+---------+-----------------------------------+------+----------+---------------------------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                  | key_len | ref                               | rows | filtered | Extra                           |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------+---------+-----------------------------------+------+----------+---------------------------------+
+|  1 | SIMPLE      | t     | NULL       | const  | PRIMARY,idx_tag_id_type                                            | PRIMARY              | 8       | const                             |    1 |   100.00 | Using temporary; Using filesort |
+|  1 | SIMPLE      | pt    | NULL       | ref    | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | idx_place_tag_tag_id | 8       | const                             | 1146 |   100.00 | NULL                            |
+|  1 | SIMPLE      | ps    | NULL       | eq_ref | PRIMARY,idx_place_stats_version_town_score                         | PRIMARY              | 16      | solply_bench_db.pt.place_id,const |    1 |    50.00 | Using where                     |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+----------------------+---------+-----------------------------------+------+----------+---------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk
+        -> Stream results  (cost=692 rows=573)
+            -> Nested loop inner join  (cost=692 rows=573)
+                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=291 rows=1146)
+                -> Filter: (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318))  (cost=0.25 rows=0.5)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=1.84..1.84 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=1.84..1.84 rows=11 loops=1)
+        -> Stream results  (cost=692 rows=573) (actual time=0.218..1.8 rows=275 loops=1)
+            -> Nested loop inner join  (cost=692 rows=573) (actual time=0.217..1.76 rows=275 loops=1)
+                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=291 rows=1146) (actual time=0.0893..0.61 rows=1146 loops=1)
+                -> Filter: (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318))  (cost=0.25 rows=0.5) (actual time=922e-6..936e-6 rows=0.24 loops=1146)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1) (actual time=804e-6..823e-6 rows=1 loops=1146)
+
+
+################################################################
+# [rep3] case9 city-tag2     (탐침: 시 단위 · 메인+서브A)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id = 1 AND t.active = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id IN (7,8,9,10) AND t.active = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+-----------------------------------+------+----------+---------------------------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                    | key_len | ref                               | rows | filtered | Extra                           |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+-----------------------------------+------+----------+---------------------------------+
+|  1 | SIMPLE      | t     | NULL       | const  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | const                             |    1 |   100.00 | Using temporary; Using filesort |
+|  1 | SIMPLE      | t     | NULL       | range  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | NULL                              |    4 |    10.00 | Using where; Start temporary    |
+|  1 | SIMPLE      | pt    | NULL       | ref    | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | idx_place_tag_tag_id   | 8       | solply_bench_db.t.id              |  579 |   100.00 | NULL                            |
+|  1 | SIMPLE      | pt    | NULL       | eq_ref | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | uk_place_tag_place_tag | 16      | solply_bench_db.pt.place_id,const |    1 |   100.00 | Using index                     |
+|  1 | SIMPLE      | ps    | NULL       | eq_ref | PRIMARY,idx_place_stats_version_town_score                         | PRIMARY                | 16      | solply_bench_db.pt.place_id,const |    1 |    50.00 | Using where; End temporary      |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+-----------------------------------+------+----------+---------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk
+        -> Stream results  (cost=341 rows=116)
+            -> Remove duplicate (pt, ps) rows using temporary table (weedout)  (cost=341 rows=116)
+                -> Nested loop inner join  (cost=341 rows=116)
+                    -> Nested loop inner join  (cost=260 rows=232)
+                        -> Nested loop inner join  (cost=95.7 rows=232)
+                            -> Filter: ((t.`active` = 1) and (t.id in (7,8,9,10)))  (cost=1.81 rows=0.4)
+                                -> Index range scan on t using PRIMARY over (id = 7) OR (id = 8) OR (2 more)  (cost=1.81 rows=4)
+                            -> Index lookup on pt using idx_place_tag_tag_id (tag_id=t.id)  (cost=321 rows=579)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=1)  (cost=0.608 rows=1)
+                    -> Filter: (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318))  (cost=0.25 rows=0.5)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=4.53..4.53 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=4.53..4.53 rows=11 loops=1)
+        -> Stream results  (cost=341 rows=116) (actual time=0.297..4.48 rows=275 loops=1)
+            -> Remove duplicate (pt, ps) rows using temporary table (weedout)  (cost=341 rows=116) (actual time=0.295..4.44 rows=275 loops=1)
+                -> Nested loop inner join  (cost=341 rows=116) (actual time=0.291..4.34 rows=409 loops=1)
+                    -> Nested loop inner join  (cost=260 rows=232) (actual time=0.118..2.69 rows=1756 loops=1)
+                        -> Nested loop inner join  (cost=95.7 rows=232) (actual time=0.114..1.16 rows=1756 loops=1)
+                            -> Filter: ((t.`active` = 1) and (t.id in (7,8,9,10)))  (cost=1.81 rows=0.4) (actual time=0.00725..0.0118 rows=4 loops=1)
+                                -> Index range scan on t using PRIMARY over (id = 7) OR (id = 8) OR (2 more)  (cost=1.81 rows=4) (actual time=0.00596..0.00942 rows=4 loops=1)
+                            -> Index lookup on pt using idx_place_tag_tag_id (tag_id=t.id)  (cost=321 rows=579) (actual time=0.0929..0.268 rows=439 loops=4)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=1)  (cost=0.608 rows=1) (actual time=737e-6..759e-6 rows=1 loops=1756)
+                    -> Filter: (ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318))  (cost=0.25 rows=0.5) (actual time=851e-6..866e-6 rows=0.233 loops=1756)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1) (actual time=715e-6..737e-6 rows=1 loops=1756)
+
+
+################################################################
+# [rep3] case10 town-tag3    (탐침: 동네 1개 · 메인+서브A+서브B)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.version = 1785978240
+  AND ps.town_id IN (301)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id = 1 AND t.active = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id IN (7,8,9,10) AND t.active = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = ps.place_id AND t.id IN (11,12,13,14,15,16) AND t.active = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- EXPLAIN (traditional) ---
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+--------------------------------------------------+------+----------+--------------------------------------------+
+| id | select_type | table | partitions | type   | possible_keys                                                      | key                    | key_len | ref                                              | rows | filtered | Extra                                      |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+--------------------------------------------------+------+----------+--------------------------------------------+
+|  1 | SIMPLE      | t     | NULL       | const  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | const                                            |    1 |   100.00 | Using temporary; Using filesort            |
+|  1 | SIMPLE      | t     | NULL       | range  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | NULL                                             |    4 |    10.00 | Using where; Start temporary               |
+|  1 | SIMPLE      | t     | NULL       | range  | PRIMARY,idx_tag_id_type                                            | PRIMARY                | 8       | NULL                                             |    6 |    10.00 | Using where; Using join buffer (hash join) |
+|  1 | SIMPLE      | pt    | NULL       | ref    | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | idx_place_tag_tag_id   | 8       | solply_bench_db.t.id                             |  579 |   100.00 | NULL                                       |
+|  1 | SIMPLE      | ps    | NULL       | eq_ref | PRIMARY,idx_place_stats_version_town_score                         | PRIMARY                | 16      | solply_bench_db.pt.place_id,const                |    1 |    10.00 | Using where                                |
+|  1 | SIMPLE      | pt    | NULL       | eq_ref | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | uk_place_tag_place_tag | 16      | solply_bench_db.pt.place_id,const                |    1 |   100.00 | Using index                                |
+|  1 | SIMPLE      | pt    | NULL       | eq_ref | uk_place_tag_place_tag,idx_place_tag_place_id,idx_place_tag_tag_id | uk_place_tag_place_tag | 16      | solply_bench_db.pt.place_id,solply_bench_db.t.id |    1 |   100.00 | Using index; End temporary                 |
++----+-------------+-------+------------+--------+--------------------------------------------------------------------+------------------------+---------+--------------------------------------------------+------+----------+--------------------------------------------+
+--- EXPLAIN FORMAT=TREE ---
+-> Limit: 11 row(s)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk
+        -> Stream results  (cost=100 rows=1.39)
+            -> Remove duplicate (ps, pt) rows using temporary table (weedout)  (cost=100 rows=1.39)
+                -> Nested loop inner join  (cost=100 rows=1.39)
+                    -> Nested loop inner join  (cost=91.4 rows=1.39)
+                        -> Nested loop inner join  (cost=82.8 rows=1.39)
+                            -> Nested loop inner join  (cost=46.7 rows=13.9)
+                                -> Inner hash join (no condition)  (cost=2.9 rows=0.024)
+                                    -> Filter: ((t.`active` = 1) and (t.id in (11,12,13,14,15,16)))  (cost=2.8 rows=0.6)
+                                        -> Index range scan on t using PRIMARY over (id = 11) OR (id = 12) OR (4 more)  (cost=2.8 rows=6)
+                                    -> Hash
+                                        -> Filter: ((t.`active` = 1) and (t.id in (7,8,9,10)))  (cost=1.81 rows=0.4)
+                                            -> Index range scan on t using PRIMARY over (id = 7) OR (id = 8) OR (2 more)  (cost=1.81 rows=4)
+                                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=t.id)  (cost=418 rows=579)
+                            -> Filter: (ps.town_id = 301)  (cost=0.25 rows=0.1)
+                                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=1)  (cost=0.614 rows=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=t.id)  (cost=0.614 rows=1)
+
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=11.6..11.6 rows=10 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=11.6..11.6 rows=10 loops=1)
+        -> Stream results  (cost=100 rows=1.39) (actual time=0.993..11.6 rows=10 loops=1)
+            -> Remove duplicate (ps, pt) rows using temporary table (weedout)  (cost=100 rows=1.39) (actual time=0.99..11.6 rows=10 loops=1)
+                -> Nested loop inner join  (cost=100 rows=1.39) (actual time=0.984..11.6 rows=32 loops=1)
+                    -> Nested loop inner join  (cost=91.4 rows=1.39) (actual time=0.236..11.5 rows=162 loops=1)
+                        -> Nested loop inner join  (cost=82.8 rows=1.39) (actual time=0.232..11.3 rows=162 loops=1)
+                            -> Nested loop inner join  (cost=46.7 rows=13.9) (actual time=0.142..4.34 rows=10536 loops=1)
+                                -> Inner hash join (no condition)  (cost=2.9 rows=0.024) (actual time=0.0237..0.0342 rows=24 loops=1)
+                                    -> Filter: ((t.`active` = 1) and (t.id in (11,12,13,14,15,16)))  (cost=2.8 rows=0.6) (actual time=0.00675..0.0141 rows=6 loops=1)
+                                        -> Index range scan on t using PRIMARY over (id = 11) OR (id = 12) OR (4 more)  (cost=2.8 rows=6) (actual time=0.00517..0.0114 rows=6 loops=1)
+                                    -> Hash
+                                        -> Filter: ((t.`active` = 1) and (t.id in (7,8,9,10)))  (cost=1.81 rows=0.4) (actual time=0.0075..0.0104 rows=4 loops=1)
+                                            -> Index range scan on t using PRIMARY over (id = 7) OR (id = 8) OR (2 more)  (cost=1.81 rows=4) (actual time=0.006..0.00842 rows=4 loops=1)
+                                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=t.id)  (cost=418 rows=579) (actual time=0.0545..0.163 rows=439 loops=24)
+                            -> Filter: (ps.town_id = 301)  (cost=0.25 rows=0.1) (actual time=603e-6..604e-6 rows=0.0154 loops=10536)
+                                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id, version=1785978240)  (cost=0.25 rows=1) (actual time=480e-6..498e-6 rows=1 loops=10536)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=1)  (cost=0.614 rows=1) (actual time=744e-6..760e-6 rows=1 loops=162)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=t.id)  (cost=0.614 rows=1) (actual time=639e-6..642e-6 rows=0.198 loops=162)
+
+

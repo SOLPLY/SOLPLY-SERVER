@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.service.facade;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -55,13 +56,20 @@ public class PlaceBookmarkFacade {
 
     // == 리스트 조회 == //
 
-    /** 특정 동네에서 사용자가 북마크한 placeId 목록을 최신순으로 반환 */
-    public List<Long> getBookmarkedPlaceIdsForTown(final Long userId, final Long townId) {
+    /** 여러 동네에서 사용자가 북마크한 placeId 목록을 최신순으로 반환 */
+    public List<Long> getBookmarkedPlaceIdsForTowns(final Long userId, final List<Long> townIds) {
         if (userId == null) return Collections.emptyList();
-        return bookmarkRepository.findBookmarkedPlaceIdsByTownOrdered(userId, townId);
+        return bookmarkRepository.findBookmarkedPlaceIdsByTownsOrdered(userId, townIds);
     }
 
-    /** 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회) */
+    /**
+     * 다중 동네 placeId 목록의 북마크 여부 배치 조회 (커버링 인덱스, DB 1회).
+     *
+     * <p>장소 목록·코스 상세·벤치 경로가 모두 이것을 쓴다. 한동안 장소 목록만
+     * {@code getMyPlaceBookmarkTimesMap}(북마크 생성 시각까지 싣는 변형)으로 갈라져 있었는데,
+     * 그 시각의 유일한 용처가 표시 카운트 보정이었고 보정이 사라지면서(2026-07-31,
+     * 이벤트 증분 도입) 함께 걷어냈다. 여부 판정에는 시각이 필요 없다.
+     */
     public Map<Long, Boolean> getPlaceBookmarkStatusMap(final Long userId, final List<Long> placeIds) {
         return bookmarkService.getBookmarkStatusMap(userId, BookmarkTargetType.PLACE, placeIds);
     }

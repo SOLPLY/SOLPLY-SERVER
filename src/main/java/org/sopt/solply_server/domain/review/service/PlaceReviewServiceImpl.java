@@ -39,6 +39,8 @@ import org.springframework.util.StringUtils;
 public class PlaceReviewServiceImpl implements PlaceReviewService {
 
   private static final int MAX_IMAGE_COUNT = 5;
+  private static final int MIN_RATING = 1;
+  private static final int MAX_RATING = 5;
 
   private final PlaceReviewRepository placeReviewRepository;
   private final UserRepository userRepository;
@@ -62,11 +64,15 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
         place,
         request.visitedAt(),
         request.visitTimeSlot(),
-        request.content().trim()
+        request.content().trim(),
+        request.rating()
     );
 
     PlaceReview savedPlaceReview = placeReviewRepository.save(placeReview);
 
+    // 여기 있던 PlaceReviewCreatedEvent 발행은 걷어냈다 (2026-08-07). place_stats.review_count를
+    // 준실시간 증분하던 리스너가 폐지된 뒤로 소비자 없이 발행만 남아 있었다 — 그 값을 고치는
+    // 주체는 매시 카운트 배치 하나다.
     List<String> imageKeys = request.imageKeys() == null
         ? Collections.emptyList()
         : request.imageKeys();
@@ -104,6 +110,13 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     validateVisitedAt(request.visitedAt());
     validateContent(request.content());
     validateImages(request.imageKeys());
+    validateRating(request.rating());
+  }
+
+  private void validateRating(Integer rating) {
+    if (rating == null || rating < MIN_RATING || rating > MAX_RATING) {
+      throw new BusinessValidationException(ErrorCode.INVALID_PLACE_REVIEW_RATING);
+    }
   }
 
   private void validateVisitedAt(LocalDate visitedAt) {

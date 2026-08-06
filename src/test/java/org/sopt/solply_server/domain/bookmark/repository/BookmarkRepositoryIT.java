@@ -3,49 +3,38 @@ package org.sopt.solply_server.domain.bookmark.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.global.config.QueryDslConfig;
+import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Testcontainers
 @Import(QueryDslConfig.class)
-class BookmarkRepositoryIT {
-
-    @Container
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
+class BookmarkRepositoryIT extends MySqlContainerSupport {
 
     @DynamicPropertySource
-    static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
-        registry.add("spring.datasource.username", MYSQL::getUsername);
-        registry.add("spring.datasource.password", MYSQL::getPassword);
-        registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
-        registry.add("spring.flyway.enabled", () -> "true");
-        registry.add("spring.flyway.locations", () -> "classpath:db/migration");
-        registry.add("spring.flyway.baseline-on-migrate", () -> "true");
-        registry.add("spring.flyway.baseline-version", () -> "0");
-        registry.add("spring.flyway.placeholders.s3_env", () -> "test");
+    static void ddlAuto(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
-        registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.MySQLDialect");
-        registry.add("decorator.datasource.enabled", () -> "false");
+        // 목록 경로가 페이지당 북마크 조회 1회임을 실측으로 못 박기 위해 통계를 켠다
+        registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
     }
 
     @Autowired
@@ -54,6 +43,9 @@ class BookmarkRepositoryIT {
     @Autowired
     EntityManager em;
 
+    @Autowired
+    EntityManagerFactory emf;
+
     private Long userId;
     private Long townId;
     private Long placeA;   // 북마크 순서: A(가장 오래됨) → B(중간) → C(최신)
@@ -61,6 +53,7 @@ class BookmarkRepositoryIT {
     private Long placeC;
     private Long otherTownId;
     private Long otherTownPlace;
+    private Long unbookmarkedPlace;
 
     private Long courseTownId;
     private Long otherCourseTownId;
@@ -95,6 +88,13 @@ class BookmarkRepositoryIT {
         otherTownId = byTown.keySet().stream()
                 .filter(t -> !t.equals(townId)).findFirst().orElseThrow();
         otherTownPlace = byTown.get(otherTownId).get(0);
+
+        // 어느 유저도 북마크하지 않는 장소 (카운트 0건 검증용)
+        List<Long> bookmarked = List.of(placeA, placeB, placeC, otherTownPlace);
+        unbookmarkedPlace = rows.stream()
+                .map(r -> ((Number) r[0]).longValue())
+                .filter(id -> !bookmarked.contains(id))
+                .findFirst().orElseThrow();
 
         // 같은 동네의 active 코스 3개 + 다른 동네의 active 코스 1개를 고른다.
         @SuppressWarnings("unchecked")
@@ -163,8 +163,42 @@ class BookmarkRepositoryIT {
 
     @Test
     void 동네별_북마크_장소_id를_최신순으로_반환한다() {
-        List<Long> ids = bookmarkRepository.findBookmarkedPlaceIdsByTownOrdered(userId, townId);
+        List<Long> ids = bookmarkRepository.findBookmarkedPlaceIdsByTownsOrdered(userId, List.of(townId));
         assertThat(ids).containsExactly(placeC, placeB, placeA); // 최신순
+    }
+
+    @Test
+    void 여러_동네의_북마크_장소_id를_최신순으로_반환한다() {
+        // given: townId(placeA 1/1, placeB 2/1, placeC 3/1) + otherTownId(otherTownPlace 1/15)
+
+        // when
+        List<Long> ids = bookmarkRepository.findBookmarkedPlaceIdsByTownsOrdered(
+                userId, List.of(townId, otherTownId));
+
+        // then: 동네 경계 없이 북마크 최신순으로 병합된다
+        assertThat(ids).containsExactly(placeC, placeB, otherTownPlace, placeA);
+    }
+
+    @Test
+    void 장소별_북마크_수를_집계한다() {
+        // given: placeA에 다른 유저의 북마크를 1개 더 추가 → placeA 2개, placeB 1개, unbookmarkedPlace 0개
+        User other = User.create("bookmark-count-it@test.com");
+        em.persist(other);
+        em.persist(Bookmark.create(other, BookmarkTargetType.PLACE, placeA));
+        em.flush();
+        em.clear();
+
+        // when
+        Map<Long, Long> counts = bookmarkRepository
+                .countByPlaceIds(List.of(placeA, placeB, unbookmarkedPlace)).stream()
+                .collect(Collectors.toMap(
+                        r -> ((Number) r[0]).longValue(),
+                        r -> ((Number) r[1]).longValue()));
+
+        // then
+        assertThat(counts.get(placeA)).isEqualTo(2L);
+        assertThat(counts.get(placeB)).isEqualTo(1L);
+        assertThat(counts).doesNotContainKey(unbookmarkedPlace); // 0건은 행 없음
     }
 
     @Test
@@ -178,6 +212,25 @@ class BookmarkRepositoryIT {
                 .containsEntry(townId, placeC)
                 .containsEntry(otherTownId, otherTownPlace)
                 .hasSize(2);
+    }
+
+    /**
+     * 여부 조회가 statement 1회임을 못 박는다 — 장소 목록 경로가 페이지당 이 조회 하나만 쓴다.
+     *
+     * <p>한동안 이 자리에 "북마크 생성 시각까지 함께 싣는" 변형 조회
+     * ({@code findMyBookmarkTimesByTargetIds})의 테스트가 6건 더 있었다. 그 시각의 유일한 용처가
+     * 표시 카운트 보정이었고, 이벤트 증분이 보정을 대체하면서(2026-07-31) 쿼리째 사라졌다.
+     */
+    @Test
+    void 북마크_여부_조회는_statement를_1회만_발행한다() {
+        Statistics stats = emf.unwrap(SessionFactory.class).getStatistics();
+
+        stats.clear();
+        Set<Long> bookmarked = bookmarkRepository.findBookmarkedTargetIdsByTargetIds(
+                userId, BookmarkTargetType.PLACE, List.of(placeA, placeB, placeC));
+
+        assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);
+        assertThat(bookmarked).containsExactlyInAnyOrder(placeA, placeB, placeC);
     }
 
     @Test

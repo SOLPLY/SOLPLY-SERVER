@@ -22,6 +22,10 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
                 @Index(
                         name = "idx_bookmark_user_type_created_target",
                         columnList = "user_id, target_type, created_at DESC, target_id"
+                ),
+                @Index(
+                        name = "idx_bookmark_target",
+                        columnList = "target_type, target_id, created_at"
                 )
         }
 )

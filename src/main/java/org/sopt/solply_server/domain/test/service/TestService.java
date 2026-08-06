@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.test.dto.response.TestLoginResponse;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.domain.user.entity.User;
 import org.sopt.solply_server.domain.user.entity.UserPersona;
+import org.sopt.solply_server.domain.user.entity.UserRole;
 import org.sopt.solply_server.domain.user.repository.UserRepository;
 import org.sopt.solply_server.domain.user.service.UserInterestTownService;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -48,7 +49,7 @@ public class TestService {
 //        userInterestTownService.updateUserInterestTowns(user, initialTowns);
 
         return TestLoginResponse.of(
-                saveTokenCollection(user.getId()),
+                saveTokenCollection(user.getId(), user.getRole()),
                 user.isNewUser(),
                 user.getId()
         );
@@ -59,7 +60,7 @@ public class TestService {
         User user = entityLoader.getUser(userId);
 
         return TestLoginResponse.of(
-                saveTokenCollection(user.getId()),
+                saveTokenCollection(user.getId(), user.getRole()),
                 user.isNewUser(),
                 user.getId()
         );
@@ -72,8 +73,9 @@ public class TestService {
     }
 
     // 토큰 발급(테스트용)
-    private TokenCollectionDto saveTokenCollection(Long userId) {
-        TokenCollectionDto newTokens = jwtTokenProvider.createTokenCollection(userId, SocialPlatform.KAKAO);
+    private TokenCollectionDto saveTokenCollection(Long userId, UserRole role) {
+        TokenCollectionDto newTokens =
+                jwtTokenProvider.createTokenCollection(userId, SocialPlatform.KAKAO, role);
         refreshTokenRepository.save(userId, newTokens.refreshToken());
         return newTokens;
     }

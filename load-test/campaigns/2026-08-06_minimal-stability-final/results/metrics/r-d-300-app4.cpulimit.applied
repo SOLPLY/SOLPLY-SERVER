@@ -1,0 +1,16 @@
+# AFTER change (4 vCPU 적용)  2026-08-06 15:28:42 KST
+## docker inspect (app)
+NanoCpus=4000000000 CpuQuota=0 CpuPeriod=0 Memory=2147483648
+## cgroup cpu.max (app)  <- 400000 100000 이어야 4 vCPU
+400000 100000
+## cgroup cpu.max (mysql)  <- 200000 100000 무변경
+200000 100000
+## app env
+SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=10
+JAVA_TOOL_OPTIONS=-Xmx1280m -XX:MaxMetaspaceSize=256m
+SPRING_APPLICATION_JSON={}
+SERVER_TOMCAT_THREADS_MAX=50
+## StartedAt/RestartCount (재기동 없음을 보인다)
+StartedAt=2026-08-05T20:17:34.005491087Z RestartCount=0 OOMKilled=false
+## JVM availableProcessors (재기동 안 했으므로 2로 남는다)
+system_cpu_count{application="solply-app"} 4.0

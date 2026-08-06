@@ -1,12 +1,12 @@
 package org.sopt.solply_server.domain.place.service;
 
+import java.math.BigDecimal;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -14,9 +14,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceLatestReviewDto;
-import org.sopt.solply_server.domain.place.dto.PlaceSearchConditionDto;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceSearchResultDto;
+import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
+import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
+import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceDetailsGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGetResponse;
@@ -24,15 +26,19 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.place.util.PlaceListCursor;
+import org.sopt.solply_server.domain.place.util.PlaceTagMatcher;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
-import org.sopt.solply_server.domain.town.util.TownValidator;
+import org.sopt.solply_server.domain.town.util.TownHierarchyResolver;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.exception.JwtTokenException;
@@ -54,9 +60,25 @@ public class PlaceService {
   private final ImageUrlProvider imageUrlProvider;
   private final TagValidator tagValidator;
   private final PlaceBookmarkFacade placeBookmarkFacade;
-  private final TownValidator townValidator;
+  /** 존재 검증까지 함께 맡는다 — {@code TownValidator}를 따로 두지 않는 근거는 resolver javadoc */
+  private final TownHierarchyResolver townHierarchyResolver;
   private final EntityLoader entityLoader;
   private final PlaceReviewRepository placeReviewRepository;
+  private final PlaceListDbQueryRepository placeListDbQueryRepository;
+  private final PlaceStatsRepository placeStatsRepository;
+
+  /**
+   * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
+   * 유일한 소비자인 이곳으로 옮겼다.
+   *
+   * <p>기본값 10 (2026-08-03, 20에서 축소): 모바일 앱 화면에서 한 번에 소비되는 양 기준.
+   * 클라이언트가 size로 상한(50)까지 올릴 수 있으므로 기본값 축소는 하위호환이다.
+   * 부하 측정 시나리오는 비교 가능성 때문에 size=20을 명시해 쓴다 — 기본값과 무관.
+   */
+  private static final int DEFAULT_PAGE_SIZE = 10;
+
+  /** {@code Place.placeImageInfos}의 {@code @BatchSize}가 이 값에 맞춰져 있다 — 함께 움직인다 */
+  private static final int MAX_PAGE_SIZE = 50;
 
   /**
    * 장소 상세 정보 조회
@@ -111,55 +133,32 @@ public class PlaceService {
   }
 
   /**
-   * 동네와 태그 조건에 따른 장소 조회
+   * 동네(leaf) 또는 시(leaf 합집합) + 태그 + 정렬 조건에 따른 장소 조회.
+   * 정렬·필터는 직교: isBookmarkSearch는 "무엇을"(전체 vs 내 북마크), sort는 "어떤 순서로".
+   * sort=latest 의미 — 일반: 장소 등록 최신순 / 북마크 검색: 내 북마크 최신순 (기존 동작 유지).
+   * 북마크 검색은 유저당 데이터 상한이 작아 페이징을 적용하지 않는다.
    */
-  public PlaceFilterGetResponse getPlacesByTownAndTag(
-      final Long userId, final Long townId, final Boolean isBookmarkSearch, final Long mainTagId,
-      final List<Long> subTagAIdList, final List<Long> subTagBIdList) {
+  public PlaceFilterGetResponse getPlaces(final Long userId, final PlaceFilterGetRequest request) {
 
-    if (userId == null && Boolean.TRUE.equals(isBookmarkSearch)) {
+    if (userId == null && Boolean.TRUE.equals(request.isBookmarkSearch())) {
       throw new JwtTokenException(ErrorCode.UNAUTHORIZED_USER);
     }
 
-    townValidator.validateTownId(townId);
+    // 존재 검증과 leaf 확장이 한 문장이다 — 근거는 TownRepository#findSelfAndActiveChildIds.
+    // 검증이 태그 검증보다 앞이라는 순서는 유지한다(동네가 없으면 태그 오류보다 그것이 먼저다).
+    List<Long> leafTownIds = townHierarchyResolver.resolveLeafTownIdsOrThrow(request.townId());
 
-    boolean isOnlyBookmarkSearch = Boolean.TRUE.equals(isBookmarkSearch);
-
-    // isBookmarkSearch=true 시 orderedIds를 한 번만 조회해서 장소 목록 필터링과 북마크 Set에 재사용
-    // (기존에는 getBookmarkedPlacesByLatest()와 북마크 Set 생성 시 각각 1회씩, 총 2회 호출했음)
-    List<Long> bookmarkedOrderedIds = (isOnlyBookmarkSearch && userId != null)
-        ? placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, townId)
-        : null;
-
-    // 북마크 검색 시 orderedIds를 함께 전달 → 내부에서 북마크 최신순으로 재정렬
-    List<Place> places = getPlacesByCondition(townId, isOnlyBookmarkSearch, mainTagId,
-        subTagAIdList, subTagBIdList, bookmarkedOrderedIds);
-
-    Set<Long> bookmarkedIds;
-    if (bookmarkedOrderedIds != null) {
-      // 북마크 검색: 이미 조회한 orderedIds를 Set으로 변환해서 재사용
-      bookmarkedIds = new HashSet<>(bookmarkedOrderedIds);
-    } else if (userId != null) {
-      // 일반 장소 목록 + 로그인 상태: 각 장소 카드의 북마크 여부(하트) 표시를 위해 조회
-      bookmarkedIds = new HashSet<>(
-          placeBookmarkFacade.getBookmarkedPlaceIdsForTown(userId, townId));
-    } else {
-      // 비로그인: 북마크 여부 불필요
-      bookmarkedIds = Collections.emptySet();
+    if (request.mainTagId() != null) {
+      tagValidator.validatePlaceTagConditions(
+          request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
     }
 
-    List<PlacePreviewDto> placePreviewDtoList = places.stream()
-        .map(place -> PlacePreviewDto.of(
-            place.getId(),
-            place.getName(),
-            imageUrlProvider.getImageUrl(place.getThumbnailFileKey()),
-            TagViewUtils.getActiveNameOrNull(place.getMainTag().orElse(null)),
-            bookmarkedIds.contains(place.getId()),
-            townId
-        ))
-        .toList();
+    PlaceSortType sort = request.sortOrDefault();
 
-    return PlaceFilterGetResponse.from(placePreviewDtoList);
+    if (Boolean.TRUE.equals(request.isBookmarkSearch())) {
+      return bookmarkSearchResponse(userId, leafTownIds, request, sort);
+    }
+    return listPlaces(userId, leafTownIds, request, sort);
   }
 
 
@@ -222,59 +221,230 @@ public class PlaceService {
 
   //=== Private Methods ===//
 
-  private List<Place> getPlacesByCondition(final Long selectedTownId,
-      final boolean isOnlyBookmarkSearch,
-      final Long mainTagId, final List<Long> subTagAIdList, final List<Long> subTagBIdList,
-      final List<Long> bookmarkedOrderedIds) {
-    if (mainTagId != null) {
-      tagValidator.validatePlaceTagConditions(mainTagId, subTagAIdList, subTagBIdList);
+  /**
+   * 목록 경로가 다루는 <b>정렬 축의 공통 형태</b>. 두 정렬의 row는 정렬 키의 원본 타입만 다르고
+   * (popular_score의 double / createdAt의 LocalDateTime) 그 뒤 처리 — hasNext 판정, 페이지 채우기,
+   * 커서 발급 — 은 완전히 같다. 커서가 sortKey를 double 하나로 담으므로 그 지점에서 어차피
+   * 한 축으로 합쳐지고, 그 합류를 쿼리 직후로 당기면 이후 로직에 정렬 분기가 사라진다.
+   *
+   * <p>레포지토리 쪽 record를 이 형태로 통일하지 않은 것은 의도다 — 그쪽은 "어떤 컬럼을 읽었는가"를
+   * 그대로 드러내는 게 맞고, "정렬 키"라는 추상은 커서를 발급하는 이 경로의 관심사다.
+   */
+  private record DbListRow(long placeId, double sortKey, long bookmarkCount,
+                           long reviewCount, BigDecimal avgRating) {}
+
+  /**
+   * 장소 목록의 <b>유일한</b> 경로 — place_stats(인기순)/places(최신순) 정렬을 DB에 맡긴다.
+   *
+   * <p><b>한때 둘이었다.</b> 2026-08-01까지 이 서비스는 동네별 스냅샷을 메모리에 들고 앱에서
+   * 정렬하는 캐시 경로(A)와 이 DB 직행 경로(B)를 프로퍼티로 갈라 A/B로 실측했고,
+   * 판정은 B였다 — 캐시가 값어치를 하지 못했다. 근거와 수치는
+   * {@code docs/perf/2026-08-01-cache-vs-db-direct.md}에 있다. 여기 남아 있던 "모드 등가",
+   * "응답 diff 게이트" 같은 장치는 비교 대상이 사라지면서 함께 걷어냈다.
+   *
+   * <p><b>남은 성질 하나는 기억할 것 — POPULAR의 기준 테이블은 place_stats다.</b> 행이 없는
+   * 장소(마지막 카운트 배치 이후 새로 생긴 장소)는 인기순 결과에 아예 나오지 않는다. 이는 버그가
+   * 아니라 정렬을 인덱스에 흡수시키는 대가이며, 창은 카운트 배치 간격(≤1h) 이내다. 근거는
+   * {@code PlaceListDbQueryRepository#findPopularRows} javadoc.
+   *
+   * <p><b>커서 v4 — 좌표와 필터 지문 (2026-08-07).</b> v3까지는 여기에 랭킹 <b>세대</b>도 실었다.
+   * 스크롤 도중 배치가 돌면 점수가 통째로 갈려 페이지가 어긋나기 때문이었는데, 인기 점수 배치를
+   * 새벽 1회로 내리면서 그 창이 트래픽 최저 시각의 수 초로 줄어 세대를 걷어냈다. 남은 지문은
+   * 배치 주기와 무관한 구멍을 막는다 — 커서를 다른 필터 요청에 쓰면 요청한 적 없는 페이지가
+   * 200으로 나가던 것. 코덱 계약과 세대 제거 근거는 {@code PlaceListCursor} 참조.
+   */
+  private PlaceFilterGetResponse listPlaces(
+      Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
+
+    boolean paging = request.cursor() != null || request.size() != null;
+    int pageSize = !paging ? Integer.MAX_VALUE - 1
+        : (request.size() == null ? DEFAULT_PAGE_SIZE
+            : Math.min(request.size(), MAX_PAGE_SIZE));
+
+    // leaf 확장 전 원본 파라미터로 만든다 — 사용자가 실제로 고른 것이 그것이고, 확장 결과는
+    // 동네 트리가 바뀌면 같은 요청에서도 달라진다 (PlaceListCursor#filterPrintOf 참조).
+    String filterPrint = PlaceListCursor.filterPrintOf(
+        request.townId(), request.mainTagId(),
+        request.subTagAIdList(), request.subTagBIdList());
+
+    Double cursorScore = null;
+    Long cursorSec = null;
+    Long cursorPlaceId = null;
+    if (request.cursor() != null) {
+      PlaceListCursor cursor = PlaceListCursor.decode(request.cursor());
+      // 정렬 축이 다르면 sortKey의 뜻 자체가 다르고(점수 대 epoch 초), 필터가 다르면 이 커서가
+      // 가리키는 위치가 이 결과 집합 안에 없다. 둘 다 조용히 진행할 수 없는 상태다.
+      if (cursor.sort() != sort || !filterPrint.equals(cursor.filterPrint())) {
+        throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+      }
+      // LATEST의 sortKey는 정수인 epoch 초라 long 좁힘이 값을 잃지 않는다
+      // (2^53초 ≈ 2.8억 년, DATETIME 범위가 한참 못 미친다).
+      if (sort == PlaceSortType.POPULAR) {
+        cursorScore = cursor.sortKey();
+      } else {
+        cursorSec = (long) cursor.sortKey();
+      }
+      cursorPlaceId = cursor.placeId();
     }
 
-    if (isOnlyBookmarkSearch) {
-      return getBookmarkedPlacesByLatest(selectedTownId, mainTagId, subTagAIdList, subTagBIdList,
-          bookmarkedOrderedIds);
+    int fetchSize = paging ? pageSize + 1 : pageSize;
+    List<DbListRow> rows = switch (sort) {
+      case POPULAR -> placeListDbQueryRepository.findPopularRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              cursorScore, cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount(),
+              r.reviewCount(), r.avgRating()))
+          .toList();
+      // sortKey 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
+      // 다른 위치를 가리킨다. 레포지토리 쪽 역변환(LocalDateTime.ofEpochSecond)과 한 쌍이라
+      // 한쪽만 고치면 페이징이 조용히 어긋난다 — findLatestRows javadoc 참고.
+      case LATEST -> placeListDbQueryRepository.findLatestRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              cursorSec, cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(
+              r.placeId(), r.createdAt().toEpochSecond(ZoneOffset.UTC), r.bookmarkCount(),
+              r.reviewCount(), r.avgRating()))
+          .toList();
+    };
+
+    boolean hasNext = paging && rows.size() > pageSize;
+    if (hasNext) {
+      rows = rows.subList(0, pageSize);
     }
 
-    return placeRepository.findPlacesByConditions(
-        PlaceSearchConditionDto.of(selectedTownId, false, null, mainTagId, subTagAIdList,
-            subTagBIdList)
-    );
+    List<Long> pageIds = rows.stream().map(DbListRow::placeId).toList();
+    // 병합 함수 (a, b) -> a 는 방어다. 컬렉션 페치 조인은 태그 수만큼 루트를 펼치고, 그 중복을
+    // 지우는 주체는 SQL DISTINCT가 아니라 하이버네이트의 루트 중복 제거다(6부터 항상 켜짐).
+    // 그 동작에 의존하지 않고 여기서 닫아 둔다 — 같은 id면 같은 인스턴스라 어느 쪽을 남겨도 같다.
+    Map<Long, Place> placesById = placeRepository.findPlacesWithTagsByIds(pageIds).stream()
+        .collect(Collectors.toMap(Place::getId, Function.identity(), (a, b) -> a));
+    Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
+
+    // 표시 카운트는 row가 실어 온 place_stats 값 그대로다 — 응답을 만들면서 더하거나 빼지 않는다.
+    // 예전에는 "내 북마크가 배치 이후면 +1"이라는 표시 보정이 있었다. 당시 배치가 하루 1회뿐이라
+    // 내가 방금 누른 것이 다음 새벽까지 숫자에 안 나타나는 문제를 화면에서만 덮던 장치였는데,
+    // 이벤트 증분(PlaceStatsIncrementListener)이 그 구간을 수십 ms로 줄이면서 걷어냈다
+    // (2026-07-31). 카운트를 고치는 주체가 증분과 배치 둘로 확정돼, 조회 경로는 읽어서 싣기만 한다.
+    // 되살리지 말 것 — PlaceServiceStatsWiringTest가 그 회귀를 감시한다.
+    List<PlacePreviewDto> previews = rows.stream()
+        .map(row -> {
+          Place p = placesById.get(row.placeId());
+          return PlacePreviewDto.of(
+              p.getId(),
+              p.getName(),
+              imageUrlProvider.getImageUrl(p.getThumbnailFileKey()),
+              TagViewUtils.getActiveNameOrNull(p.getMainTag().orElse(null)),
+              bookmarkStatus.getOrDefault(p.getId(), false),
+              p.getTown().getId(),
+              row.bookmarkCount(),
+              row.reviewCount(),
+              row.avgRating());
+        })
+        .toList();
+
+    // rows가 비었는지를 함께 보는 이유: size=0이면 pageSize도 0이라 fetchSize 1건이 잡히고
+    // hasNext(1 > 0)가 참인데 subList로 페이지는 비어, 커서를 발급하려다 get(-1)로 터진다.
+    // 빈 페이지를 조용히 돌려주는 것이 이 메서드의 계약이다. @Min(1)이 HTTP 경로를 막지만
+    // 그것은 컨트롤러의 계약이지 이 메서드의 계약이 아니다.
+    String nextCursor = hasNext && !rows.isEmpty()
+        ? new PlaceListCursor(sort,
+            rows.get(rows.size() - 1).sortKey(),
+            rows.get(rows.size() - 1).placeId(),
+            filterPrint).encode()
+        : null;
+    return PlaceFilterGetResponse.of(previews, nextCursor);
   }
 
   /**
-   * 북마크 장소 최신순 조회. 상위에서 DB로 조회한 orderedIds(북마크 최신순) → DB에서 태그 조건 필터링 → 원래 순서 복원.
+   * 북마크 검색: 내 북마크만, latest = 내 북마크 최신순 / popular = 점수순. 페이징 미적용.
+   *
+   * <p><b>목록 경로와 달리 정렬을 DB에 맡기지 않는다.</b> 상한이 "한 사용자가 이 동네들에서
+   * 북마크한 수"라 애초에 작고, {@code orderedIds}가 실어 오는 <em>북마크 최신순</em>은 SQL로
+   * 재현하려면 bookmarks와 다시 조인해야 하는데 그건 페이징도 없는 경로에 쿼리를 하나 더 얹는
+   * 일이다. 그래서 id 목록을 받아 엔티티를 채우고 앱에서 조립한다.
+   *
+   * <p><b>순서 계약.</b> {@code orderedIds}의 순서(= 북마크 최신순)를 그대로 보존해 재조립한다.
+   * POPULAR일 때만 그 위에
+   * 점수 정렬을 덮는데, 규칙(점수 DESC, id ASC)은 목록 경로
+   * {@code PlaceListDbQueryRepository#findPopularRows}의 ORDER BY와 <b>같아야 한다</b> —
+   * 같은 "인기순"이 경로마다 다른 순서를 내면 그것을 잡아 줄 타입이 없다.
+   *
+   * <p>비활성 장소 제외는 {@code getBookmarkedPlaceIdsForTowns}의 SQL
+   * ({@code AND p.active = true})이 이미 하고 있다. 아래 {@code filter(Place::isActive)}는
+   * 그 계약이 조용히 바뀌었을 때를 대비한 이중 가드다 — 캐시 시절 이 책임은 스냅샷 로더에 있었고,
+   * 로더가 사라지므로 이 경로가 스스로 지킨다는 것을 코드에 남긴다.
    */
-  private List<Place> getBookmarkedPlacesByLatest(
-      final Long selectedTownId,
-      final Long mainTagId,
-      final List<Long> subTagAIdList,
-      final List<Long> subTagBIdList,
-      final List<Long> orderedIds
-  ) {
-    if (orderedIds == null || orderedIds.isEmpty()) {
-      return List.of();
+  private PlaceFilterGetResponse bookmarkSearchResponse(
+      Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
+
+    List<Long> orderedIds = placeBookmarkFacade.getBookmarkedPlaceIdsForTowns(userId, leafTownIds);
+    if (orderedIds.isEmpty()) {
+      return PlaceFilterGetResponse.of(List.of(), null);
     }
 
-    List<Place> filtered = placeRepository.findPlacesByConditions(
-        PlaceSearchConditionDto.of(
-            selectedTownId,
-            true,
-            orderedIds,
-            mainTagId,
-            subTagAIdList,
-            subTagBIdList
-        )
-    );
-    if (filtered.isEmpty()) {
-      return List.of();
+    // 병합 함수의 근거는 목록 경로와 같다 (findPlacesWithTagsByIds javadoc 참조)
+    Map<Long, Place> byId = placeRepository.findPlacesWithTagsByIds(orderedIds).stream()
+        .collect(Collectors.toMap(Place::getId, Function.identity(), (a, b) -> a));
+
+    List<Place> mine = PlaceTagMatcher.filter(
+        orderedIds.stream()
+            .map(byId::get)
+            .filter(Objects::nonNull)
+            .filter(Place::isActive)
+            .toList(),
+        request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
+
+    // 뷰 조회는 정렬 분기 밖에 둔다 — LATEST도 표시 카운트를 여기서 얻으므로, 어느 정렬이든
+    // 이 경로의 place_stats 조회는 1회다. 목록이 페이징 없이 확정돼 있어 이 시점에 읽어도 된다.
+    Map<Long, PlaceStatsView> statsViews = statsViewMap(mine.stream().map(Place::getId).toList());
+
+    if (sort == PlaceSortType.POPULAR) {
+      Map<Long, Double> scores = scoreMap(statsViews);
+      // 점수가 없는 장소는 0점 — place_stats에 행이 없다는 뜻이고 실제 활동이 0이므로 0이 정답이다
+      mine = mine.stream()
+          .sorted(Comparator.comparingDouble((Place p) -> scores.getOrDefault(p.getId(), 0.0))
+              .reversed()
+              .thenComparing(Place::getId))
+          .toList();
     }
 
-    // DB 결과를 북마크 최신순(orderedIds 기준)으로 재정렬
-    Map<Long, Place> placeMap = filtered.stream()
-        .collect(Collectors.toMap(Place::getId, Function.identity()));
-    return orderedIds.stream()
-        .map(placeMap::get)
-        .filter(Objects::nonNull)
+    // 이 목록은 전부 내 북마크라 여부가 구조적으로 확정이다 — 여부 조회를 하지 않는다.
+    List<PlacePreviewDto> previews = mine.stream()
+        .map(p -> {
+          PlaceStatsView stats = statsViews.get(p.getId());
+          return PlacePreviewDto.of(
+              p.getId(),
+              p.getName(),
+              imageUrlProvider.getImageUrl(p.getThumbnailFileKey()),
+              TagViewUtils.getActiveNameOrNull(p.getMainTag().orElse(null)),
+              true,
+              p.getTown().getId(),
+              stats == null ? 0L : stats.bookmarkCount(),
+              stats == null ? 0L : stats.reviewCount(),
+              // 행이 없으면 평점도 없다 — 0으로 채우면 "평점 0점"이 된다 (PlacePreviewDto javadoc)
+              stats == null ? null : stats.avgRating());
+        })
         .toList();
+    return PlaceFilterGetResponse.of(previews, null);
+  }
+
+  /**
+   * 요청 시점 place_stats 조회 — 장소당 행이 하나라 PK IN 조회 1회이고,
+   * 후보 수(시 단위 병합 최대 ~1,800)에 선형이다.
+   *
+   * <p>카운트 배치가 아직 닿지 않은 장소는 <b>행 자체가 없다</b> — 결과 map에 키가 없는 것이
+   * 정상이며, 호출자가 그 경우의 기본값(0점 / 0건 / 평점 null)을 정한다.
+   */
+  private Map<Long, PlaceStatsView> statsViewMap(List<Long> placeIds) {
+    if (placeIds.isEmpty()) {
+      return Map.of();
+    }
+    return placeStatsRepository.findViewsByPlaceIds(placeIds).stream()
+        .collect(Collectors.toMap(PlaceStatsView::placeId, Function.identity()));
+  }
+
+  private static Map<Long, Double> scoreMap(Map<Long, PlaceStatsView> views) {
+    return views.values().stream()
+        .collect(Collectors.toMap(PlaceStatsView::placeId, PlaceStatsView::score));
   }
 }

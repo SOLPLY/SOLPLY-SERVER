@@ -1,0 +1,22 @@
+# BEFORE (2 vCPU 기준선)  2026-08-06 15:28:26 KST
+## docker inspect (app)
+NanoCpus=2000000000 CpuQuota=0 CpuPeriod=0 CpuShares=0 Memory=2147483648 CpusetCpus=
+## docker inspect (mysql)
+NanoCpus=2000000000 CpuQuota=0 Memory=3221225472
+## cgroup cpu.max (app)
+200000 100000
+## cgroup cpu.max (mysql)
+200000 100000
+## docker info
+NCPU=11 MemTotal=8217890816 ServerVersion=28.0.1
+## host
+hw.ncpu=11 hw.memsize=19327352832
+## app env (원복 확인용)
+SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=10
+LOGGING_LEVEL_P6SPY=OFF
+JAVA_TOOL_OPTIONS=-Xmx1280m -XX:MaxMetaspaceSize=256m
+SPRING_APPLICATION_JSON={}
+SERVER_TOMCAT_THREADS_MAX=50
+SERVER_PORT=8082
+## StartedAt/RestartCount
+StartedAt=2026-08-05T20:17:34.005491087Z RestartCount=0 OOMKilled=false

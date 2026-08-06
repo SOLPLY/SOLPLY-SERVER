@@ -1,0 +1,177 @@
+# 계단형 단일 라운드 — 워밍업 뒤 도착률을 120 → 180 → 240 → 300 → 360 /s로 30초씩 올린다.
+# 사전 등록: ../README.md
+#
+# 요청 믹스는 2026-08-06_minimal-stability-final/scenarios/stability-300.yml과 **완전히 같다**.
+# 믹스를 바꾸면 "부하 때문인가 믹스 때문인가"를 나눌 수 없고, 직전 캠페인의 120·300 관측과
+# 이어 읽을 수도 없다. 바뀌는 축은 도착률 하나뿐이다.
+#
+# 계단을 30초로 잡은 이유: Artillery의 중간 리포트가 10초 버킷이라 30초면 계단마다 **온전한
+# 버킷 3개**가 떨어진다. 25초로 잡으면 버킷이 계단 경계를 걸쳐 구간 지연이 섞인다.
+#
+# phases는 단독 정의한다 — `environments`는 phase 배열을 원소 단위로 병합해 기본 프로파일이
+# 잔존한다 (#381 측정 폐기 원인, 함정 목록).
+config:
+  target: "http://localhost:8082"
+  payload:
+    path: "../../../data/users.csv"
+    fields:
+      - token
+    order: random
+    skipHeader: true
+  # 커서에는 필터 지문이 박혀 있다 — 2페이지에서 태그가 달라지면 서버가 400으로 거절한다.
+  # 그래서 태그는 요청마다가 아니라 시나리오 단위로 고정되는 config.variables로 뽑는다.
+  variables:
+    subA: [7, 8, 9, 10]             # OPTION1, parent = 1
+    subB: [11, 12, 13, 14, 15, 16]  # OPTION2, parent = 1
+  phases:
+    - name: "Warm up"
+      duration: 30
+      arrivalRate: 60
+    - name: "S1-120"
+      duration: 30
+      arrivalRate: 120
+    - name: "S2-180"
+      duration: 30
+      arrivalRate: 180
+    - name: "S3-240"
+      duration: 30
+      arrivalRate: 240
+    - name: "S4-300"
+      duration: 30
+      arrivalRate: 300
+    - name: "S5-360"
+      duration: 30
+      arrivalRate: 360
+  plugins:
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+
+scenarios:
+  # ── 무태그 ────────────────────────────────────────────────────────────────
+  - name: "popular-town"
+    weight: 25
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: "{{ $randomNumber(301, 318) }}"
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "popular-town-p1"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  - name: "latest-town"
+    weight: 15
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: "{{ $randomNumber(301, 318) }}"
+            isBookmarkSearch: false
+            sort: "LATEST"
+            size: 20
+          name: "latest-town-p1"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  - name: "popular-city-scroll"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+          name: "popular-city-p1"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          capture:
+            json: "$.data.nextCursor"
+            as: "cursorPop"
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            size: 20
+            cursor: "{{ cursorPop }}"
+          name: "popular-city-p2"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          ifTrue: "cursorPop"
+
+  # ── 태그 필터 (b24185a 개선 대상 경로) ─────────────────────────────────────
+  - name: "popular-city-tag3-scroll"
+    weight: 25
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            mainTagId: 1
+            subTagAIdList: "{{ subA }}"
+            subTagBIdList: "{{ subB }}"
+            size: 20
+          name: "popular-city-tag3-p1"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          capture:
+            json: "$.data.nextCursor"
+            as: "cursorTagPop"
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "POPULAR"
+            mainTagId: 1
+            subTagAIdList: "{{ subA }}"
+            subTagBIdList: "{{ subB }}"
+            size: 20
+            cursor: "{{ cursorTagPop }}"
+          name: "popular-city-tag3-p2"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          ifTrue: "cursorTagPop"
+
+  - name: "latest-city-tag3-scroll"
+    weight: 15
+    flow:
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "LATEST"
+            mainTagId: 1
+            subTagAIdList: "{{ subA }}"
+            subTagBIdList: "{{ subB }}"
+            size: 20
+          name: "latest-city-tag3-p1"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          capture:
+            json: "$.data.nextCursor"
+            as: "cursorTagLat"
+      - get:
+          url: "/api/places"
+          qs:
+            townId: 201
+            isBookmarkSearch: false
+            sort: "LATEST"
+            mainTagId: 1
+            subTagAIdList: "{{ subA }}"
+            subTagBIdList: "{{ subB }}"
+            size: 20
+            cursor: "{{ cursorTagLat }}"
+          name: "latest-city-tag3-p2"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          ifTrue: "cursorTagLat"

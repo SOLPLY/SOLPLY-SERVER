@@ -95,6 +95,7 @@ public class AdminPlaceService {
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
         Place place = adminEntityLoader.getPlaceWithTown(placeId);
+        Long previousTownId = place.getTown().getId();
         Town updatedTown = adminEntityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
@@ -129,6 +130,7 @@ public class AdminPlaceService {
         );
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
+
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
         return AdminPlaceUpsertResponse.of(place.getId());
@@ -225,7 +227,9 @@ public class AdminPlaceService {
     @Transactional
     public void deletePlace(final Long placeId) {
         Place place = adminEntityLoader.getPlace(placeId);
+        Long townId = place.getTown().getId();
         adminPlaceRepository.delete(place);
+
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
 

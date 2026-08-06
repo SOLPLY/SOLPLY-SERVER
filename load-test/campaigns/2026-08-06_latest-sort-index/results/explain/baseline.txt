@@ -1,0 +1,267 @@
+================================================================
+# 라벨: baseline / 채취: 2026-08-06 03:34:44 KST
+# 커서(동네) 2026-05-31 08:59:37 / 10077 · 커서(시) 2026-07-27 04:51:40 / 10546
+# LIMIT 11 = 첫 페이지 10 + hasNext 1
+================================================================
+################################################################
+# [baseline] 형상: 현행 (town_id, active)
+################################################################
++--------+------------+------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table  | Non_unique | Key_name               | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++--------+------------+------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| places |          1 | idx_places_town_active |            1 | town_id     | A         |          66 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| places |          1 | idx_places_town_active |            2 | active      | A         |          66 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
++--------+------------+------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+--- 동네 1곳 · 첫 페이지 ---
+시간(3회, ms): 0.197 0.118 0.149
+Extra: Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=70 rows=11) (actual time=0.105..0.116 rows=11 loops=1)
+    -> Nested loop left join  (cost=70 rows=100) (actual time=0.105..0.115 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=35 rows=100) (actual time=0.0998..0.1 rows=11 loops=1)
+            -> Index lookup on p using idx_places_town_active (town_id=301, active=1)  (cost=35 rows=100) (actual time=0.0256..0.0789 rows=100 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.251 rows=1) (actual time=0.0012..0.00125 rows=1 loops=11)
+            -> Single-row index lookup on ps using PRIMARY (place_id=p.id, version=(select #2))  (cost=0.251 rows=1) (actual time=0.00103..0.00105 rows=1 loops=11)
+
+--- 동네 1곳 · 커서 ---
+시간(3회, ms): 0.155 0.124 0.118
+Extra: Using where; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=47.4 rows=11) (actual time=0.116..0.13 rows=11 loops=1)
+    -> Nested loop left join  (cost=47.4 rows=100) (actual time=0.116..0.129 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=28.6 rows=100) (actual time=0.111..0.111 rows=11 loops=1)
+            -> Filter: ((p.created_at < TIMESTAMP'2026-05-31 08:59:37') or ((p.created_at = TIMESTAMP'2026-05-31 08:59:37') and (p.id < 10077)))  (cost=28.6 rows=100) (actual time=0.0214..0.0913 rows=90 loops=1)
+                -> Index lookup on p using idx_places_town_active (town_id=301, active=1)  (cost=28.6 rows=100) (actual time=0.0183..0.0835 rows=100 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.253 rows=1) (actual time=0.00142..0.00148 rows=1 loops=11)
+
+--- 동네 18곳 · 첫 페이지 ---
+시간(3회, ms): 2.03 2.05 1.81
+Extra: Using index condition; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=1445 rows=11) (actual time=1.93..1.94 rows=11 loops=1)
+    -> Nested loop left join  (cost=1445 rows=1800) (actual time=1.93..1.94 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=815 rows=1800) (actual time=1.92..1.92 rows=11 loops=1)
+            -> Index range scan on p using idx_places_town_active over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more), with index condition: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=815 rows=1800) (actual time=0.127..1.63 rows=1800 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.25 rows=1) (actual time=0.00189..0.00193 rows=1 loops=11)
+            -> Single-row index lookup on ps using PRIMARY (place_id=p.id, version=(select #2))  (cost=0.25 rows=1) (actual time=0.00175..0.00178 rows=1 loops=11)
+
+--- 동네 18곳 · 커서 ---
+시간(3회, ms): 1.63 1.86 1.81
+Extra: Using index condition; Using where; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=1154 rows=11) (actual time=1.85..1.86 rows=11 loops=1)
+    -> Nested loop left join  (cost=1154 rows=1800) (actual time=1.85..1.86 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=815 rows=1800) (actual time=1.84..1.84 rows=11 loops=1)
+            -> Filter: ((p.created_at < TIMESTAMP'2026-07-27 04:51:40') or ((p.created_at = TIMESTAMP'2026-07-27 04:51:40') and (p.id < 10546)))  (cost=815 rows=1800) (actual time=0.0398..1.6 rows=1790 loops=1)
+                -> Index range scan on p using idx_places_town_active over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more), with index condition: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=815 rows=1800) (actual time=0.0383..1.5 rows=1800 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.25 rows=1) (actual time=0.00149..0.00155 rows=1 loops=11)
+
+--- 동네 1곳 · 카페 ---
+시간(3회, ms): 0.162 0.167 0.154
+Extra: Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=141 rows=11) (actual time=0.106..0.159 rows=11 loops=1)
+    -> Nested loop left join  (cost=141 rows=100) (actual time=0.106..0.159 rows=11 loops=1)
+        -> Nested loop inner join  (cost=106 rows=100) (actual time=0.102..0.142 rows=11 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=35 rows=100) (actual time=0.0952..0.0973 rows=61 loops=1)
+                -> Index lookup on p using idx_places_town_active (town_id=301, active=1)  (cost=35 rows=100) (actual time=0.0168..0.075 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.608 rows=1) (actual time=650e-6..652e-6 rows=0.18 loops=61)
+
+--- 동네 1곳 · 카페+옵션 2종 ---
+시간(3회, ms): 0.257 0.232 0.26
+Extra: Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=183 rows=9.09) (actual time=0.118..0.246 rows=10 loops=1)
+    -> Nested loop inner join  (cost=183 rows=9.09) (actual time=0.117..0.245 rows=10 loops=1)
+        -> Nested loop inner join  (cost=106 rows=100) (actual time=0.108..0.183 rows=17 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=35 rows=100) (actual time=0.102..0.105 rows=100 loops=1)
+                -> Index lookup on p using idx_places_town_active (town_id=301, active=1)  (cost=35 rows=100) (actual time=0.0173..0.0814 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.608 rows=1) (actual time=700e-6..704e-6 rows=0.17 loops=100)
+
+--- 동네 18곳 · 카페+옵션 2종 ---
+시간(3회, ms): 2.95 6.04 2.51
+Extra: Using temporary; Using filesort
+트리:
+-> Limit: 11 row(s)  (actual time=2.92..2.92 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=2.92..2.92 rows=11 loops=1)
+        -> Stream results  (cost=942 rows=29.6) (actual time=0.234..2.89 rows=211 loops=1)
+            -> Nested loop inner join  (cost=942 rows=29.6) (actual time=0.23..2.84 rows=211 loops=1)
+                -> Nested loop inner join  (cost=692 rows=325) (actual time=0.22..1.81 rows=275 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=291 rows=1146) (actual time=0.0879..0.623 rows=1146 loops=1)
+
+################################################################
+# [baseline] 형상: ASC (town_id, active, created_at)  ← V31
+################################################################
++--------+------------+--------------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table  | Non_unique | Key_name                       | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++--------+------------+--------------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| places |          1 | idx_places_town_active_created |            1 | town_id     | A         |          66 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| places |          1 | idx_places_town_active_created |            2 | active      | A         |          66 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| places |          1 | idx_places_town_active_created |            3 | created_at  | A         |        6006 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
++--------+------------+--------------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+--- 동네 1곳 · 첫 페이지 ---
+시간(3회, ms): 0.0247 0.025 0.0273
+Extra: Backward index scan; Using index
+트리:
+-> Limit: 11 row(s)  (cost=46.2 rows=11) (actual time=0.0132..0.0278 rows=11 loops=1)
+    -> Nested loop left join  (cost=46.2 rows=100) (actual time=0.0129..0.0271 rows=11 loops=1)
+        -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=11.2 rows=100) (actual time=0.00792..0.00975 rows=11 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.251 rows=1) (actual time=0.00131..0.00136 rows=1 loops=11)
+            -> Single-row index lookup on ps using PRIMARY (place_id=p.id, version=(select #2))  (cost=0.251 rows=1) (actual time=0.00116..0.00119 rows=1 loops=11)
+            -> Select #2 (subquery in condition; run only once)
+
+--- 동네 1곳 · 커서 ---
+시간(3회, ms): 0.0329 0.0372 0.0322
+Extra: Using where; Backward index scan; Using index
+트리:
+-> Limit: 11 row(s)  (cost=51.2 rows=11) (actual time=0.0179..0.0337 rows=11 loops=1)
+    -> Nested loop left join  (cost=51.2 rows=91) (actual time=0.0176..0.0329 rows=11 loops=1)
+        -> Filter: ((p.`active` = 1) and (p.town_id = 301) and ((p.created_at < TIMESTAMP'2026-05-31 08:59:37') or ((p.created_at = TIMESTAMP'2026-05-31 08:59:37') and (p.id < 10077))))  (cost=19.4 rows=91) (actual time=0.0125..0.0152 rows=11 loops=1)
+            -> Covering index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1 AND created_at < '2026-05-31 08:59:37') OR (town_id = 301 AND active = 1 AND created_at = '2026-05-31 08:59:37' AND id < 10077) (reverse)  (cost=19.4 rows=91) (actual time=0.011..0.0126 rows=11 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.251 rows=1) (actual time=0.00139..0.00144 rows=1 loops=11)
+            -> Single-row index lookup on ps using PRIMARY (place_id=p.id, version=(select #2))  (cost=0.251 rows=1) (actual time=0.00123..0.00125 rows=1 loops=11)
+
+--- 동네 18곳 · 첫 페이지 ---
+시간(3회, ms): 0.771 0.828 0.78
+Extra: Using where; Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=995 rows=11) (actual time=0.696..0.714 rows=11 loops=1)
+    -> Nested loop left join  (cost=995 rows=1800) (actual time=0.696..0.713 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=365 rows=1800) (actual time=0.69..0.69 rows=11 loops=1)
+            -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=365 rows=1800) (actual time=0.0178..0.47 rows=1800 loops=1)
+                -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more)  (cost=365 rows=1800) (actual time=0.016..0.345 rows=1800 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.25 rows=1) (actual time=0.00182..0.00187 rows=1 loops=11)
+
+--- 동네 18곳 · 커서 ---
+시간(3회, ms): 0.86 0.813 1.4
+Extra: Using where; Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=1000 rows=11) (actual time=0.809..0.827 rows=11 loops=1)
+    -> Nested loop left join  (cost=1000 rows=1808) (actual time=0.809..0.826 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=367 rows=1808) (actual time=0.803..0.804 rows=11 loops=1)
+            -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((p.created_at < TIMESTAMP'2026-07-27 04:51:40') or ((p.created_at = TIMESTAMP'2026-07-27 04:51:40') and (p.id < 10546))))  (cost=367 rows=1808) (actual time=0.0177..0.57 rows=1790 loops=1)
+                -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1 AND created_at < '2026-07-27 04:51:40') OR (town_id = 301 AND active = 1 AND created_at = '2026-07-27 04:51:40' AND id < 10546) OR (34 more)  (cost=367 rows=1808) (actual time=0.0151..0.376 rows=1790 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.25 rows=1) (actual time=0.00177..0.00183 rows=1 loops=11)
+
+--- 동네 1곳 · 카페 ---
+시간(3회, ms): 0.106 0.0947 0.0895
+Extra: Backward index scan; Using index
+트리:
+-> Limit: 11 row(s)  (cost=117 rows=11) (actual time=0.0233..0.0982 rows=11 loops=1)
+    -> Nested loop left join  (cost=117 rows=100) (actual time=0.0229..0.0973 rows=11 loops=1)
+        -> Nested loop inner join  (cost=81.9 rows=100) (actual time=0.0179..0.0774 rows=11 loops=1)
+            -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=11.2 rows=100) (actual time=0.00758..0.0239 rows=61 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.608 rows=1) (actual time=781e-6..786e-6 rows=0.18 loops=61)
+        -> Filter: (ps.version = (select #2))  (cost=0.251 rows=1) (actual time=0.00158..0.00163 rows=1 loops=11)
+
+--- 동네 1곳 · 카페+옵션 2종 ---
+시간(3회, ms): 0.197 0.18 0.175
+Extra: Backward index scan; Using index
+트리:
+-> Limit: 11 row(s)  (cost=159 rows=9.09) (actual time=0.0277..0.178 rows=10 loops=1)
+    -> Nested loop inner join  (cost=159 rows=9.09) (actual time=0.0273..0.178 rows=10 loops=1)
+        -> Nested loop inner join  (cost=81.9 rows=100) (actual time=0.0174..0.113 rows=17 loops=1)
+            -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=11.2 rows=100) (actual time=0.00792..0.0328 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.608 rows=1) (actual time=721e-6..725e-6 rows=0.17 loops=100)
+        -> Limit: 1 row(s)  (cost=71.4 rows=0.0909) (actual time=0.00361..0.00362 rows=0.588 loops=17)
+
+--- 동네 18곳 · 카페+옵션 2종 ---
+시간(3회, ms): 2.92 3.13 3.26
+Extra: Using temporary; Using filesort
+트리:
+-> Limit: 11 row(s)  (actual time=3.06..3.07 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=3.06..3.06 rows=11 loops=1)
+        -> Stream results  (cost=942 rows=29.6) (actual time=0.291..3.03 rows=211 loops=1)
+            -> Nested loop inner join  (cost=942 rows=29.6) (actual time=0.285..2.98 rows=211 loops=1)
+                -> Nested loop inner join  (cost=692 rows=325) (actual time=0.273..1.95 rows=275 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=291 rows=1146) (actual time=0.11..0.742 rows=1146 loops=1)
+
+################################################################
+# [baseline] 형상: DESC (town_id, active, created_at DESC)
+################################################################
+--- 동네 1곳 · 첫 페이지 ---
+시간(3회, ms): 0.0576 0.0621 0.0625
+Extra: Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=46.2 rows=11) (actual time=0.0503..0.0641 rows=11 loops=1)
+    -> Nested loop left join  (cost=46.2 rows=100) (actual time=0.05..0.0636 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=11.2 rows=100) (actual time=0.0446..0.045 rows=11 loops=1)
+            -> Index lookup on p using idx_try_desc (town_id=301, active=1)  (cost=11.2 rows=100) (actual time=0.00858..0.0263 rows=100 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.251 rows=1) (actual time=0.00145..0.0015 rows=1 loops=11)
+            -> Single-row index lookup on ps using PRIMARY (place_id=p.id, version=(select #2))  (cost=0.251 rows=1) (actual time=0.00128..0.0013 rows=1 loops=11)
+
+--- 동네 1곳 · 커서 ---
+시간(3회, ms): 0.0841 0.0863 0.0798
+Extra: Using where; Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=51.2 rows=11) (actual time=0.071..0.0871 rows=11 loops=1)
+    -> Nested loop left join  (cost=51.2 rows=91) (actual time=0.0706..0.086 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=19.4 rows=91) (actual time=0.0643..0.0647 rows=11 loops=1)
+            -> Filter: ((p.`active` = 1) and (p.town_id = 301) and ((p.created_at < TIMESTAMP'2026-05-31 08:59:37') or ((p.created_at = TIMESTAMP'2026-05-31 08:59:37') and (p.id < 10077))))  (cost=19.4 rows=91) (actual time=0.0155..0.043 rows=90 loops=1)
+                -> Index range scan on p using idx_try_desc over (town_id = 301 AND active = 1 AND created_at = '2026-05-31 08:59:37' AND id < 10077) OR (town_id = 301 AND active = 1 AND '2026-05-31 08:59:37' < created_at)  (cost=19.4 rows=91) (actual time=0.0135..0.0325 rows=90 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.251 rows=1) (actual time=0.00169..0.00175 rows=1 loops=11)
+
+--- 동네 18곳 · 첫 페이지 ---
+시간(3회, ms): 0.806 0.775 0.734
+Extra: Using where; Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=995 rows=11) (actual time=0.713..0.745 rows=11 loops=1)
+    -> Nested loop left join  (cost=995 rows=1800) (actual time=0.713..0.744 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=365 rows=1800) (actual time=0.706..0.707 rows=11 loops=1)
+            -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=365 rows=1800) (actual time=0.019..0.477 rows=1800 loops=1)
+                -> Index range scan on p using idx_try_desc over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more)  (cost=365 rows=1800) (actual time=0.0171..0.351 rows=1800 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.25 rows=1) (actual time=0.00318..0.00323 rows=1 loops=11)
+
+--- 동네 18곳 · 커서 ---
+시간(3회, ms): 0.777 0.857 0.818
+Extra: Using where; Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=1000 rows=11) (actual time=0.78..0.798 rows=11 loops=1)
+    -> Nested loop left join  (cost=1000 rows=1808) (actual time=0.779..0.797 rows=11 loops=1)
+        -> Sort: p.created_at DESC, p.id DESC  (cost=367 rows=1808) (actual time=0.773..0.773 rows=11 loops=1)
+            -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((p.created_at < TIMESTAMP'2026-07-27 04:51:40') or ((p.created_at = TIMESTAMP'2026-07-27 04:51:40') and (p.id < 10546))))  (cost=367 rows=1808) (actual time=0.024..0.531 rows=1790 loops=1)
+                -> Index range scan on p using idx_try_desc over (town_id = 301 AND active = 1 AND created_at = '2026-07-27 04:51:40' AND id < 10546) OR (town_id = 301 AND active = 1 AND '2026-07-27 04:51:40' < created_at) OR (34 more)  (cost=367 rows=1808) (actual time=0.0213..0.351 rows=1790 loops=1)
+        -> Filter: (ps.version = (select #2))  (cost=0.25 rows=1) (actual time=0.00191..0.00197 rows=1 loops=11)
+
+--- 동네 1곳 · 카페 ---
+시간(3회, ms): 0.125 0.0952 0.114
+Extra: Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=117 rows=11) (actual time=0.0565..0.119 rows=11 loops=1)
+    -> Nested loop left join  (cost=117 rows=100) (actual time=0.0561..0.118 rows=11 loops=1)
+        -> Nested loop inner join  (cost=81.9 rows=100) (actual time=0.0523..0.0993 rows=11 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=11.2 rows=100) (actual time=0.0445..0.0467 rows=61 loops=1)
+                -> Index lookup on p using idx_try_desc (town_id=301, active=1)  (cost=11.2 rows=100) (actual time=0.00692..0.0252 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.608 rows=1) (actual time=777e-6..779e-6 rows=0.18 loops=61)
+
+--- 동네 1곳 · 카페+옵션 2종 ---
+시간(3회, ms): 0.218 0.189 0.181
+Extra: Using index; Using filesort
+트리:
+-> Limit: 11 row(s)  (cost=159 rows=9.09) (actual time=0.0602..0.189 rows=10 loops=1)
+    -> Nested loop inner join  (cost=159 rows=9.09) (actual time=0.0599..0.188 rows=10 loops=1)
+        -> Nested loop inner join  (cost=81.9 rows=100) (actual time=0.0513..0.125 rows=17 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=11.2 rows=100) (actual time=0.0433..0.0468 rows=100 loops=1)
+                -> Index lookup on p using idx_try_desc (town_id=301, active=1)  (cost=11.2 rows=100) (actual time=0.00788..0.0247 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.608 rows=1) (actual time=699e-6..704e-6 rows=0.17 loops=100)
+
+--- 동네 18곳 · 카페+옵션 2종 ---
+시간(3회, ms): 2.62 2.6 2.55
+Extra: Using temporary; Using filesort
+트리:
+-> Limit: 11 row(s)  (actual time=2.87..2.87 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=2.87..2.87 rows=11 loops=1)
+        -> Stream results  (cost=942 rows=29.6) (actual time=0.259..2.84 rows=211 loops=1)
+            -> Nested loop inner join  (cost=942 rows=29.6) (actual time=0.255..2.79 rows=211 loops=1)
+                -> Nested loop inner join  (cost=692 rows=325) (actual time=0.244..1.8 rows=275 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=291 rows=1146) (actual time=0.0873..0.629 rows=1146 loops=1)
+
+################################################################
+# 종료 시 인덱스 상태 (V31이어야 한다)
++--------+------------+--------------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table  | Non_unique | Key_name                       | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++--------+------------+--------------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| places |          1 | idx_places_town_active_created |            1 | town_id     | A         |          66 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| places |          1 | idx_places_town_active_created |            2 | active      | A         |          66 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| places |          1 | idx_places_town_active_created |            3 | created_at  | A         |        6006 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
++--------+------------+--------------------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
