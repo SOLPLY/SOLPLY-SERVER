@@ -21,10 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.core.env.StandardEnvironment;
@@ -38,8 +39,22 @@ class PlaceStatsFacadeTest {
     @Mock
     private PlaceStatsBatchProcessor batchProcessor;
 
-    @InjectMocks
+    @Mock
+    private PlaceSkeletonLoader placeSkeletonLoader;
+
+    /**
+     * 실물을 쓴다 — 기본값이 {@code true}라서 훅이 <b>기본 경로</b>로 돌고, 값을 바꿔야 하는
+     * 테스트만 명시적으로 끈다. mock이면 기본이 false라 훅이 도는 것을 아무도 못 본다.
+     */
+    private final PlaceListProperties placeListProperties = new PlaceListProperties();
+
     private PlaceStatsFacade placeStatsFacade;
+
+    @BeforeEach
+    void createFacade() {
+        placeStatsFacade =
+                new PlaceStatsFacade(batchProcessor, placeSkeletonLoader, placeListProperties);
+    }
 
     /**
      * 예외를 삼키는 배치라 <b>로그가 유일한 신호</b>다. 레벨이 error 아래로 내려가거나 로그가 통째로
@@ -98,6 +113,83 @@ class PlaceStatsFacadeTest {
         placeStatsFacade.recalculatePlaceCounts();
 
         verify(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+    }
+
+    // === 골격 스냅샷 훅 ===
+
+    /**
+     * <b>스냅샷 교체는 카운트 회차에만 딸린다.</b> 스냅샷이 담는 값(이름·썸네일·대표 태그·동네)의
+     * 낡음 상한을 카운트 배치 간격에 맞추는 것이 이 훅의 전부이고, 점수는 그 값들과 아무 관계가 없다.
+     */
+    @Test
+    void 카운트_배치가_성공하면_골격_스냅샷을_교체한다() {
+        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(placeSkeletonLoader).rebuild();
+    }
+
+    /**
+     * 점수 회차에 걸면 하루 한 번 이유 없는 전량 재빌드가 는다. 두 회차의 훅이 갈려 있음을 못 박는다.
+     */
+    @Test
+    void 점수_배치는_골격_스냅샷을_건드리지_않는다() {
+        given(batchProcessor.recalculateScores(any(LocalDateTime.class))).willReturn(10);
+
+        placeStatsFacade.recalculatePopularScores();
+
+        verify(placeSkeletonLoader, never()).rebuild();
+    }
+
+    /**
+     * <b>카운트가 실패했으면 스냅샷도 짓지 않는다.</b> 실패한 회차 뒤에 스냅샷만 갈아 끼우면
+     * "언제의 사진인가"가 카운트 회차와 어긋난다 — 교체 시점은 성공한 회차에만 매여 있어야 한다.
+     */
+    @Test
+    void 카운트_배치가_실패하면_골격_스냅샷을_교체하지_않는다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(placeSkeletonLoader, never()).rebuild();
+    }
+
+    /**
+     * 반대 방향 — 스냅샷 빌드가 죽었다고 카운트 배치가 실패로 기록되면 로그가 거짓말을 한다.
+     * 두 try/catch가 갈려 있어야 하고, 스냅샷 실패도 신호는 남아야 한다.
+     */
+    @Test
+    void 골격_스냅샷_교체가_실패해도_카운트_배치는_완료로_남는다() {
+        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+        willThrow(new RuntimeException("snapshot boom")).given(placeSkeletonLoader).rebuild();
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.INFO)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains("카운트 배치 완료"));
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.ERROR)
+                .singleElement()
+                .satisfies(event -> assertThat(event.getThrowableProxy().getMessage())
+                        .isEqualTo("snapshot boom"));
+    }
+
+    /**
+     * 토글이 off면 짓지도 않는다 — A/B의 기준선(off 라운드)에 빌드 비용이 섞이면
+     * 두 모드의 차이가 캐시 효과인지 배치 잡음인지 갈라낼 수 없다.
+     */
+    @Test
+    void 캐시가_꺼져_있으면_카운트_배치가_골격_스냅샷을_짓지_않는다() {
+        placeListProperties.setSkeletonCacheEnabled(false);
+        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(placeSkeletonLoader, never()).rebuild();
     }
 
     // === 점수 회차 ===

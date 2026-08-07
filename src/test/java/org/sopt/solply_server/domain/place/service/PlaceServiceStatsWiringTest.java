@@ -24,6 +24,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonSnapshot;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -89,6 +91,14 @@ class PlaceServiceStatsWiringTest {
   @Mock private TownHierarchyResolver townHierarchyResolver;
   @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
   @Mock private PlaceStatsRepository placeStatsRepository;
+  /**
+   * 골격 캐시는 이 파일의 관심사가 아니다. 스텁하지 않으면
+   * {@code isSkeletonCacheEnabled()}가 false를 내어 <b>캐시 이전과 같은 경로</b>가 돌고,
+   * 그것이 여기서 원하는 상태다 — 카운트 배선은 캐시 유무와 무관해야 한다.
+   * 캐시 자체의 계약은 {@code PlaceServiceSkeletonCacheTest}가 문다.
+   */
+  @Mock private PlaceSkeletonSnapshot placeSkeletonSnapshot;
+  @Mock private PlaceListProperties placeListProperties;
 
   /** 표시용 평점·리뷰 수. 카운트와 구분되는 값이라야 실어 나르는 자리가 뒤바뀐 변이를 잡는다 */
   private static final long REVIEW_COUNT = 12L;
