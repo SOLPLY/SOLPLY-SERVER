@@ -14,6 +14,7 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.admin.place.facade.AdminPlaceFacade;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
@@ -72,6 +73,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     @Autowired private JdbcTemplate jdbcTemplate;
     /** 실제 북마크 생성 경로. 리포지토리를 직접 부르면 서비스 층의 계약이 검증에서 빠진다. */
     @Autowired private BookmarkService bookmarkService;
+    /** 어드민의 실제 삭제 경로. 컨트롤러가 부르는 진입점이라 파사드로 잡는다. */
+    @Autowired private AdminPlaceFacade adminPlaceFacade;
 
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
@@ -204,9 +207,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>비활성화는 즉시 숨김이 아니라 카운트 배치가 지운다.</b> 인기순 쿼리에서 places 조인이
-     * 사라졌으므로("행이 있으면 활성"이 불변식) 어드민이 장소를 내려도 다음 카운트 배치까지는
-     * 목록에 남는다 — ≤1h 노출 창을 수용한 결정이다. 재활성화도 대칭이다.
+     * <b>{@code active}만 내려간 행은 카운트 배치가 지운다 — 배치는 안전망으로 남는다.</b>
+     * 인기순 쿼리에서 places 조인이 사라졌으므로("행이 있으면 목록에 나와도 되는 장소"가 불변식)
+     * 어드민 경로를 지나쳐 플래그만 바뀐 행은 다음 카운트 배치까지 목록에 남는다.
+     *
+     * <p>여기서 {@code UPDATE places}를 직접 쏘는 것은 그 우회를 재현하기 위해서다 — 어드민 API로
+     * 장소를 내리면 그 자리에서 행이 사라진다
+     * ({@link #어드민이_삭제한_장소는_배치를_기다리지_않고_인기순에서_사라진다}).
      *
      * <p><b>여기서 카운트 배치만 돌리는 것이 핵심이다.</b> 잔행 삭제는 카운트 회차의 책임이고
      * ({@code deleteStaleRows}), 점수 회차는 행을 만들지도 지우지도 않는다. 두 배치를 함께
@@ -220,7 +227,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
 
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeC);
-        // 비활성화 직후에는 아직 보인다 — 창의 존재 자체가 계약이다
+        // 플래그만 내린 직후에는 아직 보인다 — 배치가 안전망이라는 사실 자체가 이 창의 존재다
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
 
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
@@ -234,6 +241,33 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         runBothBatches(CALCULATED_AT.plusHours(2));
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
+    }
+
+    /**
+     * <b>어드민이 내린 장소는 배치를 기다리지 않는다.</b> 위 테스트가 무는 ≤1h 창은 플래그만 바뀐
+     * 행에 남아 있는 안전망이고, 실제 어드민 경로는 place_stats 행을 그 자리에서 지운다 —
+     * 폐업했거나 신고로 내린 장소가 한 시간 노출되는 것이 이 결함의 값이었다.
+     *
+     * <p><b>배치를 한 번도 돌리지 않고 단언하는 것이 요점이다.</b> 삭제 뒤 어떤 회차라도 끼우면
+     * 잔행 삭제가 대신 지워 주어 "즉시"인지 "≤1h"인지가 구분되지 않는다.
+     *
+     * <p>이 장소에 북마크를 달지 말 것 — {@code bookmarks}는 다형 {@code target_id}라 places에
+     * FK가 없어 장소를 지워도 남고, 그 잔행이 {@code @AfterAll}의 users 삭제를
+     * {@code fk_bookmarks_user}로 막는다.
+     */
+    @Test
+    void 어드민이_삭제한_장소는_배치를_기다리지_않고_인기순에서_사라진다() {
+        long doomed = createPlace(townId, "db직행삭제", PLACE_CREATED_AT);
+        runBothBatches(CALCULATED_AT.plusHours(1));
+
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(doomed);
+        assertThat(statsRowExists(doomed)).isTrue();
+
+        adminPlaceFacade.deletePlace(doomed);
+
+        assertThat(statsRowExists(doomed)).isFalse();
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
+                .doesNotContain(doomed);
     }
 
     /**
@@ -611,6 +645,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     private void runBothBatches(LocalDateTime calculatedAt) {
         batchProcessor.recalculateCounts(calculatedAt);
         batchProcessor.recalculateScores(calculatedAt);
+    }
+
+    /** place_stats에 이 장소의 행이 있는가 — 인기순 노출 여부의 물리적 근거다 */
+    private boolean statsRowExists(long placeId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM place_stats WHERE place_id = ?", Integer.class, placeId);
+        return count != null && count > 0;
     }
 
     /** place_stats의 원시 카운트. 행이 없으면 −1 (기대값과 절대 겹치지 않는 센티널) */

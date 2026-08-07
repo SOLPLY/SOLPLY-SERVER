@@ -53,10 +53,17 @@ public class PlaceListDbQueryRepository {
      * 술어도 같은 이유로 인덱스 말단에 실려 있다 — WHERE에만 있고 인덱스에 없으면 <b>걸러낼 행마다</b>
      * 룩업이 붙는다.
      *
-     * <p><b>불변식: 행이 있는 장소 = 마지막 카운트 배치 시점의 활성 장소.</b> 그래서 여기서 활성
-     * 여부를 묻지 않는다. 지키는 주체는 카운트 배치이고({@code upsertCounts}의
-     * {@code WHERE p.active = 1} + {@code deleteStaleRows}) 대가는 노출 창 ≤1h다 —
-     * 비활성화도 재활성화도 다음 카운트 배치까지 반영되지 않는다.
+     * <p><b>불변식: 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 그래서 여기서 활성 여부를 묻지
+     * 않는다. 지키는 주체가 둘이다 — 어드민이 장소를 내리는 경로가 그 자리에서 행을 지우고
+     * ({@code AdminPlaceService#deletePlace} → {@code PlaceStatsRepository#deleteByPlaceIds}),
+     * 카운트 배치가 {@code upsertCounts}의 {@code WHERE p.active = 1} + {@code deleteStaleRows}로
+     * 뒤를 받친다. <b>그래서 내리는 쪽의 노출 창은 ≤1h가 아니라 즉시다.</b> 어드민 경로를 지나쳐
+     * {@code active}만 내려간 행이 생기더라도 다음 회차(≤1h)가 지운다 — 배치는 여전히 안전망이다.
+     *
+     * <p><b>되살리는 쪽은 대칭이 아니고, 그 비대칭이 의도다.</b> 재활성 장소는 다음 카운트 배치가
+     * 행을 만들고 그 행은 미채점이라 인기순에는 다음 점수 배치(01:00)까지 나오지 않는다 —
+     * 이유는 아래 {@code score_calculated_at} 문단에 있다. 노출 창 0 / 미노출 창 ≤24h라는 선택은
+     * "보이면 안 되는 게 보이는 것"이 "안 보이는 것"보다 비싸다는 판단이다.
      *
      * <p><b>⚠️ ps 행이 없는 장소는 인기순에 나오지 않는다.</b> place_stats가 <em>기준 테이블</em>이라
      * 마지막 카운트 배치 이후 새로 생긴 장소가 통째로 빠진다(창 ≤1h). 기준을 places로 뒤집으면

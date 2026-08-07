@@ -18,6 +18,7 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -40,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
+    private final PlaceStatsRepository placeStatsRepository;
     private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -224,10 +226,21 @@ public class AdminPlaceService {
         return AdminPlaceListResponse.of(result);
     }
 
+    /**
+     * 장소를 지우면 <b>인기순에서도 그 자리에서 빠져야 한다.</b> 인기순은 place_stats가 기준
+     * 테이블이라 행이 남아 있는 동안 노출되고, 매시 카운트 배치의 잔행 삭제만 믿으면 내린 장소가
+     * 최대 1시간 더 보인다 ({@code PlaceStatsRepository#deleteByPlaceIds}에 그 결정의 근거).
+     *
+     * <p><b>FK의 {@code ON DELETE CASCADE}가 있는데도 명시적으로 지우는 이유.</b>
+     * {@code fk_place_stats_place}가 같은 행을 지우는 것은 맞다. 다만 그 보장은 place_stats를
+     * 통째로 재생성한 마이그레이션마다(V29·V32) 다시 써야 하는 DDL 한 줄에 걸려 있어, 한 번
+     * 빠뜨리면 노출 창이 조용히 되돌아온다 — 조회 계약을 지키는 책임은 그것을 결정한 층에 둔다.
+     */
     @Transactional
     public void deletePlace(final Long placeId) {
         Place place = adminEntityLoader.getPlace(placeId);
-        Long townId = place.getTown().getId();
+
+        placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);

@@ -106,8 +106,11 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 구간이 생기고, 적재만 커밋된 채 삭제가 죽으면 내려간 장소가 다음 회차까지 인기순에 남는다.
      *
      * <p>V29까지 이 책임은 {@code deleteVersionsOtherThan}이 겸업했다 — 옛 버전이 통째로 죽으면서
-     * 비활성 장소의 행도 함께 사라졌다. 버전이 없어진 지금은 이 문장이 유일한 청소 경로다.
-     * <b>지우면 어드민이 내린 장소가 인기순에 영구히 남는다</b>(최대 1시간이 아니라 영구다).
+     * 비활성 장소의 행도 함께 사라졌다. 버전이 없어진 지금은 이 문장이 배치 쪽의 유일한 청소
+     * 경로다. <b>지우면 {@code active}만 내려간 장소의 행이 인기순에 영구히 남는다</b>
+     * (최대 1시간이 아니라 영구다). 장소를 <em>지우는</em> 경로는 {@link #deleteByPlaceIds}가
+     * 그 자리에서 행까지 지우므로 이 문장을 기다리지 않는다 — 둘은 대체 관계가 아니라
+     * 앞뒤 관계다.
      *
      * <p>{@code count_calculated_at}이 {@code NOT NULL}이라 {@code <>} 비교에 NULL 함정이 없다.
      *
@@ -121,6 +124,39 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
          WHERE count_calculated_at <> :calculatedAt
         """, nativeQuery = true)
     int deleteStaleRows(@Param("calculatedAt") LocalDateTime calculatedAt);
+
+    /**
+     * 지정한 장소들의 행을 <b>즉시</b> 지운다 = 어드민이 내린 장소를 인기순에서 그 자리에서 빼는 경로.
+     *
+     * <p>인기순은 place_stats가 기준 테이블이라 여기 행이 남아 있는 동안 노출된다. 배치의
+     * {@link #deleteStaleRows}만 믿으면 그 창이 최대 1시간인데, <b>"안 보이는 것"은 아쉬움이지만
+     * "보이면 안 되는 게 보이는 것"은 사고다</b> — 폐업했거나 신고로 내린 장소가 한 시간 노출된다.
+     * 그래서 내리는 쪽만 즉시로 당긴다.
+     *
+     * <p><b>되살리는 쪽은 당기지 않는다.</b> 재활성 장소는 다음 카운트 배치가 행을 만들고 그 행은
+     * 미채점이라 인기순에는 다음 점수 배치까지 나오지 않는다 — 미채점 행을 인기순에 넣으면 음수
+     * 점수 장소보다 위로 올라오기 때문이며, 근거는 {@code PlaceListDbQueryRepository#findPopularRows}
+     * javadoc에 있다. 노출 창은 0, 미노출 창은 ≤24h로 갈린 것이 의도다.
+     *
+     * <p><b>{@link #deleteStaleRows}의 계약을 건드리지 않는다.</b> 이 문장은
+     * {@code count_calculated_at}을 읽지도 쓰지도 않으므로 잔행 판정에 관여하지 않고, 이미 없는
+     * 행을 지우면 0을 돌려줄 뿐이다. 반대로 여기서 지운 행을 다음 회차가 되살릴지는
+     * {@link #upsertCounts}의 {@code WHERE p.active = 1}이 원본에서 다시 판단한다.
+     *
+     * <p><b>{@code clearAutomatically}를 켜지 않는다.</b> 호출부는 같은 트랜잭션에서 방금 로드한
+     * {@code Place}를 이어서 지우는데, 컨텍스트를 비우면 그 엔티티가 detach돼 삭제가 merge(불필요한
+     * SELECT)를 거친다. 어드민 경로가 {@code PlaceStats} 엔티티를 읽는 일이 없어 1차 캐시가 낡을
+     * 자리도 없다.
+     *
+     * @param placeIds 비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
+     * @return 지운 행 수. 배치가 아직 행을 만들지 않은 장소면 0이고, 그것이 정상이다
+     */
+    @Modifying
+    @Query(value = """
+        DELETE FROM place_stats
+         WHERE place_id IN (:placeIds)
+        """, nativeQuery = true)
+    int deleteByPlaceIds(@Param("placeIds") List<Long> placeIds);
 
     /**
      * 인기 점수를 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다.
