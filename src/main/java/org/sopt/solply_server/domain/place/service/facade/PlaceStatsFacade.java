@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -150,7 +151,7 @@ public class PlaceStatsFacade {
      * 다르다. 창은 다음 회차까지 최대 1시간이다.
      */
     private void rebuildPlaceSkeletonSnapshot() {
-        if (!placeListProperties.isSkeletonCacheEnabled()) {
+        if (placeListProperties.getSkeletonSource() != SkeletonSource.SNAPSHOT) {
             return;
         }
         try {

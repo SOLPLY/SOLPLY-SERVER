@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -24,8 +25,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonSnapshot;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -92,13 +95,19 @@ class PlaceServiceStatsWiringTest {
   @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
   @Mock private PlaceStatsRepository placeStatsRepository;
   /**
-   * 골격 캐시는 이 파일의 관심사가 아니다. 스텁하지 않으면
-   * {@code isSkeletonCacheEnabled()}가 false를 내어 <b>캐시 이전과 같은 경로</b>가 돌고,
-   * 그것이 여기서 원하는 상태다 — 카운트 배선은 캐시 유무와 무관해야 한다.
-   * 캐시 자체의 계약은 {@code PlaceServiceSkeletonCacheTest}가 문다.
+   * 골격 캐시는 이 파일의 관심사가 아니다. 출처를 {@code ENTITY}로 고정해 <b>캐시 이전과 같은
+   * 경로</b>를 돌린다 — 카운트 배선은 골격 출처와 무관해야 한다. 세 모드의 계약은
+   * {@code PlaceServiceSkeletonCacheTest}와 {@code PlaceSkeletonCacheIT}가 문다.
    */
   @Mock private PlaceSkeletonSnapshot placeSkeletonSnapshot;
+  @Mock private PlaceSkeletonLoader placeSkeletonLoader;
   @Mock private PlaceListProperties placeListProperties;
+
+  /** 목록을 타지 않는 테스트(북마크 검색)도 있어 lenient로 둔다 */
+  @BeforeEach
+  void givenEntitySkeletonSource() {
+    lenient().when(placeListProperties.getSkeletonSource()).thenReturn(SkeletonSource.ENTITY);
+  }
 
   /** 표시용 평점·리뷰 수. 카운트와 구분되는 값이라야 실어 나르는 자리가 뒤바뀐 변이를 잡는다 */
   private static final long REVIEW_COUNT = 12L;

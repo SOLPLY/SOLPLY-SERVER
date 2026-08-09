@@ -20,8 +20,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeleton;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonSnapshot;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -40,16 +42,17 @@ import org.sopt.solply_server.global.util.EntityLoader;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 
 /**
- * 목록 경로가 <b>골격 스냅샷을 어떻게 쓰는가</b>에 한정한 배선 테스트.
+ * 목록 경로가 <b>골격 출처 셋을 어떻게 쓰는가</b>에 한정한 배선 테스트.
  *
- * <p>이 파일이 지키는 것은 셋이다.
+ * <p>이 파일이 지키는 것은 넷이다.
  * <ul>
  *   <li>히트한 id는 엔티티를 <b>읽지 않는다</b> — 이 작업이 줄이려던 비용 그 자체다</li>
  *   <li>미스한 id <b>만</b> 기존 쿼리로 읽는다 — 하나라도 섞이면 절감이 통째로 사라진다</li>
- *   <li>토글이 off면 스냅샷을 <b>보지도 않는다</b> — A/B의 기준선이 캐시 이전과 같아야 한다</li>
+ *   <li>{@code ENTITY}면 스냅샷을 <b>보지도 않는다</b> — 기준선이 캐시 이전과 같아야 한다</li>
+ *   <li>{@code PROJECTION}은 <b>페이지 id로만</b> 로더를 부르고 스냅샷을 보지 않는다</li>
  * </ul>
  *
- * <p>스냅샷이 만드는 <em>값</em>이 엔티티 경로와 같은지는 여기서 다루지 않는다 — 그것은 실제 DB가
+ * <p>골격이 담는 <em>값</em>이 엔티티 경로와 같은지는 여기서 다루지 않는다 — 그것은 실제 DB가
  * 있어야 말할 수 있어 {@code PlaceSkeletonCacheIT}의 몫이다.
  */
 @ExtendWith(MockitoExtension.class)
@@ -65,6 +68,10 @@ class PlaceServiceSkeletonCacheTest {
     private static final PlaceSkeleton CACHED = new PlaceSkeleton(
             1L, "스냅샷이_준_이름", "https://cdn/스냅샷썸네일", "스냅샷대표태그", TOWN_ID);
 
+    /** 프로젝션이 돌려주는 장소. 스냅샷 값과도 달라야 두 모드가 섞였을 때 값에서 걸린다 */
+    private static final PlaceSkeleton PROJECTED = new PlaceSkeleton(
+            1L, "프로젝션이_준_이름", "https://cdn/프로젝션썸네일", "프로젝션대표태그", TOWN_ID);
+
     @Mock private PlaceRepository placeRepository;
     @Mock private PlaceTagRepository placeTagRepository;
     @Mock private ImageUrlProvider imageUrlProvider;
@@ -76,6 +83,7 @@ class PlaceServiceSkeletonCacheTest {
     @Mock private PlaceListDbQueryRepository placeListDbQueryRepository;
     @Mock private PlaceStatsRepository placeStatsRepository;
     @Mock private PlaceSkeletonSnapshot placeSkeletonSnapshot;
+    @Mock private PlaceSkeletonLoader placeSkeletonLoader;
     @Mock private PlaceListProperties placeListProperties;
 
     @InjectMocks private PlaceService placeService;
@@ -116,6 +124,10 @@ class PlaceServiceSkeletonCacheTest {
         return place;
     }
 
+    private void givenSource(SkeletonSource source) {
+        given(placeListProperties.getSkeletonSource()).willReturn(source);
+    }
+
     private static List<Long> ids(long... placeIds) {
         return java.util.Arrays.stream(placeIds).boxed().toList();
     }
@@ -136,7 +148,7 @@ class PlaceServiceSkeletonCacheTest {
     @Test
     @DisplayName("스냅샷에 있는 장소는 엔티티를 읽지 않고 골격 값으로 응답한다")
     void servesFromSnapshotWithoutEntityQuery() {
-        given(placeListProperties.isSkeletonCacheEnabled()).willReturn(true);
+        givenSource(SkeletonSource.SNAPSHOT);
         given(placeSkeletonSnapshot.current()).willReturn(Map.of(1L, CACHED));
         givenPopularRows(1L);
 
@@ -165,7 +177,7 @@ class PlaceServiceSkeletonCacheTest {
     @Test
     @DisplayName("스냅샷에 없는 장소만 기존 엔티티 쿼리로 채운다")
     void queriesOnlyMissedIds() {
-        given(placeListProperties.isSkeletonCacheEnabled()).willReturn(true);
+        givenSource(SkeletonSource.SNAPSHOT);
         given(placeSkeletonSnapshot.current()).willReturn(Map.of(1L, CACHED));
         givenPopularRows(1L, 2L);
         Place missedPlace = entityPlace(2L);
@@ -184,13 +196,13 @@ class PlaceServiceSkeletonCacheTest {
     }
 
     /**
-     * <b>토글이 off면 스냅샷을 보지도 않는다.</b> "읽되 쓰지 않는" 구현이면 A/B의 기준선에
-     * 스냅샷 조회 비용이 섞이고, 무엇보다 off가 <em>캐시 이전과 같은 경로</em>라는 주장이 깨진다.
+     * <b>{@code ENTITY}면 스냅샷을 보지도 않는다.</b> "읽되 쓰지 않는" 구현이면 기준선에
+     * 스냅샷 조회 비용이 섞이고, 무엇보다 이 모드가 <em>캐시 이전과 같은 경로</em>라는 주장이 깨진다.
      */
     @Test
-    @DisplayName("캐시를 끄면 스냅샷을 조회하지 않고 전량을 엔티티로 읽는다")
-    void bypassesSnapshotWhenDisabled() {
-        given(placeListProperties.isSkeletonCacheEnabled()).willReturn(false);
+    @DisplayName("entity 모드는 스냅샷·프로젝션을 조회하지 않고 전량을 엔티티로 읽는다")
+    void bypassesSnapshotWhenEntityMode() {
+        givenSource(SkeletonSource.ENTITY);
         givenPopularRows(1L);
         Place place = entityPlace(1L);
         given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
@@ -200,7 +212,51 @@ class PlaceServiceSkeletonCacheTest {
 
         assertThat(preview.placeName()).isEqualTo("엔티티가_준_이름1");
         verify(placeSkeletonSnapshot, never()).current();
+        verify(placeSkeletonLoader, never()).loadByIds(anyList());
         verify(placeRepository).findPlacesWithTagsByIds(List.of(1L));
+    }
+
+    /**
+     * <b>{@code PROJECTION}은 로더를 페이지 id로만 부르고 스냅샷을 보지 않는다.</b> 인자가
+     * 페이지 id가 아니면(예: 전량) 이 모드는 스냅샷 빌드를 요청마다 하는 셈이 되어 측정이 무의미해진다.
+     */
+    @Test
+    @DisplayName("projection 모드는 페이지 id로 로더를 부르고 엔티티를 읽지 않는다")
+    void servesFromProjectionWithPageIdsOnly() {
+        givenSource(SkeletonSource.PROJECTION);
+        given(placeSkeletonLoader.loadByIds(List.of(1L))).willReturn(Map.of(1L, PROJECTED));
+        givenPopularRows(1L);
+
+        PlacePreviewDto preview = listPlaces().get(0);
+
+        assertThat(preview.placeName()).isEqualTo("프로젝션이_준_이름");
+        assertThat(preview.thumbnailImageUrl()).isEqualTo("https://cdn/프로젝션썸네일");
+        assertThat(preview.primaryTag()).isEqualTo("프로젝션대표태그");
+        verify(placeSkeletonSnapshot, never()).current();
+        verify(placeRepository, never()).findPlacesWithTagsByIds(anyList());
+        verify(imageUrlProvider, never()).getImageUrl(anyString());
+    }
+
+    /**
+     * 프로젝션이 못 채운 id는 <b>실존하지 않는 장소</b>뿐이고(활성 조건을 걸지 않으므로),
+     * 그때도 기존 미스 경로가 그대로 돈다 — 분기가 모드마다 갈리지 않는다는 것이 계약이다.
+     */
+    @Test
+    @DisplayName("projection 모드에서도 못 채운 id는 기존 엔티티 쿼리로 흐른다")
+    void fallsBackToEntityWhenProjectionMisses() {
+        givenSource(SkeletonSource.PROJECTION);
+        given(placeSkeletonLoader.loadByIds(List.of(1L, 2L))).willReturn(Map.of(1L, PROJECTED));
+        givenPopularRows(1L, 2L);
+        Place missedPlace = entityPlace(2L);
+        given(placeRepository.findPlacesWithTagsByIds(List.of(2L)))
+                .willReturn(List.of(missedPlace));
+        given(imageUrlProvider.getImageUrl("key2")).willReturn("https://cdn/key2");
+
+        List<PlacePreviewDto> previews = listPlaces();
+
+        assertThat(previews.get(0).placeName()).isEqualTo("프로젝션이_준_이름");
+        assertThat(previews.get(1).placeName()).isEqualTo("엔티티가_준_이름2");
+        verify(placeRepository).findPlacesWithTagsByIds(List.of(2L));
     }
 
     /**
@@ -210,7 +266,7 @@ class PlaceServiceSkeletonCacheTest {
     @Test
     @DisplayName("스냅샷이 비어 있으면 전량 미스로 기존 경로를 탄다")
     void fallsBackEntirelyWhenSnapshotEmpty() {
-        given(placeListProperties.isSkeletonCacheEnabled()).willReturn(true);
+        givenSource(SkeletonSource.SNAPSHOT);
         given(placeSkeletonSnapshot.current()).willReturn(Map.of());
         givenPopularRows(1L);
         Place place = entityPlace(1L);

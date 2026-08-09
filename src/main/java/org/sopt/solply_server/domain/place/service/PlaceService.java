@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeleton;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonSnapshot;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
@@ -70,6 +71,8 @@ public class PlaceService {
   private final PlaceListDbQueryRepository placeListDbQueryRepository;
   private final PlaceStatsRepository placeStatsRepository;
   private final PlaceSkeletonSnapshot placeSkeletonSnapshot;
+  /** {@code skeleton-source=projection}에서만 쓴다 — 스냅샷 로더의 산출식을 요청 시점에 돌린다 */
+  private final PlaceSkeletonLoader placeSkeletonLoader;
   private final PlaceListProperties placeListProperties;
 
   /**
@@ -263,8 +266,10 @@ public class PlaceService {
    * 있었다. {@code PlaceSkeletonSnapshot}이 그것을 카운트 배치 주기로 미리 지어 두고, 여기서는
    * 히트한 id의 엔티티 조회를 통째로 건너뛴다. <b>스냅샷에 없는 id만</b> 기존 쿼리로 읽으며
    * 그 값은 <b>스냅샷에 넣지 않는다</b> — 근거는 {@code PlaceSkeletonSnapshot} javadoc.
-   * 캐시를 꺼도({@code solply.place-list.skeleton-cache-enabled=false}) 응답 body와 커서 토큰이
-   * 같아야 하며, 그것이 이 캐시의 유일한 계약이다.
+   *
+   * <p><b>골격의 출처는 {@code solply.place-list.skeleton-source}로 셋 중 하나가 된다</b>
+   * (snapshot / projection / entity, {@code PlaceListProperties} 참조). 어느 값이든 응답 body와
+   * 커서 토큰이 같아야 하며, 그것이 세 모드의 유일한 계약이다.
    */
   private PlaceFilterGetResponse listPlaces(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
@@ -328,10 +333,14 @@ public class PlaceService {
     List<Long> pageIds = rows.stream().map(DbListRow::placeId).toList();
 
     // 장소 골격(이름·썸네일 URL·대표 태그·동네)은 장소마다 변하지 않는 값이라 스냅샷에서 읽는다.
-    // 캐시를 끄면 빈 Map이 들어와 아래가 전량 미스로 흐른다 — 분기가 하나뿐인 것이 의도다.
-    Map<Long, PlaceSkeleton> snapshot = placeListProperties.isSkeletonCacheEnabled()
-        ? placeSkeletonSnapshot.current()
-        : Map.of();
+    // ENTITY면 빈 Map이 들어와 아래가 전량 미스로 흐른다 — 분기가 하나뿐인 것이 의도다.
+    // PROJECTION은 미스 경로를 대신 서는 모드라 missed는 실존하지 않는 id뿐이고, 비면 쿼리가
+    // 나가지 않는다 (loadByIds가 p.active를 묻지 않는 이유가 여기 있다).
+    Map<Long, PlaceSkeleton> snapshot = switch (placeListProperties.getSkeletonSource()) {
+      case SNAPSHOT -> placeSkeletonSnapshot.current();
+      case PROJECTION -> placeSkeletonLoader.loadByIds(pageIds);
+      case ENTITY -> Map.of();
+    };
     List<Long> missed = snapshot.isEmpty()
         ? pageIds
         : pageIds.stream().filter(id -> !snapshot.containsKey(id)).toList();

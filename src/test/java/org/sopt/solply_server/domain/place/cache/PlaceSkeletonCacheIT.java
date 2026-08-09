@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -34,13 +35,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 골격 스냅샷의 <b>값</b>과 조회 경로의 <b>동치</b>를 실제 DB 위에서 문다.
  *
- * <p>이 캐시의 계약은 하나뿐이다 — <b>응답이 바뀌면 안 된다</b>. 그래서 단언도 둘로 나뉜다.
+ * <p>이 캐시의 계약은 하나뿐이다 — <b>응답이 바뀌면 안 된다</b>. 그래서 단언도 셋으로 나뉜다.
  * <ol>
  *   <li>스냅샷이 만든 골격 = 엔티티 경로({@code findPlacesWithTagsByIds} + 게터)가 만드는 값.
  *       기대값을 손으로 적지 않고 <b>엔티티 경로를 실제로 돌려</b> 비교하는 것이 핵심이다 —
  *       손으로 적으면 두 경로가 함께 틀렸을 때 그린이 된다.</li>
- *   <li>캐시 on/off의 응답 body와 커서 토큰이 같다. A/B 측정의 <b>사전 게이트</b>이고,
- *       판정보다 먼저 통과해야 하는 조건이다.</li>
+ *   <li>{@code loadByIds}(프로젝션 모드의 출처)가 스냅샷과 같은 값을 내고, 스냅샷과 달리
+ *       <b>비활성 장소도 담는다</b> — 미스 경로를 대신 서기 때문이다.</li>
+ *   <li>세 모드({@code snapshot}/{@code projection}/{@code entity})의 응답 body와 커서 토큰이
+ *       같다. A/B/C 측정의 <b>사전 게이트</b>이고, 판정보다 먼저 통과해야 하는 조건이다.</li>
  * </ol>
  *
  * <p><b>픽스처가 겨누는 갈림길.</b> 대표 태그와 썸네일은 규칙이 미묘해서 "대충 맞는" 구현이
@@ -123,8 +126,8 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
     }
 
     @AfterEach
-    void restoreToggle() {
-        placeListProperties.setSkeletonCacheEnabled(true);
+    void restoreSkeletonSource() {
+        placeListProperties.setSkeletonSource(SkeletonSource.SNAPSHOT);
     }
 
     /**
@@ -216,27 +219,73 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>정합성 게이트 — 캐시 on/off의 응답 body와 커서 토큰이 같아야 한다.</b>
-     * A/B 측정의 판정보다 <em>먼저</em> 통과해야 하는 조건이며, 여기가 빨간 상태로 낸 수치는
-     * 두 다른 응답의 비용을 비교한 것이라 아무 뜻이 없다.
+     * <b>{@code loadByIds}는 스냅샷과 같은 값을 낸다.</b> 프로젝션 모드가 값 동치를 <em>구현
+     * 공유</em>로 얻는다는 주장의 근거이며, 두 쿼리 중 하나만 갈라져도(SELECT·파생 테이블·ORDER BY)
+     * 여기서 걸린다.
+     */
+    @Test
+    void loadByIds는_스냅샷_rebuild와_같은_골격을_낸다() {
+        List<Long> ids = List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly);
+
+        Map<Long, PlaceSkeleton> projected = transactionTemplate.execute(
+                status -> loader.loadByIds(ids));
+
+        assertThat(projected).containsOnlyKeys(ids.toArray(Long[]::new));
+        for (long placeId : ids) {
+            assertThat(projected.get(placeId))
+                    .as("placeId=%d", placeId)
+                    .isEqualTo(snapshot.current().get(placeId));
+        }
+    }
+
+    /**
+     * <b>{@code loadByIds}에는 활성 필터가 없다.</b> 이 메서드는 미스 경로
+     * ({@code findPlacesWithTagsByIds} — 활성 여부를 묻지 않는다)를 통째로 대신 서므로,
+     * 비활성화된 장소가 목록에 남아 있는 창(≤1h)에서도 같은 값을 내야 한다. 여기서 활성만
+     * 거르면 프로젝션 모드의 응답에 구멍이 나고 모드 간 응답이 갈린다.
+     */
+    @Test
+    void loadByIds는_비활성_장소도_담는다() {
+        assertThat(snapshot.current()).doesNotContainKey(placeInactive);
+
+        Map<Long, PlaceSkeleton> projected = transactionTemplate.execute(
+                status -> loader.loadByIds(List.of(placeInactive)));
+
+        assertThat(projected.get(placeInactive))
+                .isEqualTo(expectedFromEntity(placeInactive));
+    }
+
+    /** 빈 목록에 IN ()을 내면 문법 오류다 — 쿼리를 아예 내지 않는 것이 계약이다 */
+    @Test
+    void loadByIds는_빈_목록에_쿼리를_내지_않는다() {
+        assertThat(loader.loadByIds(List.of())).isEmpty();
+    }
+
+    /**
+     * <b>정합성 게이트 — 세 모드의 응답 body와 커서 토큰이 같아야 한다.</b>
+     * A/B/C 측정의 판정보다 <em>먼저</em> 통과해야 하는 조건이며, 여기가 빨간 상태로 낸 수치는
+     * 서로 다른 응답의 비용을 비교한 것이라 아무 뜻이 없다.
      *
      * <p>두 정렬 × 두 페이지를 도는 이유: 커서 발급은 페이지 <b>마지막 행</b>에서 나오므로 첫
      * 페이지만 보면 커서 동치가 검증되지 않고, 정렬마다 골격을 붙이는 행의 출처가 다르다
      * (인기순은 place_stats, 최신순은 places).
      */
     @Test
-    void 캐시를_켜고_끈_응답과_커서가_완전히_같다() {
+    void 세_모드의_응답과_커서가_완전히_같다() {
         for (PlaceSortType sort : PlaceSortType.values()) {
-            PlaceFilterGetResponse cachedPage1 = withCache(true, () -> get(sort, null));
-            PlaceFilterGetResponse plainPage1 = withCache(false, () -> get(sort, null));
+            PlaceFilterGetResponse snapshotPage1 =
+                    withSource(SkeletonSource.SNAPSHOT, () -> get(sort, null));
+            assertThat(snapshotPage1.nextCursor()).as("%s 커서", sort).isNotNull();
+            String cursor = snapshotPage1.nextCursor();
 
-            assertThat(cachedPage1).as("%s 첫 페이지", sort).isEqualTo(plainPage1);
-            assertThat(cachedPage1.nextCursor()).as("%s 커서", sort).isNotNull();
-
-            String cursor = cachedPage1.nextCursor();
-            assertThat(withCache(true, () -> get(sort, cursor)))
-                    .as("%s 커서 페이지", sort)
-                    .isEqualTo(withCache(false, () -> get(sort, cursor)));
+            for (SkeletonSource other : List.of(SkeletonSource.PROJECTION, SkeletonSource.ENTITY)) {
+                assertThat(withSource(other, () -> get(sort, null)))
+                        .as("%s 첫 페이지 - %s", sort, other)
+                        .isEqualTo(snapshotPage1);
+                assertThat(withSource(other, () -> get(sort, cursor)))
+                        .as("%s 커서 페이지 - %s", sort, other)
+                        .isEqualTo(withSource(SkeletonSource.SNAPSHOT, () -> get(sort, cursor)));
+            }
         }
     }
 
@@ -246,12 +295,12 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
         return placeService.getPlaces(me, request(sort, cursor, 2));
     }
 
-    private <T> T withCache(boolean enabled, java.util.function.Supplier<T> action) {
-        placeListProperties.setSkeletonCacheEnabled(enabled);
+    private <T> T withSource(SkeletonSource source, java.util.function.Supplier<T> action) {
+        placeListProperties.setSkeletonSource(source);
         try {
             return action.get();
         } finally {
-            placeListProperties.setSkeletonCacheEnabled(true);
+            placeListProperties.setSkeletonSource(SkeletonSource.SNAPSHOT);
         }
     }
 

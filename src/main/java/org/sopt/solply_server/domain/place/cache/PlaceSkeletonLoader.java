@@ -12,8 +12,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@link PlaceSkeletonSnapshot}을 짓는 <b>유일한</b> 곳. 진입점은 {@link #rebuild()} 하나이고
+ * {@link PlaceSkeletonSnapshot}을 짓는 <b>유일한</b> 곳. 진입점은 {@link #rebuild()}이고
  * 기동 훅({@code PlaceSkeletonWarmup})과 카운트 배치 훅({@code PlaceStatsFacade})이 같은 것을 부른다.
+ * {@link #loadByIds(List)}는 같은 산출식을 요청 시점에 페이지 id로만 돌리는 측정용 경로다.
  *
  * <p><b>JPA를 쓰지 않는 것이 이 클래스의 핵심 결정이다.</b> {@code findPlacesWithTagsByIds}로
  * 전량을 읽으면 두 가지가 막힌다. (1) {@code placeTags}와 {@code placeImageInfos}가 둘 다 List bag이라
@@ -34,9 +35,10 @@ import org.springframework.transaction.annotation.Transactional;
  *       {@code t.active = 1}을 걸면 안 된다 — {@link PlaceSkeleton} javadoc 참조.</li>
  * </ul>
  *
- * <p>{@code active = 1}인 장소만 담는다. 비활성화된 장소가 목록 결과에 남아 있는 창(≤1h,
- * {@code PlaceListDbQueryRepository} javadoc)에서는 스냅샷에 그 장소가 없으므로 미스로 떨어지고,
- * 미스 경로가 활성 여부를 묻지 않는 {@code findPlacesWithTagsByIds}로 같은 값을 채운다.
+ * <p>{@link #rebuild()}는 {@code active = 1}인 장소만 담는다. 비활성화된 장소가 목록 결과에 남아
+ * 있는 창(≤1h, {@code PlaceListDbQueryRepository} javadoc)에서는 스냅샷에 그 장소가 없으므로
+ * 미스로 떨어지고, 미스 경로가 활성 여부를 묻지 않는 {@code findPlacesWithTagsByIds}로 같은 값을
+ * 채운다. {@link #loadByIds(List)}는 그 미스 경로를 대신 서므로 활성 조건을 걸지 <b>않는다</b>.
  */
 @Slf4j
 @Component
@@ -54,8 +56,13 @@ public class PlaceSkeletonLoader {
      *
      * <p>{@code m.pt_id} 오름차순은 엔티티의 {@code placeTags} bag 순서(= place_tag PK 순)와
      * 맞추기 위한 것이다. MAIN 태그가 둘 이상인 비정상 데이터에서만 의미가 있다.
+     *
+     * <p><b>WHERE 조각만 파라미터로 빼고 템플릿은 한 벌로 남긴다.</b> 전량(스냅샷)과 id 제한
+     * (프로젝션)이 SELECT·파생 테이블·ORDER BY를 공유해야 두 경로가 같은 값을 낸다는 보장이
+     * 구조에서 나온다 — 블록을 복사하면 그 보장이 사라진다
+     * ({@code PlaceListDbQueryRepository#appendTagFilters}와 같은 이유).
      */
-    private static final String PLACES_WITH_MAIN_TAG_SQL = """
+    private static final String PLACES_WITH_MAIN_TAG_SQL_TEMPLATE = """
             SELECT p.id, p.name, p.town_id, m.tag_name, m.tag_active
             FROM places p
             LEFT JOIN (
@@ -67,22 +74,35 @@ public class PlaceSkeletonLoader {
                 JOIN tags t ON t.id = pt.tag_id
                 WHERE t.type = 'MAIN'
             ) m ON m.place_id = p.id
-            WHERE p.active = 1
+            WHERE %s
             ORDER BY p.id, m.pt_id
             """;
+
+    private static final String PLACES_WITH_MAIN_TAG_SQL =
+            PLACES_WITH_MAIN_TAG_SQL_TEMPLATE.formatted("p.active = 1");
+
+    /** {@link #loadByIds(List)}의 것 — {@code p.active} 조건이 없는 것이 계약이다. */
+    private static final String PLACES_BY_IDS_SQL =
+            PLACES_WITH_MAIN_TAG_SQL_TEMPLATE.formatted("p.id IN (:placeIds)");
 
     /**
      * 썸네일 후보. 장소별 첫 행만 쓰므로 정렬이 곧 선택 규칙이다
      * ({@code idx_place_images_place_id_order}가 이 순서를 그대로 만든다).
      *
-     * <p>비활성 장소의 이미지까지 읽는다 — places와 조인해 거르는 값이 전량 스캔보다 크지 않고,
-     * 조립 단계에서 활성 장소 id만 꺼내 쓰므로 결과에 섞이지 않는다.
+     * <p>전량 판은 비활성 장소의 이미지까지 읽는다 — places와 조인해 거르는 값이 전량 스캔보다
+     * 크지 않고, 조립 단계에서 활성 장소 id만 꺼내 쓰므로 결과에 섞이지 않는다.
      */
-    private static final String THUMBNAIL_SQL = """
+    private static final String THUMBNAIL_SQL_TEMPLATE = """
             SELECT pi.place_id, pi.image_file_key
             FROM place_images pi
+            %s
             ORDER BY pi.place_id, pi.display_order
             """;
+
+    private static final String THUMBNAIL_SQL = THUMBNAIL_SQL_TEMPLATE.formatted("");
+
+    private static final String THUMBNAILS_BY_IDS_SQL =
+            THUMBNAIL_SQL_TEMPLATE.formatted("WHERE pi.place_id IN (:placeIds)");
 
     /**
      * 스냅샷을 통째로 다시 짓고 교체한다.
@@ -108,6 +128,27 @@ public class PlaceSkeletonLoader {
         return fresh.size();
     }
 
+    /**
+     * 주어진 장소들의 골격만 지어 돌려준다 — 스냅샷에 담지 않고 호출자에게 넘긴다.
+     * 두 쿼리와 조립을 {@link #rebuild()}와 공유하므로 값 동치가 구현 공유로 보장된다.
+     *
+     * <p><b>⚠️ {@code p.active = 1}을 걸지 않는 것이 이 메서드의 계약이다.</b>
+     * {@link #rebuild()}는 활성 장소만 담고, 비활성화된 장소가 목록에 남아 있는 창(≤1h)에서는
+     * 그 장소가 미스로 떨어져 활성 여부를 묻지 않는 {@code findPlacesWithTagsByIds}가 메운다.
+     * 반면 이 메서드는 <b>그 미스 경로를 통째로 대신</b> 서므로, 여기서 활성만 거르면 그 창의
+     * 응답에 구멍이 나고 모드 간 응답이 갈린다.
+     *
+     * <p>트랜잭션 어노테이션을 달지 않는다 — 호출자({@code PlaceService#listPlaces})가 이미
+     * {@code @Transactional(readOnly = true)} 안이다. "두 문장이 같은 스냅샷을 본다"는
+     * {@link #rebuild()}의 계약도 그 호출자 트랜잭션으로 충족된다.
+     */
+    public Map<Long, PlaceSkeleton> loadByIds(List<Long> placeIds) {
+        if (placeIds.isEmpty()) {
+            return Map.of();    // IN () 은 문법 오류다
+        }
+        return buildMap(readPlacesByIds(placeIds), readThumbnailsByIds(placeIds));
+    }
+
     @SuppressWarnings("unchecked")
     private List<Object[]> readPlacesWithMainTag() {
         return em.createNativeQuery(PLACES_WITH_MAIN_TAG_SQL).getResultList();
@@ -116,6 +157,20 @@ public class PlaceSkeletonLoader {
     @SuppressWarnings("unchecked")
     private List<Object[]> readThumbnails() {
         return em.createNativeQuery(THUMBNAIL_SQL).getResultList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object[]> readPlacesByIds(List<Long> placeIds) {
+        return em.createNativeQuery(PLACES_BY_IDS_SQL)
+                .setParameter("placeIds", placeIds)
+                .getResultList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object[]> readThumbnailsByIds(List<Long> placeIds) {
+        return em.createNativeQuery(THUMBNAILS_BY_IDS_SQL)
+                .setParameter("placeIds", placeIds)
+                .getResultList();
     }
 
     /**

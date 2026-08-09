@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.place.cache;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -40,8 +41,9 @@ public class PlaceSkeletonWarmup implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (!properties.isSkeletonCacheEnabled()) {
-            log.info("장소 골격 스냅샷 기동 빌드 생략 - skeleton-cache-enabled=false");
+        if (properties.getSkeletonSource() != SkeletonSource.SNAPSHOT) {
+            log.info("장소 골격 스냅샷 기동 빌드 생략 - skeleton-source={}",
+                    properties.getSkeletonSource());
             return;
         }
         for (int attempt = 0; attempt <= BACKOFF_MILLIS.length; attempt++) {

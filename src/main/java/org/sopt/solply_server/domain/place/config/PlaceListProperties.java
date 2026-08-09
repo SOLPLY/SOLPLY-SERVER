@@ -19,18 +19,30 @@ import org.springframework.context.annotation.Configuration;
 public class PlaceListProperties {
 
     /**
-     * 장소 골격 스냅샷 캐시({@code PlaceSkeletonSnapshot}) 사용 여부.
+     * 목록 응답의 골격 필드(이름·썸네일 URL·대표 태그·동네 id)를 어디서 얻는가.
      *
-     * <p><b>A/B를 같은 빌드에서 돌리기 위한 스위치다.</b> 이 값이 무엇이든 응답 body와 커서 토큰은
-     * 같아야 하며, 그것이 이 캐시의 계약이다. 다르면 캐시가 아니라 버그다.
+     * <p><b>A/B/C를 같은 빌드에서 돌리기 위한 스위치다.</b> 이 값이 무엇이든 응답 body와 커서
+     * 토큰은 같아야 하며, 그것이 세 모드의 유일한 계약이다. 다르면 캐시가 아니라 버그다.
      *
-     * <p><b>{@code false}면 스냅샷을 <em>짓지도</em> 않는다.</b> 읽지 않는 값을 매시 짓는 것은
-     * 순전한 낭비이기도 하지만, 더 중요한 이유는 측정이다 — off 라운드가 비교의 기준선인데
-     * 거기에 빌드 시점의 CPU·풀 점유가 섞이면 두 모드의 차이가 캐시 효과인지 배치 잡음인지
-     * 갈라낼 수 없다. 끄면 조회 경로는 스냅샷을 아예 보지 않고 기존 쿼리로만 간다.
+     * <p><b>{@code SNAPSHOT}이 아니면 스냅샷을 <em>짓지도</em> 않는다.</b> 읽지 않는 값을 매시
+     * 짓는 것은 순전한 낭비이기도 하지만, 더 중요한 이유는 측정이다 — 다른 모드가 비교의
+     * 기준선인데 거기에 빌드 시점의 CPU·풀 점유가 섞이면 모드 간 차이가 캐시 효과인지 배치
+     * 잡음인지 갈라낼 수 없다.
      *
-     * <p>런타임에 {@code true}로 되돌리면 다음 카운트 배치(≤1h)에서 스냅샷이 채워진다.
+     * <p>런타임에 {@code SNAPSHOT}으로 되돌리면 다음 카운트 배치(≤1h)에서 스냅샷이 채워진다.
      * 그 전까지는 전량 미스라 응답은 여전히 옳고 성능만 기존과 같다.
      */
-    private boolean skeletonCacheEnabled = true;
+    private SkeletonSource skeletonSource = SkeletonSource.SNAPSHOT;
+
+    public enum SkeletonSource {
+        /** 배치 회차마다 미리 지은 스냅샷. 요청당 골격 쿼리 0회 — 채택안. */
+        SNAPSHOT,
+        /**
+         * 스냅샷 로더의 SQL·조립식을 <b>페이지 id로 제한해</b> 요청마다 실행한다. 쿼리 횟수는
+         * {@link #ENTITY}와 같은 2회이므로 두 모드의 차이가 엔티티 하이드레이션 비용만 남는다.
+         */
+        PROJECTION,
+        /** 캐시 도입 이전 경로 — 태그 페치조인 엔티티 + 이미지 지연로딩. */
+        ENTITY
+    }
 }

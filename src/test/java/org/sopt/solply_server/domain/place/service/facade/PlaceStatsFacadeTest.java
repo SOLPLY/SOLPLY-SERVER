@@ -19,6 +19,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -26,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.core.env.StandardEnvironment;
@@ -43,8 +46,8 @@ class PlaceStatsFacadeTest {
     private PlaceSkeletonLoader placeSkeletonLoader;
 
     /**
-     * 실물을 쓴다 — 기본값이 {@code true}라서 훅이 <b>기본 경로</b>로 돌고, 값을 바꿔야 하는
-     * 테스트만 명시적으로 끈다. mock이면 기본이 false라 훅이 도는 것을 아무도 못 본다.
+     * 실물을 쓴다 — 기본값이 {@code SNAPSHOT}이라서 훅이 <b>기본 경로</b>로 돌고, 값을 바꿔야 하는
+     * 테스트만 명시적으로 옮긴다. mock이면 기본이 null이라 훅이 도는 것을 아무도 못 본다.
      */
     private final PlaceListProperties placeListProperties = new PlaceListProperties();
 
@@ -179,12 +182,13 @@ class PlaceStatsFacadeTest {
     }
 
     /**
-     * 토글이 off면 짓지도 않는다 — A/B의 기준선(off 라운드)에 빌드 비용이 섞이면
-     * 두 모드의 차이가 캐시 효과인지 배치 잡음인지 갈라낼 수 없다.
+     * 골격 출처가 스냅샷이 아니면 짓지도 않는다 — 기준선 라운드에 빌드 비용이 섞이면
+     * 모드 간 차이가 캐시 효과인지 배치 잡음인지 갈라낼 수 없다.
      */
-    @Test
-    void 캐시가_꺼져_있으면_카운트_배치가_골격_스냅샷을_짓지_않는다() {
-        placeListProperties.setSkeletonCacheEnabled(false);
+    @ParameterizedTest
+    @EnumSource(value = SkeletonSource.class, names = {"PROJECTION", "ENTITY"})
+    void 스냅샷_모드가_아니면_카운트_배치가_골격_스냅샷을_짓지_않는다(SkeletonSource source) {
+        placeListProperties.setSkeletonSource(source);
         given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
 
         placeStatsFacade.recalculatePlaceCounts();
