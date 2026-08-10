@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
+import org.sopt.solply_server.domain.place.cache.PlaceTagCountCache;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
@@ -86,6 +87,7 @@ public class PlaceStatsFacade {
 
     private final PlaceStatsBatchProcessor batchProcessor;
     private final PlaceSkeletonLoader placeSkeletonLoader;
+    private final PlaceTagCountCache placeTagCountCache;
     private final PlaceListProperties placeListProperties;
 
     /**
@@ -127,6 +129,7 @@ public class PlaceStatsFacade {
             return;
         }
         rebuildPlaceSkeletonSnapshot();
+        reloadPlaceTagCounts();
     }
 
     /**
@@ -158,6 +161,24 @@ public class PlaceStatsFacade {
             placeSkeletonLoader.rebuild();
         } catch (Exception e) {
             log.error("장소 골격 스냅샷 교체 실패 - 직전 회차 스냅샷을 유지한다", e);
+        }
+    }
+
+    /**
+     * 태그 카운트 캐시 갱신 — 골격 스냅샷 교체와 <b>같은 자리</b>다.
+     *
+     * <p>캐시 자체도 {@code refreshAfterWrite(1h)}를 들고 있지만 그것은 <b>읽힐 때만</b> 도는
+     * soft TTL이라, 조회가 뜸한 구간에서는 값이 한 시간보다 훨씬 낡을 수 있다. 여기서 밀어 넣어
+     * 낡음 상한을 골격 스냅샷과 같은 회차 간격(≤1h)에 맞춘다.
+     *
+     * <p>실패해도 카운트 배치를 실패로 기록하지 않는다 — 직전 값이 그대로 남고, 그 값이 하는 일은
+     * 힌트 부착 판단뿐이라 낡아도 결과가 달라지지 않는다 ({@code PlaceTagCountCache} 계약).
+     */
+    private void reloadPlaceTagCounts() {
+        try {
+            placeTagCountCache.reload();
+        } catch (Exception e) {
+            log.error("태그 카운트 캐시 갱신 실패 - 직전 값을 유지한다", e);
         }
     }
 

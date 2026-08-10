@@ -124,7 +124,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, null, null, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, null, null, false, null, null, NO_LIMIT);
 
         // B·C는 점수가 더 높아도 태그가 없으면 나오지 않는다 — 필터가 통째로 빠지면 여기서 3건이 된다
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
@@ -154,7 +154,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA1, subA2), null, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA1, subA2), null, false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeB, placeA);
     }
@@ -179,7 +179,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA), null, null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA), null, false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
     }
@@ -202,7 +202,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), null, List.of(subA), null, null, null, NO_LIMIT);
+                List.of(townId), null, List.of(subA), null, false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeC, placeB, placeA);
     }
@@ -229,7 +229,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertStats(placeC, townId, 8.0, 0);
 
         List<PopularRow> rows = repository.findPopularRows(
-                List.of(townId), mainTagId, List.of(subA), List.of(subB), null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA), List.of(subB), false, null, null, NO_LIMIT);
 
         assertThat(placeIdsOf(rows)).containsExactly(placeA);
     }
@@ -433,7 +433,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         linkTags(placeD, mainTagId, subA);         // 서브B 불일치 → 탈락 (전체 중 가장 최신)
 
         List<LatestRow> rows = repository.findLatestRows(
-                List.of(townId), mainTagId, List.of(subA), List.of(subB), null, null, NO_LIMIT);
+                List.of(townId), mainTagId, List.of(subA), List.of(subB), false, null, null, NO_LIMIT);
 
         assertThat(latestIdsOf(rows)).containsExactly(placeB, placeA);
     }
@@ -442,12 +442,12 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {
         return repository.findPopularRows(
-                List.of(townId), null, null, null, cursorScore, cursorPlaceId, limit);
+                List.of(townId), null, null, null, false, cursorScore, cursorPlaceId, limit);
     }
 
     private List<LatestRow> findLatest(Long cursorSecond, Long cursorPlaceId, int limit) {
         return repository.findLatestRows(
-                List.of(townId), null, null, null, cursorSecond, cursorPlaceId, limit);
+                List.of(townId), null, null, null, false, cursorSecond, cursorPlaceId, limit);
     }
 
     private List<Long> placeIdsOf(List<PopularRow> rows) {

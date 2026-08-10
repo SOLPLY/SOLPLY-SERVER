@@ -35,6 +35,7 @@ import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
+import org.sopt.solply_server.domain.place.util.PlaceListJoinOrderPolicy;
 import org.sopt.solply_server.domain.place.util.PlaceTagMatcher;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
@@ -74,6 +75,7 @@ public class PlaceService {
   /** {@code skeleton-source=projection}에서만 쓴다 — 스냅샷 로더의 산출식을 요청 시점에 돌린다 */
   private final PlaceSkeletonLoader placeSkeletonLoader;
   private final PlaceListProperties placeListProperties;
+  private final PlaceListJoinOrderPolicy placeListJoinOrderPolicy;
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -306,10 +308,15 @@ public class PlaceService {
     }
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
+    // 조인 순서 강제 여부는 정렬과 무관하게 같은 입력(동네 수 + 태그 규모)에서 나온다 —
+    // 두 정렬이 한 값을 나눠 쓰는 것이 "필터 의미론은 같다"는 계약과 결이 같다.
+    boolean regionFirstHint = placeListJoinOrderPolicy.shouldForceRegionFirst(
+        leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
+
     List<DbListRow> rows = switch (sort) {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              cursorScore, cursorPlaceId, fetchSize).stream()
+              regionFirstHint, cursorScore, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount(),
               r.reviewCount(), r.avgRating()))
           .toList();
@@ -318,7 +325,7 @@ public class PlaceService {
       // 한쪽만 고치면 페이징이 조용히 어긋난다 — findLatestRows javadoc 참고.
       case LATEST -> placeListDbQueryRepository.findLatestRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              cursorSec, cursorPlaceId, fetchSize).stream()
+              regionFirstHint, cursorSec, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(
               r.placeId(), r.createdAt().toEpochSecond(ZoneOffset.UTC), r.bookmarkCount(),
               r.reviewCount(), r.avgRating()))

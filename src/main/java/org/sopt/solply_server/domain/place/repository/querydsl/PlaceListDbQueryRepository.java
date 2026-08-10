@@ -31,6 +31,13 @@ public class PlaceListDbQueryRepository {
     private final EntityManager em;
 
     /**
+     * 옵션 그룹 EXISTS에 붙이는 쿼리 블록 이름. 힌트가 세미조인 전략을 지목하려면 그 블록에
+     * 이름이 있어야 한다 — {@code SEMIJOIN(@qb1 FIRSTMATCH)}가 가리키는 대상이 이 이름이다.
+     */
+    private static final String QB_SUB_A = "qb1";
+    private static final String QB_SUB_B = "qb2";
+
+    /**
      * {@code avgRating}은 null을 유지한다 — "리뷰가 없다"와 "평점이 0이다"는 다른 말이고,
      * 여기서 0으로 뭉개면 응답까지 그 구분이 사라진다.
      */
@@ -94,13 +101,15 @@ public class PlaceListDbQueryRepository {
      * 비교하므로 경계의 등가가 양쪽에서 똑같이 판정된다. BigDecimal로 바인딩하면 오히려 자바가
      * 이미 뭉갠 값을 DB만 정확히 비교해 경계가 어긋난다.
      *
-     * @param cursorScore   커서의 sortKey. null이면 첫 페이지
-     * @param cursorPlaceId 커서의 장소 id. null이면 첫 페이지
+     * @param cursorScore     커서의 sortKey. null이면 첫 페이지
+     * @param cursorPlaceId   커서의 장소 id. null이면 첫 페이지
+     * @param regionFirstHint 지역 주도 조인 순서를 강제할지 — 판단은
+     *                        {@code PlaceListJoinOrderPolicy}가 한다
      */
     @SuppressWarnings("unchecked")
     public List<PopularRow> findPopularRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
-            Double cursorScore, Long cursorPlaceId, int limit) {
+            boolean regionFirstHint, Double cursorScore, Long cursorPlaceId, int limit) {
 
         boolean useMainTag = mainTagId != null;
         boolean useSubA = useMainTag && subTagAIds != null && !subTagAIds.isEmpty();
@@ -108,13 +117,13 @@ public class PlaceListDbQueryRepository {
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
-                SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+                SELECT %sps.place_id, ps.popular_score, ps.bookmark_count,
                        ps.review_count, ps.avg_rating
                 FROM place_stats ps
                 WHERE ps.town_id IN (:townIds)
                   AND ps.score_calculated_at IS NOT NULL
-                """);
-        appendTagFilters(sql, "ps.place_id", useMainTag, useSubA, useSubB);
+                """.formatted(joinOrderHint(regionFirstHint, "ps", useSubA, useSubB)));
+        appendTagFilters(sql, "ps.place_id", useMainTag, useSubA, useSubB, regionFirstHint);
         if (useCursor) {
             sql.append("""
                       AND (ps.popular_score < :cursorScore
@@ -182,11 +191,13 @@ public class PlaceListDbQueryRepository {
      *
      * @param cursorEpochSecond 커서의 sortKey(생성일 epoch 초, UTC 기준). null이면 첫 페이지
      * @param cursorPlaceId     커서의 장소 id. null이면 첫 페이지
+     * @param regionFirstHint   지역 주도 조인 순서를 강제할지 — 판단은
+     *                          {@code PlaceListJoinOrderPolicy}가 한다
      */
     @SuppressWarnings("unchecked")
     public List<LatestRow> findLatestRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
-            Long cursorEpochSecond, Long cursorPlaceId, int limit) {
+            boolean regionFirstHint, Long cursorEpochSecond, Long cursorPlaceId, int limit) {
 
         boolean useMainTag = mainTagId != null;
         boolean useSubA = useMainTag && subTagAIds != null && !subTagAIds.isEmpty();
@@ -194,15 +205,15 @@ public class PlaceListDbQueryRepository {
         boolean useCursor = cursorEpochSecond != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
-                SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+                SELECT %sp.id, p.created_at, COALESCE(ps.bookmark_count, 0),
                        COALESCE(ps.review_count, 0), ps.avg_rating
                 FROM places p
                 LEFT JOIN place_stats ps
                        ON ps.place_id = p.id
                 WHERE p.town_id IN (:townIds)
                   AND p.active = 1
-                """);
-        appendTagFilters(sql, "p.id", useMainTag, useSubA, useSubB);
+                """.formatted(joinOrderHint(regionFirstHint, "p", useSubA, useSubB)));
+        appendTagFilters(sql, "p.id", useMainTag, useSubA, useSubB, regionFirstHint);
         if (useCursor) {
             sql.append("""
                       AND (p.created_at < :cursorCreatedAt
@@ -267,7 +278,7 @@ public class PlaceListDbQueryRepository {
      */
     private void appendTagFilters(
             StringBuilder sql, String placeIdColumn,
-            boolean useMainTag, boolean useSubA, boolean useSubB) {
+            boolean useMainTag, boolean useSubA, boolean useSubB, boolean regionFirstHint) {
         if (useMainTag) {
             sql.append("""
                       AND EXISTS (SELECT 1 FROM place_tag pt
@@ -276,16 +287,51 @@ public class PlaceListDbQueryRepository {
         }
         if (useSubA) {
             sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt
+                      AND EXISTS (SELECT %s1 FROM place_tag pt
                                    WHERE pt.place_id = %s AND pt.tag_id IN (:subTagAIds))
-                    """.formatted(placeIdColumn));
+                    """.formatted(qbNameHint(regionFirstHint, QB_SUB_A), placeIdColumn));
         }
         if (useSubB) {
             sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt
+                      AND EXISTS (SELECT %s1 FROM place_tag pt
                                    WHERE pt.place_id = %s AND pt.tag_id IN (:subTagBIds))
-                    """.formatted(placeIdColumn));
+                    """.formatted(qbNameHint(regionFirstHint, QB_SUB_B), placeIdColumn));
         }
+    }
+
+    /**
+     * SELECT 직후에 들어가는 옵티마이저 힌트 조각.
+     *
+     * <p>옵티마이저는 시 단위 + 태그 조회에서 태그 주도 계획을 고르는데, 태그가 흔하면 지역 주도 +
+     * FirstMatch가 약 2배 빠르다. 정렬 인덱스를 스트리밍으로 읽고 LIMIT에서 조기 종료하는 이득을
+     * 코스트 모델이 반영하지 못하는 것이 원인이다 ({@code 2026-08-11_join-order-threshold}).
+     *
+     * <p><b>{@code JOIN_PREFIX}만으로는 절반만 고쳐진다.</b> 주도 테이블을 지역으로 되돌리면 옵션
+     * 그룹의 IN-list EXISTS가 <em>구체화(Materialize with deduplication)</em>로 바뀌어 이득을 도로
+     * 까먹는다. {@code SEMIJOIN(@qb FIRSTMATCH)}가 그 구체화를 막아 첫 매치에서 끊게 한다 —
+     * 두 힌트는 한 벌이다.
+     *
+     * <p><b>붙이지 않을 때는 빈 문자열이라 SQL이 바이트째 예전과 같다.</b> 판단이 어긋난 요청이
+     * 지금까지와 다른 문장을 받는 일이 없어야 힌트 도입이 되돌릴 수 있는 변경으로 남는다.
+     */
+    private String joinOrderHint(
+            boolean regionFirstHint, String drivingAlias, boolean useSubA, boolean useSubB) {
+        if (!regionFirstHint) {
+            return "";
+        }
+        StringBuilder hint = new StringBuilder("/*+ JOIN_PREFIX(").append(drivingAlias).append(")");
+        if (useSubA) {
+            hint.append(" SEMIJOIN(@").append(QB_SUB_A).append(" FIRSTMATCH)");
+        }
+        if (useSubB) {
+            hint.append(" SEMIJOIN(@").append(QB_SUB_B).append(" FIRSTMATCH)");
+        }
+        return hint.append(" */ ").toString();
+    }
+
+    /** 메인 태그 블록에는 이름을 붙이지 않는다 — 등호 프로브라 전략을 지목할 것이 없다. */
+    private String qbNameHint(boolean regionFirstHint, String queryBlockName) {
+        return regionFirstHint ? "/*+ QB_NAME(" + queryBlockName + ") */ " : "";
     }
 
     private void bindTagFilters(
