@@ -1,0 +1,966 @@
+================================================================
+# 라벨: v32 / 채취: 2026-08-10 22:03:01 KST
+# 컨테이너: solply-bench-mysql / DB: solply_bench_db
+# 형상 before = idx_place_tag_tag_id (tag_id)
+# 형상 after  = idx_place_tag_tag_place (tag_id, place_id)
+# 두 형상 모두 ANALYZE TABLE place_tag 직후에 측정한다
+# 동네 1개 = 301 / 시 단위 = 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318
+# 시간 = EXPLAIN ANALYZE 최상위 노드 actual time 끝값, 워밍업 1회 후 3회
+================================================================
++---------------+----------------+-----------+---------------+--------+
+| active_places | place_tag_rows | tags_rows | inactive_tags | scored |
++---------------+----------------+-----------+---------------+--------+
+|          6320 |          15461 |        34 |             0 |   6320 |
++---------------+----------------+-----------+---------------+--------+
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@ 인덱스 형상: before
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
++------------------------+--------------+-------------+-------------+
+| INDEX_NAME             | SEQ_IN_INDEX | COLUMN_NAME | CARDINALITY |
++------------------------+--------------+-------------+-------------+
+| idx_place_tag_place_id |            1 | place_id    |        6320 |
+| idx_place_tag_tag_id   |            1 | tag_id      |          30 |
+| PRIMARY                |            1 | id          |       15655 |
+| uk_place_tag_place_tag |            1 | place_id    |        6320 |
+| uk_place_tag_place_tag |            2 | tag_id      |       15461 |
++------------------------+--------------+-------------+-------------+
+################################################################
+# [before] 인기순 · 동네 1개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.115 0.0912 0.0928
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=40.9 rows=11) (actual time=0.0304..0.0798 rows=11 loops=1)
+    -> Nested loop inner join  (cost=40.9 rows=90) (actual time=0.0301..0.079 rows=11 loops=1)
+        -> Filter: (ps.score_calculated_at is not null)  (cost=9.41 rows=90) (actual time=0.0209..0.028 rows=72 loops=1)
+            -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.41 rows=100) (actual time=0.0201..0.0248 rows=72 loops=1)
+        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.251 rows=1) (actual time=632e-6..634e-6 rows=0.153 loops=72)
+
+
+################################################################
+# [before] 최신순 · 동네 1개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.126 0.0936 0.134
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=80.3 rows=11) (actual time=0.042..0.112 rows=11 loops=1)
+    -> Nested loop left join  (cost=80.3 rows=100) (actual time=0.0416..0.111 rows=11 loops=1)
+        -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.0338..0.0901 rows=11 loops=1)
+            -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0215..0.037 rows=61 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.251 rows=1) (actual time=762e-6..766e-6 rows=0.18 loops=61)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00172..0.00174 rows=1 loops=11)
+
+
+################################################################
+# [before] 인기순 · 동네 1개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.177 0.18 0.176
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=69.9 rows=7.13) (actual time=0.0481..0.176 rows=10 loops=1)
+    -> Nested loop inner join  (cost=69.9 rows=7.13) (actual time=0.0477..0.175 rows=10 loops=1)
+        -> Nested loop inner join  (cost=40.9 rows=90) (actual time=0.041..0.12 rows=17 loops=1)
+            -> Filter: (ps.score_calculated_at is not null)  (cost=9.41 rows=90) (actual time=0.0279..0.0419 rows=100 loops=1)
+                -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.41 rows=100) (actual time=0.0267..0.0367 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.251 rows=1) (actual time=698e-6..701e-6 rows=0.17 loops=100)
+        -> Limit: 1 row(s)  (cost=22.7 rows=0.0793) (actual time=0.00309..0.0031 rows=0.588 loops=17)
+            -> Nested loop inner join  (cost=22.7 rows=0.0793) (actual time=0.003..0.003 rows=0.588 loops=17)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.00117..0.00127 rows=1.18 loops=17)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0698 rows=2.48) (actual time=900e-6..0.00102 rows=2.18 loops=17)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0717 rows=0.285) (actual time=0.00131..0.00131 rows=0.5 loops=20)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0717 rows=2.48) (actual time=823e-6..0.00112 rows=3.15 loops=20)
+
+
+################################################################
+# [before] 최신순 · 동네 1개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.177 0.179 0.21
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=112 rows=7.93) (actual time=0.0398..0.2 rows=10 loops=1)
+    -> Nested loop inner join  (cost=112 rows=7.93) (actual time=0.0395..0.199 rows=10 loops=1)
+        -> Nested loop left join  (cost=80.3 rows=100) (actual time=0.032..0.143 rows=17 loops=1)
+            -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.0264..0.123 rows=17 loops=1)
+                -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0167..0.0414 rows=100 loops=1)
+                -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.251 rows=1) (actual time=724e-6..727e-6 rows=0.17 loops=100)
+            -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00108..0.0011 rows=1 loops=17)
+        -> Limit: 1 row(s)  (cost=25.2 rows=0.0793) (actual time=0.00313..0.00314 rows=0.588 loops=17)
+            -> Nested loop inner join  (cost=25.2 rows=0.0793) (actual time=0.00306..0.00306 rows=0.588 loops=17)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.00126..0.00136 rows=1.18 loops=17)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id)  (cost=0.0698 rows=2.48) (actual time=976e-6..0.00114 rows=2.18 loops=17)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0717 rows=0.285) (actual time=0.00126..0.00126 rows=0.5 loops=20)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id)  (cost=0.0717 rows=2.48) (actual time=850e-6..0.00105 rows=3.15 loops=20)
+
+
+################################################################
+# [before] 인기순 · 동네 1개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (21))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.135 0.139 0.139
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=72.4 rows=11) (actual time=0.0683..0.129 rows=6 loops=1)
+    -> Nested loop inner join  (cost=72.4 rows=90) (actual time=0.0676..0.128 rows=6 loops=1)
+        -> Nested loop inner join  (cost=40.9 rows=90) (actual time=0.0655..0.121 rows=6 loops=1)
+            -> Filter: (ps.score_calculated_at is not null)  (cost=9.41 rows=90) (actual time=0.0268..0.0459 rows=100 loops=1)
+                -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.41 rows=100) (actual time=0.0257..0.0405 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=21)  (cost=0.251 rows=1) (actual time=676e-6..678e-6 rows=0.06 loops=100)
+        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=882e-6..896e-6 rows=1 loops=6)
+
+
+################################################################
+# [before] 최신순 · 동네 1개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (21))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.172 0.156 0.18
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=115 rows=11) (actual time=0.0301..0.121 rows=6 loops=1)
+    -> Nested loop left join  (cost=115 rows=100) (actual time=0.0297..0.12 rows=6 loops=1)
+        -> Nested loop inner join  (cost=80.3 rows=100) (actual time=0.0244..0.11 rows=6 loops=1)
+            -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.023..0.104 rows=6 loops=1)
+                -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0143..0.0355 rows=100 loops=1)
+                -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=21)  (cost=0.251 rows=1) (actual time=617e-6..617e-6 rows=0.06 loops=100)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=2)  (cost=0.251 rows=1) (actual time=764e-6..771e-6 rows=1 loops=6)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00166..0.00167 rows=1 loops=6)
+
+
+################################################################
+# [before] 인기순 · 동네 1개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 31)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0232 0.0137 0.0144
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.0188..0.0188 rows=0 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.0185..0.0185 rows=0 loops=1)
+        -> Stream results  (cost=0.7 rows=0.05) (actual time=0.0129..0.0129 rows=0 loops=1)
+            -> Nested loop inner join  (cost=0.7 rows=0.05) (actual time=0.012..0.012 rows=0 loops=1)
+                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=31)  (cost=0.35 rows=1) (actual time=0.0113..0.0113 rows=0 loops=1)
+                -> Filter: ((ps.town_id = 301) and (ps.score_calculated_at is not null))  (cost=0.255 rows=0.05) (never executed)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.255 rows=1) (never executed)
+
+
+################################################################
+# [before] 최신순 · 동네 1개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 31)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.015 0.012 0.0113
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.012..0.012 rows=0 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.0117..0.0117 rows=0 loops=1)
+        -> Stream results  (cost=0.718 rows=0.05) (actual time=0.0085..0.0085 rows=0 loops=1)
+            -> Nested loop left join  (cost=0.718 rows=0.05) (actual time=0.00792..0.00792 rows=0 loops=1)
+                -> Nested loop inner join  (cost=0.7 rows=0.05) (actual time=0.00767..0.00767 rows=0 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=31)  (cost=0.35 rows=1) (actual time=0.00733..0.00733 rows=0 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id = 301))  (cost=0.255 rows=0.05) (never executed)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.255 rows=1) (never executed)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=2.25 rows=1) (never executed)
+
+
+################################################################
+# [before] 인기순 · 시 단위 18개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 1.64 1.7 1.71
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=1.47..1.47 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=1.47..1.47 rows=11 loops=1)
+        -> Stream results  (cost=567 rows=296) (actual time=0.193..1.43 rows=275 loops=1)
+            -> Nested loop inner join  (cost=567 rows=296) (actual time=0.192..1.4 rows=275 loops=1)
+                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=166 rows=1146) (actual time=0.0947..0.56 rows=1146 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=655e-6..668e-6 rows=0.24 loops=1146)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=532e-6..549e-6 rows=1 loops=1146)
+
+
+################################################################
+# [before] 최신순 · 시 단위 18개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 1.9 1.88 2.01
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=2.3..2.31 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=2.3..2.3 rows=11 loops=1)
+        -> Stream results  (cost=686 rows=340) (actual time=0.29..2.27 rows=275 loops=1)
+            -> Nested loop left join  (cost=686 rows=340) (actual time=0.283..2.21 rows=275 loops=1)
+                -> Nested loop inner join  (cost=567 rows=340) (actual time=0.279..1.97 rows=275 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=166 rows=1146) (actual time=0.126..0.795 rows=1146 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=935e-6..950e-6 rows=0.24 loops=1146)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=784e-6..803e-6 rows=1 loops=1146)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=737e-6..757e-6 rows=1 loops=275)
+
+
+################################################################
+# [before] 인기순 · 시 단위 18개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 2.58 2.66 2.66
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=2.56..2.56 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=2.56..2.56 rows=11 loops=1)
+        -> Stream results  (cost=663 rows=23.4) (actual time=0.266..2.52 rows=211 loops=1)
+            -> Nested loop inner join  (cost=663 rows=23.4) (actual time=0.265..2.49 rows=211 loops=1)
+                -> Nested loop inner join  (cost=567 rows=296) (actual time=0.253..1.76 rows=275 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=166 rows=1146) (actual time=0.117..0.717 rows=1146 loops=1)
+                    -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=809e-6..832e-6 rows=0.24 loops=1146)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=686e-6..704e-6 rows=1 loops=1146)
+                -> Limit: 1 row(s)  (cost=74.4 rows=0.0793) (actual time=0.00252..0.00253 rows=0.767 loops=275)
+                    -> Nested loop inner join  (cost=74.4 rows=0.0793) (actual time=0.00244..0.00244 rows=0.767 loops=275)
+                        -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.00106..0.00111 rows=1.09 loops=275)
+                            -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0698 rows=2.48) (actual time=873e-6..965e-6 rows=2.09 loops=275)
+                        -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0717 rows=0.285) (actual time=0.00109..0.00109 rows=0.701 loops=301)
+                            -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0717 rows=2.48) (actual time=767e-6..914e-6 rows=3.23 loops=301)
+
+
+################################################################
+# [before] 최신순 · 시 단위 18개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 2.91 2.99 2.97
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=3.06..3.06 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=3.06..3.06 rows=11 loops=1)
+        -> Stream results  (cost=677 rows=26.9) (actual time=0.31..3 rows=211 loops=1)
+            -> Nested loop inner join  (cost=677 rows=26.9) (actual time=0.302..2.96 rows=211 loops=1)
+                -> Nested loop inner join  (cost=567 rows=340) (actual time=0.289..1.97 rows=275 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=1)  (cost=166 rows=1146) (actual time=0.132..0.774 rows=1146 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=947e-6..961e-6 rows=0.24 loops=1146)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=799e-6..817e-6 rows=1 loops=1146)
+                -> Limit: 1 row(s)  (cost=92.2 rows=0.0793) (actual time=0.00346..0.00347 rows=0.767 loops=275)
+                    -> Nested loop left join  (cost=92.2 rows=0.0793) (actual time=0.00339..0.00339 rows=0.767 loops=275)
+                        -> Nested loop inner join  (cost=85.5 rows=0.0793) (actual time=0.00263..0.00263 rows=0.767 loops=275)
+                            -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.00123..0.00128 rows=1.09 loops=275)
+                                -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0698 rows=2.48) (actual time=0.00103..0.00113 rows=2.09 loops=275)
+                            -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0717 rows=0.285) (actual time=0.00112..0.00112 rows=0.701 loops=301)
+                                -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0717 rows=2.48) (actual time=777e-6..948e-6 rows=3.23 loops=301)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.0201 rows=1) (actual time=840e-6..840e-6 rows=1 loops=211)
+
+
+################################################################
+# [before] 인기순 · 시 단위 18개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (21))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.7 0.741 0.806
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.63..0.63 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.629..0.63 rows=11 loops=1)
+        -> Stream results  (cost=194 rows=47.7) (actual time=0.174..0.613 rows=65 loops=1)
+            -> Nested loop inner join  (cost=194 rows=47.7) (actual time=0.172..0.602 rows=65 loops=1)
+                -> Nested loop inner join  (cost=130 rows=185) (actual time=0.15..0.396 rows=185 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=21)  (cost=64.8 rows=185) (actual time=0.144..0.173 rows=185 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=0.00107..0.00109 rows=1 loops=185)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=0.00101..0.00104 rows=0.351 loops=185)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=871e-6..890e-6 rows=1 loops=185)
+
+
+################################################################
+# [before] 최신순 · 시 단위 18개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (21))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.909 0.833 0.928
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=1.03..1.03 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=1.03..1.03 rows=11 loops=1)
+        -> Stream results  (cost=213 rows=54.9) (actual time=0.26..1.01 rows=65 loops=1)
+            -> Nested loop left join  (cost=213 rows=54.9) (actual time=0.253..0.991 rows=65 loops=1)
+                -> Nested loop inner join  (cost=194 rows=54.9) (actual time=0.248..0.897 rows=65 loops=1)
+                    -> Nested loop inner join  (cost=130 rows=185) (actual time=0.217..0.579 rows=185 loops=1)
+                        -> Index lookup on pt using idx_place_tag_tag_id (tag_id=21)  (cost=64.8 rows=185) (actual time=0.206..0.245 rows=185 loops=1)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=0.00167..0.00169 rows=1 loops=185)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=0.00161..0.00163 rows=0.351 loops=185)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00145..0.00147 rows=1 loops=185)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.252 rows=1) (actual time=0.00132..0.00135 rows=1 loops=65)
+
+
+################################################################
+# [before] 인기순 · 시 단위 18개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 31)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0222 0.0157 0.0227
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.0168..0.0168 rows=0 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.0164..0.0164 rows=0 loops=1)
+        -> Stream results  (cost=0.7 rows=0.258) (actual time=0.0117..0.0117 rows=0 loops=1)
+            -> Nested loop inner join  (cost=0.7 rows=0.258) (actual time=0.0107..0.0107 rows=0 loops=1)
+                -> Index lookup on pt using idx_place_tag_tag_id (tag_id=31)  (cost=0.35 rows=1) (actual time=0.00996..0.00996 rows=0 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.276 rows=0.258) (never executed)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.276 rows=1) (never executed)
+
+
+################################################################
+# [before] 최신순 · 시 단위 18개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 31)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0242 0.017 0.0124
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.013..0.013 rows=0 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.0127..0.0127 rows=0 loops=1)
+        -> Stream results  (cost=0.804 rows=0.297) (actual time=0.00921..0.00921 rows=0 loops=1)
+            -> Nested loop left join  (cost=0.804 rows=0.297) (actual time=0.00871..0.00871 rows=0 loops=1)
+                -> Nested loop inner join  (cost=0.7 rows=0.297) (actual time=0.0085..0.0085 rows=0 loops=1)
+                    -> Index lookup on pt using idx_place_tag_tag_id (tag_id=31)  (cost=0.35 rows=1) (actual time=0.00808..0.00808 rows=0 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.28 rows=0.297) (never executed)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.28 rows=1) (never executed)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.587 rows=1) (never executed)
+
+
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@ 인덱스 형상: after
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
++-------------------------+--------------+-------------+-------------+
+| INDEX_NAME              | SEQ_IN_INDEX | COLUMN_NAME | CARDINALITY |
++-------------------------+--------------+-------------+-------------+
+| idx_place_tag_place_id  |            1 | place_id    |        6320 |
+| idx_place_tag_tag_place |            1 | tag_id      |          30 |
+| idx_place_tag_tag_place |            2 | place_id    |       15314 |
+| PRIMARY                 |            1 | id          |       15314 |
+| uk_place_tag_place_tag  |            1 | place_id    |        6320 |
+| uk_place_tag_place_tag  |            2 | tag_id      |       15314 |
++-------------------------+--------------+-------------+-------------+
+################################################################
+# [after] 인기순 · 동네 1개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0982 0.0863 0.091
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=40.9 rows=11) (actual time=0.0328..0.0795 rows=11 loops=1)
+    -> Nested loop inner join  (cost=40.9 rows=90) (actual time=0.0325..0.0786 rows=11 loops=1)
+        -> Filter: (ps.score_calculated_at is not null)  (cost=9.41 rows=90) (actual time=0.0221..0.0291 rows=72 loops=1)
+            -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.41 rows=100) (actual time=0.0212..0.0254 rows=72 loops=1)
+        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.251 rows=1) (actual time=619e-6..623e-6 rows=0.153 loops=72)
+
+
+################################################################
+# [after] 최신순 · 동네 1개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0895 0.11 0.0917
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=80.3 rows=11) (actual time=0.0301..0.0975 rows=11 loops=1)
+    -> Nested loop left join  (cost=80.3 rows=100) (actual time=0.0298..0.0967 rows=11 loops=1)
+        -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.0237..0.0804 rows=11 loops=1)
+            -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0134..0.0289 rows=61 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.251 rows=1) (actual time=751e-6..757e-6 rows=0.18 loops=61)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00134..0.00136 rows=1 loops=11)
+
+
+################################################################
+# [after] 인기순 · 동네 1개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.165 0.166 0.165
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=69.7 rows=7.13) (actual time=0.04..0.167 rows=10 loops=1)
+    -> Nested loop inner join  (cost=69.7 rows=7.13) (actual time=0.0396..0.166 rows=10 loops=1)
+        -> Nested loop inner join  (cost=40.9 rows=90) (actual time=0.0332..0.112 rows=17 loops=1)
+            -> Filter: (ps.score_calculated_at is not null)  (cost=9.41 rows=90) (actual time=0.0223..0.0361 rows=100 loops=1)
+                -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.41 rows=100) (actual time=0.0215..0.0304 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.251 rows=1) (actual time=684e-6..688e-6 rows=0.17 loops=100)
+        -> Limit: 1 row(s)  (cost=22.7 rows=0.0793) (actual time=0.00302..0.00303 rows=0.588 loops=17)
+            -> Nested loop inner join  (cost=22.7 rows=0.0793) (actual time=0.00292..0.00292 rows=0.588 loops=17)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.00115..0.00125 rows=1.18 loops=17)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0698 rows=2.42) (actual time=882e-6..0.00102 rows=2.18 loops=17)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0717 rows=0.285) (actual time=0.00128..0.00128 rows=0.5 loops=20)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0717 rows=2.42) (actual time=829e-6..0.0011 rows=3.15 loops=20)
+
+
+################################################################
+# [after] 최신순 · 동네 1개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.229 0.227 0.238
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=112 rows=7.93) (actual time=0.0502..0.208 rows=10 loops=1)
+    -> Nested loop inner join  (cost=112 rows=7.93) (actual time=0.0496..0.207 rows=10 loops=1)
+        -> Nested loop left join  (cost=80.3 rows=100) (actual time=0.0398..0.15 rows=17 loops=1)
+            -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.0316..0.123 rows=17 loops=1)
+                -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0191..0.0424 rows=100 loops=1)
+                -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.251 rows=1) (actual time=710e-6..712e-6 rows=0.17 loops=100)
+            -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00147..0.00149 rows=1 loops=17)
+        -> Limit: 1 row(s)  (cost=25.2 rows=0.0793) (actual time=0.00316..0.00317 rows=0.588 loops=17)
+            -> Nested loop inner join  (cost=25.2 rows=0.0793) (actual time=0.00311..0.00311 rows=0.588 loops=17)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.00132..0.00142 rows=1.18 loops=17)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id)  (cost=0.0698 rows=2.42) (actual time=0.00105..0.0012 rows=2.18 loops=17)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0717 rows=0.285) (actual time=0.00124..0.00124 rows=0.5 loops=20)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id)  (cost=0.0717 rows=2.42) (actual time=850e-6..0.00105 rows=3.15 loops=20)
+
+
+################################################################
+# [after] 인기순 · 동네 1개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (21))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.127 0.12 0.125
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (cost=72.4 rows=11) (actual time=0.0637..0.118 rows=6 loops=1)
+    -> Nested loop inner join  (cost=72.4 rows=90) (actual time=0.0633..0.117 rows=6 loops=1)
+        -> Nested loop inner join  (cost=40.9 rows=90) (actual time=0.0614..0.112 rows=6 loops=1)
+            -> Filter: (ps.score_calculated_at is not null)  (cost=9.41 rows=90) (actual time=0.0253..0.0401 rows=100 loops=1)
+                -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.41 rows=100) (actual time=0.0245..0.0353 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=21)  (cost=0.251 rows=1) (actual time=641e-6..642e-6 rows=0.06 loops=100)
+        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=778e-6..799e-6 rows=1 loops=6)
+
+
+################################################################
+# [after] 최신순 · 동네 1개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (21))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.273 0.352 0.362
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.344..0.344 rows=6 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.343..0.344 rows=6 loops=1)
+        -> Stream results  (cost=91.2 rows=9.25) (actual time=0.0695..0.331 rows=6 loops=1)
+            -> Nested loop left join  (cost=91.2 rows=9.25) (actual time=0.0633..0.323 rows=6 loops=1)
+                -> Nested loop inner join  (cost=88 rows=9.25) (actual time=0.0578..0.311 rows=6 loops=1)
+                    -> Nested loop inner join  (cost=84.7 rows=9.25) (actual time=0.0517..0.3 rows=6 loops=1)
+                        -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=21)  (cost=20 rows=185) (actual time=0.0265..0.0435 rows=185 loops=1)
+                        -> Filter: ((p.`active` = 1) and (p.town_id = 301))  (cost=0.25 rows=0.05) (actual time=0.0013..0.00131 rows=0.0324 loops=185)
+                            -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00115..0.00117 rows=1 loops=185)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.261 rows=1) (actual time=0.00175..0.00177 rows=1 loops=6)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.261 rows=1) (actual time=0.00185..0.00186 rows=1 loops=6)
+
+
+################################################################
+# [after] 인기순 · 동네 1개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 31)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0168 0.0255 0.0219
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.0375..0.0375 rows=0 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.037..0.037 rows=0 loops=1)
+        -> Stream results  (cost=1.42 rows=0.05) (actual time=0.0269..0.0269 rows=0 loops=1)
+            -> Nested loop inner join  (cost=1.42 rows=0.05) (actual time=0.0255..0.0255 rows=0 loops=1)
+                -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=31)  (cost=1.07 rows=1) (actual time=0.0242..0.0242 rows=0 loops=1)
+                -> Filter: ((ps.town_id = 301) and (ps.score_calculated_at is not null))  (cost=0.255 rows=0.05) (never executed)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.255 rows=1) (never executed)
+
+
+################################################################
+# [after] 최신순 · 동네 1개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 31)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0247 0.0245 0.0241
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.0249..0.0249 rows=0 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.0244..0.0244 rows=0 loops=1)
+        -> Stream results  (cost=1.44 rows=0.05) (actual time=0.0173..0.0173 rows=0 loops=1)
+            -> Nested loop left join  (cost=1.44 rows=0.05) (actual time=0.0161..0.0161 rows=0 loops=1)
+                -> Nested loop inner join  (cost=1.42 rows=0.05) (actual time=0.0155..0.0155 rows=0 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=31)  (cost=1.07 rows=1) (actual time=0.0149..0.0149 rows=0 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id = 301))  (cost=0.255 rows=0.05) (never executed)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.255 rows=1) (never executed)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=2.25 rows=1) (never executed)
+
+
+################################################################
+# [after] 인기순 · 시 단위 18개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 1.34 1.37 1.28
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=1.34..1.34 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=1.34..1.34 rows=11 loops=1)
+        -> Stream results  (cost=520 rows=296) (actual time=0.166..1.29 rows=275 loops=1)
+            -> Nested loop inner join  (cost=520 rows=296) (actual time=0.164..1.25 rows=275 loops=1)
+                -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=1)  (cost=119 rows=1146) (actual time=0.029..0.168 rows=1146 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=859e-6..872e-6 rows=0.24 loops=1146)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=729e-6..748e-6 rows=1 loops=1146)
+
+
+################################################################
+# [after] 최신순 · 시 단위 18개 · 흔한 태그 1개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 1.48 1.69 1.53
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=1.43..1.43 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=1.43..1.43 rows=11 loops=1)
+        -> Stream results  (cost=639 rows=340) (actual time=0.156..1.4 rows=275 loops=1)
+            -> Nested loop left join  (cost=639 rows=340) (actual time=0.15..1.35 rows=275 loops=1)
+                -> Nested loop inner join  (cost=520 rows=340) (actual time=0.146..1.16 rows=275 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=1)  (cost=119 rows=1146) (actual time=0.0212..0.15 rows=1146 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=798e-6..811e-6 rows=0.24 loops=1146)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=661e-6..680e-6 rows=1 loops=1146)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=593e-6..612e-6 rows=1 loops=275)
+
+
+################################################################
+# [after] 인기순 · 시 단위 18개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 2.02 2.01 2.02
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=2.02..2.02 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=2.02..2.02 rows=11 loops=1)
+        -> Stream results  (cost=615 rows=23.4) (actual time=0.172..1.98 rows=211 loops=1)
+            -> Nested loop inner join  (cost=615 rows=23.4) (actual time=0.17..1.95 rows=211 loops=1)
+                -> Nested loop inner join  (cost=520 rows=296) (actual time=0.16..1.22 rows=275 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=1)  (cost=119 rows=1146) (actual time=0.0265..0.157 rows=1146 loops=1)
+                    -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=843e-6..857e-6 rows=0.24 loops=1146)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=721e-6..739e-6 rows=1 loops=1146)
+                -> Limit: 1 row(s)  (cost=74.4 rows=0.0793) (actual time=0.00253..0.00254 rows=0.767 loops=275)
+                    -> Nested loop inner join  (cost=74.4 rows=0.0793) (actual time=0.00246..0.00246 rows=0.767 loops=275)
+                        -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.00105..0.0011 rows=1.09 loops=275)
+                            -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0698 rows=2.42) (actual time=876e-6..965e-6 rows=2.09 loops=275)
+                        -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0716 rows=0.285) (actual time=0.00111..0.00111 rows=0.701 loops=301)
+                            -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0716 rows=2.42) (actual time=761e-6..944e-6 rows=3.23 loops=301)
+
+
+################################################################
+# [after] 최신순 · 시 단위 18개 · 흔한 태그 3개
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 2.41 2.43 2.46
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=2.57..2.57 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=2.56..2.57 rows=11 loops=1)
+        -> Stream results  (cost=629 rows=26.9) (actual time=0.216..2.51 rows=211 loops=1)
+            -> Nested loop inner join  (cost=629 rows=26.9) (actual time=0.21..2.46 rows=211 loops=1)
+                -> Nested loop inner join  (cost=520 rows=340) (actual time=0.196..1.42 rows=275 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=1)  (cost=119 rows=1146) (actual time=0.0358..0.179 rows=1146 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=986e-6..1e-3 rows=0.24 loops=1146)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=824e-6..843e-6 rows=1 loops=1146)
+                -> Limit: 1 row(s)  (cost=92.2 rows=0.0793) (actual time=0.00367..0.00369 rows=0.767 loops=275)
+                    -> Nested loop left join  (cost=92.2 rows=0.0793) (actual time=0.00359..0.00359 rows=0.767 loops=275)
+                        -> Nested loop inner join  (cost=85.5 rows=0.0793) (actual time=0.0028..0.0028 rows=0.767 loops=275)
+                            -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0698 rows=0.278) (actual time=0.0012..0.00126 rows=1.09 loops=275)
+                                -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0698 rows=2.42) (actual time=0.001..0.0011 rows=2.09 loops=275)
+                            -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.0716 rows=0.285) (actual time=0.00128..0.00128 rows=0.701 loops=301)
+                                -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id)  (cost=0.0716 rows=2.42) (actual time=924e-6..0.0011 rows=3.23 loops=301)
+                        -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.0201 rows=1) (actual time=871e-6..871e-6 rows=1 loops=211)
+
+
+################################################################
+# [after] 인기순 · 시 단위 18개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (21))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.594 0.507 0.495
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.579..0.58 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.579..0.579 rows=11 loops=1)
+        -> Stream results  (cost=149 rows=47.7) (actual time=0.07..0.559 rows=65 loops=1)
+            -> Nested loop inner join  (cost=149 rows=47.7) (actual time=0.0685..0.549 rows=65 loops=1)
+                -> Nested loop inner join  (cost=84.7 rows=185) (actual time=0.037..0.294 rows=185 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=21)  (cost=20 rows=185) (actual time=0.0282..0.0449 rows=185 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=0.00121..0.00123 rows=1 loops=185)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=0.00127..0.00129 rows=0.351 loops=185)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00113..0.00115 rows=1 loops=185)
+
+
+################################################################
+# [after] 최신순 · 시 단위 18개 · 희귀 서브태그(185건)
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (21))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.707 0.683 0.683
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.674..0.675 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.674..0.674 rows=11 loops=1)
+        -> Stream results  (cost=169 rows=54.9) (actual time=0.0751..0.657 rows=65 loops=1)
+            -> Nested loop left join  (cost=169 rows=54.9) (actual time=0.0684..0.638 rows=65 loops=1)
+                -> Nested loop inner join  (cost=149 rows=54.9) (actual time=0.0635..0.556 rows=65 loops=1)
+                    -> Nested loop inner join  (cost=84.7 rows=185) (actual time=0.033..0.293 rows=185 loops=1)
+                        -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=21)  (cost=20 rows=185) (actual time=0.0252..0.0425 rows=185 loops=1)
+                        -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=0.00122..0.00124 rows=1 loops=185)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=0.00132..0.00134 rows=0.351 loops=185)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00115..0.00117 rows=1 loops=185)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.252 rows=1) (actual time=0.00112..0.00115 rows=1 loops=65)
+
+
+################################################################
+# [after] 인기순 · 시 단위 18개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 31)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.017 0.0188 0.0189
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.0262..0.0262 rows=0 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.0257..0.0257 rows=0 loops=1)
+        -> Stream results  (cost=1.42 rows=0.258) (actual time=0.017..0.017 rows=0 loops=1)
+            -> Nested loop inner join  (cost=1.42 rows=0.258) (actual time=0.016..0.016 rows=0 loops=1)
+                -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=31)  (cost=1.07 rows=1) (actual time=0.015..0.015 rows=0 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.276 rows=0.258) (never executed)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.276 rows=1) (never executed)
+
+
+################################################################
+# [after] 최신순 · 시 단위 18개 · 결과 0건 태그
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 31)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+--- 시간(3회, ms) ---
+ 0.0187 0.0213 0.0278
+--- EXPLAIN ANALYZE ---
+-> Limit: 11 row(s)  (actual time=0.0159..0.0159 rows=0 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.0156..0.0156 rows=0 loops=1)
+        -> Stream results  (cost=1.53 rows=0.297) (actual time=0.011..0.011 rows=0 loops=1)
+            -> Nested loop left join  (cost=1.53 rows=0.297) (actual time=0.0103..0.0103 rows=0 loops=1)
+                -> Nested loop inner join  (cost=1.42 rows=0.297) (actual time=0.0101..0.0101 rows=0 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=31)  (cost=1.07 rows=1) (actual time=0.0095..0.0095 rows=0 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.28 rows=0.297) (never executed)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.28 rows=1) (never executed)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.587 rows=1) (never executed)
+
+
