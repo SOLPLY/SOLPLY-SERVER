@@ -27,6 +27,10 @@ public class PlaceListJoinOrderPolicy {
      * 유효 태그 규모의 하한(장소 수). 캠페인 실측에서 인기순 시 단위 강제가 700에서 손해
      * (0.68 → 0.90ms), 1,146에서 이득(1.32 → 0.91ms)이라 그 사이의 보수적 경계로 잡았다
      * ({@code 2026-08-11_join-order-threshold}).
+     *
+     * <p><b>⚠️ 시 단위 지역 후보 1,800 기준의 값이다.</b> 전환점의 본질은 태그 크기와 지역 크기의
+     * 비율이라, 장소 수가 자릿수로 변하면 이 상수는 전제를 잃는다 — 그때는 재측정 대상이지
+     * 조정 대상이 아니다.
      */
     static final long MIN_EFFECTIVE_TAG_PLACES = 1_000L;
 
