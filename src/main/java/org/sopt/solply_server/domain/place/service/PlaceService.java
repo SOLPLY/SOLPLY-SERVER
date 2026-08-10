@@ -269,7 +269,7 @@ public class PlaceService {
    *
    * <p><b>골격의 출처는 {@code solply.place-list.skeleton-source}로 셋 중 하나가 된다</b>
    * (snapshot / projection / entity, {@code PlaceListProperties} 참조). 어느 값이든 응답 body와
-   * 커서 토큰이 같아야 하며, 그것이 세 방식의 유일한 계약이다.
+   * 커서 토큰이 같아야 한다. 다르면 캐시가 아니라 버그다.
    */
   private PlaceFilterGetResponse listPlaces(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
@@ -346,8 +346,8 @@ public class PlaceService {
         : pageIds.stream().filter(id -> !snapshot.containsKey(id)).toList();
 
     // 미스가 없으면 이 쿼리를 아예 내지 않는 것이 이 작업의 전부다.
-    // ⚠️ 여기서 읽은 값을 스냅샷에 넣지 말 것 — 읽고 쓰고 버린다. 스냅샷이 "한 배치 회차의 사진"
-    // 이라는 성질이 계약이고, 미스를 채워 넣는 순간 회차와 요청 시점 값이 뒤섞여 그 성질이 깨진다.
+    // ⚠️ 여기서 읽은 값을 스냅샷에 넣지 말 것 — 읽고 쓰고 버린다. 스냅샷은 "한 배치 회차의
+    // 사진"이어야 하고, 미스를 채워 넣는 순간 회차와 요청 시점 값이 뒤섞여 그 성질이 깨진다.
     // 미스 경로는 활성 여부를 묻지 않으므로(findPlacesWithTagsByIds), 비활성화된 장소가 목록에
     // 남아 있는 창(≤1h)에서도 스냅샷이 못 담는 그 장소를 여기가 정확히 메운다.
     //

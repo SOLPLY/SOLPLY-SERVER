@@ -81,7 +81,7 @@ public class PlaceSkeletonLoader {
     private static final String PLACES_WITH_MAIN_TAG_SQL =
             PLACES_WITH_MAIN_TAG_SQL_TEMPLATE.formatted("p.active = 1");
 
-    /** {@link #loadByIds(List)}의 것 — {@code p.active} 조건이 없는 것이 계약이다. */
+    /** {@link #loadByIds(List)}의 것 — 일부러 {@code p.active} 조건을 걸지 않았다 (메서드 javadoc 참조). */
     private static final String PLACES_BY_IDS_SQL =
             PLACES_WITH_MAIN_TAG_SQL_TEMPLATE.formatted("p.id IN (:placeIds)");
 
@@ -107,7 +107,7 @@ public class PlaceSkeletonLoader {
     /**
      * 스냅샷을 통째로 다시 짓고 교체한다.
      *
-     * <p><b>로그가 이 메서드의 계약 중 하나다.</b> 나중에 배치 직후 CPU 스파이크가 문제가 됐을 때
+     * <p><b>아래 로그를 지우지 말 것.</b> 나중에 배치 직후 CPU 스파이크가 문제가 됐을 때
      * "몇 행을 몇 ms에 지었는가"가 남아 있지 않으면 원인을 이 경로로 좁힐 수 없다.
      *
      * <p>{@code @Transactional(readOnly = true)}인 이유는 두 문장이 <b>같은 스냅샷</b>을 보게 하기
@@ -132,7 +132,7 @@ public class PlaceSkeletonLoader {
      * 주어진 장소들의 골격만 지어 돌려준다 — 스냅샷에 담지 않고 호출자에게 넘긴다.
      * 두 쿼리와 조립을 {@link #rebuild()}와 공유하므로 값 동치가 구현 공유로 보장된다.
      *
-     * <p><b>⚠️ {@code p.active = 1}을 걸지 않는 것이 이 메서드의 계약이다.</b>
+     * <p><b>⚠️ 이 메서드는 {@code p.active = 1}을 일부러 걸지 않는다.</b>
      * {@link #rebuild()}는 활성 장소만 담고, 비활성화된 장소가 목록에 남아 있는 창(≤1h)에서는
      * 그 장소가 미스로 떨어져 활성 여부를 묻지 않는 {@code findPlacesWithTagsByIds}가 메운다.
      * 반면 이 메서드는 <b>그 미스 경로를 통째로 대신</b> 서므로, 여기서 활성만 거르면 그 창의
