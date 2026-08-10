@@ -438,7 +438,109 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         assertThat(latestIdsOf(rows)).containsExactly(placeB, placeA);
     }
 
+    // === 조인 순서 힌트 ===
+
+    /**
+     * 힌트는 계획만 바꾸고 결과는 못 바꾼다는 계약.
+     *
+     * <p>나머지 테스트는 전부 {@code regionFirstHint = false}로 부르므로, 힌트가 붙은 문장은
+     * 이 셋만 실제로 실행한다. 세 EXISTS가 모두 붙는 입력을 쓰는 것이 요점이다 — 옵션 그룹이
+     * 있어야 {@code QB_NAME} + {@code SEMIJOIN} 조각까지 SQL에 들어간다.
+     */
+    @Test
+    void 인기순은_힌트_부착_여부와_무관하게_같은_결과를_낸다() {
+        HintFixture fixture = givenCityScopeTagFixture();
+
+        List<PopularRow> plain = findPopularWithTags(fixture, false, null, null);
+        List<PopularRow> hinted = findPopularWithTags(fixture, true, null, null);
+
+        // 통과자가 두 동네에 걸쳐 셋 — 비어 있으면 두 결과가 공허하게 같아진다
+        assertThat(plain).hasSize(3);
+        assertThat(hinted).containsExactlyElementsOf(plain);
+    }
+
+    /** 힌트는 계획만 바꾸고 결과는 못 바꾼다는 계약 — 최신순은 강제 대상 테이블이 places다 */
+    @Test
+    void 최신순은_힌트_부착_여부와_무관하게_같은_결과를_낸다() {
+        HintFixture fixture = givenCityScopeTagFixture();
+
+        List<LatestRow> plain = findLatestWithTags(fixture, false, null, null);
+        List<LatestRow> hinted = findLatestWithTags(fixture, true, null, null);
+
+        assertThat(plain).hasSize(3);
+        assertThat(hinted).containsExactlyElementsOf(plain);
+    }
+
+    /**
+     * 힌트는 계획만 바꾸고 결과는 못 바꾼다는 계약 — 커서 페이지도 같다.
+     *
+     * <p>커서 술어는 힌트가 지목하는 주도 테이블에 걸리는 조건이라 조인 순서가 뒤집히면 평가
+     * 시점이 달라진다. 커서 + 힌트 조합은 캠페인이 계획을 재보지 않았으므로, 최소한 결과가
+     * 변하지 않는다는 것만은 여기서 못 박는다.
+     */
+    @Test
+    void 커서_페이지도_힌트_부착_여부와_무관하게_같은_결과를_낸다() {
+        HintFixture fixture = givenCityScopeTagFixture();
+
+        List<PopularRow> page1 = findPopularWithTags(fixture, false, null, null);
+        PopularRow boundary = page1.get(0);
+
+        List<PopularRow> plain =
+                findPopularWithTags(fixture, false, boundary.popularScore(), boundary.placeId());
+        List<PopularRow> hinted =
+                findPopularWithTags(fixture, true, boundary.popularScore(), boundary.placeId());
+
+        // 커서가 1위를 가리키므로 남는 것은 뒤의 둘이다 — 0건이면 단언이 공허해진다
+        assertThat(plain).hasSize(2);
+        assertThat(hinted).containsExactlyElementsOf(plain);
+    }
+
     // === helpers ===
+
+    /** 힌트 발동 조건(복수 동네 + 메인 태그 + 옵션 두 그룹)을 갖춘 픽스처의 좌표 */
+    private record HintFixture(List<Long> townIds, long mainTagId, long subA, long subB) {}
+
+    /**
+     * 시 단위 스코프 픽스처 — 힌트는 동네가 둘 이상일 때만 붙으므로 두 번째 동네를 여기서 만든다.
+     * 다른 테스트는 {@code List.of(townId)}로만 조회하므로 이 동네가 그쪽 단언에 섞이지 않는다.
+     */
+    private HintFixture givenCityScopeTagFixture() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E", BASE.plusMinutes(1), otherTownId);
+        long placeF = createPlace("db모드F", BASE.plusMinutes(2), otherTownId);
+
+        long mainTagId = createMainTag("db모드메인힌트");
+        long subA = createSubTag("db모드서브A힌트", "OPTION1", mainTagId);
+        long subB = createSubTag("db모드서브B힌트", "OPTION2", mainTagId);
+
+        linkTags(placeA, mainTagId, subA, subB);   // 통과
+        linkTags(placeB, mainTagId, subA, subB);   // 통과
+        linkTags(placeC, mainTagId, subA);         // 서브B 불일치 → 탈락
+        linkTags(placeE, mainTagId, subA, subB);   // 두 번째 동네의 통과자
+        linkTags(placeF, mainTagId, subB);         // 서브A 불일치 → 탈락
+
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 6.0, 0);
+        insertStats(placeC, townId, 8.0, 0);
+        insertStats(placeE, otherTownId, 5.0, 0);
+        insertStats(placeF, otherTownId, 9.0, 0);
+
+        return new HintFixture(List.of(townId, otherTownId), mainTagId, subA, subB);
+    }
+
+    private List<PopularRow> findPopularWithTags(
+            HintFixture fixture, boolean regionFirstHint, Double cursorScore, Long cursorPlaceId) {
+        return repository.findPopularRows(
+                fixture.townIds(), fixture.mainTagId(), List.of(fixture.subA()),
+                List.of(fixture.subB()), regionFirstHint, cursorScore, cursorPlaceId, NO_LIMIT);
+    }
+
+    private List<LatestRow> findLatestWithTags(
+            HintFixture fixture, boolean regionFirstHint, Long cursorSecond, Long cursorPlaceId) {
+        return repository.findLatestRows(
+                fixture.townIds(), fixture.mainTagId(), List.of(fixture.subA()),
+                List.of(fixture.subB()), regionFirstHint, cursorSecond, cursorPlaceId, NO_LIMIT);
+    }
 
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {
         return repository.findPopularRows(
@@ -512,12 +614,16 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     /** created_by는 DEFAULT 1 — V2 시드의 admin 유저(id=1)라 FK가 성립한다 (PlaceListFlowIT와 동일) */
     private long createPlace(String name, LocalDateTime createdAt) {
+        return createPlace(name, createdAt, townId);
+    }
+
+    private long createPlace(String name, LocalDateTime createdAt, long placeTownId) {
         em.createNativeQuery("""
                 INSERT INTO places (name, introduction, town_id, active, created_at)
                 VALUES (:name, 'db모드IT', :townId, true, :createdAt)
                 """)
                 .setParameter("name", name)
-                .setParameter("townId", townId)
+                .setParameter("townId", placeTownId)
                 .setParameter("createdAt", createdAt)
                 .executeUpdate();
         return ((Number) em.createNativeQuery("SELECT MAX(id) FROM places").getSingleResult())
