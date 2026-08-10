@@ -1,0 +1,49 @@
+################################################################
+# 그룹 a · latest · city · size1146 · natural
+# 채취: 2026-08-11 00:16:06
+################################################################
+--- SQL ---
+SELECT  p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 9007)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (actual time=1.6..1.61 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=1.6..1.6 rows=11 loops=1)
+        -> Stream results  (cost=638 rows=340) (actual time=0.105..1.56 rows=326 loops=1)
+            -> Nested loop left join  (cost=638 rows=340) (actual time=0.101..1.5 rows=326 loops=1)
+                -> Nested loop inner join  (cost=519 rows=340) (actual time=0.0978..1.27 rows=326 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9007)  (cost=118 rows=1146) (actual time=0.0232..0.167 rows=1146 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=858e-6..876e-6 rows=0.284 loops=1146)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=692e-6..713e-6 rows=1 loops=1146)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=600e-6..620e-6 rows=1 loops=326)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (actual time=1.49..1.49 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=1.49..1.49 rows=11 loops=1)
+        -> Stream results  (cost=638 rows=340) (actual time=0.103..1.46 rows=326 loops=1)
+            -> Nested loop left join  (cost=638 rows=340) (actual time=0.0979..1.4 rows=326 loops=1)
+                -> Nested loop inner join  (cost=519 rows=340) (actual time=0.0944..1.18 rows=326 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9007)  (cost=118 rows=1146) (actual time=0.022..0.159 rows=1146 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=793e-6..809e-6 rows=0.284 loops=1146)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=629e-6..649e-6 rows=1 loops=1146)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=552e-6..572e-6 rows=1 loops=326)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (actual time=1.58..1.58 rows=11 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=1.58..1.58 rows=11 loops=1)
+        -> Stream results  (cost=638 rows=340) (actual time=0.12..1.54 rows=326 loops=1)
+            -> Nested loop left join  (cost=638 rows=340) (actual time=0.115..1.48 rows=326 loops=1)
+                -> Nested loop inner join  (cost=519 rows=340) (actual time=0.111..1.25 rows=326 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9007)  (cost=118 rows=1146) (actual time=0.0238..0.166 rows=1146 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=0.25 rows=0.297) (actual time=833e-6..865e-6 rows=0.284 loops=1146)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=676e-6..711e-6 rows=1 loops=1146)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=582e-6..604e-6 rows=1 loops=326)
