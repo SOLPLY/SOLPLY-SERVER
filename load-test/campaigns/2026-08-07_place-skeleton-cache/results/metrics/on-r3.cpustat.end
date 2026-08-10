@@ -1,0 +1,45 @@
+== solply-bench-app
+cpu.max: 200000 100000
+usage_usec 862045233
+user_usec 699719830
+system_usec 162325402
+nr_periods 10654
+nr_throttled 570
+throttled_usec 126925376
+nr_bursts 0
+burst_usec 0
+memory.current: 659730432
+memory.peak: 664121344
+memory.max: 2147483648
+restart_count: 0
+nano_cpus: 2000000000
+== solply-bench-mysql
+cpu.max: 200000 100000
+usage_usec 3788602010
+user_usec 2932895073
+system_usec 855706937
+nr_periods 1132332
+nr_throttled 244
+throttled_usec 54910000
+nr_bursts 0
+burst_usec 0
+memory.current: 1937981440
+memory.peak: 1941385216
+memory.max: 3221225472
+restart_count: 0
+nano_cpus: 2000000000
+== solply-bench-lb
+cpu.max: max 100000
+usage_usec 293688615
+user_usec 82801982
+system_usec 210886633
+nr_periods 0
+nr_throttled 0
+throttled_usec 0
+nr_bursts 0
+burst_usec 0
+memory.current: 57241600
+memory.peak: 172150784
+memory.max: max
+restart_count: 0
+nano_cpus: 0

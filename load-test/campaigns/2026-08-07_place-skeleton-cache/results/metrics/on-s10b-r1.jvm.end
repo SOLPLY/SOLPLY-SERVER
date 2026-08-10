@@ -1,0 +1,617 @@
+# HELP application_ready_time_seconds Time taken for the application to be ready to service requests
+# TYPE application_ready_time_seconds gauge
+application_ready_time_seconds{application="solply-app",main_application_class="org.sopt.solply_server.SolplyServerApplication"} 8.303
+# HELP application_started_time_seconds Time taken to start the application
+# TYPE application_started_time_seconds gauge
+application_started_time_seconds{application="solply-app",main_application_class="org.sopt.solply_server.SolplyServerApplication"} 8.119
+# HELP disk_free_bytes Usable space for path
+# TYPE disk_free_bytes gauge
+disk_free_bytes{application="solply-app",path="/solply/."} 6.35437056E9
+# HELP disk_total_bytes Total space for path
+# TYPE disk_total_bytes gauge
+disk_total_bytes{application="solply-app",path="/solply/."} 6.2671097856E10
+# HELP executor_active_threads The approximate number of threads that are actively executing tasks
+# TYPE executor_active_threads gauge
+executor_active_threads{application="solply-app",name="applicationTaskExecutor"} 0.0
+executor_active_threads{application="solply-app",name="taskScheduler"} 0.0
+# HELP executor_completed_tasks_total The approximate total number of tasks that have completed execution
+# TYPE executor_completed_tasks_total counter
+executor_completed_tasks_total{application="solply-app",name="applicationTaskExecutor"} 0.0
+executor_completed_tasks_total{application="solply-app",name="taskScheduler"} 1.0
+# HELP executor_pool_core_threads The core number of threads for the pool
+# TYPE executor_pool_core_threads gauge
+executor_pool_core_threads{application="solply-app",name="applicationTaskExecutor"} 8.0
+executor_pool_core_threads{application="solply-app",name="taskScheduler"} 1.0
+# HELP executor_pool_max_threads The maximum allowed number of threads in the pool
+# TYPE executor_pool_max_threads gauge
+executor_pool_max_threads{application="solply-app",name="applicationTaskExecutor"} 2.147483647E9
+executor_pool_max_threads{application="solply-app",name="taskScheduler"} 2.147483647E9
+# HELP executor_pool_size_threads The current number of threads in the pool
+# TYPE executor_pool_size_threads gauge
+executor_pool_size_threads{application="solply-app",name="applicationTaskExecutor"} 0.0
+executor_pool_size_threads{application="solply-app",name="taskScheduler"} 1.0
+# HELP executor_queue_remaining_tasks The number of additional elements that this queue can ideally accept without blocking
+# TYPE executor_queue_remaining_tasks gauge
+executor_queue_remaining_tasks{application="solply-app",name="applicationTaskExecutor"} 2.147483647E9
+executor_queue_remaining_tasks{application="solply-app",name="taskScheduler"} 2.147483647E9
+# HELP executor_queued_tasks The approximate number of tasks that are queued for execution
+# TYPE executor_queued_tasks gauge
+executor_queued_tasks{application="solply-app",name="applicationTaskExecutor"} 0.0
+executor_queued_tasks{application="solply-app",name="taskScheduler"} 4.0
+# HELP hikaricp_connections Total connections
+# TYPE hikaricp_connections gauge
+hikaricp_connections{application="solply-app",pool="HikariPool-1"} 10.0
+# HELP hikaricp_connections_acquire_seconds Connection acquire time
+# TYPE hikaricp_connections_acquire_seconds summary
+hikaricp_connections_acquire_seconds_count{application="solply-app",pool="HikariPool-1"} 203656
+hikaricp_connections_acquire_seconds_sum{application="solply-app",pool="HikariPool-1"} 4405.902328562
+# HELP hikaricp_connections_acquire_seconds_max Connection acquire time
+# TYPE hikaricp_connections_acquire_seconds_max gauge
+hikaricp_connections_acquire_seconds_max{application="solply-app",pool="HikariPool-1"} 1.072561667
+# HELP hikaricp_connections_active Active connections
+# TYPE hikaricp_connections_active gauge
+hikaricp_connections_active{application="solply-app",pool="HikariPool-1"} 0.0
+# HELP hikaricp_connections_creation_seconds Connection creation time
+# TYPE hikaricp_connections_creation_seconds summary
+hikaricp_connections_creation_seconds_count{application="solply-app",pool="HikariPool-1"} 10
+hikaricp_connections_creation_seconds_sum{application="solply-app",pool="HikariPool-1"} 0.503
+# HELP hikaricp_connections_creation_seconds_max Connection creation time
+# TYPE hikaricp_connections_creation_seconds_max gauge
+hikaricp_connections_creation_seconds_max{application="solply-app",pool="HikariPool-1"} 0.196
+# HELP hikaricp_connections_idle Idle connections
+# TYPE hikaricp_connections_idle gauge
+hikaricp_connections_idle{application="solply-app",pool="HikariPool-1"} 10.0
+# HELP hikaricp_connections_max Max connections
+# TYPE hikaricp_connections_max gauge
+hikaricp_connections_max{application="solply-app",pool="HikariPool-1"} 10.0
+# HELP hikaricp_connections_min Min connections
+# TYPE hikaricp_connections_min gauge
+hikaricp_connections_min{application="solply-app",pool="HikariPool-1"} 10.0
+# HELP hikaricp_connections_pending Pending threads
+# TYPE hikaricp_connections_pending gauge
+hikaricp_connections_pending{application="solply-app",pool="HikariPool-1"} 0.0
+# HELP hikaricp_connections_timeout_total Connection timeout total count
+# TYPE hikaricp_connections_timeout_total counter
+hikaricp_connections_timeout_total{application="solply-app",pool="HikariPool-1"} 0.0
+# HELP hikaricp_connections_usage_seconds Connection usage time
+# TYPE hikaricp_connections_usage_seconds summary
+hikaricp_connections_usage_seconds_count{application="solply-app",pool="HikariPool-1"} 203656
+hikaricp_connections_usage_seconds_sum{application="solply-app",pool="HikariPool-1"} 1871.116
+# HELP hikaricp_connections_usage_seconds_max Connection usage time
+# TYPE hikaricp_connections_usage_seconds_max gauge
+hikaricp_connections_usage_seconds_max{application="solply-app",pool="HikariPool-1"} 0.567
+# HELP http_server_requests_active_seconds  
+# TYPE http_server_requests_active_seconds histogram
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="120.0"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="137.438953471"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="160.345445716"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="183.251937961"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="206.158430206"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="229.064922451"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="251.971414696"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="274.877906944"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="366.503875925"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="458.129844906"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="549.755813887"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="641.381782868"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="733.007751849"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="824.63372083"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="916.259689811"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="1007.885658792"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="1099.511627776"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="1466.015503701"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="1832.519379626"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="2199.023255551"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="2565.527131476"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="2932.031007401"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="3298.534883326"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="3665.038759251"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="4031.542635176"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="4398.046511104"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="5864.062014805"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="7200.0"} 1
+http_server_requests_active_seconds_bucket{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="+Inf"} 1
+# HELP http_server_requests_active_seconds_gcount  
+# TYPE http_server_requests_active_seconds_gcount gauge
+http_server_requests_active_seconds_gcount{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN"} 1
+# HELP http_server_requests_active_seconds_gsum  
+# TYPE http_server_requests_active_seconds_gsum gauge
+http_server_requests_active_seconds_gsum{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN"} 0.00340525
+# HELP http_server_requests_active_seconds_max  
+# TYPE http_server_requests_active_seconds_max gauge
+http_server_requests_active_seconds_max{application="solply-app",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN"} 0.003407625
+# HELP http_server_requests_seconds  
+# TYPE http_server_requests_seconds histogram
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.001"} 0
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.001048576"} 0
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.001398101"} 0
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.001747626"} 0
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.002097151"} 0
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.002446676"} 6
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.002796201"} 37
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.003145726"} 83
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.003495251"} 135
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.003844776"} 169
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.004194304"} 205
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.005592405"} 259
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.006990506"} 289
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.008388607"} 315
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.009786708"} 341
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.011184809"} 382
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.01258291"} 400
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.013981011"} 409
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.015379112"} 412
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.016777216"} 417
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.022369621"} 429
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.027962026"} 432
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.033554431"} 434
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.039146836"} 434
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.044739241"} 434
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.050331646"} 434
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.055924051"} 435
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.061516456"} 435
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.067108864"} 436
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.089478485"} 455
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.111848106"} 472
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.134217727"} 474
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.156587348"} 474
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.178956969"} 476
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.20132659"} 479
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.223696211"} 480
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.246065832"} 480
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.268435456"} 480
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.357913941"} 483
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.447392426"} 484
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.536870911"} 485
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.626349396"} 485
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.715827881"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.805306366"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.894784851"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="0.984263336"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="1.073741824"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="1.431655765"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="1.789569706"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="2.147483647"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="2.505397588"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="2.863311529"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="3.22122547"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="3.579139411"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="3.937053352"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="4.294967296"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="5.726623061"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="7.158278826"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="8.589934591"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="10.021590356"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="11.453246121"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="12.884901886"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="14.316557651"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="15.748213416"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="17.179869184"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="22.906492245"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="28.633115306"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="30.0"} 486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus",le="+Inf"} 486
+http_server_requests_seconds_count{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus"} 486
+http_server_requests_seconds_sum{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus"} 9.933800256
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.001"} 5
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.001048576"} 13
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.001398101"} 325
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.001747626"} 2019
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.002097151"} 6247
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.002446676"} 14358
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.002796201"} 25665
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.003145726"} 39404
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.003495251"} 53777
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.003844776"} 66963
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.004194304"} 78195
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.005592405"} 103486
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.006990506"} 112838
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.008388607"} 117882
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.009786708"} 121412
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.011184809"} 124169
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.01258291"} 126342
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.013981011"} 128159
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.015379112"} 129724
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.016777216"} 131182
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.022369621"} 136264
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.027962026"} 139511
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.033554431"} 141116
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.039146836"} 141828
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.044739241"} 142083
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.050331646"} 142187
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.055924051"} 142464
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.061516456"} 143167
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.067108864"} 144697
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.089478485"} 160471
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.111848106"} 180717
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.134217727"} 185977
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.156587348"} 186311
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.178956969"} 189404
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.20132659"} 195633
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.223696211"} 198475
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.246065832"} 198761
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.268435456"} 198980
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.357913941"} 201779
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.447392426"} 202811
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.536870911"} 203204
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.626349396"} 203395
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.715827881"} 203494
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.805306366"} 203553
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.894784851"} 203572
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="0.984263336"} 203589
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="1.073741824"} 203596
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="1.431655765"} 203604
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="1.789569706"} 203606
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="2.147483647"} 203613
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="2.505397588"} 203635
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="2.863311529"} 203645
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="3.22122547"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="3.579139411"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="3.937053352"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="4.294967296"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="5.726623061"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="7.158278826"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="8.589934591"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="10.021590356"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="11.453246121"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="12.884901886"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="14.316557651"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="15.748213416"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="17.179869184"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="22.906492245"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="28.633115306"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="30.0"} 203652
+http_server_requests_seconds_bucket{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places",le="+Inf"} 203652
+http_server_requests_seconds_count{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places"} 203652
+http_server_requests_seconds_sum{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places"} 9240.364352366
+# HELP http_server_requests_seconds_max  
+# TYPE http_server_requests_seconds_max gauge
+http_server_requests_seconds_max{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/actuator/prometheus"} 0.197611208
+http_server_requests_seconds_max{application="solply-app",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/places"} 1.083166667
+# HELP jdbc_connections_active Current number of active connections that have been allocated from the data source.
+# TYPE jdbc_connections_active gauge
+jdbc_connections_active{application="solply-app",name="dataSource"} 0.0
+# HELP jdbc_connections_idle Number of established but idle connections.
+# TYPE jdbc_connections_idle gauge
+jdbc_connections_idle{application="solply-app",name="dataSource"} 10.0
+# HELP jdbc_connections_max Maximum number of active connections that can be allocated at the same time.
+# TYPE jdbc_connections_max gauge
+jdbc_connections_max{application="solply-app",name="dataSource"} 10.0
+# HELP jdbc_connections_min Minimum number of idle connections in the pool.
+# TYPE jdbc_connections_min gauge
+jdbc_connections_min{application="solply-app",name="dataSource"} 10.0
+# HELP jvm_info JVM version info
+# TYPE jvm_info gauge
+jvm_info{application="solply-app",runtime="OpenJDK Runtime Environment",vendor="Eclipse Adoptium",version="21.0.11+10-LTS"} 1
+# HELP jvm_buffer_count_buffers An estimate of the number of buffers in the pool
+# TYPE jvm_buffer_count_buffers gauge
+jvm_buffer_count_buffers{application="solply-app",id="direct"} 54.0
+jvm_buffer_count_buffers{application="solply-app",id="mapped"} 0.0
+jvm_buffer_count_buffers{application="solply-app",id="mapped - 'non-volatile memory'"} 0.0
+# HELP jvm_buffer_memory_used_bytes An estimate of the memory that the Java virtual machine is using for this buffer pool
+# TYPE jvm_buffer_memory_used_bytes gauge
+jvm_buffer_memory_used_bytes{application="solply-app",id="direct"} 421050.0
+jvm_buffer_memory_used_bytes{application="solply-app",id="mapped"} 0.0
+jvm_buffer_memory_used_bytes{application="solply-app",id="mapped - 'non-volatile memory'"} 0.0
+# HELP jvm_buffer_total_capacity_bytes An estimate of the total capacity of the buffers in this pool
+# TYPE jvm_buffer_total_capacity_bytes gauge
+jvm_buffer_total_capacity_bytes{application="solply-app",id="direct"} 421050.0
+jvm_buffer_total_capacity_bytes{application="solply-app",id="mapped"} 0.0
+jvm_buffer_total_capacity_bytes{application="solply-app",id="mapped - 'non-volatile memory'"} 0.0
+# HELP jvm_classes_loaded_classes The number of classes that are currently loaded in the Java virtual machine
+# TYPE jvm_classes_loaded_classes gauge
+jvm_classes_loaded_classes{application="solply-app"} 25702.0
+# HELP jvm_classes_unloaded_classes_total The total number of classes unloaded since the Java virtual machine has started execution
+# TYPE jvm_classes_unloaded_classes_total counter
+jvm_classes_unloaded_classes_total{application="solply-app"} 59.0
+# HELP jvm_compilation_time_ms_total The approximate accumulated elapsed time spent in compilation
+# TYPE jvm_compilation_time_ms_total counter
+jvm_compilation_time_ms_total{application="solply-app",compiler="HotSpot 64-Bit Tiered Compilers"} 68878.0
+# HELP jvm_gc_concurrent_phase_time_seconds Time spent in concurrent phase
+# TYPE jvm_gc_concurrent_phase_time_seconds summary
+jvm_gc_concurrent_phase_time_seconds_count{action="end of concurrent GC pause",application="solply-app",cause="No GC",gc="G1 Concurrent GC"} 116
+jvm_gc_concurrent_phase_time_seconds_sum{action="end of concurrent GC pause",application="solply-app",cause="No GC",gc="G1 Concurrent GC"} 0.965
+# HELP jvm_gc_concurrent_phase_time_seconds_max Time spent in concurrent phase
+# TYPE jvm_gc_concurrent_phase_time_seconds_max gauge
+jvm_gc_concurrent_phase_time_seconds_max{action="end of concurrent GC pause",application="solply-app",cause="No GC",gc="G1 Concurrent GC"} 0.0
+# HELP jvm_gc_live_data_size_bytes Size of long-lived heap memory pool after reclamation
+# TYPE jvm_gc_live_data_size_bytes gauge
+jvm_gc_live_data_size_bytes{application="solply-app"} 1.65151608E8
+# HELP jvm_gc_max_data_size_bytes Max size of long-lived heap memory pool
+# TYPE jvm_gc_max_data_size_bytes gauge
+jvm_gc_max_data_size_bytes{application="solply-app"} 1.34217728E9
+# HELP jvm_gc_memory_allocated_bytes_total Incremented for an increase in the size of the (young) heap memory pool after one GC to before the next
+# TYPE jvm_gc_memory_allocated_bytes_total counter
+jvm_gc_memory_allocated_bytes_total{application="solply-app"} 1.5034587532E11
+# HELP jvm_gc_memory_promoted_bytes_total Count of positive increases in the size of the old generation memory pool before GC to after GC
+# TYPE jvm_gc_memory_promoted_bytes_total counter
+jvm_gc_memory_promoted_bytes_total{application="solply-app"} 2.21154504E8
+# HELP jvm_gc_overhead An approximation of the percent of CPU time used by GC activities over the last lookback period or since monitoring began, whichever is shorter, in the range [0..1]
+# TYPE jvm_gc_overhead gauge
+jvm_gc_overhead{application="solply-app"} 0.00766
+# HELP jvm_gc_pause_seconds Time spent in GC pause
+# TYPE jvm_gc_pause_seconds summary
+jvm_gc_pause_seconds_count{action="end of minor GC",application="solply-app",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 660
+jvm_gc_pause_seconds_sum{action="end of minor GC",application="solply-app",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 6.07
+jvm_gc_pause_seconds_count{action="end of minor GC",application="solply-app",cause="GCLocker Initiated GC",gc="G1 Young Generation"} 2
+jvm_gc_pause_seconds_sum{action="end of minor GC",application="solply-app",cause="GCLocker Initiated GC",gc="G1 Young Generation"} 0.038
+# HELP jvm_gc_pause_seconds_max Time spent in GC pause
+# TYPE jvm_gc_pause_seconds_max gauge
+jvm_gc_pause_seconds_max{action="end of minor GC",application="solply-app",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 0.11
+jvm_gc_pause_seconds_max{action="end of minor GC",application="solply-app",cause="GCLocker Initiated GC",gc="G1 Young Generation"} 0.009
+# HELP jvm_memory_committed_bytes The amount of memory in bytes that is committed for the Java virtual machine to use
+# TYPE jvm_memory_committed_bytes gauge
+jvm_memory_committed_bytes{application="solply-app",area="heap",id="G1 Eden Space"} 3.70147328E8
+jvm_memory_committed_bytes{application="solply-app",area="heap",id="G1 Old Gen"} 2.26492416E8
+jvm_memory_committed_bytes{application="solply-app",area="heap",id="G1 Survivor Space"} 1.6777216E7
+jvm_memory_committed_bytes{application="solply-app",area="nonheap",id="CodeHeap 'non-nmethods'"} 2555904.0
+jvm_memory_committed_bytes{application="solply-app",area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 2.0119552E7
+jvm_memory_committed_bytes{application="solply-app",area="nonheap",id="CodeHeap 'profiled nmethods'"} 4.0894464E7
+jvm_memory_committed_bytes{application="solply-app",area="nonheap",id="Compressed Class Space"} 1.8481152E7
+jvm_memory_committed_bytes{application="solply-app",area="nonheap",id="Metaspace"} 1.37887744E8
+# HELP jvm_memory_max_bytes The maximum amount of memory in bytes that can be used for memory management
+# TYPE jvm_memory_max_bytes gauge
+jvm_memory_max_bytes{application="solply-app",area="heap",id="G1 Eden Space"} -1.0
+jvm_memory_max_bytes{application="solply-app",area="heap",id="G1 Old Gen"} 1.34217728E9
+jvm_memory_max_bytes{application="solply-app",area="heap",id="G1 Survivor Space"} -1.0
+jvm_memory_max_bytes{application="solply-app",area="nonheap",id="CodeHeap 'non-nmethods'"} 5828608.0
+jvm_memory_max_bytes{application="solply-app",area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.22916864E8
+jvm_memory_max_bytes{application="solply-app",area="nonheap",id="CodeHeap 'profiled nmethods'"} 1.22912768E8
+jvm_memory_max_bytes{application="solply-app",area="nonheap",id="Compressed Class Space"} 2.18103808E8
+jvm_memory_max_bytes{application="solply-app",area="nonheap",id="Metaspace"} 2.68435456E8
+# HELP jvm_memory_usage_after_gc The percentage of long-lived heap pool used after the last GC event, in the range [0..1]
+# TYPE jvm_memory_usage_after_gc gauge
+jvm_memory_usage_after_gc{application="solply-app",area="heap",pool="long-lived"} 0.15290696024894715
+# HELP jvm_memory_used_bytes The amount of used memory
+# TYPE jvm_memory_used_bytes gauge
+jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Eden Space"} 1.8874368E8
+jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Old Gen"} 2.05228248E8
+jvm_memory_used_bytes{application="solply-app",area="heap",id="G1 Survivor Space"} 1.6252928E7
+jvm_memory_used_bytes{application="solply-app",area="nonheap",id="CodeHeap 'non-nmethods'"} 1729536.0
+jvm_memory_used_bytes{application="solply-app",area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 2.009792E7
+jvm_memory_used_bytes{application="solply-app",area="nonheap",id="CodeHeap 'profiled nmethods'"} 1.5883392E7
+jvm_memory_used_bytes{application="solply-app",area="nonheap",id="Compressed Class Space"} 1.780892E7
+jvm_memory_used_bytes{application="solply-app",area="nonheap",id="Metaspace"} 1.3654472E8
+# HELP jvm_threads_daemon_threads The current number of live daemon threads
+# TYPE jvm_threads_daemon_threads gauge
+jvm_threads_daemon_threads{application="solply-app"} 68.0
+# HELP jvm_threads_live_threads The current number of live threads including both daemon and non-daemon threads
+# TYPE jvm_threads_live_threads gauge
+jvm_threads_live_threads{application="solply-app"} 73.0
+# HELP jvm_threads_peak_threads The peak live thread count since the Java virtual machine started or peak was reset
+# TYPE jvm_threads_peak_threads gauge
+jvm_threads_peak_threads{application="solply-app"} 74.0
+# HELP jvm_threads_started_threads_total The total number of application threads started in the JVM
+# TYPE jvm_threads_started_threads_total counter
+jvm_threads_started_threads_total{application="solply-app"} 89.0
+# HELP jvm_threads_states_threads The current number of threads
+# TYPE jvm_threads_states_threads gauge
+jvm_threads_states_threads{application="solply-app",state="blocked"} 0.0
+jvm_threads_states_threads{application="solply-app",state="new"} 0.0
+jvm_threads_states_threads{application="solply-app",state="runnable"} 8.0
+jvm_threads_states_threads{application="solply-app",state="terminated"} 0.0
+jvm_threads_states_threads{application="solply-app",state="timed-waiting"} 62.0
+jvm_threads_states_threads{application="solply-app",state="waiting"} 3.0
+# HELP logback_events_total Number of log events that were enabled by the effective log level
+# TYPE logback_events_total counter
+logback_events_total{application="solply-app",level="debug"} 0.0
+logback_events_total{application="solply-app",level="error"} 0.0
+logback_events_total{application="solply-app",level="info"} 11.0
+logback_events_total{application="solply-app",level="trace"} 0.0
+logback_events_total{application="solply-app",level="warn"} 0.0
+# HELP process_cpu_time_ns_total The "cpu time" used by the Java Virtual Machine process
+# TYPE process_cpu_time_ns_total counter
+process_cpu_time_ns_total{application="solply-app"} 6.4274E11
+# HELP process_cpu_usage The "recent cpu usage" for the Java Virtual Machine process
+# TYPE process_cpu_usage gauge
+process_cpu_usage{application="solply-app"} 0.014285714285714285
+# HELP process_files_max_files The maximum file descriptor count
+# TYPE process_files_max_files gauge
+process_files_max_files{application="solply-app"} 1048576.0
+# HELP process_files_open_files The open file descriptor count
+# TYPE process_files_open_files gauge
+process_files_open_files{application="solply-app"} 729.0
+# HELP process_start_time_seconds Start time of the process since unix epoch.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds{application="solply-app"} 1.786128794329E9
+# HELP process_uptime_seconds The uptime of the Java virtual machine
+# TYPE process_uptime_seconds gauge
+process_uptime_seconds{application="solply-app"} 614.877
+# HELP spring_data_repository_invocations_seconds Duration of repository invocations
+# TYPE spring_data_repository_invocations_seconds summary
+spring_data_repository_invocations_seconds_count{application="solply-app",exception="None",method="count",repository="PlaceStatsRepository",state="SUCCESS"} 1
+spring_data_repository_invocations_seconds_sum{application="solply-app",exception="None",method="count",repository="PlaceStatsRepository",state="SUCCESS"} 0.028798291
+spring_data_repository_invocations_seconds_count{application="solply-app",exception="None",method="existsByScoreCalculatedAtNotNull",repository="PlaceStatsRepository",state="SUCCESS"} 1
+spring_data_repository_invocations_seconds_sum{application="solply-app",exception="None",method="existsByScoreCalculatedAtNotNull",repository="PlaceStatsRepository",state="SUCCESS"} 0.0591655
+spring_data_repository_invocations_seconds_count{application="solply-app",exception="None",method="findAllByIdInWithParentAndActiveTrue",repository="TagRepository",state="SUCCESS"} 100940
+spring_data_repository_invocations_seconds_sum{application="solply-app",exception="None",method="findAllByIdInWithParentAndActiveTrue",repository="TagRepository",state="SUCCESS"} 136.913063115
+spring_data_repository_invocations_seconds_count{application="solply-app",exception="None",method="findBookmarkedTargetIdsByTargetIds",repository="BookmarkRepository",state="SUCCESS"} 203652
+spring_data_repository_invocations_seconds_sum{application="solply-app",exception="None",method="findBookmarkedTargetIdsByTargetIds",repository="BookmarkRepository",state="SUCCESS"} 356.475855325
+spring_data_repository_invocations_seconds_count{application="solply-app",exception="None",method="findByIdWithParentAndActiveTrue",repository="TagRepository",state="SUCCESS"} 100940
+spring_data_repository_invocations_seconds_sum{application="solply-app",exception="None",method="findByIdWithParentAndActiveTrue",repository="TagRepository",state="SUCCESS"} 112.578921455
+spring_data_repository_invocations_seconds_count{application="solply-app",exception="None",method="findCourseIdsByStatusIn",repository="CourseSearchDocumentRepository",state="SUCCESS"} 1
+spring_data_repository_invocations_seconds_sum{application="solply-app",exception="None",method="findCourseIdsByStatusIn",repository="CourseSearchDocumentRepository",state="SUCCESS"} 0.157254417
+spring_data_repository_invocations_seconds_count{application="solply-app",exception="None",method="findSelfAndActiveChildIds",repository="TownRepository",state="SUCCESS"} 203652
+spring_data_repository_invocations_seconds_sum{application="solply-app",exception="None",method="findSelfAndActiveChildIds",repository="TownRepository",state="SUCCESS"} 209.8323397
+# HELP spring_data_repository_invocations_seconds_max Duration of repository invocations
+# TYPE spring_data_repository_invocations_seconds_max gauge
+spring_data_repository_invocations_seconds_max{application="solply-app",exception="None",method="count",repository="PlaceStatsRepository",state="SUCCESS"} 0.0
+spring_data_repository_invocations_seconds_max{application="solply-app",exception="None",method="existsByScoreCalculatedAtNotNull",repository="PlaceStatsRepository",state="SUCCESS"} 0.0
+spring_data_repository_invocations_seconds_max{application="solply-app",exception="None",method="findAllByIdInWithParentAndActiveTrue",repository="TagRepository",state="SUCCESS"} 0.1995215
+spring_data_repository_invocations_seconds_max{application="solply-app",exception="None",method="findBookmarkedTargetIdsByTargetIds",repository="BookmarkRepository",state="SUCCESS"} 0.305799125
+spring_data_repository_invocations_seconds_max{application="solply-app",exception="None",method="findByIdWithParentAndActiveTrue",repository="TagRepository",state="SUCCESS"} 0.273995541
+spring_data_repository_invocations_seconds_max{application="solply-app",exception="None",method="findCourseIdsByStatusIn",repository="CourseSearchDocumentRepository",state="SUCCESS"} 0.0
+spring_data_repository_invocations_seconds_max{application="solply-app",exception="None",method="findSelfAndActiveChildIds",repository="TownRepository",state="SUCCESS"} 0.243897167
+# HELP spring_security_authorizations_active_seconds  
+# TYPE spring_security_authorizations_active_seconds summary
+spring_security_authorizations_active_seconds_count{application="solply-app",spring_security_authentication_type="n/a",spring_security_authorization_decision="unknown",spring_security_object="request"} 0
+spring_security_authorizations_active_seconds_sum{application="solply-app",spring_security_authentication_type="n/a",spring_security_authorization_decision="unknown",spring_security_object="request"} 0.0
+# HELP spring_security_authorizations_active_seconds_max  
+# TYPE spring_security_authorizations_active_seconds_max gauge
+spring_security_authorizations_active_seconds_max{application="solply-app",spring_security_authentication_type="n/a",spring_security_authorization_decision="unknown",spring_security_object="request"} 0.0
+# HELP spring_security_authorizations_seconds  
+# TYPE spring_security_authorizations_seconds summary
+spring_security_authorizations_seconds_count{application="solply-app",error="none",spring_security_authentication_type="n/a",spring_security_authorization_decision="true",spring_security_object="request"} 204139
+spring_security_authorizations_seconds_sum{application="solply-app",error="none",spring_security_authentication_type="n/a",spring_security_authorization_decision="true",spring_security_object="request"} 7.93557969
+# HELP spring_security_authorizations_seconds_max  
+# TYPE spring_security_authorizations_seconds_max gauge
+spring_security_authorizations_seconds_max{application="solply-app",error="none",spring_security_authentication_type="n/a",spring_security_authorization_decision="true",spring_security_object="request"} 0.080332708
+# HELP spring_security_filterchains_JwtAuthenticationFilter_after_total  
+# TYPE spring_security_filterchains_JwtAuthenticationFilter_after_total counter
+spring_security_filterchains_JwtAuthenticationFilter_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 203652.0
+# HELP spring_security_filterchains_JwtAuthenticationFilter_before_total  
+# TYPE spring_security_filterchains_JwtAuthenticationFilter_before_total counter
+spring_security_filterchains_JwtAuthenticationFilter_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 203652.0
+# HELP spring_security_filterchains_access_exceptions_after_total  
+# TYPE spring_security_filterchains_access_exceptions_after_total counter
+spring_security_filterchains_access_exceptions_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_access_exceptions_before_total  
+# TYPE spring_security_filterchains_access_exceptions_before_total counter
+spring_security_filterchains_access_exceptions_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_active_seconds  
+# TYPE spring_security_filterchains_active_seconds summary
+spring_security_filterchains_active_seconds_count{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 0
+spring_security_filterchains_active_seconds_sum{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 0.0
+spring_security_filterchains_active_seconds_count{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 0
+spring_security_filterchains_active_seconds_sum{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 0.0
+# HELP spring_security_filterchains_active_seconds_max  
+# TYPE spring_security_filterchains_active_seconds_max gauge
+spring_security_filterchains_active_seconds_max{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 0.0
+spring_security_filterchains_active_seconds_max{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 0.0
+# HELP spring_security_filterchains_authentication_anonymous_after_total  
+# TYPE spring_security_filterchains_authentication_anonymous_after_total counter
+spring_security_filterchains_authentication_anonymous_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_authentication_anonymous_before_total  
+# TYPE spring_security_filterchains_authentication_anonymous_before_total counter
+spring_security_filterchains_authentication_anonymous_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_authorization_after_total  
+# TYPE spring_security_filterchains_authorization_after_total counter
+spring_security_filterchains_authorization_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_authorization_before_total  
+# TYPE spring_security_filterchains_authorization_before_total counter
+spring_security_filterchains_authorization_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_context_async_after_total  
+# TYPE spring_security_filterchains_context_async_after_total counter
+spring_security_filterchains_context_async_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_context_async_before_total  
+# TYPE spring_security_filterchains_context_async_before_total counter
+spring_security_filterchains_context_async_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_context_holder_after_total  
+# TYPE spring_security_filterchains_context_holder_after_total counter
+spring_security_filterchains_context_holder_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_context_holder_before_total  
+# TYPE spring_security_filterchains_context_holder_before_total counter
+spring_security_filterchains_context_holder_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_context_servlet_after_total  
+# TYPE spring_security_filterchains_context_servlet_after_total counter
+spring_security_filterchains_context_servlet_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_context_servlet_before_total  
+# TYPE spring_security_filterchains_context_servlet_before_total counter
+spring_security_filterchains_context_servlet_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_cors_after_total  
+# TYPE spring_security_filterchains_cors_after_total counter
+spring_security_filterchains_cors_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 203652.0
+# HELP spring_security_filterchains_cors_before_total  
+# TYPE spring_security_filterchains_cors_before_total counter
+spring_security_filterchains_cors_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 203652.0
+# HELP spring_security_filterchains_header_after_total  
+# TYPE spring_security_filterchains_header_after_total counter
+spring_security_filterchains_header_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_header_before_total  
+# TYPE spring_security_filterchains_header_before_total counter
+spring_security_filterchains_header_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_logout_after_total  
+# TYPE spring_security_filterchains_logout_after_total counter
+spring_security_filterchains_logout_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_logout_before_total  
+# TYPE spring_security_filterchains_logout_before_total counter
+spring_security_filterchains_logout_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_requestcache_after_total  
+# TYPE spring_security_filterchains_requestcache_after_total counter
+spring_security_filterchains_requestcache_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_requestcache_before_total  
+# TYPE spring_security_filterchains_requestcache_before_total counter
+spring_security_filterchains_requestcache_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_seconds  
+# TYPE spring_security_filterchains_seconds summary
+spring_security_filterchains_seconds_count{application="solply-app",error="none",security_security_reached_filter_section="after",spring_security_filterchain_position="11",spring_security_filterchain_size="11",spring_security_reached_filter_name="DisableEncodeUrlFilter"} 486
+spring_security_filterchains_seconds_sum{application="solply-app",error="none",security_security_reached_filter_section="after",spring_security_filterchain_position="11",spring_security_filterchain_size="11",spring_security_reached_filter_name="DisableEncodeUrlFilter"} 0.012494114
+spring_security_filterchains_seconds_count{application="solply-app",error="none",security_security_reached_filter_section="after",spring_security_filterchain_position="13",spring_security_filterchain_size="13",spring_security_reached_filter_name="DisableEncodeUrlFilter"} 203652
+spring_security_filterchains_seconds_sum{application="solply-app",error="none",security_security_reached_filter_section="after",spring_security_filterchain_position="13",spring_security_filterchain_size="13",spring_security_reached_filter_name="DisableEncodeUrlFilter"} 15.847669613
+spring_security_filterchains_seconds_count{application="solply-app",error="none",security_security_reached_filter_section="before",spring_security_filterchain_position="11",spring_security_filterchain_size="11",spring_security_reached_filter_name="AuthorizationFilter"} 487
+spring_security_filterchains_seconds_sum{application="solply-app",error="none",security_security_reached_filter_section="before",spring_security_filterchain_position="11",spring_security_filterchain_size="11",spring_security_reached_filter_name="AuthorizationFilter"} 0.261572662
+spring_security_filterchains_seconds_count{application="solply-app",error="none",security_security_reached_filter_section="before",spring_security_filterchain_position="13",spring_security_filterchain_size="13",spring_security_reached_filter_name="AuthorizationFilter"} 203652
+spring_security_filterchains_seconds_sum{application="solply-app",error="none",security_security_reached_filter_section="before",spring_security_filterchain_position="13",spring_security_filterchain_size="13",spring_security_reached_filter_name="AuthorizationFilter"} 2450.964587371
+# HELP spring_security_filterchains_seconds_max  
+# TYPE spring_security_filterchains_seconds_max gauge
+spring_security_filterchains_seconds_max{application="solply-app",error="none",security_security_reached_filter_section="after",spring_security_filterchain_position="11",spring_security_filterchain_size="11",spring_security_reached_filter_name="DisableEncodeUrlFilter"} 1.2575E-4
+spring_security_filterchains_seconds_max{application="solply-app",error="none",security_security_reached_filter_section="after",spring_security_filterchain_position="13",spring_security_filterchain_size="13",spring_security_reached_filter_name="DisableEncodeUrlFilter"} 0.084297709
+spring_security_filterchains_seconds_max{application="solply-app",error="none",security_security_reached_filter_section="before",spring_security_filterchain_position="11",spring_security_filterchain_size="11",spring_security_reached_filter_name="AuthorizationFilter"} 0.068663041
+spring_security_filterchains_seconds_max{application="solply-app",error="none",security_security_reached_filter_section="before",spring_security_filterchain_position="13",spring_security_filterchain_size="13",spring_security_reached_filter_name="AuthorizationFilter"} 0.727837208
+# HELP spring_security_filterchains_session_management_after_total  
+# TYPE spring_security_filterchains_session_management_after_total counter
+spring_security_filterchains_session_management_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_session_management_before_total  
+# TYPE spring_security_filterchains_session_management_before_total counter
+spring_security_filterchains_session_management_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_filterchains_session_urlencoding_after_total  
+# TYPE spring_security_filterchains_session_urlencoding_after_total counter
+spring_security_filterchains_session_urlencoding_after_total{application="solply-app",security_security_reached_filter_section="after",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204138.0
+# HELP spring_security_filterchains_session_urlencoding_before_total  
+# TYPE spring_security_filterchains_session_urlencoding_before_total counter
+spring_security_filterchains_session_urlencoding_before_total{application="solply-app",security_security_reached_filter_section="before",spring_security_filterchain_position="0",spring_security_filterchain_size="0",spring_security_reached_filter_name="none"} 204139.0
+# HELP spring_security_http_secured_requests_active_seconds  
+# TYPE spring_security_http_secured_requests_active_seconds summary
+spring_security_http_secured_requests_active_seconds_count{application="solply-app"} 1
+spring_security_http_secured_requests_active_seconds_sum{application="solply-app"} 0.003308083
+# HELP spring_security_http_secured_requests_active_seconds_max  
+# TYPE spring_security_http_secured_requests_active_seconds_max gauge
+spring_security_http_secured_requests_active_seconds_max{application="solply-app"} 0.003308958
+# HELP spring_security_http_secured_requests_seconds  
+# TYPE spring_security_http_secured_requests_seconds summary
+spring_security_http_secured_requests_seconds_count{application="solply-app",error="none"} 204138
+spring_security_http_secured_requests_seconds_sum{application="solply-app",error="none"} 6730.541276697
+# HELP spring_security_http_secured_requests_seconds_max  
+# TYPE spring_security_http_secured_requests_seconds_max gauge
+spring_security_http_secured_requests_seconds_max{application="solply-app",error="none"} 1.081766876
+# HELP system_cpu_count The number of processors available to the Java virtual machine
+# TYPE system_cpu_count gauge
+system_cpu_count{application="solply-app"} 2.0
+# HELP system_cpu_usage The "recent cpu usage" of the system the application is running in
+# TYPE system_cpu_usage gauge
+system_cpu_usage{application="solply-app"} 0.028697857142857143
+# HELP system_load_average_1m The sum of the number of runnable entities queued to available processors and the number of runnable entities running on the available processors averaged over a period of time
+# TYPE system_load_average_1m gauge
+system_load_average_1m{application="solply-app"} 12.62646484375
+# HELP tasks_scheduled_execution_active_seconds  
+# TYPE tasks_scheduled_execution_active_seconds summary
+tasks_scheduled_execution_active_seconds_count{application="solply-app",code_function="reembedStaleDocuments",code_namespace="org.sopt.solply_server.domain.course.service.facade.CourseEmbeddingFacade",exception="none",outcome="UNKNOWN"} 0
+tasks_scheduled_execution_active_seconds_sum{application="solply-app",code_function="reembedStaleDocuments",code_namespace="org.sopt.solply_server.domain.course.service.facade.CourseEmbeddingFacade",exception="none",outcome="UNKNOWN"} 0.0
+# HELP tasks_scheduled_execution_active_seconds_max  
+# TYPE tasks_scheduled_execution_active_seconds_max gauge
+tasks_scheduled_execution_active_seconds_max{application="solply-app",code_function="reembedStaleDocuments",code_namespace="org.sopt.solply_server.domain.course.service.facade.CourseEmbeddingFacade",exception="none",outcome="UNKNOWN"} 0.0
+# HELP tasks_scheduled_execution_seconds  
+# TYPE tasks_scheduled_execution_seconds summary
+tasks_scheduled_execution_seconds_count{application="solply-app",code_function="reembedStaleDocuments",code_namespace="org.sopt.solply_server.domain.course.service.facade.CourseEmbeddingFacade",error="none",exception="none",outcome="SUCCESS"} 1
+tasks_scheduled_execution_seconds_sum{application="solply-app",code_function="reembedStaleDocuments",code_namespace="org.sopt.solply_server.domain.course.service.facade.CourseEmbeddingFacade",error="none",exception="none",outcome="SUCCESS"} 0.169103125
+# HELP tasks_scheduled_execution_seconds_max  
+# TYPE tasks_scheduled_execution_seconds_max gauge
+tasks_scheduled_execution_seconds_max{application="solply-app",code_function="reembedStaleDocuments",code_namespace="org.sopt.solply_server.domain.course.service.facade.CourseEmbeddingFacade",error="none",exception="none",outcome="SUCCESS"} 0.0
+# HELP tomcat_sessions_active_current_sessions  
+# TYPE tomcat_sessions_active_current_sessions gauge
+tomcat_sessions_active_current_sessions{application="solply-app"} 0.0
+# HELP tomcat_sessions_active_max_sessions  
+# TYPE tomcat_sessions_active_max_sessions gauge
+tomcat_sessions_active_max_sessions{application="solply-app"} 0.0
+# HELP tomcat_sessions_alive_max_seconds  
+# TYPE tomcat_sessions_alive_max_seconds gauge
+tomcat_sessions_alive_max_seconds{application="solply-app"} 0.0
+# HELP tomcat_sessions_created_sessions_total  
+# TYPE tomcat_sessions_created_sessions_total counter
+tomcat_sessions_created_sessions_total{application="solply-app"} 0.0
+# HELP tomcat_sessions_expired_sessions_total  
+# TYPE tomcat_sessions_expired_sessions_total counter
+tomcat_sessions_expired_sessions_total{application="solply-app"} 0.0
+# HELP tomcat_sessions_rejected_sessions_total  
+# TYPE tomcat_sessions_rejected_sessions_total counter
+tomcat_sessions_rejected_sessions_total{application="solply-app"} 0.0

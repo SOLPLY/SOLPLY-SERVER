@@ -11,6 +11,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeleton;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonSnapshot;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceLatestReviewDto;
@@ -66,6 +70,10 @@ public class PlaceService {
   private final PlaceReviewRepository placeReviewRepository;
   private final PlaceListDbQueryRepository placeListDbQueryRepository;
   private final PlaceStatsRepository placeStatsRepository;
+  private final PlaceSkeletonSnapshot placeSkeletonSnapshot;
+  /** {@code skeleton-source=projection}에서만 쓴다 — 스냅샷 로더의 산출식을 요청 시점에 돌린다 */
+  private final PlaceSkeletonLoader placeSkeletonLoader;
+  private final PlaceListProperties placeListProperties;
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -252,6 +260,16 @@ public class PlaceService {
    * 새벽 1회로 내리면서 그 창이 트래픽 최저 시각의 수 초로 줄어 세대를 걷어냈다. 남은 지문은
    * 배치 주기와 무관한 구멍을 막는다 — 커서를 다른 필터 요청에 쓰면 요청한 적 없는 페이지가
    * 200으로 나가던 것. 코덱 계약과 세대 제거 근거는 {@code PlaceListCursor} 참조.
+   *
+   * <p><b>장소 골격은 스냅샷에서 읽는다 (2026-08-07).</b> 응답의 네 필드(이름·썸네일 URL·대표
+   * 태그·동네 id)는 장소마다 변하지 않는 값인데 매 요청 다시 읽고 엔티티로 하이드레이션되고
+   * 있었다. {@code PlaceSkeletonSnapshot}이 그것을 카운트 배치 주기로 미리 지어 두고, 여기서는
+   * 히트한 id의 엔티티 조회를 통째로 건너뛴다. <b>스냅샷에 없는 id만</b> 기존 쿼리로 읽으며
+   * 그 값은 <b>스냅샷에 넣지 않는다</b> — 근거는 {@code PlaceSkeletonSnapshot} javadoc.
+   *
+   * <p><b>골격의 출처는 {@code solply.place-list.skeleton-source}로 셋 중 하나가 된다</b>
+   * (snapshot / projection / entity, {@code PlaceListProperties} 참조). 어느 값이든 응답 body와
+   * 커서 토큰이 같아야 한다. 다르면 캐시가 아니라 버그다.
    */
   private PlaceFilterGetResponse listPlaces(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
@@ -313,11 +331,33 @@ public class PlaceService {
     }
 
     List<Long> pageIds = rows.stream().map(DbListRow::placeId).toList();
+
+    // 장소 골격(이름·썸네일 URL·대표 태그·동네)은 장소마다 변하지 않는 값이라 스냅샷에서 읽는다.
+    // ENTITY면 빈 Map이 들어와 아래가 전량 미스로 흐른다 — 분기가 하나뿐인 것이 의도다.
+    // PROJECTION은 미스 경로를 대신 서는 방식이라 missed는 실존하지 않는 id뿐이고, 비면 쿼리가
+    // 나가지 않는다 (loadByIds가 p.active를 묻지 않는 이유가 여기 있다).
+    Map<Long, PlaceSkeleton> snapshot = switch (placeListProperties.getSkeletonSource()) {
+      case SNAPSHOT -> placeSkeletonSnapshot.current();
+      case PROJECTION -> placeSkeletonLoader.loadByIds(pageIds);
+      case ENTITY -> Map.of();
+    };
+    List<Long> missed = snapshot.isEmpty()
+        ? pageIds
+        : pageIds.stream().filter(id -> !snapshot.containsKey(id)).toList();
+
+    // 미스가 없으면 이 쿼리를 아예 내지 않는 것이 이 작업의 전부다.
+    // ⚠️ 여기서 읽은 값을 스냅샷에 넣지 말 것 — 읽고 쓰고 버린다. 스냅샷은 "한 배치 회차의
+    // 사진"이어야 하고, 미스를 채워 넣는 순간 회차와 요청 시점 값이 뒤섞여 그 성질이 깨진다.
+    // 미스 경로는 활성 여부를 묻지 않으므로(findPlacesWithTagsByIds), 비활성화된 장소가 목록에
+    // 남아 있는 창(≤1h)에서도 스냅샷이 못 담는 그 장소를 여기가 정확히 메운다.
+    //
     // 병합 함수 (a, b) -> a 는 방어다. 컬렉션 페치 조인은 태그 수만큼 루트를 펼치고, 그 중복을
     // 지우는 주체는 SQL DISTINCT가 아니라 하이버네이트의 루트 중복 제거다(6부터 항상 켜짐).
     // 그 동작에 의존하지 않고 여기서 닫아 둔다 — 같은 id면 같은 인스턴스라 어느 쪽을 남겨도 같다.
-    Map<Long, Place> placesById = placeRepository.findPlacesWithTagsByIds(pageIds).stream()
-        .collect(Collectors.toMap(Place::getId, Function.identity(), (a, b) -> a));
+    Map<Long, Place> placesById = missed.isEmpty()
+        ? Map.of()
+        : placeRepository.findPlacesWithTagsByIds(missed).stream()
+            .collect(Collectors.toMap(Place::getId, Function.identity(), (a, b) -> a));
     Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
 
     // 표시 카운트는 row가 실어 온 place_stats 값 그대로다 — 응답을 만들면서 더하거나 빼지 않는다.
@@ -328,13 +368,29 @@ public class PlaceService {
     // 되살리지 말 것 — PlaceServiceStatsWiringTest가 그 회귀를 감시한다.
     List<PlacePreviewDto> previews = rows.stream()
         .map(row -> {
+          boolean bookmarked = bookmarkStatus.getOrDefault(row.placeId(), false);
+          PlaceSkeleton skeleton = snapshot.get(row.placeId());
+          if (skeleton != null) {
+            return PlacePreviewDto.of(
+                skeleton.id(),
+                skeleton.name(),
+                skeleton.imageUrl(),
+                skeleton.mainTagName(),
+                bookmarked,
+                skeleton.townId(),
+                row.bookmarkCount(),
+                row.reviewCount(),
+                row.avgRating());
+          }
+          // 스냅샷과 이 분기가 같은 값을 내야 한다 — 규칙이 갈리면 캐시 on/off에서 응답이 달라진다.
+          // 골격 필드 넷의 산출식이 PlaceSkeletonLoader와 한 쌍이다.
           Place p = placesById.get(row.placeId());
           return PlacePreviewDto.of(
               p.getId(),
               p.getName(),
               imageUrlProvider.getImageUrl(p.getThumbnailFileKey()),
               TagViewUtils.getActiveNameOrNull(p.getMainTag().orElse(null)),
-              bookmarkStatus.getOrDefault(p.getId(), false),
+              bookmarked,
               p.getTown().getId(),
               row.bookmarkCount(),
               row.reviewCount(),
@@ -373,6 +429,12 @@ public class PlaceService {
    * ({@code AND p.active = true})이 이미 하고 있다. 아래 {@code filter(Place::isActive)}는
    * 그 계약이 조용히 바뀌었을 때를 대비한 이중 가드다 — 캐시 시절 이 책임은 스냅샷 로더에 있었고,
    * 로더가 사라지므로 이 경로가 스스로 지킨다는 것을 코드에 남긴다.
+   *
+   * <p><b>골격 스냅샷을 태우지 않는다 (2026-08-07 판단).</b> 이 경로는 {@code PlaceTagMatcher}로
+   * 태그를 거르는데 그 필터는 장소가 가진 <b>모든 태그의 id·타입·활성</b>을 본다. 골격이 담는 것은
+   * 대표 태그 <em>이름</em> 하나뿐이라 여기서는 쓸 수 없고, 쓰려면 태그 집합을 통째로 실어야 하는데
+   * 그러면 "장소당 불변 5필드"라는 골격의 정의가 무너진다. 페이징이 없어 id 목록의 상한이 페이지
+   * 크기가 아니라 사용자의 북마크 수라는 것도 성격이 다르다. 목록 경로만 바꾼다.
    */
   private PlaceFilterGetResponse bookmarkSearchResponse(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {

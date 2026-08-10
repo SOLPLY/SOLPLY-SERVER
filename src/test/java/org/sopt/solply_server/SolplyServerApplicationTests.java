@@ -1,6 +1,7 @@
 package org.sopt.solply_server;
 
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,6 +39,16 @@ class SolplyServerApplicationTests {
 	 */
 	@MockBean
 	PlaceStatsBatchProcessor placeStatsBatchProcessor;
+
+	/**
+	 * 같은 이유로 골격 스냅샷 로더도 목으로 세운다. {@code PlaceSkeletonWarmup}은
+	 * {@code ApplicationRunner}라 기동 <b>중에</b> 동기로 도는데, 테이블 없는 H2에서는 실패하고
+	 * 백오프 재시도를 끝까지 소진한다 — 실측으로 이 테스트 하나에 25초가 붙고 ERROR 스택트레이스가
+	 * 6줄 찍혔다. 재시도 자체는 운영에서 필요한 동작이므로({@code PlaceSkeletonWarmup} javadoc)
+	 * 프로퍼티로 끄지 않고 여기서만 의존을 끊는다.
+	 */
+	@MockBean
+	PlaceSkeletonLoader placeSkeletonLoader;
 
 	@Test
 	void contextLoads() {

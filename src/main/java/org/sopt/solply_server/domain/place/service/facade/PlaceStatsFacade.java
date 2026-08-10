@@ -6,6 +6,9 @@ import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -14,6 +17,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * {@code place_stats} 집계 배치의 진입점. 정기 스케줄 <b>둘</b>과 부팅 시 최초 적재를 연다.
+ *
+ * <p>카운트 회차에는 {@code PlaceSkeletonSnapshot} 교체가 딸려 있다 — 장소 골격의 낡음 상한을
+ * 이 회차의 간격에 맞추는 것이 그 훅의 전부다. 근거는 {@link #rebuildPlaceSkeletonSnapshot()}.
  *
  * <p><b>주기를 가른 이유는 두 값의 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>
@@ -79,6 +85,8 @@ import org.springframework.stereotype.Component;
 public class PlaceStatsFacade {
 
     private final PlaceStatsBatchProcessor batchProcessor;
+    private final PlaceSkeletonLoader placeSkeletonLoader;
+    private final PlaceListProperties placeListProperties;
 
     /**
      * 표시 카운트 회차 — 매시 30분 (KST).
@@ -116,6 +124,40 @@ public class PlaceStatsFacade {
         } catch (Exception e) {
             // 전량 재계산이라 다음 회차가 전부 복원한다. 스케줄러 스레드로 예외를 흘리지 않는다.
             log.error("인기순 카운트 배치 실패 - calculatedAt={}", calculatedAt, e);
+            return;
+        }
+        rebuildPlaceSkeletonSnapshot();
+    }
+
+    /**
+     * 장소 골격 스냅샷 교체 — <b>카운트 회차에만</b> 건다.
+     *
+     * <p>스냅샷이 담는 것(이름·썸네일·메인 태그·동네)의 낡음 상한을 카운트 배치 간격(≤1h)에
+     * 맞추는 것이 이 훅의 전부다. 그 창은 {@code PlaceListDbQueryRepository}가 이미 명시한
+     * town_id 비정규화·비활성화 노출 창과 <b>같은 값</b>이라, 여기서 새로 감수하는 낡음은 없다.
+     * 그래서 어드민 경로에 무효화 코드를 넣지 않는다.
+     *
+     * <p><b>점수 회차(매일 01:00)에는 걸지 않는다.</b> 점수는 정렬 축이고 스냅샷이 담는 값과
+     * 아무 관계가 없다 — 거기에 걸면 하루 한 번 이유 없는 전량 재빌드가 늘 뿐이다.
+     *
+     * <p><b>Processor가 아니라 여기서 부르는 이유.</b> {@code recalculateCounts}는 자기
+     * 트랜잭션(READ_COMMITTED)의 경계 그 자체다. 그 안에서 스냅샷을 지으면 (a) 카운트 배치의
+     * 트랜잭션이 빌드 시간만큼 길어지고, (b) 아직 커밋되지 않은 상태를 재료로 삼게 된다.
+     * 여기는 커밋 <b>이후</b>이고 트랜잭션 밖이다.
+     *
+     * <p>try/catch가 카운트 배치의 것과 갈려 있는 것도 의도다 — 스냅샷 빌드가 죽었다고
+     * 카운트 배치가 실패로 기록되면 로그가 거짓말을 한다. 빌드가 실패하면 직전 회차의 사진이
+     * 그대로 남고, 그 사이 바뀐 장소는 미스가 아니라 <b>낡은 값</b>으로 보인다는 점이 기동 실패와
+     * 다르다. 창은 다음 회차까지 최대 1시간이다.
+     */
+    private void rebuildPlaceSkeletonSnapshot() {
+        if (placeListProperties.getSkeletonSource() != SkeletonSource.SNAPSHOT) {
+            return;
+        }
+        try {
+            placeSkeletonLoader.rebuild();
+        } catch (Exception e) {
+            log.error("장소 골격 스냅샷 교체 실패 - 직전 회차 스냅샷을 유지한다", e);
         }
     }
 

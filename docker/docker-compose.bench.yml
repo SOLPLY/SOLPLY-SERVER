@@ -68,7 +68,8 @@ services:
       LOGGING_LEVEL_P6SPY: "OFF"
       LOGGING_LEVEL_ORG_FLYWAYDB: "WARN"
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_JDBC_CORE: "WARN"
-      # v0 벤치 시: BENCH_APP_JSON='{"solply.place-list.popular-read-mode":"db"}' docker compose ... up -d
+      # 모드 전환 예: BENCH_APP_JSON='{"solply.place-list.skeleton-source":"projection"}' docker compose ... up -d
+      # (snapshot / projection / entity — 옛 popular-read-mode 키는 캐시 철거와 함께 사라졌다)
       SPRING_APPLICATION_JSON: ${BENCH_APP_JSON:-{}}
     cpus: 2
     mem_limit: 2g
