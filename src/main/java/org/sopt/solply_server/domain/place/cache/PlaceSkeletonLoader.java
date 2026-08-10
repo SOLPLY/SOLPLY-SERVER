@@ -136,7 +136,7 @@ public class PlaceSkeletonLoader {
      * {@link #rebuild()}는 활성 장소만 담고, 비활성화된 장소가 목록에 남아 있는 창(≤1h)에서는
      * 그 장소가 미스로 떨어져 활성 여부를 묻지 않는 {@code findPlacesWithTagsByIds}가 메운다.
      * 반면 이 메서드는 <b>그 미스 경로를 통째로 대신</b> 서므로, 여기서 활성만 거르면 그 창의
-     * 응답에 구멍이 나고 모드 간 응답이 갈린다.
+     * 응답에 구멍이 나고 방식 간 응답이 갈린다.
      *
      * <p>트랜잭션 어노테이션을 달지 않는다 — 호출자({@code PlaceService#listPlaces})가 이미
      * {@code @Transactional(readOnly = true)} 안이다. "두 문장이 같은 스냅샷을 본다"는

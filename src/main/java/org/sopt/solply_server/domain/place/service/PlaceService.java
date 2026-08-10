@@ -269,7 +269,7 @@ public class PlaceService {
    *
    * <p><b>골격의 출처는 {@code solply.place-list.skeleton-source}로 셋 중 하나가 된다</b>
    * (snapshot / projection / entity, {@code PlaceListProperties} 참조). 어느 값이든 응답 body와
-   * 커서 토큰이 같아야 하며, 그것이 세 모드의 유일한 계약이다.
+   * 커서 토큰이 같아야 하며, 그것이 세 방식의 유일한 계약이다.
    */
   private PlaceFilterGetResponse listPlaces(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
@@ -334,7 +334,7 @@ public class PlaceService {
 
     // 장소 골격(이름·썸네일 URL·대표 태그·동네)은 장소마다 변하지 않는 값이라 스냅샷에서 읽는다.
     // ENTITY면 빈 Map이 들어와 아래가 전량 미스로 흐른다 — 분기가 하나뿐인 것이 의도다.
-    // PROJECTION은 미스 경로를 대신 서는 모드라 missed는 실존하지 않는 id뿐이고, 비면 쿼리가
+    // PROJECTION은 미스 경로를 대신 서는 방식이라 missed는 실존하지 않는 id뿐이고, 비면 쿼리가
     // 나가지 않는다 (loadByIds가 p.active를 묻지 않는 이유가 여기 있다).
     Map<Long, PlaceSkeleton> snapshot = switch (placeListProperties.getSkeletonSource()) {
       case SNAPSHOT -> placeSkeletonSnapshot.current();
