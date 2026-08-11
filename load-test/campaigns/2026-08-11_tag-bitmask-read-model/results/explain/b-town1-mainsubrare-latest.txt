@@ -1,0 +1,29 @@
+################################################################
+# B · latest · town1 · mainsubrare · p1
+# towns: 301
+# 채취: 2026-08-11 18:32:43
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.created_at, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+
+  AND (ps.tag_bitmask & 4) != 0
+  AND (ps.tag_bitmask & 2097152) != 0
+ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.0406..0.0692 rows=6 loops=1)
+    -> Filter: (((ps.tag_bitmask & 4) <> 0) and ((ps.tag_bitmask & 2097152) <> 0))  (cost=11.5 rows=100) (actual time=0.0403..0.0685 rows=6 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0341..0.0586 rows=100 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.0356..0.0631 rows=6 loops=1)
+    -> Filter: (((ps.tag_bitmask & 4) <> 0) and ((ps.tag_bitmask & 2097152) <> 0))  (cost=11.5 rows=100) (actual time=0.0351..0.0623 rows=6 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0305..0.0542 rows=100 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.03..0.049 rows=6 loops=1)
+    -> Filter: (((ps.tag_bitmask & 4) <> 0) and ((ps.tag_bitmask & 2097152) <> 0))  (cost=11.5 rows=100) (actual time=0.0298..0.0485 rows=6 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0259..0.0425 rows=100 loops=1)

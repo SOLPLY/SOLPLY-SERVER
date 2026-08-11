@@ -1,0 +1,69 @@
+================================================================
+# A 형상 채취: 2026-08-11 18:02:50 KST
+# 컨테이너: solply-bench-mysql / DB: solply_bench_db / MySQL: 8.0.46
+# 지역: town1=(301) town4=(301,302,303,304) city18=(301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+# 시간 = EXPLAIN ANALYZE 최상위 노드 actual time 끝값, 워밍업 1회 후 3회 중앙값
+# 이 스크립트는 DDL도 ANALYZE도 하지 않는다 — 마이그레이션 전 스키마 그대로다
+================================================================
++---------------------+---------------+
+| COLUMN_NAME         | COLUMN_TYPE   |
++---------------------+---------------+
+| place_id            | bigint        |
+| town_id             | bigint        |
+| popular_score       | decimal(18,6) |
+| bookmark_count      | int           |
+| review_count        | int           |
+| avg_rating          | decimal(3,2)  |
+| count_calculated_at | datetime(6)   |
+| score_calculated_at | datetime(6)   |
++---------------------+---------------+
++----------------------------------+--------------+---------------------+
+| INDEX_NAME                       | SEQ_IN_INDEX | COLUMN_NAME         |
++----------------------------------+--------------+---------------------+
+| idx_place_stats_town_score       |            1 | town_id             |
+| idx_place_stats_town_score       |            2 | popular_score       |
+| idx_place_stats_town_score       |            3 | place_id            |
+| idx_place_stats_town_score       |            4 | bookmark_count      |
+| idx_place_stats_town_score       |            5 | review_count        |
+| idx_place_stats_town_score       |            6 | avg_rating          |
+| idx_place_stats_town_score       |            7 | score_calculated_at |
+| PRIMARY                          |            1 | place_id            |
+| idx_place_tag_place_id           |            1 | place_id            |
+| idx_place_tag_tag_place          |            1 | tag_id              |
+| idx_place_tag_tag_place          |            2 | place_id            |
+| PRIMARY                          |            1 | id                  |
+| uk_place_tag_place_tag           |            1 | place_id            |
+| uk_place_tag_place_tag           |            2 | tag_id              |
+| ft_places_name                   |            1 | name                |
+| idx_places_created_by_created_at |            1 | created_by          |
+| idx_places_created_by_created_at |            2 | created_at          |
+| idx_places_town_active_created   |            1 | town_id             |
+| idx_places_town_active_created   |            2 | active              |
+| idx_places_town_active_created   |            3 | created_at          |
+| PRIMARY                          |            1 | id                  |
++----------------------------------+--------------+---------------------+
++---------------+---------+--------+----------------+-----------+
+| active_places | ps_rows | scored | place_tag_rows | tags_rows |
++---------------+---------+--------+----------------+-----------+
+|          6320 |    6320 |   6320 |          15481 |        36 |
++---------------+---------+--------+----------------+-----------+
++----+--------------------+---------+--------+
+| id | name               | type    | linked |
++----+--------------------+---------+--------+
+|  1 | 카페               | MAIN    |   1146 |
+|  2 | 음식               | MAIN    |   1094 |
+|  5 | 이색공간           | MAIN    |    985 |
+|  7 | 커피/디저트        | OPTION1 |    455 |
+|  8 | 작업               | OPTION1 |    424 |
+|  9 | 독서               | OPTION1 |    425 |
+| 10 | 힐링               | OPTION1 |    452 |
+| 11 | 시그니처메뉴       | OPTION2 |    308 |
+| 12 | 감성인테리어       | OPTION2 |    287 |
+| 13 | 채광좋음           | OPTION2 |    297 |
+| 14 | 콘센트많음         | OPTION2 |    291 |
+| 15 | 시간제한없음       | OPTION2 |    308 |
+| 16 | 바테이블           | OPTION2 |    312 |
+| 21 | 바/술집            | OPTION1 |    185 |
+| 40 | 합성메인0020       | MAIN    |     20 |
+| 41 | 합성메인0000       | MAIN    |      0 |
++----+--------------------+---------+--------+

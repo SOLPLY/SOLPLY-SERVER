@@ -1,0 +1,30 @@
+################################################################
+# B · latest · town4 · notag · p1
+# towns: 301,302,303,304
+# 채취: 2026-08-11 18:32:45
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.created_at, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304)
+
+ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=83.2 rows=11) (actual time=0.142..0.143 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=83.2 rows=400) (actual time=0.142..0.142 rows=11 loops=1)
+        -> Filter: (ps.town_id in (301,302,303,304))  (cost=83.2 rows=400) (actual time=0.0194..0.103 rows=400 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=83.2 rows=400) (actual time=0.0182..0.0861 rows=400 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=83.2 rows=11) (actual time=0.147..0.148 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=83.2 rows=400) (actual time=0.147..0.147 rows=11 loops=1)
+        -> Filter: (ps.town_id in (301,302,303,304))  (cost=83.2 rows=400) (actual time=0.0202..0.102 rows=400 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=83.2 rows=400) (actual time=0.019..0.0821 rows=400 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=83.2 rows=11) (actual time=0.155..0.156 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=83.2 rows=400) (actual time=0.155..0.155 rows=11 loops=1)
+        -> Filter: (ps.town_id in (301,302,303,304))  (cost=83.2 rows=400) (actual time=0.0205..0.113 rows=400 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=83.2 rows=400) (actual time=0.0193..0.0936 rows=400 loops=1)

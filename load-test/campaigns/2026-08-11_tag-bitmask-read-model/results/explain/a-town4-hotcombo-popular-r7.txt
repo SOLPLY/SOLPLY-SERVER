@@ -1,0 +1,123 @@
+################################################################
+# A 재채취 7회 · popular · town4 · hotcombo · p1
+# 채취: 2026-08-11 18:04:28
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304)
+  AND ps.score_calculated_at IS NOT NULL
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 1)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=326 rows=11) (actual time=0.19..0.29 rows=11 loops=1)
+    -> Nested loop inner join  (cost=326 rows=27.8) (actual time=0.189..0.29 rows=11 loops=1)
+        -> Nested loop inner join  (cost=211 rows=400) (actual time=0.185..0.25 rows=16 loops=1)
+            -> Sort: ps.popular_score DESC, ps.place_id  (cost=80.9 rows=400) (actual time=0.175..0.179 rows=84 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304)) and (ps.score_calculated_at is not null))  (cost=80.9 rows=400) (actual time=0.0214..0.11 rows=400 loops=1)
+                    -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=80.9 rows=400) (actual time=0.02..0.0864 rows=400 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.25 rows=1) (actual time=765e-6..770e-6 rows=0.19 loops=84)
+        -> Limit: 1 row(s)  (cost=90.5 rows=0.0695) (actual time=0.00233..0.00234 rows=0.688 loops=16)
+            -> Nested loop inner join  (cost=90.5 rows=0.0695) (actual time=0.00227..0.00227 rows=0.688 loops=16)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0653 rows=0.26) (actual time=872e-6..948e-6 rows=1.19 loops=16)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0653 rows=2.33) (actual time=659e-6..763e-6 rows=2.19 loops=16)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.067 rows=0.267) (actual time=967e-6..967e-6 rows=0.579 loops=19)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.067 rows=2.33) (actual time=601e-6..807e-6 rows=3.26 loops=19)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=326 rows=11) (actual time=0.176..0.273 rows=11 loops=1)
+    -> Nested loop inner join  (cost=326 rows=27.8) (actual time=0.176..0.273 rows=11 loops=1)
+        -> Nested loop inner join  (cost=211 rows=400) (actual time=0.171..0.236 rows=16 loops=1)
+            -> Sort: ps.popular_score DESC, ps.place_id  (cost=80.9 rows=400) (actual time=0.158..0.162 rows=84 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304)) and (ps.score_calculated_at is not null))  (cost=80.9 rows=400) (actual time=0.0217..0.103 rows=400 loops=1)
+                    -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=80.9 rows=400) (actual time=0.0202..0.0815 rows=400 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.25 rows=1) (actual time=803e-6..807e-6 rows=0.19 loops=84)
+        -> Limit: 1 row(s)  (cost=90.5 rows=0.0695) (actual time=0.00218..0.00219 rows=0.688 loops=16)
+            -> Nested loop inner join  (cost=90.5 rows=0.0695) (actual time=0.00211..0.00211 rows=0.688 loops=16)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0653 rows=0.26) (actual time=818e-6..888e-6 rows=1.19 loops=16)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0653 rows=2.33) (actual time=628e-6..734e-6 rows=2.19 loops=16)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.067 rows=0.267) (actual time=901e-6..901e-6 rows=0.579 loops=19)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.067 rows=2.33) (actual time=566e-6..743e-6 rows=3.26 loops=19)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=326 rows=11) (actual time=0.194..0.304 rows=11 loops=1)
+    -> Nested loop inner join  (cost=326 rows=27.8) (actual time=0.194..0.304 rows=11 loops=1)
+        -> Nested loop inner join  (cost=211 rows=400) (actual time=0.189..0.253 rows=16 loops=1)
+            -> Sort: ps.popular_score DESC, ps.place_id  (cost=80.9 rows=400) (actual time=0.168..0.171 rows=84 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304)) and (ps.score_calculated_at is not null))  (cost=80.9 rows=400) (actual time=0.0234..0.105 rows=400 loops=1)
+                    -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=80.9 rows=400) (actual time=0.0186..0.0808 rows=400 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.25 rows=1) (actual time=903e-6..907e-6 rows=0.19 loops=84)
+        -> Limit: 1 row(s)  (cost=90.5 rows=0.0695) (actual time=0.00303..0.00304 rows=0.688 loops=16)
+            -> Nested loop inner join  (cost=90.5 rows=0.0695) (actual time=0.00296..0.00296 rows=0.688 loops=16)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0653 rows=0.26) (actual time=0.00166..0.00174 rows=1.19 loops=16)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0653 rows=2.33) (actual time=0.00148..0.00159 rows=2.19 loops=16)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.067 rows=0.267) (actual time=886e-6..886e-6 rows=0.579 loops=19)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.067 rows=2.33) (actual time=562e-6..739e-6 rows=3.26 loops=19)
+
+--- EXPLAIN ANALYZE (run 4) ---
+-> Limit: 11 row(s)  (cost=326 rows=11) (actual time=0.206..0.301 rows=11 loops=1)
+    -> Nested loop inner join  (cost=326 rows=27.8) (actual time=0.206..0.3 rows=11 loops=1)
+        -> Nested loop inner join  (cost=211 rows=400) (actual time=0.201..0.262 rows=16 loops=1)
+            -> Sort: ps.popular_score DESC, ps.place_id  (cost=80.9 rows=400) (actual time=0.191..0.195 rows=84 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304)) and (ps.score_calculated_at is not null))  (cost=80.9 rows=400) (actual time=0.0235..0.125 rows=400 loops=1)
+                    -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=80.9 rows=400) (actual time=0.022..0.0973 rows=400 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.25 rows=1) (actual time=722e-6..726e-6 rows=0.19 loops=84)
+        -> Limit: 1 row(s)  (cost=90.5 rows=0.0695) (actual time=0.00224..0.00224 rows=0.688 loops=16)
+            -> Nested loop inner join  (cost=90.5 rows=0.0695) (actual time=0.00217..0.00217 rows=0.688 loops=16)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0653 rows=0.26) (actual time=833e-6..912e-6 rows=1.19 loops=16)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0653 rows=2.33) (actual time=630e-6..747e-6 rows=2.19 loops=16)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.067 rows=0.267) (actual time=928e-6..928e-6 rows=0.579 loops=19)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.067 rows=2.33) (actual time=562e-6..761e-6 rows=3.26 loops=19)
+
+--- EXPLAIN ANALYZE (run 5) ---
+-> Limit: 11 row(s)  (cost=326 rows=11) (actual time=0.17..0.283 rows=11 loops=1)
+    -> Nested loop inner join  (cost=326 rows=27.8) (actual time=0.17..0.282 rows=11 loops=1)
+        -> Nested loop inner join  (cost=211 rows=400) (actual time=0.165..0.236 rows=16 loops=1)
+            -> Sort: ps.popular_score DESC, ps.place_id  (cost=80.9 rows=400) (actual time=0.154..0.159 rows=84 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304)) and (ps.score_calculated_at is not null))  (cost=80.9 rows=400) (actual time=0.0205..0.101 rows=400 loops=1)
+                    -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=80.9 rows=400) (actual time=0.0193..0.0793 rows=400 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.25 rows=1) (actual time=819e-6..821e-6 rows=0.19 loops=84)
+        -> Limit: 1 row(s)  (cost=90.5 rows=0.0695) (actual time=0.00272..0.00273 rows=0.688 loops=16)
+            -> Nested loop inner join  (cost=90.5 rows=0.0695) (actual time=0.00264..0.00264 rows=0.688 loops=16)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0653 rows=0.26) (actual time=0.00102..0.0011 rows=1.19 loops=16)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0653 rows=2.33) (actual time=766e-6..899e-6 rows=2.19 loops=16)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.067 rows=0.267) (actual time=0.00113..0.00113 rows=0.579 loops=19)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.067 rows=2.33) (actual time=671e-6..903e-6 rows=3.26 loops=19)
+
+--- EXPLAIN ANALYZE (run 6) ---
+-> Limit: 11 row(s)  (cost=326 rows=11) (actual time=0.174..0.27 rows=11 loops=1)
+    -> Nested loop inner join  (cost=326 rows=27.8) (actual time=0.173..0.269 rows=11 loops=1)
+        -> Nested loop inner join  (cost=211 rows=400) (actual time=0.168..0.231 rows=16 loops=1)
+            -> Sort: ps.popular_score DESC, ps.place_id  (cost=80.9 rows=400) (actual time=0.158..0.162 rows=84 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304)) and (ps.score_calculated_at is not null))  (cost=80.9 rows=400) (actual time=0.0217..0.102 rows=400 loops=1)
+                    -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=80.9 rows=400) (actual time=0.0204..0.0807 rows=400 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.25 rows=1) (actual time=758e-6..763e-6 rows=0.19 loops=84)
+        -> Limit: 1 row(s)  (cost=90.5 rows=0.0695) (actual time=0.00219..0.00221 rows=0.688 loops=16)
+            -> Nested loop inner join  (cost=90.5 rows=0.0695) (actual time=0.00212..0.00212 rows=0.688 loops=16)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0653 rows=0.26) (actual time=825e-6..898e-6 rows=1.19 loops=16)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0653 rows=2.33) (actual time=612e-6..726e-6 rows=2.19 loops=16)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.067 rows=0.267) (actual time=906e-6..906e-6 rows=0.579 loops=19)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.067 rows=2.33) (actual time=533e-6..741e-6 rows=3.26 loops=19)
+
+--- EXPLAIN ANALYZE (run 7) ---
+-> Limit: 11 row(s)  (cost=326 rows=11) (actual time=0.208..0.319 rows=11 loops=1)
+    -> Nested loop inner join  (cost=326 rows=27.8) (actual time=0.207..0.318 rows=11 loops=1)
+        -> Nested loop inner join  (cost=211 rows=400) (actual time=0.202..0.272 rows=16 loops=1)
+            -> Sort: ps.popular_score DESC, ps.place_id  (cost=80.9 rows=400) (actual time=0.192..0.196 rows=84 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304)) and (ps.score_calculated_at is not null))  (cost=80.9 rows=400) (actual time=0.0236..0.125 rows=400 loops=1)
+                    -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (2 more)  (cost=80.9 rows=400) (actual time=0.0222..0.098 rows=400 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id, tag_id=1)  (cost=0.25 rows=1) (actual time=811e-6..815e-6 rows=0.19 loops=84)
+        -> Limit: 1 row(s)  (cost=90.5 rows=0.0695) (actual time=0.00273..0.00274 rows=0.688 loops=16)
+            -> Nested loop inner join  (cost=90.5 rows=0.0695) (actual time=0.00263..0.00263 rows=0.688 loops=16)
+                -> Filter: (pt.tag_id in (7,8,9,10))  (cost=0.0653 rows=0.26) (actual time=0.00102..0.00112 rows=1.19 loops=16)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.0653 rows=2.33) (actual time=766e-6..903e-6 rows=2.19 loops=16)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=0.067 rows=0.267) (actual time=0.00113..0.00113 rows=0.579 loops=19)
+                    -> Covering index lookup on pt using uk_place_tag_place_tag (place_id=ps.place_id)  (cost=0.067 rows=2.33) (actual time=699e-6..932e-6 rows=3.26 loops=19)

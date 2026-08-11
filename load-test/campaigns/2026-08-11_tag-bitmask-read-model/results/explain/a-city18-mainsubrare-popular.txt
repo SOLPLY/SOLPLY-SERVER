@@ -1,0 +1,50 @@
+################################################################
+# A · popular · city18 · mainsubrare · p1
+# towns: 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318
+# 채취: 2026-08-11 18:03:04
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 2)
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 21)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (actual time=0.556..0.557 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.556..0.556 rows=11 loops=1)
+        -> Stream results  (cost=148 rows=47.7) (actual time=0.0575..0.538 rows=65 loops=1)
+            -> Nested loop inner join  (cost=148 rows=47.7) (actual time=0.056..0.525 rows=65 loops=1)
+                -> Nested loop inner join  (cost=83.6 rows=185) (actual time=0.031..0.296 rows=185 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=21)  (cost=18.9 rows=185) (actual time=0.024..0.0417 rows=185 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=0.00122..0.00124 rows=1 loops=185)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=0.00112..0.00114 rows=0.351 loops=185)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=960e-6..983e-6 rows=1 loops=185)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (actual time=1.18..1.18 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=1.18..1.18 rows=11 loops=1)
+        -> Stream results  (cost=148 rows=47.7) (actual time=0.0559..1.16 rows=65 loops=1)
+            -> Nested loop inner join  (cost=148 rows=47.7) (actual time=0.0548..1.15 rows=65 loops=1)
+                -> Nested loop inner join  (cost=83.6 rows=185) (actual time=0.0296..0.928 rows=185 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=21)  (cost=18.9 rows=185) (actual time=0.0233..0.0409 rows=185 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=0.00465..0.00467 rows=1 loops=185)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=0.00108..0.0011 rows=0.351 loops=185)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=925e-6..948e-6 rows=1 loops=185)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (actual time=1.16..1.16 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=1.16..1.16 rows=11 loops=1)
+        -> Stream results  (cost=148 rows=47.7) (actual time=0.0538..1.14 rows=65 loops=1)
+            -> Nested loop inner join  (cost=148 rows=47.7) (actual time=0.0524..1.13 rows=65 loops=1)
+                -> Nested loop inner join  (cost=83.6 rows=185) (actual time=0.0288..0.919 rows=185 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=21)  (cost=18.9 rows=185) (actual time=0.0227..0.0386 rows=185 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=pt.place_id, tag_id=2)  (cost=0.251 rows=1) (actual time=0.00463..0.00464 rows=1 loops=185)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.258) (actual time=0.00104..0.00106 rows=0.351 loops=185)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=902e-6..922e-6 rows=1 loops=185)

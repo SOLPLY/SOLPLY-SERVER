@@ -1,0 +1,8 @@
+form,sort,region,tagcell,page,runs,driving_tables,driving_rows,times_ms,min_ms,median_ms,max_ms
+B,latest,town4,hotcombo,p1,7,ps,400,0.184;0.15;0.155;0.152;0.176;0.148;0.143,0.143,0.152,0.184
+B,latest,town4,hotcombo,p2,7,ps,293,0.117;0.135;0.149;0.16;0.131;0.136;0.14,0.117,0.136,0.16
+B,popular,town4,hotcombo,p1,7,ps,400,0.164;0.19;0.166;0.176;0.181;0.197;0.201,0.164,0.181,0.201
+B,popular,town4,hotcombo,p2,7,ps,316,0.142;0.149;0.142;0.118;0.14;0.162;0.149,0.118,0.142,0.162
+B,popular,town4,mainrare,p1,7,ps,400,0.19;0.183;0.168;0.175;0.169;0.168;0.197,0.168,0.175,0.197
+B,popular,city18,mainsubrare,p1,7,ps,1800,0.61;0.566;0.634;0.833;0.598;0.588;0.594,0.566,0.598,0.833
+B,latest,city18,zero,p1,7,ps,1800,0.512;0.582;0.558;0.576;0.516;0.555;0.573,0.512,0.558,0.582
