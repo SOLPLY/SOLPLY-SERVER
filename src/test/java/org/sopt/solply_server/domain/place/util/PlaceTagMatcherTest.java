@@ -11,9 +11,12 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.entity.TagUsage;
 
 /**
- * 태그 필터 의미론의 계약을 못 박는다 — 케이스는 삭제된 {@code CachedPlaceFilterTest}에서 그대로
- * 옮겨 왔고(타입 내 OR, 타입 간 AND, 메인 없으면 서브 무시, 원본 순서 보존, null 안전),
- * 대상만 스냅샷 record에서 {@code Place} 엔티티로 바뀌었다.
+ * 태그 필터 의미론의 계약을 못 박는다 — <b>설정한 태그를 전부 가진 장소만</b>(AND-all),
+ * 메인 없으면 서브 무시, 원본 순서 보존, null 안전.
+ *
+ * <p><b>여기서 가장 중요한 것은 "좁아지는가"다.</b> 3세대를 내려온 구 구현은 그룹 안을 OR로 걸어
+ * 서브 태그를 고를수록 결과가 <em>넓어졌다</em>. 예외가 나지 않는 오답이라 응답을 눈으로 세기 전까지
+ * 드러나지 않았고, 그래서 2026-08-11 교정 이후로는 "둘 다 가진 장소만 남는다"를 이 파일이 문다.
  *
  * <p><b>하나가 늘었다 — 비활성 태그.</b> 캐시 스냅샷은 로더가 active 태그만 담아 왔기 때문에
  * "비활성 태그로는 매치되지 않는다"를 필터 단위에서 물을 수 없었다(로더 IT의 몫이었다).
@@ -77,19 +80,43 @@ class PlaceTagMatcherTest {
                 .extracting(Place::getName).containsExactly("p1");
     }
 
+    /**
+     * <b>한 그룹에서 둘을 고르면 둘 다 가진 장소만 남는다.</b> 구 OR 구현이었다면 하나만 가진
+     * p1·p2까지 통과해 결과가 셋이 된다 — 이 테스트가 그 회귀를 정면으로 막는다.
+     *
+     * <p>p3에 <em>요청에 없는</em> OPTION1 태그를 하나 더 붙인 것은 "전부 포함"이 "정확히 일치"가
+     * 아님을 함께 못 박기 위해서다. 남는 태그가 있어도 통과해야 한다.
+     */
     @Test
-    void 서브_태그는_타입_내_OR로_매칭한다() {
+    void 같은_그룹의_태그를_전부_가진_장소만_통과한다() {
         List<Place> places = List.of(
                 place("p1", tag(MAIN, TagType.MAIN), List.of(tag(SUB_A1, TagType.OPTION1)), List.of()),
                 place("p2", tag(MAIN, TagType.MAIN), List.of(tag(SUB_A2, TagType.OPTION1)), List.of()),
-                place("p3", tag(MAIN, TagType.MAIN), List.of(tag(29L, TagType.OPTION1)), List.of()));
+                place("p3", tag(MAIN, TagType.MAIN),
+                        List.of(tag(SUB_A1, TagType.OPTION1), tag(SUB_A2, TagType.OPTION1),
+                                tag(29L, TagType.OPTION1)),
+                        List.of()));
 
         assertThat(PlaceTagMatcher.filter(places, MAIN, List.of(SUB_A1, SUB_A2), null))
-                .extracting(Place::getName).containsExactly("p1", "p2");
+                .extracting(Place::getName).containsExactly("p3");
     }
 
+    /**
+     * <b>하나만 가진 장소는 제외된다 — 위 테스트를 최소 형상으로 다시 세운 짝이다.</b>
+     * 통과자를 두지 않아 "필터가 통째로 빠지면 둘 다 살아남는" 회귀가 <em>빈 결과</em>로 드러난다.
+     */
     @Test
-    void 태그_타입_간에는_AND로_결합한다() {
+    void 요청_태그_중_하나만_가진_장소는_제외된다() {
+        List<Place> places = List.of(
+                place("p1", tag(MAIN, TagType.MAIN), List.of(tag(SUB_A1, TagType.OPTION1)), List.of()),
+                place("p2", tag(MAIN, TagType.MAIN), List.of(tag(SUB_A2, TagType.OPTION1)), List.of()));
+
+        assertThat(PlaceTagMatcher.filter(places, MAIN, List.of(SUB_A1, SUB_A2), null)).isEmpty();
+    }
+
+    /** 그룹이 달라도 규칙은 하나다 — 메인·서브A·서브B를 모두 만족해야 통과한다. */
+    @Test
+    void 메인과_서브_그룹은_모두_만족해야_통과한다() {
         List<Place> places = List.of(
                 place("p1", tag(MAIN, TagType.MAIN),
                         List.of(tag(SUB_A1, TagType.OPTION1)), List.of(tag(SUB_B, TagType.OPTION2))),
@@ -131,10 +158,16 @@ class PlaceTagMatcherTest {
                 .extracting(Place::getName).containsExactly("p1", "p2");
     }
 
+    /**
+     * <b>후보의 null은 조건에서 빠질 뿐 결과를 비우지 않는다.</b> AND-all에서 null을 "불일치"로
+     * 세면 잡음 하나가 목록을 통째로 비운다 — 태그 id가 아니라 파싱 잡음이므로 없는 셈 친다.
+     * (OR 시절에는 건너뛰어도 다른 후보가 통과를 만들어 이 선택이 드러나지 않았다.)
+     */
     @Test
-    void 서브_태그_후보에_null이_섞여도_예외_없이_불일치로_처리한다() {
+    void 서브_태그_후보에_null이_섞여도_예외_없이_남은_조건으로_판정한다() {
         List<Place> places = List.of(
-                place("p1", tag(MAIN, TagType.MAIN), List.of(tag(SUB_A1, TagType.OPTION1)), List.of()));
+                place("p1", tag(MAIN, TagType.MAIN), List.of(tag(SUB_A1, TagType.OPTION1)), List.of()),
+                place("p2", tag(MAIN, TagType.MAIN), List.of(tag(SUB_A2, TagType.OPTION1)), List.of()));
 
         assertThat(PlaceTagMatcher.filter(places, MAIN, Arrays.asList(null, SUB_A1), null))
                 .extracting(Place::getName).containsExactly("p1");

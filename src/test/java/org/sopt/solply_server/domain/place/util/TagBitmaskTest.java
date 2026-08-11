@@ -19,17 +19,37 @@ class TagBitmaskTest {
         assertThat(TagBitmask.of(62)).isEqualTo(1L << 62);
     }
 
-    /** 그룹 안은 OR — 합집합이 곧 "이 중 하나라도"다. */
+    /** 합집합이 곧 "이걸 전부" — 짝이 되는 술어가 {@code (bitmask & mask) = mask}이기 때문이다. */
     @Test
-    void 그룹_마스크는_비트_합집합이다() {
-        assertThat(TagBitmask.ofAny(List.of(1L, 3L, 5L))).isEqualTo(0b101010L);
+    void 여러_태그의_마스크는_비트_합집합이다() {
+        assertThat(TagBitmask.ofAll(List.of(1L, 3L, 5L))).isEqualTo(0b101010L);
     }
 
     /** 0은 "술어를 붙이지 않는다"는 신호라 호출부가 분기의 근거로 쓴다. */
     @Test
-    void 빈_그룹은_0이다() {
-        assertThat(TagBitmask.ofAny(null)).isZero();
-        assertThat(TagBitmask.ofAny(List.of())).isZero();
+    void 빈_목록은_0이다() {
+        assertThat(TagBitmask.ofAll(null)).isZero();
+        assertThat(TagBitmask.ofAll(List.of())).isZero();
+    }
+
+    /**
+     * <b>요청의 필수 마스크는 세 그룹을 한 덩어리로 합친 것이다.</b> 그룹을 나눠 세 술어로 걸던
+     * 시절은 그룹 안이 OR였기 때문인데, 스펙이 AND-all이라 나눌 이유가 사라졌다.
+     */
+    @Test
+    void 필수_마스크는_메인과_서브_전부의_합집합이다() {
+        assertThat(TagBitmask.required(1L, List.of(3L), List.of(5L))).isEqualTo(0b101010L);
+    }
+
+    /**
+     * <b>메인 태그가 없으면 서브 조건은 통째로 버린다.</b> 북마크 검색의 {@code PlaceTagMatcher}가
+     * {@code mainTagId == null}이면 원본을 그대로 돌려주는 것과 같은 규칙이고, 두 경로가 여기서
+     * 갈리면 같은 요청이 경로마다 다른 답을 낸다. 서브를 <em>주었는데도</em> 0이어야 한다는 것이
+     * 요점이라 인자를 비워 두지 않는다.
+     */
+    @Test
+    void 메인_태그가_없으면_필수_마스크는_0이다() {
+        assertThat(TagBitmask.required(null, List.of(3L), List.of(5L))).isZero();
     }
 
     /**
@@ -43,7 +63,7 @@ class TagBitmaskTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> TagBitmask.of(64))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> TagBitmask.ofAny(List.of(1L, 99L)))
+        assertThatThrownBy(() -> TagBitmask.ofAll(List.of(1L, 99L)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

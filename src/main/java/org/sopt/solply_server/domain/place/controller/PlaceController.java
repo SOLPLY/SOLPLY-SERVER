@@ -59,9 +59,9 @@ public class PlaceController {
             parameters = {
                     @Parameter(name = "townId", description = "동네 또는 시 ID (시면 하위 동네 합집합 조회)", required = true, example = "1"),
                     @Parameter(name = "isBookmarkSearch", description = "북마크 검색 여부", required = true, example = "true"),
-                    @Parameter(name = "mainTagId", description = "메인 태그 ID", example = "5"),
-                    @Parameter(name = "subTagAIdList", description = "서브 태그(옵션1) ID 목록 (쉼표 구분)", example = "8,9,10"),
-                    @Parameter(name = "subTagBIdList", description = "서브 태그(옵션2) ID 목록 (쉼표 구분)", example = "11,12"),
+                    @Parameter(name = "mainTagId", description = "메인 태그 ID (1개). 미지정 시 서브 태그 조건은 무시됩니다.", example = "5"),
+                    @Parameter(name = "subTagAIdList", description = "서브 태그(옵션1) ID 목록 (쉼표 구분). 목록의 태그를 모두 가진 장소만 조회 — 많이 고를수록 결과가 좁아집니다.", example = "8,9,10"),
+                    @Parameter(name = "subTagBIdList", description = "서브 태그(옵션2) ID 목록 (쉼표 구분). 목록의 태그를 모두 가진 장소만 조회 — 많이 고를수록 결과가 좁아집니다.", example = "11,12"),
                     @Parameter(name = "sort", description = "정렬 기준 (latest 기본 | popular: 누적 북마크순)", example = "popular"),
                     @Parameter(name = "cursor", description = "이전 응답의 nextCursor (무한 스크롤)"),
                     @Parameter(name = "size", description = "페이지 크기 (1~50, cursor 지정 시 기본 20)")

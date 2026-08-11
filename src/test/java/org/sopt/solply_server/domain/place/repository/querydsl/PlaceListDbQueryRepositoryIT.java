@@ -6,11 +6,14 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.LatestRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.PopularRow;
+import org.sopt.solply_server.domain.place.util.PlaceTagMatcher;
 import org.sopt.solply_server.global.config.QueryDslConfig;
 import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -132,43 +135,46 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>타입 내 OR.</b> 서브A에 두 태그를 주면 <em>둘 중 하나만</em> 가진 장소도 통과해야 한다
-     * (북마크 검색의 {@code PlaceTagMatcher}와 같은 의미론).
+     * <b>서브 태그를 더 고를수록 결과는 좁아진다.</b> 확정 스펙은 "설정한 태그를 전부 갖고 있는
+     * 장소만"이므로, 한 그룹 안에서 둘을 고르면 <em>둘 다</em> 가진 장소만 남아야 한다.
      *
-     * <p>서브 태그 EXISTS는 {@code t.id IN (:subTagAIds)}로 메인({@code t.id = :mainTagId})과
-     * <b>다른 SQL 분기</b>라 메인 태그 테스트가 이 경로를 대신 물어 주지 못한다. 그래서 여기서
-     * 따로 못 박는다.
+     * <p>같은 픽스처에 <b>한 개짜리 요청과 두 개짜리 요청을 나란히</b> 던져 좁아지는 방향 자체를
+     * 단언한다 — 결과 하나만 보면 "원래 그 장소뿐"인지 "필터가 좁힌 것"인지 구분되지 않는다.
      *
-     * <p>탈락해야 할 placeC에 가장 높은 점수를 주는 것이 핵심이다 — 서브A 블록이 빠지면 C가
-     * 결과 맨 앞에 되살아나므로 "정렬은 맞는데 필터만 빠진" 회귀도 순서로 드러난다.
+     * <p>구 OR 구현이었다면 두 개짜리 요청이 오히려 <b>넓어져</b> {@code [C, B, A]}가 된다. 탈락해야
+     * 할 placeC에 가장 높은 점수를 준 덕에 그 회귀는 결과 맨 앞이 바뀌는 것으로도 드러난다.
      */
     @Test
-    void 서브_태그는_타입_내_OR로_매칭한다() {
-        long mainTagId = createMainTag("db모드메인OR");
+    void 같은_그룹의_태그를_전부_가진_장소만_통과한다() {
+        long mainTagId = createMainTag("db모드메인전부");
         long subA1 = createSubTag("db모드서브A1", "OPTION1", mainTagId);
         long subA2 = createSubTag("db모드서브A2", "OPTION1", mainTagId);
-        linkTags(placeA, mainTagId, subA1);
-        linkTags(placeB, mainTagId, subA2);
-        linkTags(placeC, mainTagId);   // 메인만 있고 서브A는 없다 → 탈락
+        linkTags(placeA, mainTagId, subA1, subA2);   // 둘 다 → 통과
+        linkTags(placeB, mainTagId, subA1);          // 하나만 → 탈락
+        linkTags(placeC, mainTagId, subA2);          // 하나만 → 탈락
         insertStats(placeA, townId, 4.0, 0);
         insertStats(placeB, townId, 6.0, 0);
         insertStats(placeC, townId, 8.0, 0);
 
-        List<PopularRow> rows = repository.findPopularRows(
+        List<PopularRow> one = repository.findPopularRows(
+                List.of(townId), mainTagId, List.of(subA1), null, null, null, NO_LIMIT);
+        List<PopularRow> both = repository.findPopularRows(
                 List.of(townId), mainTagId, List.of(subA1, subA2), null, null, null, NO_LIMIT);
 
-        assertThat(placeIdsOf(rows)).containsExactly(placeB, placeA);
+        assertThat(placeIdsOf(one)).containsExactly(placeB, placeA);
+        assertThat(placeIdsOf(both)).containsExactly(placeA);
     }
 
     /**
-     * <b>타입 간 AND.</b> 메인과 서브A는 모두 만족해야 통과한다.
+     * <b>메인과 서브도 같은 규칙 하나로 묶인다.</b> 그룹이 다르다고 규칙이 달라지지 않는다 —
+     * 요청에 실린 태그는 전부 만족해야 한다.
      *
-     * <p>두 방향의 불일치를 한 번에 세운다 — placeB는 메인만, placeC는 서브A만 가진다. AND가
-     * OR로 새면 셋 다 나오고, 어느 한 EXISTS가 빠지면 그쪽 방향의 탈락자가 되살아난다.
-     * placeC에 가장 높은 점수를 준 것은 위와 같은 이유다.
+     * <p>두 방향의 불일치를 한 번에 세운다 — placeB는 메인만, placeC는 서브A만 가진다. 마스크
+     * 술어가 {@code != 0}으로 뒤집히면 셋 다 나온다. placeC에 가장 높은 점수를 준 것은 그 회귀가
+     * 결과 맨 앞으로도 드러나게 하기 위해서다.
      */
     @Test
-    void 태그_타입_간에는_AND로_결합한다() {
+    void 메인과_서브를_함께_주면_둘_다_가진_장소만_통과한다() {
         long mainTagId = createMainTag("db모드메인AND");
         long otherMainTagId = createMainTag("db모드메인AND타");
         long subA = createSubTag("db모드서브A", "OPTION1", mainTagId);
@@ -186,8 +192,8 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>메인 태그가 없으면 서브 태그는 무시한다.</b> 구현의 {@code useSubA = useMainTag && ...}
-     * 가드가 그 일을 하고, 북마크 검색의 {@code PlaceTagMatcher}도 {@code mainTagId == null}이면
+     * <b>메인 태그가 없으면 서브 태그는 무시한다.</b> 구현의 {@code TagBitmask.required} 안
+     * {@code mainTagId == null} 가드가 그 일을 하고, 북마크 검색의 {@code PlaceTagMatcher}도 마찬가지로
      * 원본을 그대로 돌려준다 — 두 경로가 여기서 갈리면 같은 요청이 경로마다 다른 답을 낸다.
      *
      * <p>서브A를 가진 장소를 <em>하나만</em> 두어(placeA) 가드가 사라지면 결과가 1건으로
@@ -209,16 +215,15 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>세 마스크 술어가 동시에 붙는 경로.</b> 메인·서브A·서브B를 함께 주는 요청은
-     * {@code appendTagFilters}가 세 조각을, {@code bindTagFilters}가 세 파라미터를 모두 맞춰야
-     * 성립한다 — 바인딩이 하나라도 빠지면 결과가 아니라 <b>파라미터 미바인딩 예외</b>로 터진다.
+     * <b>세 그룹이 한 마스크로 합쳐지는 경로.</b> 메인·서브A·서브B를 함께 주면
+     * {@code TagBitmask.required}가 비트 셋을 한 마스크로 묶고, 술어 하나가 그 셋을 모두 요구한다.
+     * 합치기에서 어느 한 그룹이 빠지면 예외가 아니라 <b>조용히 넓어진 결과</b>가 나간다.
      *
-     * <p>서브B만 어긋난 placeB, 서브A만 어긋난 placeC를 함께 세워 두 술어가 각각 제 몫을 하는지
-     * 본다. <b>세 그룹을 한 마스크로 합치는 변이</b>가 여기서 드러난다 — 합치면 AND가 OR가 되어
-     * 셋 다 통과한다.
+     * <p>서브B만 어긋난 placeB, 서브A만 어긋난 placeC를 함께 세워 두 비트가 각각 제 몫을 하는지
+     * 본다. 술어를 {@code != 0}으로 되돌리는 변이도 여기서 드러난다 — 그러면 셋 다 통과한다.
      */
     @Test
-    void 서브_A와_B를_동시에_주면_세_마스크_술어가_모두_적용된다() {
+    void 메인_서브A_서브B를_모두_주면_셋_다_가진_장소만_통과한다() {
         long mainTagId = createMainTag("db모드메인AB");
         long subA = createSubTag("db모드서브A_AB", "OPTION1", mainTagId);
         long subB = createSubTag("db모드서브B_AB", "OPTION2", mainTagId);
@@ -471,24 +476,48 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     // === 마스크 술어 ↔ EXISTS 동치 ===
 
     /**
-     * <b>V34 전환의 성공 조건은 "결과가 한 행도 달라지지 않는다"였다</b>(캠페인
-     * {@code 2026-08-11_tag-bitmask-read-model} S1). 앞의 테스트들이 <em>기대값</em>을 손으로 적어
-     * 두는 방식이라면, 여기는 걷어낸 {@code place_tag} EXISTS를 이 파일 안에 그대로 남겨 두고
-     * <b>같은 픽스처에 두 문장을 나란히 돌려 대조</b>한다 — 손으로 적은 기대값이 함께 틀리는
-     * 경우까지 걸러 낸다.
+     * <b>마스크 한 줄이 정말 "전부 포함"인지, 다른 방식으로 쓴 같은 규칙과 대조한다.</b> 앞의
+     * 테스트들이 <em>기대값</em>을 손으로 적어 두는 방식이라면, 여기는 요구 태그마다 EXISTS를 하나씩
+     * 붙인 대조군을 이 파일 안에 두고 <b>같은 픽스처에 두 문장을 나란히 돌린다</b> — 손으로 적은
+     * 기대값이 함께 틀리는 경우까지 걸러 낸다.
      *
-     * <p>덮는 태그 형상 넷: 메인 단독(넓게 걸림) · 세 그룹 조합(핫패스) · 희귀(통과자 1) ·
-     * 0건(아무도 안 가진 태그). 마지막 둘이 중요한 이유는 마스크 술어가 <b>조기 종료를 잃는</b>
-     * 구간이기 때문이다 — 성능은 캠페인이 재고, 여기서는 그 구간에서도 <em>답이 같은지</em>만 문다.
+     * <p><b>대조군의 형태가 곧 스펙의 정의다.</b> 태그 하나당 EXISTS 하나면 "전부 가진"이 문장
+     * 모양으로 읽힌다. 2026-08-11 이전의 대조군은 서브 그룹을 {@code tag_id IN (...)} 하나로 묶어
+     * OR를 굳혀 두고 있었고, 마스크 쪽도 같은 OR였던 탓에 <b>둘이 사이좋게 스펙을 벗어나 있었다</b>.
+     *
+     * <p>덮는 태그 형상 다섯: 메인 단독(넓게 걸림) · 세 그룹 조합(핫패스) · <b>한 그룹에 둘</b>
+     * (OR였다면 넓어지는 자리) · 희귀(통과자 1) · 0건(아무도 안 가진 태그). 뒤의 둘이 중요한 이유는
+     * 마스크 술어가 <b>조기 종료를 잃는</b> 구간이기 때문이다 — 성능은 캠페인이 재고, 여기서는 그
+     * 구간에서도 <em>답이 같은지</em>만 문다.
      */
     @Test
-    void 마스크_필터는_EXISTS와_같은_집합을_낸다() {
+    void 마스크_필터는_태그마다_EXISTS를_건_것과_같은_집합을_낸다() {
         TagFixture f = givenTwoTownTagFixture();
 
         assertSameAsExists(f, f.mainTagId(), null, null);
         assertSameAsExists(f, f.mainTagId(), List.of(f.subA()), List.of(f.subB()));
+        assertSameAsExists(f, f.mainTagId(), List.of(f.subA(), f.rareTag()), null);
         assertSameAsExists(f, f.mainTagId(), List.of(f.rareTag()), null);
         assertSameAsExists(f, f.mainTagId(), List.of(f.orphanTag()), null);
+    }
+
+    /**
+     * <b>목록 경로와 북마크 검색이 같은 입력에 같은 답을 낸다.</b> 두 경로는 구현이 전혀 다르다 —
+     * 한쪽은 SQL 비트 연산, 다른 쪽은 엔티티 위의 자바 스트림이라 스펙을 한 번에 고치지 않으면
+     * <b>같은 요청이 화면마다 다른 결과를 낸다</b>. 이번 교정이 정확히 그 위험 구간이라 여기서 묶는다.
+     *
+     * <p>비교 대상 집합은 <b>태그 조건을 뺀 목록 결과</b>로 만든다 — 두 경로에 같은 후보를 주지
+     * 않으면 "필터가 다르다"와 "본 것이 다르다"가 섞인다. 순서까지 묻지 않는 것은 정렬이 목록
+     * 경로만의 책임이기 때문이다(매처는 입력 순서를 보존할 뿐이다).
+     */
+    @Test
+    void 목록_경로와_북마크_매처는_같은_입력에_같은_집합을_낸다() {
+        TagFixture f = givenTwoTownTagFixture();
+
+        assertSameAsMatcher(f, f.mainTagId(), null, null);
+        assertSameAsMatcher(f, f.mainTagId(), List.of(f.subA()), List.of(f.subB()));
+        assertSameAsMatcher(f, f.mainTagId(), List.of(f.subA(), f.rareTag()), null);
+        assertSameAsMatcher(f, f.mainTagId(), List.of(f.orphanTag()), null);
     }
 
     /**
@@ -578,10 +607,44 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * V34 이전의 태그 술어를 그대로 되살린 대조군. <b>기준 테이블·정렬·커서는 현행과 같게 두고
-     * 태그 조건만 EXISTS로 되돌린다</b> — 최신순의 기준 테이블 전환(places → place_stats)은
-     * 의도된 계약 변경이라 대조 대상이 아니고, 여기서 묻는 것은 오직 "태그 필터의 의미론이
+     * 목록 경로(SQL 마스크)와 북마크 검색({@code PlaceTagMatcher})이 같은 후보에서 같은 장소를
+     * 남기는지 본다. 후보는 태그 조건을 뺀 목록 결과이므로 두 경로가 <b>같은 집합을 보고 시작</b>한다.
+     */
+    private void assertSameAsMatcher(
+            TagFixture f, Long mainTagId, List<Long> subA, List<Long> subB) {
+        List<Long> candidateIds = placeIdsOf(repository.findPopularRows(
+                f.townIds(), null, null, null, null, null, NO_LIMIT));
+        List<Long> viaMatcher = PlaceTagMatcher
+                .filter(loadPlacesWithTags(candidateIds), mainTagId, subA, subB)
+                .stream().map(Place::getId).toList();
+
+        assertThat(placeIdsOf(repository.findPopularRows(
+                f.townIds(), mainTagId, subA, subB, null, null, NO_LIMIT)))
+                .containsExactlyInAnyOrderElementsOf(viaMatcher);
+    }
+
+    /**
+     * 매처는 {@code Place.placeTags → tag}를 직접 읽으므로 태그까지 함께 끌어온다.
+     * 픽스처를 네이티브 INSERT로 심었어도 같은 트랜잭션이라 JPQL의 auto-flush가 보이게 한다.
+     */
+    private List<Place> loadPlacesWithTags(List<Long> ids) {
+        return em.createQuery("""
+                SELECT DISTINCT p FROM Place p
+                LEFT JOIN FETCH p.placeTags pt
+                LEFT JOIN FETCH pt.tag
+                WHERE p.id IN :ids
+                """, Place.class)
+                .setParameter("ids", ids)
+                .getResultList();
+    }
+
+    /**
+     * 태그 조건을 <b>요구 태그 하나당 EXISTS 하나</b>로 다시 쓴 대조군. 기준 테이블·정렬·커서는
+     * 현행과 같게 두고 태그 조건만 이 형태로 바꾼다 — 여기서 묻는 것은 오직 "태그 필터의 의미론이
      * 같은가"다. 둘을 한꺼번에 바꿔 비교하면 어느 쪽이 결과를 바꿨는지 가를 수 없다.
+     *
+     * <p>서브 그룹을 {@code tag_id IN (...)}으로 묶지 않는 것이 핵심이다 — 그 형태가 곧 OR이고,
+     * 스펙은 "전부 가진"이다.
      */
     private List<Long> popularIdsByExists(
             TagFixture f, Long mainTagId, List<Long> subA, List<Long> subB,
@@ -641,37 +704,36 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     private void appendExistsFilters(
             StringBuilder sql, Long mainTagId, List<Long> subA, List<Long> subB) {
-        if (mainTagId != null) {
-            sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt
-                                   WHERE pt.place_id = ps.place_id AND pt.tag_id = :mainTagId)
-                    """);
-        }
-        if (mainTagId != null && subA != null && !subA.isEmpty()) {
-            sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt
-                                   WHERE pt.place_id = ps.place_id AND pt.tag_id IN (:subTagAIds))
-                    """);
-        }
-        if (mainTagId != null && subB != null && !subB.isEmpty()) {
-            sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt
-                                   WHERE pt.place_id = ps.place_id AND pt.tag_id IN (:subTagBIds))
-                    """);
+        List<Long> required = requiredTagIds(mainTagId, subA, subB);
+        for (int i = 0; i < required.size(); i++) {
+            sql.append("  AND EXISTS (SELECT 1 FROM place_tag pt\n")
+                    .append("               WHERE pt.place_id = ps.place_id AND pt.tag_id = :tag")
+                    .append(i).append(")\n");
         }
     }
 
     private void bindExistsFilters(
             Query query, Long mainTagId, List<Long> subA, List<Long> subB) {
-        if (mainTagId != null) {
-            query.setParameter("mainTagId", mainTagId);
+        List<Long> required = requiredTagIds(mainTagId, subA, subB);
+        for (int i = 0; i < required.size(); i++) {
+            query.setParameter("tag" + i, required.get(i));
         }
-        if (mainTagId != null && subA != null && !subA.isEmpty()) {
-            query.setParameter("subTagAIds", subA);
+    }
+
+    /** 메인이 없으면 서브는 버린다 — 대조군도 그 규칙까지 스스로 다시 써야 대조가 성립한다. */
+    private List<Long> requiredTagIds(Long mainTagId, List<Long> subA, List<Long> subB) {
+        if (mainTagId == null) {
+            return List.of();
         }
-        if (mainTagId != null && subB != null && !subB.isEmpty()) {
-            query.setParameter("subTagBIds", subB);
+        List<Long> required = new ArrayList<>();
+        required.add(mainTagId);
+        if (subA != null) {
+            required.addAll(subA);
         }
+        if (subB != null) {
+            required.addAll(subB);
+        }
+        return required;
     }
 
     @SuppressWarnings("unchecked")
@@ -831,9 +893,10 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     /**
      * 서브 태그(OPTION1/OPTION2)를 메인 태그 아래에 만든다. parent_id를 실제 메인 태그로 채우는 것은
-     * FK({@code fk_tags_parent})와 도메인 규칙(서브는 메인에 종속) 때문이며, <b>정렬 쿼리의 EXISTS는
-     * type도 parent_id도 보지 않는다</b> — 태그 타입 정합은 상위(요청 검증)의 책임이라는 뜻이다.
-     * 그래서 픽스처는 타입을 정확히 심어 "정상 입력에서 두 경로가 같은 답을 내는가"만 묻는다.
+     * FK({@code fk_tags_parent})와 도메인 규칙(서브는 메인에 종속) 때문이며, <b>정렬 쿼리의 마스크
+     * 술어는 type도 parent_id도 보지 않는다</b> — 태그 타입 정합은 상위(요청 검증)의 책임이라는 뜻이다.
+     * 반대로 북마크 매처는 타입·활성을 직접 본다. 그래서 픽스처는 타입을 정확히 심어 "정상 입력에서
+     * 두 경로가 같은 답을 내는가"만 묻는다.
      */
     private long createSubTag(String name, String type, long parentId) {
         long tagId = nextTagId();
