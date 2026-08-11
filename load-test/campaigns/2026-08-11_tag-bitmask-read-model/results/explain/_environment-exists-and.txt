@@ -1,0 +1,75 @@
+================================================================
+# EXISTS-AND 대안 채취: 2026-08-11 20:17:41 KST
+# 컨테이너: solply-bench-mysql / DB: solply_bench_db / MySQL: 8.0.46
+# 술어: 태그 하나당 EXISTS 하나, AND로 연결 (IN 리스트 아님, tags 조인 없음)
+# 대조군: results/summary-b-and.csv — 같은 칸, 술어만 (tag_bitmask & M) = M
+# 지역: town1=(301) city18=(301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+# 시간 = EXPLAIN ANALYZE 최상위 노드 actual time 끝값, 워밍업 1회 후 3회 중앙값
+================================================================
++---------+------------------------------------------+--------------+---------------------+
+| version | description                              | installed_by | installed_on        |
++---------+------------------------------------------+--------------+---------------------+
+| 34      | place stats read model                   | bench-manual | 2026-08-11 09:30:23 |
+| 33      | make place tag tag index covering        | bench-manual | 2026-08-11 09:30:23 |
+| 32      | place stats single row and split batches | solplyuser   | 2026-08-07 13:08:58 |
++---------+------------------------------------------+--------------+---------------------+
++-------------------------+--------------+-------------+
+| INDEX_NAME              | SEQ_IN_INDEX | COLUMN_NAME |
++-------------------------+--------------+-------------+
+| idx_place_tag_place_id  |            1 | place_id    |
+| idx_place_tag_tag_place |            1 | tag_id      |
+| idx_place_tag_tag_place |            2 | place_id    |
+| PRIMARY                 |            1 | id          |
+| uk_place_tag_place_tag  |            1 | place_id    |
+| uk_place_tag_place_tag  |            2 | tag_id      |
++-------------------------+--------------+-------------+
++------------------------------+--------------+---------------------+
+| INDEX_NAME                   | SEQ_IN_INDEX | COLUMN_NAME         |
++------------------------------+--------------+---------------------+
+| idx_place_stats_town_created |            1 | town_id             |
+| idx_place_stats_town_created |            2 | created_at          |
+| idx_place_stats_town_created |            3 | place_id            |
+| idx_place_stats_town_created |            4 | tag_bitmask         |
+| idx_place_stats_town_created |            5 | bookmark_count      |
+| idx_place_stats_town_created |            6 | review_count        |
+| idx_place_stats_town_created |            7 | avg_rating          |
+| idx_place_stats_town_score   |            1 | town_id             |
+| idx_place_stats_town_score   |            2 | popular_score       |
+| idx_place_stats_town_score   |            3 | place_id            |
+| idx_place_stats_town_score   |            4 | bookmark_count      |
+| idx_place_stats_town_score   |            5 | review_count        |
+| idx_place_stats_town_score   |            6 | avg_rating          |
+| idx_place_stats_town_score   |            7 | score_calculated_at |
+| idx_place_stats_town_score   |            8 | tag_bitmask         |
+| PRIMARY                      |            1 | place_id            |
++------------------------------+--------------+---------------------+
++----+--------------------+---------+--------+
+| id | name               | type    | linked |
++----+--------------------+---------+--------+
+|  1 | 카페               | MAIN    |   1146 |
+|  7 | 커피/디저트        | OPTION1 |    455 |
+|  8 | 작업               | OPTION1 |    424 |
+|  9 | 독서               | OPTION1 |    425 |
+| 10 | 힐링               | OPTION1 |    452 |
+| 11 | 시그니처메뉴       | OPTION2 |    308 |
+| 12 | 감성인테리어       | OPTION2 |    287 |
+| 13 | 채광좋음           | OPTION2 |    297 |
+| 14 | 콘센트많음         | OPTION2 |    291 |
+| 15 | 시간제한없음       | OPTION2 |    308 |
+| 16 | 바테이블           | OPTION2 |    312 |
++----+--------------------+---------+--------+
++----------------+
+| place_tag_rows |
++----------------+
+|          15461 |
++----------------+
++------------------+
+| place_stats_rows |
++------------------+
+|             6320 |
++------------------+
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| optimizer_switch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
