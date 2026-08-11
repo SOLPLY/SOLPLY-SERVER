@@ -1,0 +1,160 @@
+================================================================
+# 세 구조 · 한 창 채취: 2026-08-11 23:37:00 KST
+# 컨테이너: solply-bench-mysql / DB: solply_bench_db / MySQL: 8.0.46
+================================================================
+
+----------------------------------------------------------------
+# 설계와 해석 규칙 (사전 등록)
+#
+# ① **기반을 고정하고 쿼리 구조만 바꾼다.** 세 열 모두 통계 테이블 형태와 커버링
+#    인덱스가 V32+V33으로 같다(B만 그 위에 V34의 컬럼·인덱스를 더한다). 묻는 것이
+#    '조인 구조가 만든 문제를 각 해법이 얼마나 해결했는가'라서, 조인 구조 말고는
+#    다 같아야 하기 때문이다.
+#    JOIN 열과 A 열은 **EXISTS 안의 문자열 말고는 바이트 동일한 SQL**이다.
+#
+# ② **처음 구조를 V29 형상까지 되돌리지 않는다.** 그 형상에는 조인 구조 말고도
+#    테이블 2배·PK의 version·인덱스 선두의 version·비커버링 태그 인덱스가 함께 얹혀
+#    있어, 되돌리면 각 칸이 '조인을 없앤 몫'이 아니라 '그동안 쌓인 기반 개선분 전체'를
+#    재게 된다. 두 질문은 다르고 지금 묻는 것은 앞쪽이다.
+#
+# ③ **세 열은 서로 비교하라고 만든 것이다.** 같은 컨테이너·같은 데이터·같은 그리드·
+#    같은 시간대·같은 술어(그룹 안 OR, 그룹 사이 AND = 확정 스펙)에서 나왔다.
+#
+# ④ **원 캠페인 기록과 절대값으로 대조하지 않는다.** 2026-08-06_tag-filter-join-order와
+#    2026-08-11_tag-bitmask-read-model의 수치는 각자의 창에서 유효하고 그대로 보존한다.
+#    그 창들과 이 창 사이에 실측된 드리프트가 있다 — place_tag 프로브 단가가 시간이
+#    지나며 싸졌고(단건 커버링 조회 0.622 → 0.266), 형상 전환이
+#    idx_place_stats_town_score를 재생성해 갓 만든 인덱스의 이점이 붙는다.
+#    아래 [recheck] 줄이 그 드리프트의 크기를 A 열 3칸으로 보여 준다 — 판정이 아니라
+#    정보다. 어긋나도 채취를 막지 않는다.
+#
+# ⑤ JOIN 열의 오추정 재현 여부는 CSV의 tags_nodes·cartesian 열로 읽는다.
+#      tags_nodes > 0 — t.id가 IN 리스트라 조인이 상수로 접히지 않고 트리에 남았다
+#      cartesian  > 0 — 두 태그 축이 조건 없는 해시 조인으로 곱해졌다(추정이 무너지는 자리)
+#    단일 태그 그룹만 있는 칸은 t.id가 PK 등호라 조인이 접혀 tags_nodes=0이 정상이다.
+----------------------------------------------------------------
+
+# 그리드: 지역 3 × 태그 7 × 정렬 2 = 42칸 + 핫콤보 커서 2페이지
+# 지역: town1=(301) town4=(301,302,303,304) city18=(301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+# 시간 = EXPLAIN ANALYZE 최상위 노드 actual time 끝값, 워밍업 1회 후 3회 중앙값
+#        (JOIN 열의 무거운 칸 maincafe hotcombo mainrare 와 핫콤보 커서는 7회)
+
+# JOIN·A 채취 시점 스키마 (V32+V33, 합성 태그 시드 상태)
++---------------------+---------------+-------------+
+| COLUMN_NAME         | COLUMN_TYPE   | IS_NULLABLE |
++---------------------+---------------+-------------+
+| place_id            | bigint        | NO          |
+| town_id             | bigint        | NO          |
+| popular_score       | decimal(18,6) | NO          |
+| bookmark_count      | int           | NO          |
+| review_count        | int           | NO          |
+| avg_rating          | decimal(3,2)  | YES         |
+| count_calculated_at | datetime(6)   | NO          |
+| score_calculated_at | datetime(6)   | YES         |
++---------------------+---------------+-------------+
++-------------+----------------------------------+--------------+---------------------+
+| TABLE_NAME  | INDEX_NAME                       | SEQ_IN_INDEX | COLUMN_NAME         |
++-------------+----------------------------------+--------------+---------------------+
+| place_stats | idx_place_stats_town_score       |            1 | town_id             |
+| place_stats | idx_place_stats_town_score       |            2 | popular_score       |
+| place_stats | idx_place_stats_town_score       |            3 | place_id            |
+| place_stats | idx_place_stats_town_score       |            4 | bookmark_count      |
+| place_stats | idx_place_stats_town_score       |            5 | review_count        |
+| place_stats | idx_place_stats_town_score       |            6 | avg_rating          |
+| place_stats | idx_place_stats_town_score       |            7 | score_calculated_at |
+| place_stats | PRIMARY                          |            1 | place_id            |
+| place_tag   | idx_place_tag_place_id           |            1 | place_id            |
+| place_tag   | idx_place_tag_tag_place          |            1 | tag_id              |
+| place_tag   | idx_place_tag_tag_place          |            2 | place_id            |
+| place_tag   | PRIMARY                          |            1 | id                  |
+| place_tag   | uk_place_tag_place_tag           |            1 | place_id            |
+| place_tag   | uk_place_tag_place_tag           |            2 | tag_id              |
+| places      | ft_places_name                   |            1 | name                |
+| places      | idx_places_created_by_created_at |            1 | created_by          |
+| places      | idx_places_created_by_created_at |            2 | created_at          |
+| places      | idx_places_town_active_created   |            1 | town_id             |
+| places      | idx_places_town_active_created   |            2 | active              |
+| places      | idx_places_town_active_created   |            3 | created_at          |
+| places      | PRIMARY                          |            1 | id                  |
++-------------+----------------------------------+--------------+---------------------+
++---------------+---------+----------------+-----------+---------------+
+| active_places | ps_rows | place_tag_rows | tags_rows | inactive_tags |
++---------------+---------+----------------+-----------+---------------+
+|          6320 |    6320 |          15481 |        36 |             0 |
++---------------+---------+----------------+-----------+---------------+
++----+--------------------+---------+--------+--------+
+| id | name               | type    | active | linked |
++----+--------------------+---------+--------+--------+
+|  1 | 카페               | MAIN    |      1 |   1146 |
+|  2 | 음식               | MAIN    |      1 |   1094 |
+|  5 | 이색공간           | MAIN    |      1 |    985 |
+|  7 | 커피/디저트        | OPTION1 |      1 |    455 |
+|  8 | 작업               | OPTION1 |      1 |    424 |
+|  9 | 독서               | OPTION1 |      1 |    425 |
+| 10 | 힐링               | OPTION1 |      1 |    452 |
+| 11 | 시그니처메뉴       | OPTION2 |      1 |    308 |
+| 12 | 감성인테리어       | OPTION2 |      1 |    287 |
+| 13 | 채광좋음           | OPTION2 |      1 |    297 |
+| 14 | 콘센트많음         | OPTION2 |      1 |    291 |
+| 15 | 시간제한없음       | OPTION2 |      1 |    308 |
+| 16 | 바테이블           | OPTION2 |      1 |    312 |
+| 21 | 바/술집            | OPTION1 |      1 |    185 |
+| 40 | 합성메인0020       | MAIN    |      1 |     20 |
+| 41 | 합성메인0000       | MAIN    |      1 |      0 |
++----+--------------------+---------+--------+--------+
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| optimizer_switch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+[recheck] city18/notag/popular yesterday=0.803ms/ps today=1.08ms/ps verdict=일치
+[recheck] city18/hotcombo/popular yesterday=2.05ms/pt today=6.44ms/pt verdict=일치/시간 2배 밖
+[recheck] city18/mainsubrare/latest yesterday=0.84ms/pt today=0.606ms/pt verdict=일치
+
+================================================================
+# 복원 검증 (최종): 2026-08-11 23:38:20 KST
+# ① 스키마 = 현행(V34) 형상 / ② tag_bitmask 전수 재계산 / ③ created_at
+# ④ 현행 술어 재실행 / ⑤ 합성 태그 잔재
+================================================================
++---------------------+---------------+-------------+
+| COLUMN_NAME         | COLUMN_TYPE   | IS_NULLABLE |
++---------------------+---------------+-------------+
+| place_id            | bigint        | NO          |
+| town_id             | bigint        | NO          |
+| popular_score       | decimal(18,6) | NO          |
+| bookmark_count      | int           | NO          |
+| review_count        | int           | NO          |
+| avg_rating          | decimal(3,2)  | YES         |
+| count_calculated_at | datetime(6)   | NO          |
+| score_calculated_at | datetime(6)   | YES         |
+| created_at          | datetime      | NO          |
+| tag_bitmask         | bigint        | NO          |
++---------------------+---------------+-------------+
++-------------+------------------------------+--------------+---------------------+-----------+
+| TABLE_NAME  | INDEX_NAME                   | SEQ_IN_INDEX | COLUMN_NAME         | COLLATION |
++-------------+------------------------------+--------------+---------------------+-----------+
+| place_stats | idx_place_stats_town_created |            1 | town_id             | A         |
+| place_stats | idx_place_stats_town_created |            2 | created_at          | A         |
+| place_stats | idx_place_stats_town_created |            3 | place_id            | A         |
+| place_stats | idx_place_stats_town_created |            4 | tag_bitmask         | A         |
+| place_stats | idx_place_stats_town_created |            5 | bookmark_count      | A         |
+| place_stats | idx_place_stats_town_created |            6 | review_count        | A         |
+| place_stats | idx_place_stats_town_created |            7 | avg_rating          | A         |
+| place_stats | idx_place_stats_town_score   |            1 | town_id             | A         |
+| place_stats | idx_place_stats_town_score   |            2 | popular_score       | D         |
+| place_stats | idx_place_stats_town_score   |            3 | place_id            | A         |
+| place_stats | idx_place_stats_town_score   |            4 | bookmark_count      | A         |
+| place_stats | idx_place_stats_town_score   |            5 | review_count        | A         |
+| place_stats | idx_place_stats_town_score   |            6 | avg_rating          | A         |
+| place_stats | idx_place_stats_town_score   |            7 | score_calculated_at | A         |
+| place_stats | idx_place_stats_town_score   |            8 | tag_bitmask         | A         |
+| place_stats | PRIMARY                      |            1 | place_id            | A         |
+| place_tag   | idx_place_tag_place_id       |            1 | place_id            | A         |
+| place_tag   | idx_place_tag_tag_place      |            1 | tag_id              | A         |
+| place_tag   | idx_place_tag_tag_place      |            2 | place_id            | A         |
+| place_tag   | PRIMARY                      |            1 | id                  | A         |
+| place_tag   | uk_place_tag_place_tag       |            1 | place_id            | A         |
+| place_tag   | uk_place_tag_place_tag       |            2 | tag_id              | A         |
++-------------+------------------------------+--------------+---------------------+-----------+
+mask_mismatch=0 created_at_null=0 created_at_mismatch=0 ps_rows=6320 synth_leftover=0
+검증④ 재실행: 0.603 0.533 0.571 → median 0.571ms

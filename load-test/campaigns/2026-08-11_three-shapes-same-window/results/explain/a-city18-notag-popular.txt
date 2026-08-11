@@ -1,0 +1,33 @@
+################################################################
+# A · popular · city18 · notag · p1
+# 태그 그룹: [(무태그)] (그룹 0개, 그룹 안 OR · 그룹 사이 AND)
+# 기반 형상: V33
+# towns: 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318 / 1페이지 기준 매치 행 수: 1800
+# 채취: 2026-08-11 23:37:47
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=372 rows=11) (actual time=0.851..0.853 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=372 rows=1800) (actual time=0.851..0.852 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=372 rows=1800) (actual time=0.0324..0.598 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=372 rows=1800) (actual time=0.0306..0.459 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=372 rows=11) (actual time=1.09..1.09 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=372 rows=1800) (actual time=1.09..1.09 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=372 rows=1800) (actual time=0.0371..0.769 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=372 rows=1800) (actual time=0.0355..0.595 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=372 rows=11) (actual time=1.08..1.08 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=372 rows=1800) (actual time=1.08..1.08 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=372 rows=1800) (actual time=0.0271..0.748 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=372 rows=1800) (actual time=0.0257..0.572 rows=1800 loops=1)

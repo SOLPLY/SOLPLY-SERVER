@@ -1,0 +1,51 @@
+################################################################
+# JOIN · latest · town1 · synth20 · p1
+# 태그 그룹: [40] (그룹 0개, 그룹 안 OR · 그룹 사이 AND)
+# 기반 형상: V33
+# towns: 301 / 1페이지 기준 매치 행 수: 0
+# 채취: 2026-08-11 23:37:09
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+               WHERE pt.place_id = p.id AND t.id = 40 AND t.active = 1)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (actual time=0.093..0.093 rows=0 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.0926..0.0926 rows=0 loops=1)
+        -> Stream results  (cost=11.1 rows=1) (actual time=0.0867..0.0867 rows=0 loops=1)
+            -> Nested loop left join  (cost=11.1 rows=1) (actual time=0.0859..0.0859 rows=0 loops=1)
+                -> Nested loop inner join  (cost=10 rows=1) (actual time=0.0856..0.0856 rows=0 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=40)  (cost=3.03 rows=20) (actual time=0.00871..0.0133 rows=20 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id = 301))  (cost=0.25 rows=0.05) (actual time=0.00346..0.00346 rows=0 loops=20)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00316..0.00318 rows=1 loops=20)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=1.08 rows=1) (never executed)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (actual time=0.0656..0.0656 rows=0 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.0652..0.0652 rows=0 loops=1)
+        -> Stream results  (cost=11.1 rows=1) (actual time=0.0597..0.0597 rows=0 loops=1)
+            -> Nested loop left join  (cost=11.1 rows=1) (actual time=0.0589..0.0589 rows=0 loops=1)
+                -> Nested loop inner join  (cost=10 rows=1) (actual time=0.0585..0.0585 rows=0 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=40)  (cost=3.03 rows=20) (actual time=0.00821..0.013 rows=20 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id = 301))  (cost=0.25 rows=0.05) (actual time=0.00211..0.00211 rows=0 loops=20)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00184..0.00187 rows=1 loops=20)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=1.08 rows=1) (never executed)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (actual time=0.0655..0.0655 rows=0 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.0651..0.0651 rows=0 loops=1)
+        -> Stream results  (cost=11.1 rows=1) (actual time=0.0603..0.0603 rows=0 loops=1)
+            -> Nested loop left join  (cost=11.1 rows=1) (actual time=0.0596..0.0596 rows=0 loops=1)
+                -> Nested loop inner join  (cost=10 rows=1) (actual time=0.0593..0.0593 rows=0 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=40)  (cost=3.03 rows=20) (actual time=0.00833..0.0131 rows=20 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id = 301))  (cost=0.25 rows=0.05) (actual time=0.00214..0.00214 rows=0 loops=20)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00182..0.00185 rows=1 loops=20)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=1.08 rows=1) (never executed)

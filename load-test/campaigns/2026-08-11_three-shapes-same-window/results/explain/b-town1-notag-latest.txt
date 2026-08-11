@@ -1,0 +1,26 @@
+################################################################
+# B · latest · town1 · notag · p1
+# 태그 그룹: [(무태그)] (그룹 0개, 그룹 안 OR · 그룹 사이 AND)
+# 기반 형상: V34
+# towns: 301 / 1페이지 기준 매치 행 수: 100
+# 채취: 2026-08-11 23:37:57
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.created_at, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+
+ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.0302..0.0323 rows=11 loops=1)
+    -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0297..0.0312 rows=11 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.029..0.031 rows=11 loops=1)
+    -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0285..0.03 rows=11 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.0378..0.0402 rows=11 loops=1)
+    -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0372..0.039 rows=11 loops=1)
