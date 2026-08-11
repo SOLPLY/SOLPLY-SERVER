@@ -1,0 +1,11 @@
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+real	0m3.098s
+user	0m0.012s
+sys	0m0.011s
+mode=separated
+fire=campaigns/2026-08-10_batch-read-overlap/bench/20-batch-separated.sql
+exit_code=0
+epoch_start=1786353241.929648000
+epoch_end=1786353245.032245000
+elapsed_s=3.103

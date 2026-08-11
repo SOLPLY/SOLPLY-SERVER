@@ -1,0 +1,10 @@
+
+real	4m4.335s
+user	3m49.400s
+sys	3m36.107s
+mode=storm
+fire=campaigns/2026-08-10_batch-read-overlap/bench/30-hot-page-storm.sh
+exit_code=0
+epoch_start=1786355957.032423000
+epoch_end=1786356201.371033000
+elapsed_s=244.339
