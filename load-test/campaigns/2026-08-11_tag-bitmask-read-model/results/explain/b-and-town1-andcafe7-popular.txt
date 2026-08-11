@@ -1,0 +1,30 @@
+################################################################
+# B(AND-all) · popular · town1 · andcafe7 · mask=130
+# 동네 1곳 — 조기 종료 확인
+# towns: 301
+# 매치 행 수(LIMIT 없음): 9
+# 채취: 2026-08-11 19:52:46
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+  AND (ps.tag_bitmask & 130) = 130
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=9.6 rows=11) (actual time=0.0273..0.0477 rows=9 loops=1)
+    -> Filter: ((ps.score_calculated_at is not null) and ((ps.tag_bitmask & 130) = 130))  (cost=9.6 rows=90) (actual time=0.0268..0.0468 rows=9 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.6 rows=100) (actual time=0.0225..0.0389 rows=100 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=9.6 rows=11) (actual time=0.0271..0.0487 rows=9 loops=1)
+    -> Filter: ((ps.score_calculated_at is not null) and ((ps.tag_bitmask & 130) = 130))  (cost=9.6 rows=90) (actual time=0.0268..0.048 rows=9 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.6 rows=100) (actual time=0.0225..0.0399 rows=100 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=9.6 rows=11) (actual time=0.0308..0.0569 rows=9 loops=1)
+    -> Filter: ((ps.score_calculated_at is not null) and ((ps.tag_bitmask & 130) = 130))  (cost=9.6 rows=90) (actual time=0.0304..0.0559 rows=9 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=9.6 rows=100) (actual time=0.0257..0.0466 rows=100 loops=1)

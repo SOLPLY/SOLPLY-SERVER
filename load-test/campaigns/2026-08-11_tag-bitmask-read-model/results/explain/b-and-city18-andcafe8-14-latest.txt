@@ -1,0 +1,32 @@
+################################################################
+# B(AND-all) · latest · city18 · andcafe8-14 · mask=16642
+# 카페+작업+콘센트많음 — 다중 그룹 AND
+# towns: 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318
+# 매치 행 수(LIMIT 없음): 29
+# 채취: 2026-08-11 19:52:45
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.created_at, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND (ps.tag_bitmask & 16642) = 16642
+ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=363 rows=11) (actual time=0.565..0.566 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=363 rows=1800) (actual time=0.565..0.566 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.tag_bitmask & 16642) = 16642))  (cost=363 rows=1800) (actual time=0.0362..0.552 rows=29 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=363 rows=1800) (actual time=0.0288..0.449 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=363 rows=11) (actual time=0.476..0.477 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=363 rows=1800) (actual time=0.476..0.476 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.tag_bitmask & 16642) = 16642))  (cost=363 rows=1800) (actual time=0.0409..0.461 rows=29 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=363 rows=1800) (actual time=0.0331..0.374 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=363 rows=11) (actual time=0.544..0.545 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=363 rows=1800) (actual time=0.543..0.544 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.tag_bitmask & 16642) = 16642))  (cost=363 rows=1800) (actual time=0.0315..0.531 rows=29 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=363 rows=1800) (actual time=0.0248..0.43 rows=1800 loops=1)
