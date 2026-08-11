@@ -42,7 +42,6 @@ import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryR
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.LatestRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.PopularRow;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
-import org.sopt.solply_server.domain.place.util.PlaceListJoinOrderPolicy;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -103,8 +102,6 @@ class PlaceServiceStatsWiringTest {
   @Mock private PlaceSkeletonSnapshot placeSkeletonSnapshot;
   @Mock private PlaceSkeletonLoader placeSkeletonLoader;
   @Mock private PlaceListProperties placeListProperties;
-  /** 스터빙하지 않는다 — 기본값 false가 곧 "힌트 없음"이고, 이 파일의 관심사는 카운트 배선이다 */
-  @Mock private PlaceListJoinOrderPolicy placeListJoinOrderPolicy;
 
   /** 목록을 타지 않는 테스트(북마크 검색)도 있어 lenient로 둔다 */
   @BeforeEach
@@ -149,12 +146,12 @@ class PlaceServiceStatsWiringTest {
     Place place = placeEntity();
     if (sort == PlaceSortType.POPULAR) {
       given(placeListDbQueryRepository.findPopularRows(
-          List.of(TOWN_ID), null, null, null, false, null, null, NO_PAGING_FETCH_SIZE))
+          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(
               new PopularRow(1L, 9.0, bookmarkCount, REVIEW_COUNT, AVG_RATING)));
     } else {
       given(placeListDbQueryRepository.findLatestRows(
-          List.of(TOWN_ID), null, null, null, false, null, null, NO_PAGING_FETCH_SIZE))
+          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(
               new LatestRow(1L, LocalDateTime.of(2026, 1, 1, 0, 0), bookmarkCount,
                   REVIEW_COUNT, AVG_RATING)));

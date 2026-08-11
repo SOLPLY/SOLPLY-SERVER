@@ -35,7 +35,6 @@ import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
-import org.sopt.solply_server.domain.place.util.PlaceListJoinOrderPolicy;
 import org.sopt.solply_server.domain.place.util.PlaceTagMatcher;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
@@ -75,7 +74,6 @@ public class PlaceService {
   /** {@code skeleton-source=projection}에서만 쓴다 — 스냅샷 로더의 산출식을 요청 시점에 돌린다 */
   private final PlaceSkeletonLoader placeSkeletonLoader;
   private final PlaceListProperties placeListProperties;
-  private final PlaceListJoinOrderPolicy placeListJoinOrderPolicy;
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -244,7 +242,7 @@ public class PlaceService {
                            long reviewCount, BigDecimal avgRating) {}
 
   /**
-   * 장소 목록의 <b>유일한</b> 경로 — place_stats(인기순)/places(최신순) 정렬을 DB에 맡긴다.
+   * 장소 목록의 <b>유일한</b> 경로 — 두 정렬 모두 place_stats 단독으로 DB에 맡긴다 (V34).
    *
    * <p><b>한때 둘이었다.</b> 2026-08-01까지 이 서비스는 동네별 스냅샷을 메모리에 들고 앱에서
    * 정렬하는 캐시 경로(A)와 이 DB 직행 경로(B)를 프로퍼티로 갈라 A/B로 실측했고,
@@ -252,10 +250,10 @@ public class PlaceService {
    * {@code docs/perf/2026-08-01-cache-vs-db-direct.md}에 있다. 여기 남아 있던 "모드 등가",
    * "응답 diff 게이트" 같은 장치는 비교 대상이 사라지면서 함께 걷어냈다.
    *
-   * <p><b>남은 성질 하나는 기억할 것 — POPULAR의 기준 테이블은 place_stats다.</b> 행이 없는
-   * 장소(마지막 카운트 배치 이후 새로 생긴 장소)는 인기순 결과에 아예 나오지 않는다. 이는 버그가
-   * 아니라 정렬을 인덱스에 흡수시키는 대가이며, 창은 카운트 배치 간격(≤1h) 이내다. 근거는
-   * {@code PlaceListDbQueryRepository#findPopularRows} javadoc.
+   * <p><b>남은 성질 하나는 기억할 것 — 두 정렬의 기준 테이블이 place_stats다.</b> 행이 없는 장소는
+   * 어느 정렬에도 나오지 않는다. 어드민 생성·재활성이 같은 트랜잭션에서 행을 만들므로 그 경로에는
+   * 창이 없고, 어드민을 지나친 변경만 다음 카운트 배치(≤1h)를 기다린다. 근거는
+   * {@code PlaceListDbQueryRepository} javadoc.
    *
    * <p><b>커서 v4 — 좌표와 필터 지문 (2026-08-07).</b> v3까지는 여기에 랭킹 <b>세대</b>도 실었다.
    * 스크롤 도중 배치가 돌면 점수가 통째로 갈려 페이지가 어긋나기 때문이었는데, 인기 점수 배치를
@@ -308,15 +306,11 @@ public class PlaceService {
     }
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
-    // 조인 순서 강제 여부는 정렬과 무관하게 같은 입력(동네 수 + 태그 규모)에서 나온다 —
-    // 두 정렬이 한 값을 나눠 쓰는 것이 "필터 의미론은 같다"는 계약과 결이 같다.
-    boolean regionFirstHint = placeListJoinOrderPolicy.shouldForceRegionFirst(
-        leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
 
     List<DbListRow> rows = switch (sort) {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              regionFirstHint, cursorScore, cursorPlaceId, fetchSize).stream()
+              cursorScore, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount(),
               r.reviewCount(), r.avgRating()))
           .toList();
@@ -325,7 +319,7 @@ public class PlaceService {
       // 한쪽만 고치면 페이징이 조용히 어긋난다 — findLatestRows javadoc 참고.
       case LATEST -> placeListDbQueryRepository.findLatestRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              regionFirstHint, cursorSec, cursorPlaceId, fetchSize).stream()
+              cursorSec, cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(
               r.placeId(), r.createdAt().toEpochSecond(ZoneOffset.UTC), r.bookmarkCount(),
               r.reviewCount(), r.avgRating()))

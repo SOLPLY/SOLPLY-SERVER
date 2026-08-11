@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.admin.place.service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +51,15 @@ public class AdminPlaceService {
     private final AdminTagValidator adminTagValidator;
     private final AdminEntityLoader adminEntityLoader;
 
+    /**
+     * <b>새 장소는 같은 트랜잭션에서 place_stats 행까지 만든다.</b> 목록 조회 두 정렬의 기준
+     * 테이블이 place_stats라, 행이 없으면 방금 등록한 장소가 <em>최신순 맨 앞</em>에서 다음 카운트
+     * 배치(≤1h)까지 보이지 않는다 (V34).
+     *
+     * <p>동네가 비활성이면 {@code Place.create}가 장소를 비활성으로 만들고, 그 경우
+     * {@code upsertRowsForActivePlaces}의 {@code WHERE p.active = 1}이 행 생성을 막는다 —
+     * 여기서 따로 분기하지 않는 이유다.
+     */
     @Transactional
     public AdminPlaceUpsertResponse createPlace(final Long adminUserId, final AdminPlaceUpsertRequest req) {
         User admin = adminEntityLoader.getUser(adminUserId);
@@ -86,6 +96,7 @@ public class AdminPlaceService {
         );
 
         Place saved = adminPlaceRepository.save(place);
+        syncPlaceStats(saved.getId());
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
         applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
@@ -94,10 +105,17 @@ public class AdminPlaceService {
         return AdminPlaceUpsertResponse.of(saved.getId());
     }
 
+    /**
+     * <b>수정도 place_stats의 파생 컬럼을 같은 트랜잭션에서 다시 짓는다.</b> 여기서 바뀔 수 있는
+     * 것이 둘이다 — 태그({@code tag_bitmask})와 동네({@code town_id}). 둘 다 낡으면 순위가 아니라
+     * <em>결과 집합</em>이 틀린다: 뗀 태그로 계속 검색되고, 옮긴 동네가 아니라 이전 동네 목록에 낀다.
+     *
+     * <p>{@code town_id} 쪽은 V24부터 알려져 있던 stale 창(≤1h)이었고, V34의 동기 갱신이 그것을
+     * 함께 닫는다.
+     */
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
         Place place = adminEntityLoader.getPlaceWithTown(placeId);
-        Long previousTownId = place.getTown().getId();
         Town updatedTown = adminEntityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
@@ -132,6 +150,7 @@ public class AdminPlaceService {
         );
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
+        syncPlaceStats(place.getId());
 
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
@@ -227,7 +246,7 @@ public class AdminPlaceService {
     }
 
     /**
-     * 장소를 지우면 <b>인기순에서도 그 자리에서 빠져야 한다.</b> 인기순은 place_stats가 기준
+     * 장소를 지우면 <b>목록에서도 그 자리에서 빠져야 한다.</b> 두 정렬 모두 place_stats가 기준
      * 테이블이라 행이 남아 있는 동안 노출되고, 매시 카운트 배치의 잔행 삭제만 믿으면 내린 장소가
      * 최대 1시간 더 보인다 ({@code PlaceStatsRepository#deleteByPlaceIds}에 그 결정의 근거).
      *
@@ -246,9 +265,40 @@ public class AdminPlaceService {
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
 
+    /**
+     * 동네를 되살리면 그 동네 장소들의 place_stats 행도 <b>그 자리에서</b> 만든다.
+     *
+     * <p>내리는 쪽({@link #deletePlace})만 즉시로 당기고 되살리는 쪽은 배치에 맡기던 옛 비대칭은
+     * 인기순만 place_stats를 기준으로 삼던 시절의 것이다. 최신순까지 같은 기준이 된 지금(V34) 행을
+     * 안 만들면 되살린 장소가 <b>최신순에서도</b> 다음 카운트 배치(≤1h)까지 사라진다 — 그것은
+     * 대가가 아니라 버그다.
+     *
+     * <p>비대칭이 완전히 사라지지는 않는다. 새로 만든 행은 미채점이라 인기순에는 다음 점수
+     * 배치(≤24h)까지 나오지 않는다 ({@code PlaceListDbQueryRepository#findPopularRows}).
+     *
+     * <p>{@code updateActiveByTownId}가 {@code clearAutomatically}라 갱신 결과를 엔티티로 다시 읽지
+     * 않고 id만 모아 넘긴다. 활성 여부 판정은 넘긴 뒤 SQL이 원본에서 다시 한다.
+     */
     @Transactional
     public void activatePlacesByTownIds(final List<Long> townIds) {
         adminPlaceRepository.updateActiveByTownId(townIds, true);
+        syncPlaceStats(adminPlaceRepository.findIdsByTownIds(townIds));
+    }
+
+    /** 장소 하나. 태그·동네가 이미 flush된 뒤에 부를 것 — 문장이 원본을 다시 읽는다. */
+    private void syncPlaceStats(final Long placeId) {
+        syncPlaceStats(List.of(placeId));
+    }
+
+    /**
+     * place_stats 행을 원본(places · place_tag)에서 다시 짓는다. 비활성 장소는 문장이 걸러내므로
+     * 여기서 활성 여부를 묻지 않는다 ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
+     */
+    private void syncPlaceStats(final List<Long> placeIds) {
+        if (placeIds.isEmpty()) {
+            return;
+        }
+        placeStatsRepository.upsertRowsForActivePlaces(placeIds, LocalDateTime.now());
     }
 
 

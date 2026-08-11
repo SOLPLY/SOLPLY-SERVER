@@ -127,9 +127,9 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
 
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, bookmark_count, review_count, avg_rating,
+                    (place_id, town_id, created_at, bookmark_count, review_count, avg_rating,
                      count_calculated_at)
-                SELECT p.id, p.town_id, 0, 0, NULL, :countAt
+                SELECT p.id, p.town_id, p.created_at, 0, 0, NULL, :countAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("countAt", COUNT_CALCULATED_AT)
@@ -190,9 +190,9 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
     private void insertStats(long placeId) {
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, popular_score, bookmark_count, review_count, avg_rating,
-                     count_calculated_at, score_calculated_at)
-                SELECT p.id, p.town_id, 12.5, 7, 2, 4.50, :countAt, :scoreAt
+                    (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
+                     avg_rating, count_calculated_at, score_calculated_at)
+                SELECT p.id, p.town_id, p.created_at, 12.5, 7, 2, 4.50, :countAt, :scoreAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("countAt", COUNT_CALCULATED_AT)

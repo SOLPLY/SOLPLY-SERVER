@@ -9,10 +9,25 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.springframework.stereotype.Repository;
 
 /**
  * 장소 목록을 DB에서 정렬·필터·페이징한다 — 목록 조회의 <b>유일한</b> 경로다.
+ *
+ * <p><b>두 정렬 모두 place_stats 단독이다 (V34).</b> 기준 테이블도, 정렬 축도, 필터 축도, 표시값도
+ * 전부 한 테이블 안에 있어 <b>조인이 하나도 없다.</b> 그것이 이 설계의 목적 그 자체다 — 조인이
+ * 있으면 옵티마이저에게 조인 순서·세미조인 전략의 자유도가 생기고, 그 선택은 LIMIT 조기 종료를
+ * 비용에 세지 못하는 맹점에 노출돼 입력(태그 규모 × 지역 크기)에 따라 계획이 흔들린다. 조건부
+ * 힌트로 그 맹점을 우회하는 안은 임계가 요청 형상 한 점에서만 유효함이 실측으로 확정돼 철회했고
+ * ({@code load-test/campaigns/2026-08-11_region-size-threshold}), 대신 선택지 자체를 없앴다.
+ *
+ * <p><b>불변식: place_stats에 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 그래서 두 쿼리 어느
+ * 쪽도 {@code places}를 되짚어 활성 여부를 묻지 않는다. 지키는 주체가 둘이다 — 어드민의 삭제
+ * 경로가 그 자리에서 행을 지우고({@code AdminPlaceService#deletePlace}), 카운트 배치가
+ * {@code upsertCounts}의 {@code WHERE p.active = 1} + {@code deleteStaleRows}로 뒤를 받친다.
+ * <b>내리는 쪽의 노출 창은 즉시</b>이고, 어드민을 지나쳐 {@code active}만 내려간 행이 생기더라도
+ * 다음 회차(≤1h)가 지운다.
  *
  * <p><b>커서 계약.</b> {@code PlaceListCursor} v4. sortKey는 POPULAR이 점수의 double,
  * LATEST가 createdAt의 epoch 초(UTC)이고, 정렬은 POPULAR (점수 DESC, id ASC) /
@@ -31,13 +46,6 @@ public class PlaceListDbQueryRepository {
     private final EntityManager em;
 
     /**
-     * 옵션 그룹 EXISTS에 붙이는 쿼리 블록 이름. 힌트가 세미조인 전략을 지목하려면 그 블록에
-     * 이름이 있어야 한다 — {@code SEMIJOIN(@qb1 FIRSTMATCH)}가 가리키는 대상이 이 이름이다.
-     */
-    private static final String QB_SUB_A = "qb1";
-    private static final String QB_SUB_B = "qb2";
-
-    /**
      * {@code avgRating}은 null을 유지한다 — "리뷰가 없다"와 "평점이 0이다"는 다른 말이고,
      * 여기서 0으로 뭉개면 응답까지 그 구분이 사라진다.
      */
@@ -48,49 +56,33 @@ public class PlaceListDbQueryRepository {
                             long reviewCount, BigDecimal avgRating) {}
 
     /**
-     * 인기순을 place_stats 단독으로 서빙한다 — {@code idx_place_stats_town_score}
-     * (town_id, popular_score DESC, place_id, bookmark_count, review_count, avg_rating,
-     * score_calculated_at)가 필터·정렬·타이브레이크를 흡수하고, 말단 네 컬럼이 표시값과 채점
-     * 여부까지 덮어 커버링을 만든다 (V32).
+     * 인기순. {@code idx_place_stats_town_score} (town_id, popular_score DESC, place_id,
+     * bookmark_count, review_count, avg_rating, score_calculated_at, tag_bitmask)가 필터·정렬·
+     * 타이브레이크를 흡수하고, 말단 다섯 컬럼이 표시값·채점 여부·태그 소속까지 덮어 커버링을 만든다.
      *
-     * <p><b>SELECT에 표시 컬럼을 더할 때는 인덱스 말단도 함께 늘린다.</b> 덮지 못한 컬럼이 하나라도
-     * 있으면 페이지 행마다 {@code PRIMARY (place_id)} 룩업이 붙는다. 세컨더리 엔트리가
-     * PK를 이미 들고 있어 등호 조회이긴 하나, 이 인덱스의 존재 이유가 "쿼리가 인덱스 안에서
-     * 끝난다"이므로 조용히 깨뜨리지 말 것 (V30 주석에 채택 근거). 아래 {@code score_calculated_at}
-     * 술어도 같은 이유로 인덱스 말단에 실려 있다 — WHERE에만 있고 인덱스에 없으면 <b>걸러낼 행마다</b>
-     * 룩업이 붙는다.
-     *
-     * <p><b>불변식: 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 그래서 여기서 활성 여부를 묻지
-     * 않는다. 지키는 주체가 둘이다 — 어드민이 장소를 내리는 경로가 그 자리에서 행을 지우고
-     * ({@code AdminPlaceService#deletePlace} → {@code PlaceStatsRepository#deleteByPlaceIds}),
-     * 카운트 배치가 {@code upsertCounts}의 {@code WHERE p.active = 1} + {@code deleteStaleRows}로
-     * 뒤를 받친다. <b>그래서 내리는 쪽의 노출 창은 ≤1h가 아니라 즉시다.</b> 어드민 경로를 지나쳐
-     * {@code active}만 내려간 행이 생기더라도 다음 회차(≤1h)가 지운다 — 배치는 여전히 안전망이다.
-     *
-     * <p><b>되살리는 쪽은 대칭이 아니고, 그 비대칭이 의도다.</b> 재활성 장소는 다음 카운트 배치가
-     * 행을 만들고 그 행은 미채점이라 인기순에는 다음 점수 배치(01:00)까지 나오지 않는다 —
-     * 이유는 아래 {@code score_calculated_at} 문단에 있다. 노출 창 0 / 미노출 창 ≤24h라는 선택은
-     * "보이면 안 되는 게 보이는 것"이 "안 보이는 것"보다 비싸다는 판단이다.
+     * <p><b>SELECT나 WHERE에 place_stats 컬럼을 더할 때는 인덱스 말단도 함께 늘린다.</b> 덮지 못한
+     * 컬럼이 하나라도 있으면 행마다 {@code PRIMARY (place_id)} 룩업이 붙는다 — 이 인덱스의 존재
+     * 이유가 "쿼리가 인덱스 안에서 끝난다"이므로 조용히 깨뜨리지 말 것. WHERE에만 있고 인덱스에
+     * 없으면 <b>걸러낼 행마다</b> 룩업이 붙어 더 나쁘다 (V30·V32·V34 주석에 채택 근거).
      *
      * <p><b>⚠️ ps 행이 없는 장소는 인기순에 나오지 않는다.</b> place_stats가 <em>기준 테이블</em>이라
-     * 마지막 카운트 배치 이후 새로 생긴 장소가 통째로 빠진다(창 ≤1h). 기준을 places로 뒤집으면
-     * 정렬 인덱스를 잃으므로 이것은 버그가 아니라 대가다. LATEST는 기준 테이블이 places라 이 예외가
-     * 없다 — 신규 장소야말로 최신순 맨 앞에 와야 하기 때문이며, 두 정렬의 비대칭은 의도된 것이다.
+     * 어드민 경로를 지나쳐 생긴 장소가 통째로 빠진다(창 ≤1h). 어드민 생성·재활성은 같은
+     * 트랜잭션에서 행을 만들므로 그 경로에는 창이 없다 ({@code AdminPlaceService}).
      *
      * <p><b>⚠️ {@code score_calculated_at IS NOT NULL}을 지우지 말 것 — 인기순은 채점된 행만 본다.</b>
-     * 카운트 배치가 만든 신규 행의 {@code popular_score}는 컬럼 기본값 0인데, 그 0은 "점수가 0이다"가
-     * 아니라 <b>"아직 점수가 없다"</b>는 뜻이다. 술어를 지우면 그 행이 <em>유효한 음수 점수</em>보다
-     * 위에 끼어든다 — 저평점 리뷰가 쌓인 장소의 점수는 실제로 음수가 되므로(리뷰 축이
+     * 새로 만들어진 행의 {@code popular_score}는 컬럼 기본값 0인데, 그 0은 "점수가 0이다"가 아니라
+     * <b>"아직 점수가 없다"</b>는 뜻이다. 술어를 지우면 그 행이 <em>유효한 음수 점수</em>보다 위에
+     * 끼어든다 — 저평점 리뷰가 쌓인 장소의 점수는 실제로 음수가 되므로(리뷰 축이
      * {@code w₂ × (조정평점 − C)}라 {@code C} 아래면 음수), 아직 아무 평가도 받지 않은 신규 장소가
      * 평판 나쁜 장소를 제치고 올라간다. 두 값의 의미가 다른데 컬럼 하나로는 구분되지 않으므로
      * <b>{@code score_calculated_at}의 non-NULL이 유일한 판정 근거</b>다.
      *
      * <p>그래서 신규·재활성 장소는 <b>다음 인기점수 배치(새벽 01:00)까지 인기순에서 빠진다</b> —
-     * 창의 상한이 24시간이다. 표시 카운트는 그 사이에도 정상이다: 최신순은 기준 테이블이 places라
-     * 이 술어를 타지 않고, 카운트 배치가 이미 채운 값을 그대로 싣는다. "인기순에서 24시간 빠진다"와
-     * "잘못된 순위로 24시간 노출된다" 중 앞을 고른 결정이며, 인기점수를 새벽 배치 이후 값만
-     * 관리한다는 원칙의 직접적 귀결이다. <b>시간당 미채점 행만 따로 채점하는 패스를 추가하지 말 것</b> —
-     * 그 순간 "점수는 하루 1회"가 깨지고 커서 좌표계가 다시 매시간 갈린다.
+     * 창의 상한이 24시간이다. 같은 장소가 최신순에는 즉시 나온다({@link #findLatestRows}는 이
+     * 술어를 걸지 않는다). "인기순에서 24시간 빠진다"와 "잘못된 순위로 24시간 노출된다" 중 앞을
+     * 고른 결정이며, 인기점수를 새벽 배치 이후 값만 관리한다는 원칙의 직접적 귀결이다.
+     * <b>시간당 미채점 행만 따로 채점하는 패스를 추가하지 말 것</b> — 그 순간 "점수는 하루 1회"가
+     * 깨지고 커서 좌표계가 다시 매시간 갈린다.
      *
      * <p><b>다중 town 조회의 filesort는 수용한다.</b> 인덱스상 결과가 town별로 묶여 각 range 안에서만
      * 점수순이라 {@code town_id IN (...)}이 여러 개면 전역 점수순을 인덱스가 만들 수 없다.
@@ -101,29 +93,25 @@ public class PlaceListDbQueryRepository {
      * 비교하므로 경계의 등가가 양쪽에서 똑같이 판정된다. BigDecimal로 바인딩하면 오히려 자바가
      * 이미 뭉갠 값을 DB만 정확히 비교해 경계가 어긋난다.
      *
-     * @param cursorScore     커서의 sortKey. null이면 첫 페이지
-     * @param cursorPlaceId   커서의 장소 id. null이면 첫 페이지
-     * @param regionFirstHint 지역 주도 조인 순서를 강제할지 — 판단은
-     *                        {@code PlaceListJoinOrderPolicy}가 한다
+     * @param cursorScore   커서의 sortKey. null이면 첫 페이지
+     * @param cursorPlaceId 커서의 장소 id. null이면 첫 페이지
      */
     @SuppressWarnings("unchecked")
     public List<PopularRow> findPopularRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
-            boolean regionFirstHint, Double cursorScore, Long cursorPlaceId, int limit) {
+            Double cursorScore, Long cursorPlaceId, int limit) {
 
-        boolean useMainTag = mainTagId != null;
-        boolean useSubA = useMainTag && subTagAIds != null && !subTagAIds.isEmpty();
-        boolean useSubB = useMainTag && subTagBIds != null && !subTagBIds.isEmpty();
+        TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
-                SELECT %sps.place_id, ps.popular_score, ps.bookmark_count,
+                SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
                        ps.review_count, ps.avg_rating
                 FROM place_stats ps
                 WHERE ps.town_id IN (:townIds)
                   AND ps.score_calculated_at IS NOT NULL
-                """.formatted(joinOrderHint(regionFirstHint, "ps", useSubA, useSubB)));
-        appendTagFilters(sql, "ps.place_id", useMainTag, useSubA, useSubB, regionFirstHint);
+                """);
+        appendTagFilters(sql, masks);
         if (useCursor) {
             sql.append("""
                       AND (ps.popular_score < :cursorScore
@@ -135,7 +123,7 @@ public class PlaceListDbQueryRepository {
         Query query = em.createNativeQuery(sql.toString())
                 .setParameter("townIds", townIds)
                 .setParameter("limitSize", limit);
-        bindTagFilters(query, mainTagId, subTagAIds, subTagBIds, useMainTag, useSubA, useSubB);
+        bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorScore", cursorScore);
             query.setParameter("cursorPlaceId", cursorPlaceId);
@@ -155,77 +143,66 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
-     * 최신순. <b>기준 테이블이 place_stats가 아니라 places다</b> — 배치가 아직 닿지 않은 신규 장소는
-     * ps 행이 없는데, 신규 장소야말로 최신순의 맨 앞에 와야 할 대상이다. 그래서 카운트만
-     * LEFT JOIN으로 붙이고 없으면 0으로 읽는다 (캐시 경로도 행이 없으면 0으로 표시한다).
+     * 최신순. 인기순과 <b>같은 기준 테이블</b>이고 정렬 축만 다르다 (V34).
      *
-     * <p><b>{@code avg_rating}에만 COALESCE를 걸지 않는다.</b> 카운트는 없으면 0이 정확한 답이지만
-     * 평점은 0으로 채우는 순간 "평점 0점"으로 읽힌다. 조인이 성립하지 않은 신규 장소도, 리뷰가
-     * 아직 없는 장소도 null이 정답이라 그대로 흘려보낸다.
+     * <p><b>{@code score_calculated_at} 술어를 여기에 넣지 말 것.</b> 신규 장소는 아직 미채점인데,
+     * 신규 장소야말로 최신순의 맨 앞에 와야 할 대상이다. 인기순만 그 술어를 거는 비대칭이 의도다 —
+     * 근거는 {@link #findPopularRows} javadoc.
      *
-     * <p><b>정렬은 {@code idx_places_town_active_created (town_id, active, created_at)}가 만든다
-     * — 역방향 스캔이다.</b> 세컨더리 인덱스 뒤에 PK가 오름차순으로 붙으므로 이 인덱스를 거꾸로 읽으면
-     * {@code created_at DESC, id DESC}가 그대로 나와 ORDER BY와 일치한다. {@code created_at}을
-     * <b>DESC로 선언하면 오히려 어긋난다</b>({@code created_at DESC, id ASC}가 되어 타이브레이크가
-     * 반대) — V31 주석에 실측 근거가 있다. SELECT가 places에서 만지는 컬럼을 모두 덮어 커버링이기도 하다.
+     * <p><b>정렬은 {@code idx_place_stats_town_created (town_id, created_at, place_id, ...)}가
+     * 만든다 — 역방향 스캔이다.</b> 이 인덱스를 거꾸로 읽으면 {@code created_at DESC, place_id DESC}가
+     * 그대로 나와 ORDER BY와 일치한다. {@code created_at}을 <b>DESC로 선언하면 오히려 어긋난다</b>
+     * (뒤에 붙는 place_id가 여전히 오름차순이라 타이브레이크가 반대) — V31·V34 주석에 실측 근거가
+     * 있다. 말단 네 컬럼이 태그 술어와 표시값을 덮어 커버링이기도 하다.
      *
      * <p>다중 town은 town별로만 순서가 만들어져 filesort가 남는다. 정렬 대상이 커버링 엔트리
      * (시 단위 ~1,800건)라 수용한다 — 인기순과 같은 성질이다.
      *
      * <p><b>커서를 {@code FROM_UNIXTIME}이 아니라 LocalDateTime 바인딩으로 비교하는 이유.</b>
      * {@code FROM_UNIXTIME}은 세션 {@code time_zone}을 타므로 커넥션 설정에 따라 경계가 통째로
-     * 밀린다 — 커서 초는 UTC 기준인데 세션이 KST면 9시간이 어긋난다. 반면 커서의 epoch 초는 캐시
-     * 경로가 {@code createdAt.toEpochSecond(ZoneOffset.UTC)}로 만든, 벽시계 값을 UTC로 <em>간주해</em>
-     * 얻은 수다. 그러므로 정확히 그 역변환({@code LocalDateTime.ofEpochSecond(sec, 0, UTC)})으로
-     * 원래 벽시계 값을 복원해 DATETIME 컬럼과 직접 비교하는 것이, 타임존에 의존하지 않으면서
-     * 캐시 경로와 왕복이 정확히 일치하는 유일한 방식이다.
+     * 밀린다 — 커서 초는 UTC 기준인데 세션이 KST면 9시간이 어긋난다. 반면 커서의 epoch 초는 호출부가
+     * {@code createdAt.toEpochSecond(ZoneOffset.UTC)}로 만든, 벽시계 값을 UTC로 <em>간주해</em> 얻은
+     * 수다. 그러므로 정확히 그 역변환({@code LocalDateTime.ofEpochSecond(sec, 0, UTC)})으로 원래
+     * 벽시계 값을 복원해 DATETIME 컬럼과 직접 비교하는 것이, 타임존에 의존하지 않으면서 발급부와
+     * 왕복이 정확히 일치하는 유일한 방식이다.
      *
-     * <p>{@code places.created_at}은 초 정밀도 DATETIME이라 같은 초에 여러 장소가 들어올 수 있다.
-     * 그래서 등호 분기의 타이브레이크({@code p.id < :cursorPlaceId})가 필수다 — 없으면 같은 초의
-     * 장소들이 페이지 경계에서 조용히 누락된다.
+     * <p>{@code created_at}은 초 정밀도 DATETIME이라 같은 초에 여러 장소가 들어올 수 있다.
+     * 그래서 등호 분기의 타이브레이크({@code ps.place_id < :cursorPlaceId})가 필수다 — 없으면 같은
+     * 초의 장소들이 페이지 경계에서 조용히 누락된다.
      *
-     * <p><b>조인이 PK 등호 하나로 끝난다 (V32).</b> 버전 행 시절에는 여기에 "현 버전은 무엇인가"를
-     * 묻는 스칼라 서브쿼리가 붙어 있었다 — 지우면 보관 중인 두 버전이 모두 붙어 장소마다 행이
-     * 2개로 펼쳐졌기 때문이다. 장소당 행이 하나로 돌아오면서 그 조건도, 조건이 읽던 레지스터도
-     * 함께 사라졌다.
+     * <p>카운트에 COALESCE를 걸지 않는 것은 컬럼이 {@code NOT NULL}이기 때문이다. {@code avg_rating}만
+     * nullable로 남는데, 0으로 채우면 "평점 0점"으로 읽히므로 그대로 흘려보낸다.
      *
      * @param cursorEpochSecond 커서의 sortKey(생성일 epoch 초, UTC 기준). null이면 첫 페이지
      * @param cursorPlaceId     커서의 장소 id. null이면 첫 페이지
-     * @param regionFirstHint   지역 주도 조인 순서를 강제할지 — 판단은
-     *                          {@code PlaceListJoinOrderPolicy}가 한다
      */
     @SuppressWarnings("unchecked")
     public List<LatestRow> findLatestRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
-            boolean regionFirstHint, Long cursorEpochSecond, Long cursorPlaceId, int limit) {
+            Long cursorEpochSecond, Long cursorPlaceId, int limit) {
 
-        boolean useMainTag = mainTagId != null;
-        boolean useSubA = useMainTag && subTagAIds != null && !subTagAIds.isEmpty();
-        boolean useSubB = useMainTag && subTagBIds != null && !subTagBIds.isEmpty();
+        TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorEpochSecond != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
-                SELECT %sp.id, p.created_at, COALESCE(ps.bookmark_count, 0),
-                       COALESCE(ps.review_count, 0), ps.avg_rating
-                FROM places p
-                LEFT JOIN place_stats ps
-                       ON ps.place_id = p.id
-                WHERE p.town_id IN (:townIds)
-                  AND p.active = 1
-                """.formatted(joinOrderHint(regionFirstHint, "p", useSubA, useSubB)));
-        appendTagFilters(sql, "p.id", useMainTag, useSubA, useSubB, regionFirstHint);
+                SELECT ps.place_id, ps.created_at, ps.bookmark_count,
+                       ps.review_count, ps.avg_rating
+                FROM place_stats ps
+                WHERE ps.town_id IN (:townIds)
+                """);
+        appendTagFilters(sql, masks);
         if (useCursor) {
             sql.append("""
-                      AND (p.created_at < :cursorCreatedAt
-                           OR (p.created_at = :cursorCreatedAt AND p.id < :cursorPlaceId))
+                      AND (ps.created_at < :cursorCreatedAt
+                           OR (ps.created_at = :cursorCreatedAt AND ps.place_id < :cursorPlaceId))
                     """);
         }
-        sql.append("ORDER BY p.created_at DESC, p.id DESC LIMIT :limitSize");
+        sql.append("ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT :limitSize");
 
         Query query = em.createNativeQuery(sql.toString())
                 .setParameter("townIds", townIds)
                 .setParameter("limitSize", limit);
-        bindTagFilters(query, mainTagId, subTagAIds, subTagBIds, useMainTag, useSubA, useSubB);
+        bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorCreatedAt",
                     LocalDateTime.ofEpochSecond(cursorEpochSecond, 0, ZoneOffset.UTC));
@@ -246,105 +223,69 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
-     * 태그 EXISTS 블록. 두 정렬이 같은 문자열을 <b>공유</b>해야 "정렬 축만 다르고 필터 의미론은 같다"가
+     * 요청의 태그 조건을 그룹별 마스크 <b>셋</b>으로 옮긴 것. 0은 "이 그룹의 술어를 붙이지 않는다".
+     *
+     * <p>세 그룹은 AND로 엮이므로 <b>한 마스크로 합치면 안 된다</b> — 합치는 순간 OR가 되어 의미가
+     * 뒤집힌다. 그룹 안의 OR만 마스크가 흡수한다 ({@code TagBitmask} 참조).
+     *
+     * <p>메인 태그가 없으면 서브 조건은 통째로 버린다. 북마크 검색의 {@code PlaceTagMatcher}가
+     * {@code mainTagId == null}이면 원본을 그대로 돌려주는 것과 같은 규칙이고, 두 경로가 여기서
+     * 갈리면 같은 요청이 경로마다 다른 답을 낸다.
+     */
+    private record TagMasks(long main, long subA, long subB) {
+
+        static TagMasks of(Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds) {
+            if (mainTagId == null) {
+                return new TagMasks(0L, 0L, 0L);
+            }
+            return new TagMasks(
+                    TagBitmask.of(mainTagId),
+                    TagBitmask.ofAny(subTagAIds),
+                    TagBitmask.ofAny(subTagBIds));
+        }
+    }
+
+    /**
+     * 태그 술어. 두 정렬이 같은 문자열을 <b>공유</b>해야 "정렬 축만 다르고 필터 의미론은 같다"가
      * 구조적으로 보장된다 — 복사해 두면 한쪽만 고치는 실수가 조용히 통과한다.
      *
-     * <p><b>장소 id 컬럼을 별칭째 파라미터로 받는 이유 — 공유를 지키기 위해서다.</b> 예전에는 두 쿼리
-     * 모두 places를 {@code p}로 뒀기에 {@code p.id}를 문자열에 박아 둘 수 있었다. 인기순에서 places
-     * 조인이 사라지면서({@link #findPopularRows} javadoc) 그 별칭이 한쪽에만 존재하게 됐는데,
-     * 그때 선택지는 둘이었다 — 블록을 복사해 정렬별로 갈라 두거나, 다른 <em>한 조각</em>만
-     * 파라미터로 빼고 템플릿은 한 벌로 남기거나. 갈라 두면 위 문단의 구조적 보장이 그대로
-     * 사라지므로 후자를 택했다. 인기순은 {@code "ps.place_id"}, 최신순은 {@code "p.id"}를 넘긴다.
+     * <p>마스크가 0인 그룹은 술어를 붙이지 않는다. 태그 조건이 아예 없는 요청의 SQL이 태그 도입
+     * 전과 <b>바이트째 같아지는</b> 것이 그 결과이고, 그것이 최다 트래픽 경로다.
      *
-     * <p>이 인자는 <b>호출자가 주는 컬럼 표현식 리터럴</b>이라 사용자 입력이 닿지 않는다 —
-     * 두 호출부 모두 상수 문자열이다. 여기에 요청에서 온 값을 흘리는 순간 SQL 조립이 되므로
-     * 그러지 말 것 (태그 id들은 지금처럼 {@code :mainTagId} 같은 바인딩 파라미터로만 들어온다).
+     * <p><b>{@code != 0}을 {@code = :mask}로 바꾸지 말 것.</b> 등호는 "그 그룹의 태그를 전부 가진
+     * 장소"가 되어 그룹 안 OR가 AND로 뒤집힌다.
      *
      * <p><b>⚠️ 여기서 {@code tags}를 조인하지 말 것.</b> 요청에 실린 태그 id의 존재·활성·타입은
      * 상위 {@code TagValidator.validatePlaceTagConditions}가 이미 검증해 400/404로 막는다
-     * ({@code PlaceService#getPlaces}). 그러니 SQL의 재검사는 중복인데, 값이 공짜가 아니라
-     * <b>플랜을 망가뜨린다</b> — {@code t.active = 1}은 인덱스도 통계도 없어 옵티마이저가 통과율을
-     * 기본 추측값 10%로 잡고, EXISTS마다 그 추측이 곱해져 태그 쪽 결과를 <b>1,000배 과소평가</b>한다.
-     * 그러면 주도 테이블이 {@code place_tag}로 뒤집혀 정렬 인덱스와 조기 종료를 함께 잃는다
-     * (실측: {@code docs/perf/2026-08-06-tag-filter-join-order.md}).
-     *
-     * <p>{@code pt.tag_id}가 곧 태그 id이고 {@code fk_place_tag_tag}가 그 행의 존재를 보장하므로
-     * 조인은 애초에 정보를 보태지도 않았다.
+     * ({@code PlaceService#getPlaces}). 조인은 정보를 보태지 않으면서 이 쿼리에 유일하게 남은
+     * "조인 없음"이라는 성질을 깨뜨린다.
      *
      * <p><b>북마크 검색 경로와의 차이 — 타입·활성을 여기서는 검사하지 않는다.</b>
      * {@code PlaceTagMatcher}는 엔티티의 {@code Tag}를 직접 보고 타입과 활성을 확인한다. 따라서
      * <b>타입이 어긋나거나 비활성인 태그 id</b>가 오면 북마크 검색은 0건, 목록은 매칭이 되어 두 경로가
      * 갈린다. 그 갈림은 <b>상위 검증이 통과시키지 않는 입력에서만</b> 관측된다.
      */
-    private void appendTagFilters(
-            StringBuilder sql, String placeIdColumn,
-            boolean useMainTag, boolean useSubA, boolean useSubB, boolean regionFirstHint) {
-        if (useMainTag) {
-            sql.append("""
-                      AND EXISTS (SELECT 1 FROM place_tag pt
-                                   WHERE pt.place_id = %s AND pt.tag_id = :mainTagId)
-                    """.formatted(placeIdColumn));
+    private void appendTagFilters(StringBuilder sql, TagMasks masks) {
+        if (masks.main() != 0L) {
+            sql.append("  AND (ps.tag_bitmask & :mainMask) != 0\n");
         }
-        if (useSubA) {
-            sql.append("""
-                      AND EXISTS (SELECT %s1 FROM place_tag pt
-                                   WHERE pt.place_id = %s AND pt.tag_id IN (:subTagAIds))
-                    """.formatted(qbNameHint(regionFirstHint, QB_SUB_A), placeIdColumn));
+        if (masks.subA() != 0L) {
+            sql.append("  AND (ps.tag_bitmask & :subAMask) != 0\n");
         }
-        if (useSubB) {
-            sql.append("""
-                      AND EXISTS (SELECT %s1 FROM place_tag pt
-                                   WHERE pt.place_id = %s AND pt.tag_id IN (:subTagBIds))
-                    """.formatted(qbNameHint(regionFirstHint, QB_SUB_B), placeIdColumn));
+        if (masks.subB() != 0L) {
+            sql.append("  AND (ps.tag_bitmask & :subBMask) != 0\n");
         }
     }
 
-    /**
-     * SELECT 직후에 들어가는 옵티마이저 힌트 조각.
-     *
-     * <p>옵티마이저는 시 단위 + 태그 조회에서 태그 주도 계획을 고르는데, 태그가 흔하면 지역 주도 +
-     * FirstMatch가 약 2배 빠르다. 정렬 인덱스를 스트리밍으로 읽고 LIMIT에서 조기 종료하는 이득을
-     * 코스트 모델이 반영하지 못하는 것이 원인이다 ({@code 2026-08-11_join-order-threshold}).
-     *
-     * <p><b>{@code JOIN_PREFIX}만으로는 절반만 고쳐진다.</b> 주도 테이블을 지역으로 되돌리면 옵션
-     * 그룹의 IN-list EXISTS가 <em>구체화(Materialize with deduplication)</em>로 바뀌어 이득을 도로
-     * 까먹는다. {@code SEMIJOIN(@qb FIRSTMATCH)}가 그 구체화를 막아 첫 매치에서 끊게 한다 —
-     * 두 힌트는 한 벌이다.
-     *
-     * <p><b>붙이지 않을 때는 빈 문자열이라 SQL이 바이트째 예전과 같다.</b> 판단이 어긋난 요청이
-     * 지금까지와 다른 문장을 받는 일이 없어야 힌트 도입이 되돌릴 수 있는 변경으로 남는다.
-     */
-    private String joinOrderHint(
-            boolean regionFirstHint, String drivingAlias, boolean useSubA, boolean useSubB) {
-        if (!regionFirstHint) {
-            return "";
+    private void bindTagFilters(Query query, TagMasks masks) {
+        if (masks.main() != 0L) {
+            query.setParameter("mainMask", masks.main());
         }
-        StringBuilder hint = new StringBuilder("/*+ JOIN_PREFIX(").append(drivingAlias).append(")");
-        if (useSubA) {
-            hint.append(" SEMIJOIN(@").append(QB_SUB_A).append(" FIRSTMATCH)");
+        if (masks.subA() != 0L) {
+            query.setParameter("subAMask", masks.subA());
         }
-        if (useSubB) {
-            hint.append(" SEMIJOIN(@").append(QB_SUB_B).append(" FIRSTMATCH)");
-        }
-        return hint.append(" */ ").toString();
-    }
-
-    /** 메인 태그 블록에는 이름을 붙이지 않는다 — 등호 프로브라 전략을 지목할 것이 없다. */
-    private String qbNameHint(boolean regionFirstHint, String queryBlockName) {
-        return regionFirstHint ? "/*+ QB_NAME(" + queryBlockName + ") */ " : "";
-    }
-
-    private void bindTagFilters(
-            Query query, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
-            boolean useMainTag, boolean useSubA, boolean useSubB) {
-        if (useMainTag) {
-            query.setParameter("mainTagId", mainTagId);
-        }
-        if (useSubA) {
-            query.setParameter("subTagAIds", subTagAIds);
-        }
-        if (useSubB) {
-            query.setParameter("subTagBIds", subTagBIds);
+        if (masks.subB() != 0L) {
+            query.setParameter("subBMask", masks.subB());
         }
     }
 

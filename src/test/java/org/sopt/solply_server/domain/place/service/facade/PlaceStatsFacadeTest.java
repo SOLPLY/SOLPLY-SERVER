@@ -27,7 +27,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
-import org.sopt.solply_server.domain.place.cache.PlaceTagCountCache;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
@@ -46,9 +45,6 @@ class PlaceStatsFacadeTest {
     @Mock
     private PlaceSkeletonLoader placeSkeletonLoader;
 
-    @Mock
-    private PlaceTagCountCache placeTagCountCache;
-
     /**
      * 실물을 쓴다 — 기본값이 {@code SNAPSHOT}이라서 훅이 <b>기본 경로</b>로 돌고, 값을 바꿔야 하는
      * 테스트만 명시적으로 옮긴다. mock이면 기본이 null이라 훅이 도는 것을 아무도 못 본다.
@@ -60,8 +56,7 @@ class PlaceStatsFacadeTest {
     @BeforeEach
     void createFacade() {
         placeStatsFacade =
-                new PlaceStatsFacade(batchProcessor, placeSkeletonLoader, placeTagCountCache,
-                        placeListProperties);
+                new PlaceStatsFacade(batchProcessor, placeSkeletonLoader, placeListProperties);
     }
 
     /**

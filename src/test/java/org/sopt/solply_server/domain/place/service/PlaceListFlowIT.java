@@ -14,7 +14,9 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertRequest;
 import org.sopt.solply_server.domain.admin.place.facade.AdminPlaceFacade;
+import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
@@ -73,8 +75,10 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     @Autowired private JdbcTemplate jdbcTemplate;
     /** 실제 북마크 생성 경로. 리포지토리를 직접 부르면 서비스 층의 계약이 검증에서 빠진다. */
     @Autowired private BookmarkService bookmarkService;
-    /** 어드민의 실제 삭제 경로. 컨트롤러가 부르는 진입점이라 파사드로 잡는다. */
+    /** 어드민의 실제 생성·수정·삭제 경로. 컨트롤러가 부르는 진입점이라 파사드로 잡는다. */
     @Autowired private AdminPlaceFacade adminPlaceFacade;
+    /** 동네 재활성은 파사드에 없다 — {@code AdminTownService}가 이 메서드를 직접 부른다 */
+    @Autowired private AdminPlaceService adminPlaceService;
 
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
@@ -99,6 +103,19 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
     /** 태그 필터 배선 검증용 태그의 이름 접두사 — 뒷정리가 이것으로 되찾는다 */
     private static final String TAG_NAME_PREFIX = "db직행IT태그";
+
+    /** V2 시드의 admin 유저 */
+    private static final long ADMIN_USER_ID = 1L;
+
+    /**
+     * 어드민 쓰기 경로가 쓰는 태그 좌표는 <b>V2 시드의 것을 그대로 빌린다</b>.
+     * {@code TagValidator}가 "서브 태그의 parent = 메인 태그"까지 요구하므로 계층이 이미 맞는
+     * 시드를 쓰는 편이, 관계까지 갖춘 태그 세 개를 매번 심는 것보다 픽스처가 짧다.
+     * (1 = 카페 · 7 = 커피/디저트 · 8 = 작업, 뒤 둘은 OPTION1이고 parent가 1이다.)
+     */
+    private static final long SEED_MAIN_TAG = 1L;
+    private static final long SEED_OPTION1_A = 7L;
+    private static final long SEED_OPTION1_B = 8L;
 
     // 점수는 ln(1 + 감쇠합) + 2 × (조정평점 − 전체평균)이고, 여기서 전체평균 C는 3.0이다
     // (5점 5건 + 1점 5건). 북마크 쪽이 ≈인 것은 감쇠항이 "기준시각 1분 전"에도 미세하게
@@ -162,7 +179,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * 최신순은 {@code places}를 기준 테이블로 DB가 서빙한다 (카운트만 place_stats LEFT JOIN).
+     * 최신순도 {@code place_stats}를 기준 테이블로 DB가 서빙한다 (V34).
      *
      * <p><b>인기순과 동네를 나눈 이유.</b> 최신순 픽스처를 같은 동네에 심으면 그 장소들이 인기순
      * 결과에도 0점으로 끼어들어 위 테스트의 기대값([C, A] → [B])이 통째로 흔들린다.
@@ -177,8 +194,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * ({@code PlaceListCursor}의 sortKey 한계) 등호 분기의 id 타이브레이크가 없으면 같은 초의
      * {@code l1}이 통째로 누락되고, 반대로 경계가 {@code <=}로 느슨해지면 {@code l2}가 중복된다.
      *
-     * <p>이 장소들은 setUp의 배치 <b>이후</b>에 심으므로 place_stats 행이 없다 — 최신순이
-     * {@code LEFT JOIN}으로 카운트를 붙이는 경로(신규 장소가 맨 앞에 와야 한다)까지 함께 걷는다.
+     * <p>이 장소들은 SQL로 직접 심어 어드민 경로를 지나치므로, 최신순에 나오려면 카운트 배치가
+     * 한 번 돌아야 한다 (V34: 최신순의 기준 테이블이 place_stats다). 어드민 경로로 만든 장소가
+     * 배치 없이 즉시 나오는 것은 {@link #어드민이_만든_장소는_배치_없이_최신순에_즉시_나온다}가 문다.
      */
     @Test
     void 최신순은_생성일_내림차순이고_동점은_id_내림차순이며_커서가_같은_초를_흘리지_않는다() {
@@ -187,6 +205,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         long l2 = createPlace(latestTownId, "db직행최신2", PLACE_CREATED_AT);
         long l3 = createPlace(latestTownId, "db직행최신3", PLACE_CREATED_AT);
         long lOld = createPlace(latestTownId, "db직행최신0", PLACE_CREATED_AT.minusDays(2));
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
 
         PlaceFilterGetResponse page1 =
                 placeService.getPlaces(me, latestRequest(latestTownId, null, 2));
@@ -202,7 +221,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         assertThat(page2.nextCursor()).isNull();
         assertThat(ids(page1)).doesNotContainAnyElementsOf(ids(page2));
 
-        // place_stats 행이 없는 신규 장소는 0건으로 읽는다 (INNER JOIN이면 여기서 사라진다)
+        // 북마크가 없는 장소는 0건으로 읽는다
         assertThat(previewOf(page2, lOld).bookmarkCount()).isZero();
     }
 
@@ -280,7 +299,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      *
      * <p><b>같은 무대에서 표시 카운트는 정상이어야 한다.</b> 인기순에서 빼는 것과 "통계가 아예
      * 없는 것처럼 보이는 것"은 다른 말이고, 후자면 이 결정이 사용자에게 손해가 된다.
-     * 최신순은 기준 테이블이 places라 이 술어를 타지 않으므로 신규 장소가 맨 앞에 뜨고 카운트도
+     * 최신순은 {@code score_calculated_at} 술어를 걸지 않으므로 같은 행이 맨 앞에 뜨고 카운트도
      * 실린다 — 두 정렬의 비대칭이 여기서 값으로 드러난다.
      */
     @Test
@@ -327,6 +346,104 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         assertThat(ranked).doesNotContain(newPlace);
         // 꼬리가 음수 점수 장소다 — 미채점 0이 끼어들면 여기가 newPlace로 바뀐다
         assertThat(ranked.get(ranked.size() - 1)).isEqualTo(placeB);
+    }
+
+    // === 어드민 쓰기 경로가 place_stats를 동기 유지한다 (V34) ===
+
+    /**
+     * <b>어드민이 만든 장소는 배치를 기다리지 않는다.</b> V34로 최신순의 기준 테이블이
+     * place_stats가 되면서, 행을 안 만들면 방금 등록한 장소가 <em>최신순 맨 앞</em>에서 최대
+     * 1시간 사라진다 — 대가로 수용할 수 없는 종류의 창이라 생성 경로가 같은 트랜잭션에서 행을 짓는다.
+     *
+     * <p><b>태그 필터를 걸어 조회하는 것이 요점이다.</b> 행만 생기고 {@code tag_bitmask}가 0이면
+     * 무필터 조회는 통과하고 태그 조회만 조용히 비는데, 그 상태가 정확히 이 마이그레이션의
+     * 대표적 실패 모양이다.
+     *
+     * <p><b>배치를 한 번도 돌리지 않는다.</b> 끼우는 순간 "즉시"인지 "≤1h"인지가 구분되지 않는다.
+     */
+    @Test
+    void 어드민이_만든_장소는_배치_없이_최신순에_즉시_나온다() {
+        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민생성");
+
+        long created = adminPlaceFacade.createPlace(
+                ADMIN_USER_ID, upsertRequest("db직행어드민생성", adminTownId, SEED_OPTION1_A)).placeId();
+
+        assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_A))))
+                .containsExactly(created);
+    }
+
+    /**
+     * <b>태그를 갈아 끼우면 필터 결과가 그 자리에서 갈린다.</b> {@code tag_bitmask}는 place_tag의
+     * 사본이라, 수정 경로가 다시 짓지 않으면 <b>뗀 태그로 계속 검색되고 새로 붙인 태그로는 안
+     * 잡히는</b> 상태가 다음 배치까지 남는다. 두 방향을 함께 단언하는 이유가 그것이다 —
+     * 한쪽만 보면 마스크를 지우기만 하고 다시 채우지 않는 변이가 통과한다.
+     */
+    @Test
+    void 어드민의_태그_수정은_배치_없이_필터에_즉시_반영된다() {
+        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민태그수정");
+        long placeId = adminPlaceFacade.createPlace(
+                ADMIN_USER_ID, upsertRequest("db직행어드민수정", adminTownId, SEED_OPTION1_A)).placeId();
+
+        adminPlaceFacade.updatePlace(
+                placeId, upsertRequest("db직행어드민수정", adminTownId, SEED_OPTION1_B));
+
+        assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_A))))
+                .isEmpty();
+        assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_B))))
+                .containsExactly(placeId);
+    }
+
+    /**
+     * <b>동네를 옮기면 소속도 그 자리에서 옮겨간다.</b> {@code place_stats.town_id}는 정렬 인덱스의
+     * 선두 컬럼이라 places에서 비정규화해 온 값이고, 낡으면 순위가 아니라 <em>소속</em>이 틀린다 —
+     * 옮긴 장소가 옛 동네 목록에 계속 낀다. 배치 간격이 그 창의 상한이던 것을 V34의 동기 갱신이 닫았다.
+     */
+    @Test
+    void 어드민의_동네_이동은_배치_없이_목록_소속에_즉시_반영된다() {
+        long fromTownId = createTown(TOWN_NAME_PREFIX + "어드민이동전");
+        long toTownId = createTown(TOWN_NAME_PREFIX + "어드민이동후");
+        long placeId = adminPlaceFacade.createPlace(
+                ADMIN_USER_ID, upsertRequest("db직행어드민이동", fromTownId, SEED_OPTION1_A)).placeId();
+
+        adminPlaceFacade.updatePlace(
+                placeId, upsertRequest("db직행어드민이동", toTownId, SEED_OPTION1_A));
+
+        assertThat(ids(placeService.getPlaces(me, latestRequest(fromTownId, null, 10)))).isEmpty();
+        assertThat(ids(placeService.getPlaces(me, latestRequest(toTownId, null, 10))))
+                .containsExactly(placeId);
+    }
+
+    /**
+     * <b>되살린 장소도 배치를 기다리지 않는다.</b> 내리는 쪽만 즉시로 당기고 되살리는 쪽은 배치에
+     * 맡기던 옛 비대칭은 인기순만 place_stats를 기준으로 삼던 시절의 것이다. 최신순까지 같은 기준이
+     * 된 지금 행을 안 만들면 되살린 장소가 <em>최신순에서도</em> 최대 1시간 사라진다.
+     *
+     * <p>비대칭이 완전히 사라진 것은 아니다 — 새로 만든 행은 미채점이라 <b>인기순</b>에는 다음 점수
+     * 배치까지 나오지 않는다. 그 잔여 비대칭도 여기서 값으로 확인한다.
+     *
+     * <p>중간의 카운트 배치 <b>두 번</b>이 각각 다른 일을 한다: 첫 번째는 행을 만들고, 두 번째는
+     * 비활성화된 장소의 잔행을 지운다(사라진 상태를 실제로 만든다). 그 뒤로는 배치를 돌리지 않는다.
+     */
+    @Test
+    void 재활성화된_장소는_배치_없이_최신순에_즉시_돌아온다() {
+        long revivedTownId = createTown(TOWN_NAME_PREFIX + "어드민재활성");
+        long placeId = createPlace(revivedTownId, "db직행재활성", PLACE_CREATED_AT);
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+        assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
+                .containsExactly(placeId);
+
+        jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeId);
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(2));
+        assertThat(statsRowExists(placeId)).isFalse();
+
+        jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeId);
+        adminPlaceService.activatePlacesByTownIds(List.of(revivedTownId));
+
+        assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
+                .containsExactly(placeId);
+        // 되살아난 행은 미채점이라 인기순에는 아직 없다 — 잔여 비대칭이 그대로임을 값으로 남긴다
+        assertThat(ids(placeService.getPlaces(me, popularRequest(revivedTownId, null, 10))))
+                .isEmpty();
     }
 
     // === 커서 v4: 좌표와 필터 지문 ===
@@ -451,6 +568,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         long latestTownId = createTown(LATEST_TOWN_NAME + "지문");
         createPlace(latestTownId, "db직행지문1", PLACE_CREATED_AT);
         createPlace(latestTownId, "db직행지문2", PLACE_CREATED_AT);
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
 
         String cursor =
                 placeService.getPlaces(me, latestRequest(latestTownId, null, 1)).nextCursor();
@@ -663,8 +781,30 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     private PlaceFilterGetRequest popularRequest(String cursor, Integer size) {
+        return popularRequest(townId, cursor, size);
+    }
+
+    private PlaceFilterGetRequest popularRequest(long town, String cursor, Integer size) {
         return new PlaceFilterGetRequest(
-                townId, false, null, null, null, PlaceSortType.POPULAR, cursor, size);
+                town, false, null, null, null, PlaceSortType.POPULAR, cursor, size);
+    }
+
+    /** 최신순 + 태그 필터. 마스크가 0으로 남는 회귀는 무필터 조회로는 보이지 않는다. */
+    private PlaceFilterGetRequest latestTagRequest(long town, long option1TagId) {
+        return new PlaceFilterGetRequest(
+                town, false, SEED_MAIN_TAG, List.of(option1TagId), null,
+                PlaceSortType.LATEST, null, 10);
+    }
+
+    /**
+     * 어드민 생성·수정 요청. 이미지 키를 비워 두면 S3 검증이 통째로 건너뛰어지므로
+     * ({@code ImageFileKeyValidator}가 목록을 순회할 뿐이다) 이 IT가 S3에 의존하지 않는다.
+     */
+    private AdminPlaceUpsertRequest upsertRequest(String name, long town, long option1TagId) {
+        return new AdminPlaceUpsertRequest(
+                name, "db직행 어드민 경로 검증용 소개", "서울시 어딘가", 37.5, 127.0,
+                town, SEED_MAIN_TAG, List.of(option1TagId), null,
+                List.of(), null, null, null, List.of());
     }
 
     private PlaceFilterGetRequest latestRequest(long town, String cursor, Integer size) {
@@ -723,11 +863,22 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      */
     private long createMainTag() {
         String name = TAG_NAME_PREFIX + (++tagSeq);
+        long tagId = nextTagId();
         jdbcTemplate.update("""
-                INSERT INTO tags (name, type, parent_id, active, tag_usage)
-                VALUES (?, 'MAIN', NULL, true, 'PLACE')""", name);
+                INSERT INTO tags (id, name, type, parent_id, active, tag_usage)
+                VALUES (?, ?, 'MAIN', NULL, true, 'PLACE')""", tagId, name);
+        return tagId;
+    }
+
+    /**
+     * <b>태그 id를 auto-increment에 맡기지 않는다.</b> V34부터 태그 id가 곧
+     * {@code place_stats.tag_bitmask}의 비트 자리라 62를 넘으면 안 되는데
+     * ({@code TagBitmask}), auto-increment 카운터는 롤백해도 되돌아가지 않아 같은 싱글턴 컨테이너를
+     * 나눠 쓰는 IT가 늘수록 상한에 다가간다. {@code MAX(id) + 1}은 뒷정리를 따라 되돌아간다.
+     */
+    private long nextTagId() {
         return jdbcTemplate.queryForObject(
-                "SELECT id FROM tags WHERE name = ?", Long.class, name);
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM tags", Long.class);
     }
 
     /**
@@ -736,11 +887,11 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      */
     private long createOptionTag() {
         String name = TAG_NAME_PREFIX + "옵션" + (++tagSeq);
+        long tagId = nextTagId();
         jdbcTemplate.update("""
-                INSERT INTO tags (name, type, parent_id, active, tag_usage)
-                VALUES (?, 'OPTION1', NULL, true, 'PLACE')""", name);
-        return jdbcTemplate.queryForObject(
-                "SELECT id FROM tags WHERE name = ?", Long.class, name);
+                INSERT INTO tags (id, name, type, parent_id, active, tag_usage)
+                VALUES (?, ?, 'OPTION1', NULL, true, 'PLACE')""", tagId, name);
+        return tagId;
     }
 
     private void linkTag(long placeId, long tagId) {

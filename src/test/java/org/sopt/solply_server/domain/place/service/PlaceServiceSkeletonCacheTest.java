@@ -34,7 +34,6 @@ import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.PopularRow;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
-import org.sopt.solply_server.domain.place.util.PlaceListJoinOrderPolicy;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
 import org.sopt.solply_server.domain.town.entity.Town;
@@ -86,8 +85,6 @@ class PlaceServiceSkeletonCacheTest {
     @Mock private PlaceSkeletonSnapshot placeSkeletonSnapshot;
     @Mock private PlaceSkeletonLoader placeSkeletonLoader;
     @Mock private PlaceListProperties placeListProperties;
-    /** 스터빙하지 않는다 — 기본값 false가 곧 "힌트 없음"이고, 이 파일의 관심사는 골격 출처다 */
-    @Mock private PlaceListJoinOrderPolicy placeListJoinOrderPolicy;
 
     @InjectMocks private PlaceService placeService;
 
@@ -102,7 +99,7 @@ class PlaceServiceSkeletonCacheTest {
                 .mapToObj(id -> new PopularRow(id, 9.0, 3L, 2L, new BigDecimal("4.50")))
                 .toList();
         given(placeListDbQueryRepository.findPopularRows(
-                List.of(TOWN_ID), null, null, null, false, null, null, NO_PAGING_FETCH_SIZE))
+                List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
                 .willReturn(rows);
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, ids(placeIds)))
                 .willReturn(Map.of());
