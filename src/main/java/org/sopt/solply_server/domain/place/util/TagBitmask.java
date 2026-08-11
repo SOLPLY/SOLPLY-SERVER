@@ -5,10 +5,10 @@ import java.util.Collection;
 /**
  * 태그 id 집합 ↔ {@code place_stats.tag_bitmask}의 변환. <b>비트 자리 = tag id</b>다.
  *
- * <p><b>의미론은 요청 하나가 마스크 하나다.</b> 목록 필터는 "설정한 태그를 <em>전부</em> 가진
- * 장소"(AND-all)이므로 메인·서브A·서브B를 구분하지 않고 한 마스크로 합치고, 술어는
- * {@code (tag_bitmask & :mask) = :mask} 하나다. 그룹을 나눌 이유가 없는 것은 그룹 안도 AND이기
- * 때문이다 — {@link #required}가 그 합치기를 한 자리에서 한다.
+ * <p><b>의미론은 그룹 하나가 마스크 하나다.</b> 목록 필터는 "메인 1개 AND (옵션A 중 하나) AND
+ * (옵션B 중 하나)"이므로, 그룹별로 마스크를 만들고 각각 {@code (tag_bitmask & :mask) != 0}을 건다.
+ * 그룹 <em>안</em>의 OR는 마스크 한 개가 흡수하고, 그룹 <em>사이</em>의 AND는 술어 세 개가 만든다.
+ * 세 그룹을 한 마스크로 합치면 OR가 되어 의미가 뒤집힌다.
  *
  * <p><b>⚠️ 쓸 수 있는 비트 자리는 0..62다.</b> {@code tag_bitmask}가 부호 있는 BIGINT라 63번
  * 자리는 부호 비트이고, 자바에서도 {@code 1L << 63}이 {@code Long.MIN_VALUE}다. 그 위는 자바의
@@ -32,29 +32,11 @@ public final class TagBitmask {
     }
 
     /**
-     * 요청 하나가 요구하는 태그를 전부 담은 마스크. 술어 {@code (tag_bitmask & mask) = mask}와
-     * 짝이라 <b>합집합이 곧 "이걸 전부"</b>가 된다.
+     * 한 그룹(옵션1 또는 옵션2)의 마스크. 그룹 안은 OR라 비트 합집합이 곧 "이 중 하나라도"다.
      *
-     * <p>메인 태그가 없으면 서브 태그 조건은 통째로 버린다 — 목록 경로와 북마크 검색
-     * ({@code PlaceTagMatcher})이 공유하는 규칙이고, 여기서 갈리면 같은 요청이 경로마다 다른 답을 낸다.
-     *
-     * @return 조건이 없으면 0 — 호출부가 술어를 붙이지 않는 신호로 쓴다
+     * @return 비어 있거나 null이면 0 — 호출부가 술어를 붙이지 않는 신호로 쓴다
      */
-    public static long required(
-            Long mainTagId, Collection<Long> subTagAIds, Collection<Long> subTagBIds) {
-        if (mainTagId == null) {
-            return 0L;
-        }
-        return of(mainTagId) | ofAll(subTagAIds) | ofAll(subTagBIds);
-    }
-
-    /**
-     * 태그 여러 개의 마스크 = 비트 합집합. 계산은 예전({@code ofAny})과 같지만 <b>읽는 술어가
-     * 달라져 뜻이 뒤집혔다</b> — {@code != 0}이면 "하나라도", {@code = mask}면 "전부"다.
-     *
-     * @return 비어 있거나 null이면 0
-     */
-    public static long ofAll(Collection<Long> tagIds) {
+    public static long ofAny(Collection<Long> tagIds) {
         if (tagIds == null || tagIds.isEmpty()) {
             return 0L;
         }

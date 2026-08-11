@@ -34,9 +34,8 @@ import org.springframework.stereotype.Repository;
  * LATEST (생성일 DESC, id DESC)다. 발급하는 쪽({@code PlaceService})과 해석하는 쪽(여기)이
  * 한 쌍이라 한쪽만 바꾸면 페이징이 조용히 어긋난다.
  *
- * <p>태그 필터 의미론은 북마크 검색의 {@code PlaceTagMatcher}와 같다 — <b>설정한 태그를 전부 가진
- * 장소만</b>(AND-all), 메인 태그가 없으면 서브 태그는 무시. 메인은 원래 한 개만 고를 수 있고,
- * 서브는 여러 개를 고를수록 결과가 <em>좁아진다</em>.
+ * <p>태그 필터 의미론은 북마크 검색의 {@code PlaceTagMatcher}와 같다 (타입 내 OR, 타입 간 AND,
+ * 메인 태그가 없으면 서브 태그는 무시).
  *
  * <p>상세: {@code docs/design/2026-08-05-place-stats-version-rows.md} §4
  */
@@ -102,7 +101,7 @@ public class PlaceListDbQueryRepository {
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
             Double cursorScore, Long cursorPlaceId, int limit) {
 
-        long requiredTagMask = TagBitmask.required(mainTagId, subTagAIds, subTagBIds);
+        TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
@@ -112,7 +111,7 @@ public class PlaceListDbQueryRepository {
                 WHERE ps.town_id IN (:townIds)
                   AND ps.score_calculated_at IS NOT NULL
                 """);
-        appendTagFilter(sql, requiredTagMask);
+        appendTagFilters(sql, masks);
         if (useCursor) {
             sql.append("""
                       AND (ps.popular_score < :cursorScore
@@ -124,7 +123,7 @@ public class PlaceListDbQueryRepository {
         Query query = em.createNativeQuery(sql.toString())
                 .setParameter("townIds", townIds)
                 .setParameter("limitSize", limit);
-        bindTagFilter(query, requiredTagMask);
+        bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorScore", cursorScore);
             query.setParameter("cursorPlaceId", cursorPlaceId);
@@ -182,7 +181,7 @@ public class PlaceListDbQueryRepository {
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
             Long cursorEpochSecond, Long cursorPlaceId, int limit) {
 
-        long requiredTagMask = TagBitmask.required(mainTagId, subTagAIds, subTagBIds);
+        TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorEpochSecond != null && cursorPlaceId != null;
 
         StringBuilder sql = new StringBuilder("""
@@ -191,7 +190,7 @@ public class PlaceListDbQueryRepository {
                 FROM place_stats ps
                 WHERE ps.town_id IN (:townIds)
                 """);
-        appendTagFilter(sql, requiredTagMask);
+        appendTagFilters(sql, masks);
         if (useCursor) {
             sql.append("""
                       AND (ps.created_at < :cursorCreatedAt
@@ -203,7 +202,7 @@ public class PlaceListDbQueryRepository {
         Query query = em.createNativeQuery(sql.toString())
                 .setParameter("townIds", townIds)
                 .setParameter("limitSize", limit);
-        bindTagFilter(query, requiredTagMask);
+        bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorCreatedAt",
                     LocalDateTime.ofEpochSecond(cursorEpochSecond, 0, ZoneOffset.UTC));
@@ -224,16 +223,37 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
+     * 요청의 태그 조건을 그룹별 마스크 <b>셋</b>으로 옮긴 것. 0은 "이 그룹의 술어를 붙이지 않는다".
+     *
+     * <p>세 그룹은 AND로 엮이므로 <b>한 마스크로 합치면 안 된다</b> — 합치는 순간 OR가 되어 의미가
+     * 뒤집힌다. 그룹 안의 OR만 마스크가 흡수한다 ({@code TagBitmask} 참조).
+     *
+     * <p>메인 태그가 없으면 서브 조건은 통째로 버린다. 북마크 검색의 {@code PlaceTagMatcher}가
+     * {@code mainTagId == null}이면 원본을 그대로 돌려주는 것과 같은 규칙이고, 두 경로가 여기서
+     * 갈리면 같은 요청이 경로마다 다른 답을 낸다.
+     */
+    private record TagMasks(long main, long subA, long subB) {
+
+        static TagMasks of(Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds) {
+            if (mainTagId == null) {
+                return new TagMasks(0L, 0L, 0L);
+            }
+            return new TagMasks(
+                    TagBitmask.of(mainTagId),
+                    TagBitmask.ofAny(subTagAIds),
+                    TagBitmask.ofAny(subTagBIds));
+        }
+    }
+
+    /**
      * 태그 술어. 두 정렬이 같은 문자열을 <b>공유</b>해야 "정렬 축만 다르고 필터 의미론은 같다"가
      * 구조적으로 보장된다 — 복사해 두면 한쪽만 고치는 실수가 조용히 통과한다.
      *
-     * <p>마스크가 0이면 술어를 붙이지 않는다. 태그 조건이 아예 없는 요청의 SQL이 태그 도입 전과
-     * <b>바이트째 같아지는</b> 것이 그 결과이고, 그것이 최다 트래픽 경로다.
+     * <p>마스크가 0인 그룹은 술어를 붙이지 않는다. 태그 조건이 아예 없는 요청의 SQL이 태그 도입
+     * 전과 <b>바이트째 같아지는</b> 것이 그 결과이고, 그것이 최다 트래픽 경로다.
      *
-     * <p><b>⚠️ {@code = :requiredTagMask}를 {@code != 0}으로 바꾸지 말 것.</b> 등호가 "요청한 태그를
-     * 전부 가진 장소"(AND-all, 확정 스펙)이고, {@code != 0}으로 바꾸는 순간 <b>"하나라도 가진
-     * 장소"(OR)로 뒤집힌다</b> — 결과가 넓어질 뿐 예외는 나지 않으므로 조용히 통과하는 회귀다.
-     * 구 SQL부터 3세대를 내려온 OR이 바로 그 형태였고, 2026-08-11에 스펙대로 교정했다.
+     * <p><b>{@code != 0}을 {@code = :mask}로 바꾸지 말 것.</b> 등호는 "그 그룹의 태그를 전부 가진
+     * 장소"가 되어 그룹 안 OR가 AND로 뒤집힌다.
      *
      * <p><b>⚠️ 여기서 {@code tags}를 조인하지 말 것.</b> 요청에 실린 태그 id의 존재·활성·타입은
      * 상위 {@code TagValidator.validatePlaceTagConditions}가 이미 검증해 400/404로 막는다
@@ -245,15 +265,27 @@ public class PlaceListDbQueryRepository {
      * <b>타입이 어긋나거나 비활성인 태그 id</b>가 오면 북마크 검색은 0건, 목록은 매칭이 되어 두 경로가
      * 갈린다. 그 갈림은 <b>상위 검증이 통과시키지 않는 입력에서만</b> 관측된다.
      */
-    private void appendTagFilter(StringBuilder sql, long requiredTagMask) {
-        if (requiredTagMask != 0L) {
-            sql.append("  AND (ps.tag_bitmask & :requiredTagMask) = :requiredTagMask\n");
+    private void appendTagFilters(StringBuilder sql, TagMasks masks) {
+        if (masks.main() != 0L) {
+            sql.append("  AND (ps.tag_bitmask & :mainMask) != 0\n");
+        }
+        if (masks.subA() != 0L) {
+            sql.append("  AND (ps.tag_bitmask & :subAMask) != 0\n");
+        }
+        if (masks.subB() != 0L) {
+            sql.append("  AND (ps.tag_bitmask & :subBMask) != 0\n");
         }
     }
 
-    private void bindTagFilter(Query query, long requiredTagMask) {
-        if (requiredTagMask != 0L) {
-            query.setParameter("requiredTagMask", requiredTagMask);
+    private void bindTagFilters(Query query, TagMasks masks) {
+        if (masks.main() != 0L) {
+            query.setParameter("mainMask", masks.main());
+        }
+        if (masks.subA() != 0L) {
+            query.setParameter("subAMask", masks.subA());
+        }
+        if (masks.subB() != 0L) {
+            query.setParameter("subBMask", masks.subB());
         }
     }
 
