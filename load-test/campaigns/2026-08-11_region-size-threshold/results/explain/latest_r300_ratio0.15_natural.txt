@@ -1,0 +1,50 @@
+################################################################
+# latest · R=300 · ratio=0.15 · tag_size=45 (tag_id=9001) · natural
+# towns: 301,302,303
+# 채취: 2026-08-11 11:49:56
+################################################################
+--- SQL ---
+SELECT  p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303)
+  AND p.active = 1
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 9001)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (actual time=0.135..0.135 rows=2 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.134..0.135 rows=2 loops=1)
+        -> Stream results  (cost=21.6 rows=2.25) (actual time=0.0382..0.127 rows=2 loops=1)
+            -> Nested loop left join  (cost=21.6 rows=2.25) (actual time=0.0335..0.121 rows=2 loops=1)
+                -> Nested loop inner join  (cost=20.8 rows=2.25) (actual time=0.03..0.116 rows=2 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9001)  (cost=5.02 rows=45) (actual time=0.0148..0.0206 rows=45 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303)))  (cost=0.25 rows=0.05) (actual time=0.00201..0.00201 rows=0.0444 loops=45)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00175..0.00178 rows=1 loops=45)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.294 rows=1) (actual time=0.00219..0.00221 rows=1 loops=2)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (actual time=0.124..0.125 rows=2 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.124..0.124 rows=2 loops=1)
+        -> Stream results  (cost=21.6 rows=2.25) (actual time=0.0416..0.115 rows=2 loops=1)
+            -> Nested loop left join  (cost=21.6 rows=2.25) (actual time=0.037..0.11 rows=2 loops=1)
+                -> Nested loop inner join  (cost=20.8 rows=2.25) (actual time=0.0333..0.105 rows=2 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9001)  (cost=5.02 rows=45) (actual time=0.0154..0.0219 rows=45 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303)))  (cost=0.25 rows=0.05) (actual time=0.00172..0.00172 rows=0.0444 loops=45)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00146..0.00149 rows=1 loops=45)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.294 rows=1) (actual time=0.00229..0.00231 rows=1 loops=2)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (actual time=0.11..0.11 rows=2 loops=1)
+    -> Sort: p.created_at DESC, p.id DESC, limit input to 11 row(s) per chunk  (actual time=0.109..0.11 rows=2 loops=1)
+        -> Stream results  (cost=21.6 rows=2.25) (actual time=0.0374..0.102 rows=2 loops=1)
+            -> Nested loop left join  (cost=21.6 rows=2.25) (actual time=0.0333..0.0971 rows=2 loops=1)
+                -> Nested loop inner join  (cost=20.8 rows=2.25) (actual time=0.0298..0.0922 rows=2 loops=1)
+                    -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9001)  (cost=5.02 rows=45) (actual time=0.0141..0.0199 rows=45 loops=1)
+                    -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303)))  (cost=0.25 rows=0.05) (actual time=0.0015..0.0015 rows=0.0444 loops=45)
+                        -> Single-row index lookup on p using PRIMARY (id=pt.place_id)  (cost=0.25 rows=1) (actual time=0.00129..0.00131 rows=1 loops=45)
+                -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.294 rows=1) (actual time=0.00215..0.00217 rows=1 loops=2)
