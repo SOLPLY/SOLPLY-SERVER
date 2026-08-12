@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.place.repository.querydsl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -116,7 +117,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     @Test
-    void 태그_필터는_EXISTS_의미론을_유지한다() {
+    void 태그_필터는_소속_의미론을_유지한다() {
         long mainTagId = createMainTag("db모드메인태그");
         linkTag(placeA, mainTagId);   // 메인 태그를 가진 장소는 A 하나뿐
         insertStats(placeA, townId, 4.0, 0);
@@ -208,16 +209,16 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>세 EXISTS 블록이 동시에 붙는 경로.</b> 메인·서브A·서브B를 함께 주는 요청은
+     * <b>세 마스크 술어가 동시에 붙는 경로.</b> 메인·서브A·서브B를 함께 주는 요청은
      * {@code appendTagFilters}가 세 조각을, {@code bindTagFilters}가 세 파라미터를 모두 맞춰야
      * 성립한다 — 바인딩이 하나라도 빠지면 결과가 아니라 <b>파라미터 미바인딩 예외</b>로 터진다.
-     * 그 조합은 지금까지 어느 테스트도 밟지 않았다.
      *
-     * <p>서브B만 어긋난 placeB, 서브A만 어긋난 placeC를 함께 세워 두 블록이 각각 제 몫을 하는지
-     * 본다 (한쪽 블록만 있어도 통과하는 픽스처면 누락이 숨는다).
+     * <p>서브B만 어긋난 placeB, 서브A만 어긋난 placeC를 함께 세워 두 술어가 각각 제 몫을 하는지
+     * 본다. <b>세 그룹을 한 마스크로 합치는 변이</b>가 여기서 드러난다 — 합치면 AND가 OR가 되어
+     * 셋 다 통과한다.
      */
     @Test
-    void 서브_A와_B를_동시에_주면_세_EXISTS가_모두_적용된다() {
+    void 서브_A와_B를_동시에_주면_세_마스크_술어가_모두_적용된다() {
         long mainTagId = createMainTag("db모드메인AB");
         long subA = createSubTag("db모드서브A_AB", "OPTION1", mainTagId);
         long subB = createSubTag("db모드서브B_AB", "OPTION2", mainTagId);
@@ -365,6 +366,8 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     @Test
     void LATEST는_생성일_내림차순_동점은_id_내림차순() {
+        insertUnscoredStatsForBasePlaces();
+
         List<LatestRow> rows = findLatest(null, null, NO_LIMIT);
 
         // 같은 초의 b·c·d는 id 내림차순, 그보다 1분 이른 a가 마지막 — comparatorOf(LATEST)와 같은 규칙
@@ -375,7 +378,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 같은 초에 세 장소가 몰린 상태에서 페이지 경계가 <b>그 초 한가운데</b>를 지나게 만든다.
      *
      * <p>커서가 실어 나르는 것은 초 단위 값뿐이라({@code PlaceListCursor}의 sortKey 한계)
-     * {@code p.created_at < :cursor}만으로 다음 페이지를 잡으면 커서와 같은 초에 남아 있던
+     * {@code ps.created_at < :cursor}만으로 다음 페이지를 잡으면 커서와 같은 초에 남아 있던
      * placeB가 통째로 사라진다. 등호 분기의 id 타이브레이크가 그 구멍을 메운다.
      *
      * <p>커서 값을 상수가 아니라 <b>앞 페이지 마지막 행에서 발급부와 같은 식</b>
@@ -384,6 +387,8 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      */
     @Test
     void LATEST_커서는_초_단위_경계에서_항목을_흘리지_않는다() {
+        insertUnscoredStatsForBasePlaces();
+
         List<LatestRow> page1 = findLatest(null, null, 2);
         assertThat(latestIdsOf(page1)).containsExactly(placeD, placeC);
 
@@ -398,18 +403,42 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * LATEST의 기준 테이블은 places이고 카운트만 LEFT JOIN으로 붙는다.
-     * INNER JOIN으로 바뀌면 통계가 없는 신규 장소(여기서는 b·c·d)가 최신순 맨 앞에서 사라진다.
+     * <b>LATEST의 기준 테이블도 place_stats다 (V34).</b> 행이 없는 장소는 최신순에도 나오지 않고,
+     * 표시 카운트는 조인 없이 같은 행에서 그대로 실려 온다.
+     *
+     * <p>행을 안 만든 placeD를 <b>가장 최신 장소</b>로 두는 것이 핵심이다 — 기준 테이블이 places로
+     * 되돌아가면 D가 결과 맨 앞에 나타난다.
+     *
+     * <p>이것이 "대가"가 아니라 "계약"인 이유는 <b>행을 만드는 쪽이 즉시</b>이기 때문이다.
+     * 어드민 생성·재활성이 같은 트랜잭션에서 행을 만들므로 실제 신규 장소는 빠지지 않는다 —
+     * 그 끝-끝 계약은 {@code PlaceListFlowIT}가 문다.
      */
     @Test
-    void LATEST_행도_bookmark_count를_place_stats에서_싣는다() {
-        insertStats(placeA, townId, 4.0, 9);   // placeD에는 일부러 행을 만들지 않는다
+    void LATEST도_행이_없는_장소는_나오지_않고_카운트는_같은_행에서_온다() {
+        insertStats(placeA, townId, 4.0, 9);
+        insertUnscoredStats(placeB, townId, 0);
+        insertUnscoredStats(placeC, townId, 0);
+        // placeD에는 일부러 행을 만들지 않는다
 
         List<LatestRow> rows = findLatest(null, null, NO_LIMIT);
 
-        assertThat(latestIdsOf(rows)).containsExactly(placeD, placeC, placeB, placeA);
+        assertThat(latestIdsOf(rows)).containsExactly(placeC, placeB, placeA);
         assertThat(latestRowOf(rows, placeA).bookmarkCount()).isEqualTo(9);
-        assertThat(latestRowOf(rows, placeD).bookmarkCount()).isZero();
+    }
+
+    /**
+     * <b>최신순은 미채점 행을 걸러내지 않는다 — 인기순과 갈리는 유일한 술어다.</b>
+     * 방금 만들어진 장소는 아직 채점 전인데, 그 장소야말로 최신순 맨 앞에 와야 한다.
+     * {@code score_calculated_at IS NOT NULL}이 이쪽에도 복사되면 최신순이 통째로 빈다.
+     */
+    @Test
+    void LATEST는_채점_전_행도_보여준다() {
+        insertUnscoredStatsForBasePlaces();
+
+        assertThat(latestIdsOf(findLatest(null, null, NO_LIMIT)))
+                .containsExactly(placeD, placeC, placeB, placeA);
+        // 같은 픽스처가 인기순에서는 한 건도 나오지 않는다 — 비대칭이 의도임을 한 자리에서 못 박는다
+        assertThat(findPopular(null, null, NO_LIMIT)).isEmpty();
     }
 
     /**
@@ -420,7 +449,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      *
      * <p>탈락자를 <b>가장 최신인 placeD</b>로 잡는다 — 필터가 빠지면 결과 맨 앞이 D로 바뀌므로
      * 순서만 봐도 드러난다. 통과자를 둘 남겨(placeB·placeA) 필터가 붙은 뒤에도 생성일 내림차순이
-     * 유지되는지 함께 본다. LATEST는 기준 테이블이 places라 place_stats를 심지 않는다.
+     * 유지되는지 함께 본다.
      */
     @Test
     void LATEST에도_같은_태그_필터가_적용된다() {
@@ -431,6 +460,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         linkTags(placeB, mainTagId, subA, subB);   // 통과자 중 최신
         linkTags(placeC, mainTagId, subB);         // 서브A 불일치 → 탈락
         linkTags(placeD, mainTagId, subA);         // 서브B 불일치 → 탈락 (전체 중 가장 최신)
+        insertUnscoredStatsForBasePlaces();
 
         List<LatestRow> rows = repository.findLatestRows(
                 List.of(townId), mainTagId, List.of(subA), List.of(subB), null, null, NO_LIMIT);
@@ -438,7 +468,218 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         assertThat(latestIdsOf(rows)).containsExactly(placeB, placeA);
     }
 
+    // === 마스크 술어 ↔ EXISTS 동치 ===
+
+    /**
+     * <b>V34 전환의 성공 조건은 "결과가 한 행도 달라지지 않는다"였다</b>(캠페인
+     * {@code 2026-08-11_tag-bitmask-read-model} S1). 앞의 테스트들이 <em>기대값</em>을 손으로 적어
+     * 두는 방식이라면, 여기는 걷어낸 {@code place_tag} EXISTS를 이 파일 안에 그대로 남겨 두고
+     * <b>같은 픽스처에 두 문장을 나란히 돌려 대조</b>한다 — 손으로 적은 기대값이 함께 틀리는
+     * 경우까지 걸러 낸다.
+     *
+     * <p>덮는 태그 형상 넷: 메인 단독(넓게 걸림) · 세 그룹 조합(핫패스) · 희귀(통과자 1) ·
+     * 0건(아무도 안 가진 태그). 마지막 둘이 중요한 이유는 마스크 술어가 <b>조기 종료를 잃는</b>
+     * 구간이기 때문이다 — 성능은 캠페인이 재고, 여기서는 그 구간에서도 <em>답이 같은지</em>만 문다.
+     */
+    @Test
+    void 마스크_필터는_EXISTS와_같은_집합을_낸다() {
+        TagFixture f = givenTwoTownTagFixture();
+
+        assertSameAsExists(f, f.mainTagId(), null, null);
+        assertSameAsExists(f, f.mainTagId(), List.of(f.subA()), List.of(f.subB()));
+        assertSameAsExists(f, f.mainTagId(), List.of(f.rareTag()), null);
+        assertSameAsExists(f, f.mainTagId(), List.of(f.orphanTag()), null);
+    }
+
+    /**
+     * <b>커서 두 번째 페이지도 같아야 한다.</b> 커서 술어와 태그 술어가 한 WHERE 안에서 만나는
+     * 조합이고, 직전 캠페인이 계획을 재보지 않고 남겨 둔 구멍이 정확히 여기였다.
+     *
+     * <p>경계를 1페이지 마지막 행에서 <b>발급부와 같은 식</b>으로 만든다 — 상수로 적으면 커서
+     * 왕복(점수의 double 좁힘, 생성일의 epoch 초 변환)이 검증에서 빠진다.
+     */
+    @Test
+    void 커서_두번째_페이지도_EXISTS와_같은_집합을_낸다() {
+        TagFixture f = givenTwoTownTagFixture();
+        List<Long> subA = List.of(f.subA());
+        List<Long> subB = List.of(f.subB());
+
+        PopularRow popularBoundary = repository.findPopularRows(
+                f.townIds(), f.mainTagId(), subA, subB, null, null, 2).get(1);
+        LatestRow latestBoundary = repository.findLatestRows(
+                f.townIds(), f.mainTagId(), subA, subB, null, null, 2).get(1);
+
+        List<PopularRow> popularPage2 = repository.findPopularRows(
+                f.townIds(), f.mainTagId(), subA, subB,
+                popularBoundary.popularScore(), popularBoundary.placeId(), NO_LIMIT);
+        List<LatestRow> latestPage2 = repository.findLatestRows(
+                f.townIds(), f.mainTagId(), subA, subB,
+                latestBoundary.createdAt().toEpochSecond(ZoneOffset.UTC),
+                latestBoundary.placeId(), NO_LIMIT);
+
+        // 통과자가 셋이라 2페이지에 정확히 하나가 남는다 — 0건이면 대조가 공허해진다
+        assertThat(popularPage2).hasSize(1);
+        assertThat(latestPage2).hasSize(1);
+        assertThat(placeIdsOf(popularPage2)).isEqualTo(popularIdsByExists(
+                f, f.mainTagId(), subA, subB,
+                popularBoundary.popularScore(), popularBoundary.placeId()));
+        assertThat(latestIdsOf(latestPage2)).isEqualTo(latestIdsByExists(
+                f, f.mainTagId(), subA, subB,
+                latestBoundary.createdAt(), latestBoundary.placeId()));
+    }
+
     // === helpers ===
+
+    /**
+     * 두 동네에 걸친 태그 픽스처. 동네를 둘로 두는 것은 {@code town_id IN (...)}이 여러 개인
+     * 실제 시 단위 조회 형상을 밟기 위해서다 — 다른 테스트는 {@code List.of(townId)}로만
+     * 조회하므로 두 번째 동네가 그쪽 단언에 섞이지 않는다.
+     */
+    private record TagFixture(List<Long> townIds, long mainTagId, long subA, long subB,
+                              long rareTag, long orphanTag) {}
+
+    private TagFixture givenTwoTownTagFixture() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E", BASE.plusMinutes(1), otherTownId);
+        long placeF = createPlace("db모드F", BASE.plusMinutes(2), otherTownId);
+
+        long mainTagId = createMainTag("db모드메인동치");
+        long subA = createSubTag("db모드서브A동치", "OPTION1", mainTagId);
+        long subB = createSubTag("db모드서브B동치", "OPTION2", mainTagId);
+        long rareTag = createSubTag("db모드희귀동치", "OPTION1", mainTagId);
+        long orphanTag = createSubTag("db모드0건동치", "OPTION1", mainTagId);
+
+        linkTags(placeA, mainTagId, subA, subB, rareTag);   // 통과 + 희귀 태그의 유일한 주인
+        linkTags(placeB, mainTagId, subA, subB);            // 통과
+        linkTags(placeC, mainTagId, subA);                  // 서브B 불일치 → 탈락
+        linkTags(placeE, mainTagId, subA, subB);            // 두 번째 동네의 통과자
+        linkTags(placeF, mainTagId, subB);                  // 서브A 불일치 → 탈락
+        // orphanTag는 아무 장소에도 붙이지 않는다
+
+        insertStats(placeA, townId, 4.0, 0);
+        insertStats(placeB, townId, 6.0, 0);
+        insertStats(placeC, townId, 8.0, 0);
+        insertStats(placeE, otherTownId, 5.0, 0);
+        insertStats(placeF, otherTownId, 9.0, 0);
+
+        return new TagFixture(
+                List.of(townId, otherTownId), mainTagId, subA, subB, rareTag, orphanTag);
+    }
+
+    /** 두 정렬 모두에서 마스크 술어와 EXISTS의 결과가 <b>순서까지</b> 같은지 본다. */
+    private void assertSameAsExists(
+            TagFixture f, Long mainTagId, List<Long> subA, List<Long> subB) {
+        assertThat(placeIdsOf(repository.findPopularRows(
+                f.townIds(), mainTagId, subA, subB, null, null, NO_LIMIT)))
+                .isEqualTo(popularIdsByExists(f, mainTagId, subA, subB, null, null));
+        assertThat(latestIdsOf(repository.findLatestRows(
+                f.townIds(), mainTagId, subA, subB, null, null, NO_LIMIT)))
+                .isEqualTo(latestIdsByExists(f, mainTagId, subA, subB, null, null));
+    }
+
+    /**
+     * V34 이전의 태그 술어를 그대로 되살린 대조군. <b>기준 테이블·정렬·커서는 현행과 같게 두고
+     * 태그 조건만 EXISTS로 되돌린다</b> — 최신순의 기준 테이블 전환(places → place_stats)은
+     * 의도된 계약 변경이라 대조 대상이 아니고, 여기서 묻는 것은 오직 "태그 필터의 의미론이
+     * 같은가"다. 둘을 한꺼번에 바꿔 비교하면 어느 쪽이 결과를 바꿨는지 가를 수 없다.
+     */
+    private List<Long> popularIdsByExists(
+            TagFixture f, Long mainTagId, List<Long> subA, List<Long> subB,
+            Double cursorScore, Long cursorPlaceId) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT ps.place_id
+                FROM place_stats ps
+                WHERE ps.town_id IN (:townIds)
+                  AND ps.score_calculated_at IS NOT NULL
+                """);
+        appendExistsFilters(sql, mainTagId, subA, subB);
+        if (cursorScore != null) {
+            sql.append("""
+                      AND (ps.popular_score < :cursorScore
+                           OR (ps.popular_score = :cursorScore AND ps.place_id > :cursorPlaceId))
+                    """);
+        }
+        sql.append("ORDER BY ps.popular_score DESC, ps.place_id ASC");
+
+        Query query = em.createNativeQuery(sql.toString())
+                .setParameter("townIds", f.townIds());
+        bindExistsFilters(query, mainTagId, subA, subB);
+        if (cursorScore != null) {
+            query.setParameter("cursorScore", cursorScore);
+            query.setParameter("cursorPlaceId", cursorPlaceId);
+        }
+        return toIds(query);
+    }
+
+    /** {@link #popularIdsByExists}의 최신순 짝. 대조 범위에 대한 설명은 그쪽에 있다. */
+    private List<Long> latestIdsByExists(
+            TagFixture f, Long mainTagId, List<Long> subA, List<Long> subB,
+            LocalDateTime cursorCreatedAt, Long cursorPlaceId) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT ps.place_id
+                FROM place_stats ps
+                WHERE ps.town_id IN (:townIds)
+                """);
+        appendExistsFilters(sql, mainTagId, subA, subB);
+        if (cursorCreatedAt != null) {
+            sql.append("""
+                      AND (ps.created_at < :cursorCreatedAt
+                           OR (ps.created_at = :cursorCreatedAt AND ps.place_id < :cursorPlaceId))
+                    """);
+        }
+        sql.append("ORDER BY ps.created_at DESC, ps.place_id DESC");
+
+        Query query = em.createNativeQuery(sql.toString())
+                .setParameter("townIds", f.townIds());
+        bindExistsFilters(query, mainTagId, subA, subB);
+        if (cursorCreatedAt != null) {
+            query.setParameter("cursorCreatedAt", cursorCreatedAt);
+            query.setParameter("cursorPlaceId", cursorPlaceId);
+        }
+        return toIds(query);
+    }
+
+    private void appendExistsFilters(
+            StringBuilder sql, Long mainTagId, List<Long> subA, List<Long> subB) {
+        if (mainTagId != null) {
+            sql.append("""
+                      AND EXISTS (SELECT 1 FROM place_tag pt
+                                   WHERE pt.place_id = ps.place_id AND pt.tag_id = :mainTagId)
+                    """);
+        }
+        if (mainTagId != null && subA != null && !subA.isEmpty()) {
+            sql.append("""
+                      AND EXISTS (SELECT 1 FROM place_tag pt
+                                   WHERE pt.place_id = ps.place_id AND pt.tag_id IN (:subTagAIds))
+                    """);
+        }
+        if (mainTagId != null && subB != null && !subB.isEmpty()) {
+            sql.append("""
+                      AND EXISTS (SELECT 1 FROM place_tag pt
+                                   WHERE pt.place_id = ps.place_id AND pt.tag_id IN (:subTagBIds))
+                    """);
+        }
+    }
+
+    private void bindExistsFilters(
+            Query query, Long mainTagId, List<Long> subA, List<Long> subB) {
+        if (mainTagId != null) {
+            query.setParameter("mainTagId", mainTagId);
+        }
+        if (mainTagId != null && subA != null && !subA.isEmpty()) {
+            query.setParameter("subTagAIds", subA);
+        }
+        if (mainTagId != null && subB != null && !subB.isEmpty()) {
+            query.setParameter("subTagBIds", subB);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Long> toIds(Query query) {
+        return ((List<Object>) query.getResultList()).stream()
+                .map(v -> ((Number) v).longValue())
+                .toList();
+    }
 
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {
         return repository.findPopularRows(
@@ -465,37 +706,63 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     /**
      * 행을 직접 심는다 — 정렬 쿼리는 배치 결과를 읽을 뿐이므로 배치를 돌릴 필요가 없다.
      * <b>장소당 행이 하나뿐이라</b> 같은 placeId를 두 번 심으면 중복 키로 터진다(V32).
+     *
+     * <p><b>{@code created_at}·{@code tag_bitmask}는 값을 받지 않고 원본에서 읽는다 (V34).</b>
+     * 두 컬럼은 places·place_tag의 사본이라 픽스처가 다른 값을 지어내면 "조회가 틀렸다"와
+     * "픽스처가 틀렸다"를 구분할 수 없게 된다. 배치가 하는 계산과 같은 식을 여기서도 쓴다.
+     *
+     * <p><b>⚠️ 태그 연결({@code linkTag})을 먼저 하고 이것을 부를 것.</b> 마스크는 이 문장이 도는
+     * 시점의 place_tag를 굳혀 담는다 — 나중에 붙인 태그는 마스크에 없다. 실제 쓰기 경로도 같은
+     * 성질이라({@code AdminPlaceService}가 태그를 flush한 뒤 마스크를 짓는다) 이 제약 자체가 계약이다.
      */
     private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
+        insertStatsRow(placeId, townId, score, bookmarkCount, COUNT_CALCULATED_AT);
+    }
+
+    /**
+     * 아직 채점되지 않은 행 — {@code popular_score}는 0, {@code score_calculated_at}은 NULL이다.
+     * 어드민 생성·재활성이 만드는 행과 카운트 배치가 만든 신규 행이 이 형태다.
+     */
+    private void insertUnscoredStats(long placeId, long townId, long bookmarkCount) {
+        insertStatsRow(placeId, townId, 0.0, bookmarkCount, null);
+    }
+
+    private void insertStatsRow(
+            long placeId, long townId, double score, long bookmarkCount,
+            LocalDateTime scoreCalculatedAt) {
         em.createNativeQuery("""
-                INSERT INTO place_stats (place_id, town_id, popular_score, bookmark_count,
+                INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask,
+                                         popular_score, bookmark_count,
                                          review_count, avg_rating,
                                          count_calculated_at, score_calculated_at)
-                VALUES (:placeId, :townId, :score, :cnt, 0, NULL, :calculatedAt, :calculatedAt)
+                SELECT p.id,
+                       :townId,
+                       p.created_at,
+                       COALESCE((SELECT BIT_OR(1 << pt.tag_id)
+                                 FROM place_tag pt WHERE pt.place_id = p.id), 0),
+                       :score, :cnt, 0, NULL, :calculatedAt, :scoreAt
+                FROM places p
+                WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeId)
                 .setParameter("townId", townId)
                 .setParameter("score", score)
                 .setParameter("cnt", bookmarkCount)
                 .setParameter("calculatedAt", COUNT_CALCULATED_AT)
+                .setParameter("scoreAt", scoreCalculatedAt)
                 .executeUpdate();
     }
 
     /**
-     * 카운트 배치가 만들었지만 아직 채점되지 않은 행 — {@code popular_score}는 컬럼 DEFAULT(0),
-     * {@code score_calculated_at}은 NULL이다. 점수를 명시하지 않는 것이 이 헬퍼의 요점이다.
+     * 네 기준 장소 전부에 미채점 행을 심는다. 최신순의 기준 테이블이 place_stats라
+     * <b>행이 없는 장소는 최신순에도 나오지 않는다</b> — 정렬·커서만 보려는 테스트가 매번 네 줄을
+     * 쓰지 않게 묶어 둔다.
      */
-    private void insertUnscoredStats(long placeId, long townId, long bookmarkCount) {
-        em.createNativeQuery("""
-                INSERT INTO place_stats (place_id, town_id, bookmark_count,
-                                         review_count, avg_rating, count_calculated_at)
-                VALUES (:placeId, :townId, :cnt, 0, NULL, :calculatedAt)
-                """)
-                .setParameter("placeId", placeId)
-                .setParameter("townId", townId)
-                .setParameter("cnt", bookmarkCount)
-                .setParameter("calculatedAt", COUNT_CALCULATED_AT)
-                .executeUpdate();
+    private void insertUnscoredStatsForBasePlaces() {
+        insertUnscoredStats(placeA, townId, 0);
+        insertUnscoredStats(placeB, townId, 0);
+        insertUnscoredStats(placeC, townId, 0);
+        insertUnscoredStats(placeD, townId, 0);
     }
 
     /**
@@ -512,12 +779,16 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     /** created_by는 DEFAULT 1 — V2 시드의 admin 유저(id=1)라 FK가 성립한다 (PlaceListFlowIT와 동일) */
     private long createPlace(String name, LocalDateTime createdAt) {
+        return createPlace(name, createdAt, townId);
+    }
+
+    private long createPlace(String name, LocalDateTime createdAt, long placeTownId) {
         em.createNativeQuery("""
                 INSERT INTO places (name, introduction, town_id, active, created_at)
                 VALUES (:name, 'db모드IT', :townId, true, :createdAt)
                 """)
                 .setParameter("name", name)
-                .setParameter("townId", townId)
+                .setParameter("townId", placeTownId)
                 .setParameter("createdAt", createdAt)
                 .executeUpdate();
         return ((Number) em.createNativeQuery("SELECT MAX(id) FROM places").getSingleResult())
@@ -530,15 +801,32 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .executeUpdate();
     }
 
+    /**
+     * <b>태그 id를 auto-increment에 맡기지 않고 {@code MAX(id) + 1}로 직접 정한다.</b>
+     *
+     * <p>V34부터 <b>태그 id가 곧 {@code tag_bitmask}의 비트 자리</b>라 62를 넘으면 안 되는데
+     * ({@code TagBitmask}), auto-increment 카운터는 롤백해도 되돌아가지 않는다. 이 파일만 스무 개
+     * 넘는 태그를 만들고 같은 싱글턴 컨테이너를 다른 IT가 나눠 쓰므로, 맡겨 두면 스위트가 커질수록
+     * 상한을 넘어 <b>테스트가 아니라 가드가 터진다</b>. {@code MAX(id) + 1}은 롤백을 따라 되돌아가
+     * 실행 순서·개수와 무관하게 시드 다음 자리(35~)에 머문다.
+     *
+     * <p>운영에서 그 상한을 지키는 것은 {@code AdminTagService#createTag}의 가드다.
+     */
+    private long nextTagId() {
+        return ((Number) em.createNativeQuery("SELECT COALESCE(MAX(id), 0) + 1 FROM tags")
+                .getSingleResult()).longValue();
+    }
+
     private long createMainTag(String name) {
+        long tagId = nextTagId();
         em.createNativeQuery("""
-                INSERT INTO tags (name, type, parent_id, active, tag_usage)
-                VALUES (:name, 'MAIN', NULL, true, 'PLACE')
+                INSERT INTO tags (id, name, type, parent_id, active, tag_usage)
+                VALUES (:id, :name, 'MAIN', NULL, true, 'PLACE')
                 """)
+                .setParameter("id", tagId)
                 .setParameter("name", name)
                 .executeUpdate();
-        return ((Number) em.createNativeQuery("SELECT MAX(id) FROM tags").getSingleResult())
-                .longValue();
+        return tagId;
     }
 
     /**
@@ -548,16 +836,17 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 그래서 픽스처는 타입을 정확히 심어 "정상 입력에서 두 경로가 같은 답을 내는가"만 묻는다.
      */
     private long createSubTag(String name, String type, long parentId) {
+        long tagId = nextTagId();
         em.createNativeQuery("""
-                INSERT INTO tags (name, type, parent_id, active, tag_usage)
-                VALUES (:name, :type, :parentId, true, 'PLACE')
+                INSERT INTO tags (id, name, type, parent_id, active, tag_usage)
+                VALUES (:id, :name, :type, :parentId, true, 'PLACE')
                 """)
+                .setParameter("id", tagId)
                 .setParameter("name", name)
                 .setParameter("type", type)
                 .setParameter("parentId", parentId)
                 .executeUpdate();
-        return ((Number) em.createNativeQuery("SELECT MAX(id) FROM tags").getSingleResult())
-                .longValue();
+        return tagId;
     }
 
     private void linkTag(long placeId, long tagId) {

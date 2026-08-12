@@ -1,0 +1,111 @@
+################################################################
+# 프로브 B · latest · city · combo_cafe_opt1_opt2 · forced+base
+# 채취: 2026-08-11 00:26:29
+################################################################
+--- SQL ---
+SELECT /*+ JOIN_PREFIX(p) */ p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND p.active = 1
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 1)
+  AND EXISTS (SELECT /*+ QB_NAME(qb1) */ 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (7,8,9,10))
+  AND EXISTS (SELECT /*+ QB_NAME(qb2) */ 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id IN (11,12,13,14,15,16))
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN FORMAT=TREE + SHOW WARNINGS (힌트 수용 여부) ---
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| EXPLAIN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| -> Limit: 11 row(s)  (cost=570e+6 rows=11)
+    -> Nested loop inner join  (cost=570e+6 rows=5.7e+9)
+        -> Nested loop inner join  (cost=317881 rows=3.16e+6)
+            -> Nested loop left join  (cost=1621 rows=1800)
+                -> Nested loop inner join  (cost=991 rows=1800)
+                    -> Sort: p.created_at DESC, p.id DESC  (cost=361 rows=1800)
+                        -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=361 rows=1800)
+                            -> Covering index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more)  (cost=361 rows=1800)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.25 rows=1)
+                -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1)
+            -> Single-row index lookup on <subquery3> using <auto_distinct_key> (place_id=p.id)  (cost=532..532 rows=1)
+                -> Materialize with deduplication  (cost=532..532 rows=1756)
+                    -> Filter: (pt.tag_id in (7,8,9,10))  (cost=356 rows=1756)
+                        -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 7) OR (tag_id = 8) OR (2 more)  (cost=356 rows=1756)
+        -> Single-row index lookup on <subquery4> using <auto_distinct_key> (place_id=p.id)  (cost=546..546 rows=1)
+            -> Materialize with deduplication  (cost=546..546 rows=1803)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=366 rows=1803)
+                    -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 11) OR (tag_id = 12) OR (4 more)  (cost=366 rows=1803)
+ |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-------+------+----------------------------------------------------------------------------------+
+| Level | Code | Message                                                                          |
++-------+------+----------------------------------------------------------------------------------+
+| Note  | 1276 | Field or reference 'solply_bench_db.p.id' of SELECT #2 was resolved in SELECT #1 |
+| Note  | 1276 | Field or reference 'solply_bench_db.p.id' of SELECT #3 was resolved in SELECT #1 |
+| Note  | 1276 | Field or reference 'solply_bench_db.p.id' of SELECT #4 was resolved in SELECT #1 |
++-------+------+----------------------------------------------------------------------------------+
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=570e+6 rows=11) (actual time=3.07..3.16 rows=11 loops=1)
+    -> Nested loop inner join  (cost=570e+6 rows=5.7e+9) (actual time=3.07..3.16 rows=11 loops=1)
+        -> Nested loop inner join  (cost=317881 rows=3.16e+6) (actual time=2.55..2.63 rows=11 loops=1)
+            -> Nested loop left join  (cost=1621 rows=1800) (actual time=1.97..2.04 rows=11 loops=1)
+                -> Nested loop inner join  (cost=991 rows=1800) (actual time=1.96..2.02 rows=11 loops=1)
+                    -> Sort: p.created_at DESC, p.id DESC  (cost=361 rows=1800) (actual time=1.94..1.94 rows=54 loops=1)
+                        -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=361 rows=1800) (actual time=0.0982..0.594 rows=1800 loops=1)
+                            -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more)  (cost=361 rows=1800) (actual time=0.0942..0.467 rows=1800 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.25 rows=1) (actual time=0.00136..0.00137 rows=0.204 loops=54)
+                -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.00233..0.00236 rows=1 loops=11)
+            -> Single-row index lookup on <subquery3> using <auto_distinct_key> (place_id=p.id)  (cost=532..532 rows=1) (actual time=0.0528..0.0529 rows=1 loops=11)
+                -> Materialize with deduplication  (cost=532..532 rows=1756) (actual time=0.577..0.577 rows=1145 loops=1)
+                    -> Filter: (pt.tag_id in (7,8,9,10))  (cost=356 rows=1756) (actual time=0.0195..0.351 rows=1756 loops=1)
+                        -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 7) OR (tag_id = 8) OR (2 more)  (cost=356 rows=1756) (actual time=0.0193..0.264 rows=1756 loops=1)
+        -> Single-row index lookup on <subquery4> using <auto_distinct_key> (place_id=p.id)  (cost=546..546 rows=1) (actual time=0.0479..0.048 rows=1 loops=11)
+            -> Materialize with deduplication  (cost=546..546 rows=1803) (actual time=0.524..0.524 rows=867 loops=1)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=366 rows=1803) (actual time=0.0187..0.34 rows=1803 loops=1)
+                    -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 11) OR (tag_id = 12) OR (4 more)  (cost=366 rows=1803) (actual time=0.0182..0.253 rows=1803 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=570e+6 rows=11) (actual time=1.8..1.91 rows=11 loops=1)
+    -> Nested loop inner join  (cost=570e+6 rows=5.7e+9) (actual time=1.8..1.9 rows=11 loops=1)
+        -> Nested loop inner join  (cost=317881 rows=3.16e+6) (actual time=1.29..1.39 rows=11 loops=1)
+            -> Nested loop left join  (cost=1621 rows=1800) (actual time=0.76..0.852 rows=11 loops=1)
+                -> Nested loop inner join  (cost=991 rows=1800) (actual time=0.749..0.821 rows=11 loops=1)
+                    -> Sort: p.created_at DESC, p.id DESC  (cost=361 rows=1800) (actual time=0.726..0.731 rows=54 loops=1)
+                        -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=361 rows=1800) (actual time=0.0328..0.499 rows=1800 loops=1)
+                            -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more)  (cost=361 rows=1800) (actual time=0.0302..0.376 rows=1800 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.25 rows=1) (actual time=0.00155..0.00155 rows=0.204 loops=54)
+                -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.00269..0.00272 rows=1 loops=11)
+            -> Single-row index lookup on <subquery3> using <auto_distinct_key> (place_id=p.id)  (cost=532..532 rows=1) (actual time=0.0482..0.0482 rows=1 loops=11)
+                -> Materialize with deduplication  (cost=532..532 rows=1756) (actual time=0.523..0.523 rows=1145 loops=1)
+                    -> Filter: (pt.tag_id in (7,8,9,10))  (cost=356 rows=1756) (actual time=0.0175..0.347 rows=1756 loops=1)
+                        -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 7) OR (tag_id = 8) OR (2 more)  (cost=356 rows=1756) (actual time=0.0172..0.262 rows=1756 loops=1)
+        -> Single-row index lookup on <subquery4> using <auto_distinct_key> (place_id=p.id)  (cost=546..546 rows=1) (actual time=0.047..0.047 rows=1 loops=11)
+            -> Materialize with deduplication  (cost=546..546 rows=1803) (actual time=0.513..0.513 rows=867 loops=1)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=366 rows=1803) (actual time=0.0169..0.346 rows=1803 loops=1)
+                    -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 11) OR (tag_id = 12) OR (4 more)  (cost=366 rows=1803) (actual time=0.0165..0.257 rows=1803 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=570e+6 rows=11) (actual time=1.8..1.89 rows=11 loops=1)
+    -> Nested loop inner join  (cost=570e+6 rows=5.7e+9) (actual time=1.8..1.89 rows=11 loops=1)
+        -> Nested loop inner join  (cost=317881 rows=3.16e+6) (actual time=1.3..1.38 rows=11 loops=1)
+            -> Nested loop left join  (cost=1621 rows=1800) (actual time=0.855..0.927 rows=11 loops=1)
+                -> Nested loop inner join  (cost=991 rows=1800) (actual time=0.849..0.906 rows=11 loops=1)
+                    -> Sort: p.created_at DESC, p.id DESC  (cost=361 rows=1800) (actual time=0.834..0.836 rows=54 loops=1)
+                        -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)))  (cost=361 rows=1800) (actual time=0.0335..0.578 rows=1800 loops=1)
+                            -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (16 more)  (cost=361 rows=1800) (actual time=0.0307..0.439 rows=1800 loops=1)
+                    -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=1)  (cost=0.25 rows=1) (actual time=0.0012..0.0012 rows=0.204 loops=54)
+                -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.00177..0.0018 rows=1 loops=11)
+            -> Single-row index lookup on <subquery3> using <auto_distinct_key> (place_id=p.id)  (cost=532..532 rows=1) (actual time=0.041..0.0411 rows=1 loops=11)
+                -> Materialize with deduplication  (cost=532..532 rows=1756) (actual time=0.448..0.448 rows=1145 loops=1)
+                    -> Filter: (pt.tag_id in (7,8,9,10))  (cost=356 rows=1756) (actual time=0.0149..0.295 rows=1756 loops=1)
+                        -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 7) OR (tag_id = 8) OR (2 more)  (cost=356 rows=1756) (actual time=0.0145..0.218 rows=1756 loops=1)
+        -> Single-row index lookup on <subquery4> using <auto_distinct_key> (place_id=p.id)  (cost=546..546 rows=1) (actual time=0.0456..0.0457 rows=1 loops=11)
+            -> Materialize with deduplication  (cost=546..546 rows=1803) (actual time=0.499..0.499 rows=867 loops=1)
+                -> Filter: (pt.tag_id in (11,12,13,14,15,16))  (cost=366 rows=1803) (actual time=0.0147..0.33 rows=1803 loops=1)
+                    -> Covering index range scan on pt using idx_place_tag_tag_place over (tag_id = 11) OR (tag_id = 12) OR (4 more)  (cost=366 rows=1803) (actual time=0.0147..0.236 rows=1803 loops=1)

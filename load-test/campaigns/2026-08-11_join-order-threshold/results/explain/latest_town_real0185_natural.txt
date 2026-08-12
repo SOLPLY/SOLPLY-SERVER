@@ -1,0 +1,40 @@
+################################################################
+# 그룹 c · latest · town · real0185 · natural
+# 채취: 2026-08-11 00:16:07
+################################################################
+--- SQL ---
+SELECT  p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 21)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=80.3 rows=11) (actual time=0.0303..0.139 rows=6 loops=1)
+    -> Nested loop left join  (cost=80.3 rows=100) (actual time=0.03..0.139 rows=6 loops=1)
+        -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.0241..0.127 rows=6 loops=1)
+            -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0128..0.037 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=21)  (cost=0.251 rows=1) (actual time=822e-6..823e-6 rows=0.06 loops=100)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00174..0.00176 rows=1 loops=6)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=80.3 rows=11) (actual time=0.0342..0.125 rows=6 loops=1)
+    -> Nested loop left join  (cost=80.3 rows=100) (actual time=0.0337..0.125 rows=6 loops=1)
+        -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.0277..0.113 rows=6 loops=1)
+            -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0153..0.0366 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=21)  (cost=0.251 rows=1) (actual time=696e-6..698e-6 rows=0.06 loops=100)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.0018..0.00181 rows=1 loops=6)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=80.3 rows=11) (actual time=0.0323..0.136 rows=6 loops=1)
+    -> Nested loop left join  (cost=80.3 rows=100) (actual time=0.032..0.136 rows=6 loops=1)
+        -> Nested loop inner join  (cost=45.3 rows=100) (actual time=0.0257..0.124 rows=6 loops=1)
+            -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0138..0.0355 rows=100 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=21)  (cost=0.251 rows=1) (actual time=806e-6..806e-6 rows=0.06 loops=100)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00176..0.00178 rows=1 loops=6)

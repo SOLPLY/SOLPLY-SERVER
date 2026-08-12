@@ -1,0 +1,42 @@
+################################################################
+# popular · R=600 · ratio=0.64 · tag_size=384 (tag_id=9015) · natural
+# towns: 301,302,303,304,305,306
+# 채취: 2026-08-11 11:50:09
+################################################################
+--- SQL ---
+SELECT  ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306)
+  AND ps.score_calculated_at IS NOT NULL
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = ps.place_id AND pt.tag_id = 9015)
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (actual time=0.47..0.471 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.469..0.47 rows=11 loops=1)
+        -> Stream results  (cost=174 rows=33) (actual time=0.056..0.456 rows=36 loops=1)
+            -> Nested loop inner join  (cost=174 rows=33) (actual time=0.0548..0.449 rows=36 loops=1)
+                -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9015)  (cost=39.4 rows=384) (actual time=0.0227..0.0705 rows=384 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.086) (actual time=893e-6..900e-6 rows=0.0938 loops=384)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=737e-6..758e-6 rows=1 loops=384)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (actual time=0.437..0.438 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.437..0.437 rows=11 loops=1)
+        -> Stream results  (cost=174 rows=33) (actual time=0.0536..0.424 rows=36 loops=1)
+            -> Nested loop inner join  (cost=174 rows=33) (actual time=0.0523..0.417 rows=36 loops=1)
+                -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9015)  (cost=39.4 rows=384) (actual time=0.0214..0.0633 rows=384 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.086) (actual time=844e-6..850e-6 rows=0.0938 loops=384)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=702e-6..722e-6 rows=1 loops=384)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (actual time=0.392..0.392 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (actual time=0.391..0.392 rows=11 loops=1)
+        -> Stream results  (cost=174 rows=33) (actual time=0.0479..0.38 rows=36 loops=1)
+            -> Nested loop inner join  (cost=174 rows=33) (actual time=0.047..0.375 rows=36 loops=1)
+                -> Covering index lookup on pt using idx_place_tag_tag_place (tag_id=9015)  (cost=39.4 rows=384) (actual time=0.0192..0.0538 rows=384 loops=1)
+                -> Filter: ((ps.town_id in (301,302,303,304,305,306)) and (ps.score_calculated_at is not null))  (cost=0.25 rows=0.086) (actual time=768e-6..773e-6 rows=0.0938 loops=384)
+                    -> Single-row index lookup on ps using PRIMARY (place_id=pt.place_id)  (cost=0.25 rows=1) (actual time=648e-6..666e-6 rows=1 loops=384)

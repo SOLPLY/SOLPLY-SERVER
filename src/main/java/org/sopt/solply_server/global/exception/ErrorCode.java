@@ -100,6 +100,9 @@ public enum ErrorCode {
     CANNOT_ACTIVATE_TAG_PARENT_INACTIVE(HttpStatus.BAD_REQUEST, "TAG-006", "상위 태그가 비활성화되어 있는 상태입니다"),
     INVALID_TAG_USAGE(HttpStatus.BAD_REQUEST, "TAG-007" , "태그 사용 용도(장소용/코스용)가 잘못 되었습니다." ),
     NOT_ACTIVE_TAG(HttpStatus.BAD_REQUEST, "TAG-008", "비활성화된 태그에 대한 요청입니다" ),
+    // 태그 id가 곧 place_stats.tag_bitmask의 비트 자리다 (TagBitmask 참조). 이 상한을 넘기려면
+    // 마스크 폭을 넓히는 스키마 결정이 먼저라, 요청을 받아 두고 나중에 고치는 형태로 두지 않는다.
+    TAG_ID_BIT_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "TAG-009", "태그를 더 만들 수 없습니다. 태그 id 상한(62)에 도달했습니다."),
 
 
     // 북마크 관련 (BOOKMARK-xxx)

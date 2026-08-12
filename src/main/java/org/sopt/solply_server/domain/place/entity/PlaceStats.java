@@ -12,33 +12,45 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 인기순 복합 점수와 표시 카운트의 사전 집계 결과. <b>장소당 최신 행 하나</b>다 (V32).
+ * 장소 목록 조회 <b>두 정렬 모두</b>의 읽기 모델. <b>장소당 행 하나</b>다 (V32·V34).
  *
- * <p><b>이 행에는 주인이 둘이고, 서로의 컬럼을 건드리지 않는 것이 계약이다.</b>
+ * <p>담는 것이 세 가지다 — 정렬 축({@code popular_score}, {@code created_at}), 필터 축
+ * ({@code town_id}, {@code tag_bitmask}), 표시값(카운트 셋). 목록 조회가 이 테이블 하나로 끝나는 것,
+ * 즉 <b>조인이 없다</b>는 것이 V34의 요점이다.
+ *
+ * <p><b>컬럼마다 주인이 정해져 있고, 서로의 칸을 건드리지 않는 것이 계약이다.</b>
  * <table>
- *   <caption>컬럼별 소유 배치</caption>
- *   <tr><th>배치</th><th>주기</th><th>소유 컬럼</th></tr>
- *   <tr><td>카운트</td><td>매시 30분</td>
- *       <td>{@code town_id}, {@code bookmark_count}, {@code review_count}, {@code avg_rating},
- *           {@code count_calculated_at} + <b>행의 존재 자체</b></td></tr>
- *   <tr><td>인기점수</td><td>매일 01:00 (KST)</td>
+ *   <caption>컬럼별 소유 주체</caption>
+ *   <tr><th>주체</th><th>주기</th><th>소유 컬럼</th></tr>
+ *   <tr><td>카운트 배치</td><td>매시 30분</td>
+ *       <td>{@code town_id}, {@code created_at}, {@code tag_bitmask}, {@code bookmark_count},
+ *           {@code review_count}, {@code avg_rating}, {@code count_calculated_at}
+ *           + <b>행의 존재 자체</b></td></tr>
+ *   <tr><td>인기점수 배치</td><td>매일 01:00 (KST)</td>
  *       <td>{@code popular_score}, {@code score_calculated_at}</td></tr>
+ *   <tr><td>어드민 쓰기 경로</td><td>즉시(같은 트랜잭션)</td>
+ *       <td>카운트 배치와 같은 칸 — 생성·수정·재활성·삭제가 행과 파생 컬럼을 동기 유지한다
+ *           ({@code AdminPlaceService})</td></tr>
  * </table>
- * 리뷰 평점이 양쪽에 나오는 것은 <b>쓰임이 둘이기 때문</b>이다 — 화면에 찍히는 {@code avg_rating}은
- * 표시값이라 카운트 배치가, 점수의 리뷰 축(베이지안 조정 평점)은 순위 재료라 인기점수 배치가
- * 각자 원본에서 계산한다. 한쪽이 다른 쪽 값을 재활용하면 두 배치의 신선도가 섞인다.
+ * 리뷰 평점이 두 배치에 다 나오는 것은 <b>쓰임이 둘이기 때문</b>이다 — 화면에 찍히는
+ * {@code avg_rating}은 표시값이라 카운트 배치가, 점수의 리뷰 축(베이지안 조정 평점)은 순위 재료라
+ * 인기점수 배치가 각자 원본에서 계산한다. 한쪽이 다른 쪽 값을 재활용하면 두 배치의 신선도가 섞인다.
  *
- * <p><b>불변식: 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 인기순 조회가 places를 되짚지 않는
- * 근거다. 지키는 주체가 둘이다 — 어드민의 삭제 경로가 그 자리에서 행을 지우고
- * ({@code PlaceStatsRepository#deleteByPlaceIds}), 카운트 배치의 {@code WHERE p.active = 1} +
- * 잔행 삭제가 뒤를 받친다. <b>내리는 쪽은 즉시, 되살리는 쪽은 다음 점수 배치까지(≤24h)</b>이고
- * 그 비대칭이 의도다.
+ * <p>어드민 경로와 카운트 배치가 같은 칸을 나눠 쓰는 것은 위 계약과 충돌하지 않는다 — 둘은 같은
+ * 원본(places·place_tag)에서 같은 값을 계산하므로 서로를 되돌릴 수 없고, 배치는 어드민이 지나친
+ * 경로(직접 SQL 수정 등)의 안전망으로 남는다. 드리프트 수명이 곧 배치 간격(≤1h)이다.
  *
- * <p>{@code town_id}는 정렬 인덱스의 선두 컬럼이라 places에서 비정규화해 온 값이다. 점수가 낡으면
- * 순위만 흔들리지만 town_id가 낡으면 <em>소속</em>이 틀린다(동네를 옮긴 장소가 이전 동네에 낀다) —
- * 쿼리로는 못 막고 카운트 배치 간격이 그 창의 상한이다(≤1h).
+ * <p><b>불변식: 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 두 정렬 어느 쪽도 places를 되짚어
+ * 활성 여부를 묻지 않는 근거다. 지키는 주체가 둘이다 — 어드민의 삭제·비활성 경로가 그 자리에서
+ * 행을 지우고 ({@code PlaceStatsRepository#deleteByPlaceIds}), 카운트 배치의
+ * {@code WHERE p.active = 1} + 잔행 삭제가 뒤를 받친다.
  *
- * <p>쓰기 API(세터·정적 팩토리)를 두지 않는다. 쓰기 경로는 두 배치의 네이티브 SQL뿐이고,
+ * <p><b>파생 컬럼이 낡으면 순위가 아니라 소속·매칭이 틀린다.</b> {@code town_id}가 낡으면 동네를
+ * 옮긴 장소가 이전 동네 목록에 끼고, {@code tag_bitmask}가 낡으면 태그를 뗀 장소가 그 태그 필터에
+ * 계속 잡힌다. 그래서 어드민 쓰기 경로가 같은 트랜잭션에서 둘을 갱신하고, 배치 간격은 그 창의
+ * 상한이 아니라 <b>어드민을 지나친 변경의</b> 상한이다.
+ *
+ * <p>쓰기 API(세터·정적 팩토리)를 두지 않는다. 쓰기 경로는 전부 네이티브 SQL이고,
  * 여기 필드는 스키마 정합 검증(ddl-auto=validate)과 테스트 단언용이다.
  *
  * <p>{@code avg_rating}이 NULL인 것은 "리뷰가 없다"는 뜻이며 0점과 구분해야 한다 —
@@ -47,10 +59,16 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "place_stats",
-        indexes = @Index(
-                name = "idx_place_stats_town_score",
-                columnList = "town_id, popular_score DESC, place_id, "
-                        + "bookmark_count, review_count, avg_rating, score_calculated_at")
+        indexes = {
+                @Index(
+                        name = "idx_place_stats_town_score",
+                        columnList = "town_id, popular_score DESC, place_id, bookmark_count, "
+                                + "review_count, avg_rating, score_calculated_at, tag_bitmask"),
+                @Index(
+                        name = "idx_place_stats_town_created",
+                        columnList = "town_id, created_at, place_id, tag_bitmask, "
+                                + "bookmark_count, review_count, avg_rating")
+        }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -74,6 +92,24 @@ public class PlaceStats {
 
     @Column(name = "avg_rating", precision = 3, scale = 2)
     private BigDecimal avgRating;
+
+    /**
+     * 최신순의 정렬 축. {@code places.created_at}의 사본이며 <b>같은 값</b>이어야 한다 —
+     * 커서가 이 값의 epoch 초를 싣고 다음 페이지의 경계로 되돌아온다.
+     */
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+
+    /**
+     * 이 장소가 가진 태그의 비트 합집합. <b>비트 자리 = tag id</b>이고 쓸 수 있는 자리는 0..62다
+     * ({@code TagBitmask} 참조 — 63은 부호 비트라 못 쓴다).
+     *
+     * <p>목록 조회의 태그 필터가 {@code place_tag} 조인 대신 {@code (tag_bitmask & :mask) != 0}으로
+     * 나가는 근거다. 조인이 없으면 조인 순서·세미조인 전략이라는 선택지 자체가 없어져 계획이
+     * 입력에 따라 흔들리지 않는다 (V34).
+     */
+    @Column(name = "tag_bitmask", nullable = false)
+    private long tagBitmask;
 
     /**
      * 카운트 배치가 이 행을 마지막으로 건드린 회차의 기준 시각.

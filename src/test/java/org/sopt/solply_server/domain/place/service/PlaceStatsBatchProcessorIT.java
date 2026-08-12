@@ -1027,9 +1027,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         clearStats();
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, popular_score, bookmark_count, review_count,
+                    (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
                      avg_rating, count_calculated_at)
-                SELECT p.id, p.town_id, 777.000000, 777, 0, NULL, :calculatedAt
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 777, 0, NULL, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
@@ -1097,9 +1097,10 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         insertBookmark(placeA, 0);
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, popular_score, bookmark_count, review_count,
+                    (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
                      avg_rating, count_calculated_at, score_calculated_at)
-                SELECT p.id, p.town_id, 777.000000, 0, 0, NULL, :calculatedAt, :calculatedAt
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 0, 0, NULL,
+                       :calculatedAt, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)

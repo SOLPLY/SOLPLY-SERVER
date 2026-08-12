@@ -1,0 +1,31 @@
+################################################################
+# A · popular · city18 · notag · p1
+# towns: 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318
+# 채취: 2026-08-11 18:03:01
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=363 rows=11) (actual time=0.701..0.702 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=363 rows=1800) (actual time=0.701..0.701 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=363 rows=1800) (actual time=0.0282..0.488 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=363 rows=1800) (actual time=0.0261..0.372 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=363 rows=11) (actual time=0.839..0.84 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=363 rows=1800) (actual time=0.838..0.839 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=363 rows=1800) (actual time=0.0387..0.609 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=363 rows=1800) (actual time=0.0362..0.445 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=363 rows=11) (actual time=0.802..0.803 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=363 rows=1800) (actual time=0.801..0.802 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null))  (cost=363 rows=1800) (actual time=0.0299..0.557 rows=1800 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=363 rows=1800) (actual time=0.028..0.429 rows=1800 loops=1)

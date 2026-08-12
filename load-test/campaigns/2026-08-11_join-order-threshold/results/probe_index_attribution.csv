@@ -1,0 +1,5 @@
+sort,region,size,mode,index_shape,driving_table,sort_node,materialize,run1_ms,run2_ms,run3_ms,median_ms
+popular,city,combo_cafe_opt1_opt2,natural,v32idx,pt,y,n,2.48,2.44,2.64,2.48
+popular,city,combo_cafe_opt1_opt2,forced,v32idx,ps,y,n,0.953,1.05,0.982,0.982
+latest,city,combo_cafe_opt1_opt2,natural,v32idx,pt,y,n,2.77,2.96,2.48,2.77
+latest,city,combo_cafe_opt1_opt2,forced,v32idx,p,y,n,1.02,0.932,0.932,0.932

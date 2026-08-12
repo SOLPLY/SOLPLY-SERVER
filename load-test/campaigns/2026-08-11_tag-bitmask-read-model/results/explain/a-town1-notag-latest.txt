@@ -1,0 +1,33 @@
+################################################################
+# A · latest · town1 · notag · p1
+# towns: 301
+# 채취: 2026-08-11 18:02:51
+################################################################
+--- SQL ---
+SELECT p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301)
+  AND p.active = 1
+
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=45.3 rows=11) (actual time=0.0222..0.0365 rows=11 loops=1)
+    -> Nested loop left join  (cost=45.3 rows=100) (actual time=0.0218..0.0355 rows=11 loops=1)
+        -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0137..0.0158 rows=11 loops=1)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00156..0.00158 rows=1 loops=11)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=45.3 rows=11) (actual time=0.0233..0.0382 rows=11 loops=1)
+    -> Nested loop left join  (cost=45.3 rows=100) (actual time=0.023..0.0373 rows=11 loops=1)
+        -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.015..0.0171 rows=11 loops=1)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00159..0.00161 rows=1 loops=11)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=45.3 rows=11) (actual time=0.0254..0.0402 rows=11 loops=1)
+    -> Nested loop left join  (cost=45.3 rows=100) (actual time=0.0251..0.0392 rows=11 loops=1)
+        -> Covering index lookup on p using idx_places_town_active_created (town_id=301, active=1) (reverse)  (cost=10.3 rows=100) (actual time=0.0159..0.0181 rows=11 loops=1)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.251 rows=1) (actual time=0.00166..0.00167 rows=1 loops=11)

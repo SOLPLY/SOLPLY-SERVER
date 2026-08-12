@@ -1,0 +1,47 @@
+################################################################
+# latest · R=3600 · ratio=0.52 · tag_size=1872 (tag_id=9034) · forced
+# towns: 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336
+# 채취: 2026-08-11 11:50:33
+################################################################
+--- SQL ---
+SELECT /*+ JOIN_PREFIX(p) */ p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336)
+  AND p.active = 1
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 9034)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=3243 rows=11) (actual time=1.47..1.55 rows=11 loops=1)
+    -> Nested loop left join  (cost=3243 rows=3600) (actual time=1.47..1.55 rows=11 loops=1)
+        -> Nested loop inner join  (cost=1983 rows=3600) (actual time=1.46..1.52 rows=11 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=723 rows=3600) (actual time=1.45..1.45 rows=30 loops=1)
+                -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336)))  (cost=723 rows=3600) (actual time=0.023..0.98 rows=3600 loops=1)
+                    -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (34 more)  (cost=723 rows=3600) (actual time=0.0209..0.732 rows=3600 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=9034)  (cost=0.25 rows=1) (actual time=0.00239..0.00239 rows=0.367 loops=30)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.00206..0.00208 rows=1 loops=11)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=3243 rows=11) (actual time=1.44..1.51 rows=11 loops=1)
+    -> Nested loop left join  (cost=3243 rows=3600) (actual time=1.44..1.5 rows=11 loops=1)
+        -> Nested loop inner join  (cost=1983 rows=3600) (actual time=1.43..1.49 rows=11 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=723 rows=3600) (actual time=1.42..1.42 rows=30 loops=1)
+                -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336)))  (cost=723 rows=3600) (actual time=0.022..0.95 rows=3600 loops=1)
+                    -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (34 more)  (cost=723 rows=3600) (actual time=0.0198..0.706 rows=3600 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=9034)  (cost=0.25 rows=1) (actual time=0.00191..0.00192 rows=0.367 loops=30)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.00158..0.00161 rows=1 loops=11)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=3243 rows=11) (actual time=1.44..1.5 rows=11 loops=1)
+    -> Nested loop left join  (cost=3243 rows=3600) (actual time=1.44..1.5 rows=11 loops=1)
+        -> Nested loop inner join  (cost=1983 rows=3600) (actual time=1.43..1.48 rows=11 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=723 rows=3600) (actual time=1.42..1.42 rows=30 loops=1)
+                -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336)))  (cost=723 rows=3600) (actual time=0.0384..0.962 rows=3600 loops=1)
+                    -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (34 more)  (cost=723 rows=3600) (actual time=0.0363..0.718 rows=3600 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=9034)  (cost=0.25 rows=1) (actual time=0.00193..0.00194 rows=0.367 loops=30)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.0016..0.00162 rows=1 loops=11)

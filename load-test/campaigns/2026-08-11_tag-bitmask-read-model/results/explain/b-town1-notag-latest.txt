@@ -1,0 +1,24 @@
+################################################################
+# B · latest · town1 · notag · p1
+# towns: 301
+# 채취: 2026-08-11 18:32:40
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.created_at, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+
+ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.0346..0.0368 rows=11 loops=1)
+    -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0341..0.0361 rows=11 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.0278..0.0296 rows=11 loops=1)
+    -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0274..0.0286 rows=11 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=11.5 rows=11) (actual time=0.0292..0.0309 rows=11 loops=1)
+    -> Covering index lookup on ps using idx_place_stats_town_created (town_id=301) (reverse)  (cost=11.5 rows=100) (actual time=0.0287..0.03 rows=11 loops=1)

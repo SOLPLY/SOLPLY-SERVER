@@ -1,0 +1,24 @@
+count_star	avg_ms	sum_rows_examined	rows_per_exec	digest_head
+1	3271.556	18414	18414.0	INSERT INTO `place_stats` ( `place_id` , `town_id` , `bookmark_count` , `review_count` , `avg_rating` , `count_calculated_at` ) SELECT `p` .
+1314	0.345	5332	4.1	SELECT `b1_0` . `target_id` FROM `bookmarks` `b1_0` WHERE `b1_0` . `user_id` = ? AND `b1_0` . `target_type` = ? AND `b1_0` . `target_id` IN 
+1314	0.296	117386	89.3	SELECT `p1_0` . `id` , `p1_0` . `active` , `p1_0` . `address` , `p1_0` . `contact_number` , `p1_0` . `created_at` , `p1_0` . `created_by` , 
+1314	0.265	18468	14.1	SELECT `t1_0` . `id` FROM `towns` `t1_0` WHERE `t1_0` . `id` = ? OR ( `t1_0` . `parent_id` = ? AND `t1_0` . `active` = ? ) ORDER BY `t1_0` .
+202	1.416	135823	672.4	SELECT `ps` . `place_id` , `ps` . `popular_score` , `ps` . `bookmark_count` , `ps` . `review_count` , `ps` . `avg_rating` FROM `place_stats`
+202	1.237	135484	670.7	SELECT `ps` . `place_id` , `ps` . `popular_score` , `ps` . `bookmark_count` , `ps` . `review_count` , `ps` . `avg_rating` FROM `place_stats`
+1314	0.179	25972	19.8	SELECT `pii1_0` . `place_id` , `pii1_0` . `display_order` , `pii1_0` . `image_file_key` FROM `place_images` `pii1_0` WHERE `pii1_0` . `place
+388	0.574	312068	804.3	SELECT `ps` . `place_id` , `ps` . `popular_score` , `ps` . `bookmark_count` , `ps` . `review_count` , `ps` . `avg_rating` FROM `place_stats`
+171	1.272	307971	1801.0	SELECT `ps` . `place_id` , `ps` . `popular_score` , `ps` . `bookmark_count` , `ps` . `review_count` , `ps` . `avg_rating` FROM `place_stats`
+104	1.940	73844	710.0	SELECT `p` . `id` , `p` . `created_at` , COALESCE ( `ps` . `bookmark_count` , ? ) , COALESCE ( `ps` . `review_count` , ? ) , `ps` . `avg_rat
+104	1.358	72474	696.9	SELECT `p` . `id` , `p` . `created_at` , COALESCE ( `ps` . `bookmark_count` , ? ) , COALESCE ( `ps` . `review_count` , ? ) , `ps` . `avg_rat
+2627	0.054	0	0.0	SET `autocommit` = ?
+611	0.170	611	1.0	SELECT `t1_0` . `id` , `t1_0` . `active` , `t1_0` . `meaning` , `t1_0` . `name` , `p1_0` . `id` , `p1_0` . `active` , `p1_0` . `meaning` , `
+1314	0.074	0	0.0	SET SESSION TRANSACTION READ WRITE
+610	0.151	2444	4.0	SELECT `t1_0` . `id` , `t1_0` . `active` , `t1_0` . `meaning` , `t1_0` . `name` , `p1_0` . `id` , `p1_0` . `active` , `p1_0` . `meaning` , `
+1309	0.059	0	0.0	SET SESSION TRANSACTION READ ONLY
+1315	0.046	0	0.0	COMMIT
+143	0.177	3146	22.0	SELECT `p` . `id` , `p` . `created_at` , COALESCE ( `ps` . `bookmark_count` , ? ) , COALESCE ( `ps` . `review_count` , ? ) , `ps` . `avg_rat
+1	3.776	6320	6320.0	DELETE FROM `place_stats` WHERE `count_calculated_at` != @?
+1	0.075	1	1.0	SELECT @@`version_comment` LIMIT ?
+1	0.042	0	0.0	SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED
+1	0.029	0	0.0	SET @? = NOW (?)
+1	0.017	0	0.0	START TRANSACTION

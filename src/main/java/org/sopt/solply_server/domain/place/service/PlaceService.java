@@ -242,7 +242,7 @@ public class PlaceService {
                            long reviewCount, BigDecimal avgRating) {}
 
   /**
-   * 장소 목록의 <b>유일한</b> 경로 — place_stats(인기순)/places(최신순) 정렬을 DB에 맡긴다.
+   * 장소 목록의 <b>유일한</b> 경로 — 두 정렬 모두 place_stats 단독으로 DB에 맡긴다 (V34).
    *
    * <p><b>한때 둘이었다.</b> 2026-08-01까지 이 서비스는 동네별 스냅샷을 메모리에 들고 앱에서
    * 정렬하는 캐시 경로(A)와 이 DB 직행 경로(B)를 프로퍼티로 갈라 A/B로 실측했고,
@@ -250,10 +250,10 @@ public class PlaceService {
    * {@code docs/perf/2026-08-01-cache-vs-db-direct.md}에 있다. 여기 남아 있던 "모드 등가",
    * "응답 diff 게이트" 같은 장치는 비교 대상이 사라지면서 함께 걷어냈다.
    *
-   * <p><b>남은 성질 하나는 기억할 것 — POPULAR의 기준 테이블은 place_stats다.</b> 행이 없는
-   * 장소(마지막 카운트 배치 이후 새로 생긴 장소)는 인기순 결과에 아예 나오지 않는다. 이는 버그가
-   * 아니라 정렬을 인덱스에 흡수시키는 대가이며, 창은 카운트 배치 간격(≤1h) 이내다. 근거는
-   * {@code PlaceListDbQueryRepository#findPopularRows} javadoc.
+   * <p><b>남은 성질 하나는 기억할 것 — 두 정렬의 기준 테이블이 place_stats다.</b> 행이 없는 장소는
+   * 어느 정렬에도 나오지 않는다. 어드민 생성·재활성이 같은 트랜잭션에서 행을 만들므로 그 경로에는
+   * 창이 없고, 어드민을 지나친 변경만 다음 카운트 배치(≤1h)를 기다린다. 근거는
+   * {@code PlaceListDbQueryRepository} javadoc.
    *
    * <p><b>커서 v4 — 좌표와 필터 지문 (2026-08-07).</b> v3까지는 여기에 랭킹 <b>세대</b>도 실었다.
    * 스크롤 도중 배치가 돌면 점수가 통째로 갈려 페이지가 어긋나기 때문이었는데, 인기 점수 배치를
@@ -306,6 +306,7 @@ public class PlaceService {
     }
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
+
     List<DbListRow> rows = switch (sort) {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),

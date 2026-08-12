@@ -42,6 +42,14 @@ public interface AdminPlaceRepository extends JpaRepository<Place, Long>, AdminP
 
     boolean existsByTown_Id(@Param("townId") Long townId);
 
+    /**
+     * 동네에 속한 장소 id. 재활성 직후 place_stats 행을 지어 넣는 경로가 쓴다
+     * ({@code AdminPlaceService#activatePlacesByTownIds}) — 활성 여부는 그쪽 문장이 다시 보므로
+     * 여기서 거르지 않는다.
+     */
+    @Query("select p.id from Place p where p.town.id in :townIds")
+    List<Long> findIdsByTownIds(@Param("townIds") List<Long> townIds);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
         update Place p

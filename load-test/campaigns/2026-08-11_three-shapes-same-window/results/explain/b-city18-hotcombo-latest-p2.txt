@@ -1,0 +1,36 @@
+################################################################
+# B · latest · city18 · hotcombo · p2
+# 태그 그룹: [1;7+8+9+10;11+12+13+14+15+16] (그룹 2개, 그룹 안 OR · 그룹 사이 AND)
+# 기반 형상: V34
+# towns: 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318 / 1페이지 기준 매치 행 수: 211
+# 채취: 2026-08-11 23:38:18
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.created_at, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND (ps.tag_bitmask & 2) != 0
+  AND (ps.tag_bitmask & 1920) != 0
+  AND (ps.tag_bitmask & 129024) != 0
+  AND (ps.created_at < '2026-07-13 13:28:08'
+       OR (ps.created_at = '2026-07-13 13:28:08' AND ps.place_id < 10744))
+ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=364 rows=11) (actual time=0.571..0.572 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=364 rows=1764) (actual time=0.571..0.571 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.tag_bitmask & 2) <> 0) and ((ps.tag_bitmask & 1920) <> 0) and ((ps.tag_bitmask & 129024) <> 0) and ((ps.created_at < TIMESTAMP'2026-07-13 13:28:08') or ((ps.created_at = TIMESTAMP'2026-07-13 13:28:08') and (ps.place_id < 10744))))  (cost=364 rows=1764) (actual time=0.0323..0.543 rows=200 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301 AND created_at < '2026-07-13 13:28:08') OR (town_id = 301 AND created_at = '2026-07-13 13:28:08' AND place_id < 10744) OR (34 more)  (cost=364 rows=1764) (actual time=0.0263..0.427 rows=1746 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=364 rows=11) (actual time=0.524..0.525 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=364 rows=1764) (actual time=0.524..0.525 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.tag_bitmask & 2) <> 0) and ((ps.tag_bitmask & 1920) <> 0) and ((ps.tag_bitmask & 129024) <> 0) and ((ps.created_at < TIMESTAMP'2026-07-13 13:28:08') or ((ps.created_at = TIMESTAMP'2026-07-13 13:28:08') and (ps.place_id < 10744))))  (cost=364 rows=1764) (actual time=0.0277..0.498 rows=200 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301 AND created_at < '2026-07-13 13:28:08') OR (town_id = 301 AND created_at = '2026-07-13 13:28:08' AND place_id < 10744) OR (34 more)  (cost=364 rows=1764) (actual time=0.0223..0.389 rows=1746 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=364 rows=11) (actual time=0.804..0.805 rows=11 loops=1)
+    -> Sort: ps.created_at DESC, ps.place_id DESC, limit input to 11 row(s) per chunk  (cost=364 rows=1764) (actual time=0.804..0.804 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and ((ps.tag_bitmask & 2) <> 0) and ((ps.tag_bitmask & 1920) <> 0) and ((ps.tag_bitmask & 129024) <> 0) and ((ps.created_at < TIMESTAMP'2026-07-13 13:28:08') or ((ps.created_at = TIMESTAMP'2026-07-13 13:28:08') and (ps.place_id < 10744))))  (cost=364 rows=1764) (actual time=0.042..0.766 rows=200 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_created over (town_id = 301 AND created_at < '2026-07-13 13:28:08') OR (town_id = 301 AND created_at = '2026-07-13 13:28:08' AND place_id < 10744) OR (34 more)  (cost=364 rows=1764) (actual time=0.0333..0.599 rows=1746 loops=1)

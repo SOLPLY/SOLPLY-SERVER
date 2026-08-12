@@ -22,12 +22,18 @@ import org.springframework.data.repository.query.Param;
 public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
-     * 표시용 카운트를 원본에서 재계산해 활성 장소 전량에 적재한다. <b>행의 존재 자체를 정하는
-     * 문장이자 카운트 배치의 1단계</b>이며, {@code popular_score}·{@code score_calculated_at}은
-     * 건드리지 않는다.
+     * 목록 조회가 읽는 값 전부를 원본에서 재계산해 활성 장소 전량에 적재한다. <b>행의 존재 자체를
+     * 정하는 문장이자 카운트 배치의 1단계</b>이며, {@code popular_score}·
+     * {@code score_calculated_at}은 건드리지 않는다.
+     *
+     * <p><b>표시 카운트만의 문장이 아니다 (V34).</b> 목록 조회가 place_stats 단독이 되면서
+     * {@code created_at}(최신순의 정렬 축)과 {@code tag_bitmask}(태그 필터의 유일한 근거)도 여기서
+     * 다시 계산한다. 어드민 쓰기 경로가 이미 같은 값을 같은 트랜잭션에서 유지하므로 이쪽은
+     * <b>안전망</b>이다 — 어드민을 지나친 변경(직접 SQL 수정, 배포 중 유실)의 드리프트 수명을 회차
+     * 간격(≤1h)으로 자른다. 두 계산이 같은 원본을 보므로 서로를 되돌릴 수 없다.
      *
      * <p><b>{@code WHERE p.active = 1}이 조회의 불변식을 만든다</b> — 비활성 장소는 이번 회차에
-     * 아예 들어가지 않으므로 인기순 쿼리가 places를 되짚지 않아도 된다. 다만 이 문장은 "새로
+     * 아예 들어가지 않으므로 목록 쿼리가 places를 되짚지 않아도 된다. 다만 이 문장은 "새로
      * 넣지 않을" 뿐 이미 있는 행을 지우지 않는다. 짝이 되는 삭제가
      * {@link #deleteStaleRows}이고, <b>둘은 반드시 한 트랜잭션에</b> 있어야 한다.
      *
@@ -36,8 +42,12 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 결과를 바꾼다면 "회차를 재실행해도 안전하다"가 성립하지 않는다.
      *
      * <p><b>{@code ON DUPLICATE KEY UPDATE}는 평시 경로다.</b> 장소당 행이 하나뿐이라 두 번째
-     * 회차부터는 전부 UPDATE로 흐른다. 여기 나열된 다섯 컬럼이 카운트 배치의 소유 목록 전부이며,
+     * 회차부터는 전부 UPDATE로 흐른다. 여기 나열된 일곱 컬럼이 카운트 배치의 소유 목록 전부이며,
      * {@code popular_score}가 여기 끼면 매시 배치가 새벽에 계산한 점수를 0으로 되돌린다.
+     *
+     * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다.</b> 넘으면 다른 태그의 자리를
+     * 조용히 덮어써 필터 결과가 틀린다. 그 상한을 지키는 것은 {@code AdminTagService#createTag}의
+     * 가드이고, 읽기 쪽 {@code TagBitmask}가 같은 상한에서 예외를 던진다.
      *
      * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> {@code INSERT ... SELECT}는
      * REPEATABLE READ에서 두 소스 테이블 <em>전체</em>에 shared next-key 락을 걸어 동시
@@ -64,14 +74,23 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
-            place_id, town_id, bookmark_count, review_count, avg_rating, count_calculated_at)
+            place_id, town_id, created_at, tag_bitmask,
+            bookmark_count, review_count, avg_rating, count_calculated_at)
         SELECT p.id,
                p.town_id,
+               p.created_at,
+               COALESCE(t.mask, 0),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
                r.avg_rating,
                :calculatedAt
         FROM places p
+        LEFT JOIN (
+            SELECT pt.place_id AS place_id,
+                   BIT_OR(1 << pt.tag_id) AS mask
+            FROM place_tag pt
+            GROUP BY pt.place_id
+        ) t ON t.place_id = p.id
         LEFT JOIN (
             SELECT bm.target_id AS place_id,
                    COUNT(*) AS cnt
@@ -91,6 +110,8 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         WHERE p.active = 1
         ON DUPLICATE KEY UPDATE
             town_id             = VALUES(town_id),
+            created_at          = VALUES(created_at),
+            tag_bitmask         = VALUES(tag_bitmask),
             bookmark_count      = VALUES(bookmark_count),
             review_count        = VALUES(review_count),
             avg_rating          = VALUES(avg_rating),
@@ -126,17 +147,77 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     int deleteStaleRows(@Param("calculatedAt") LocalDateTime calculatedAt);
 
     /**
-     * 지정한 장소들의 행을 <b>즉시</b> 지운다 = 어드민이 내린 장소를 인기순에서 그 자리에서 빼는 경로.
+     * 지정한 <b>활성</b> 장소들의 행을 원본에서 다시 지어 넣는다 = 어드민 쓰기 경로가 목록을
+     * 그 자리에서 맞추는 문장. 생성·수정·재활성이 모두 이 하나를 쓴다.
      *
-     * <p>인기순은 place_stats가 기준 테이블이라 여기 행이 남아 있는 동안 노출된다. 배치의
+     * <p><b>{@code WHERE p.active = 1}이 불변식을 지킨다.</b> 비활성 장소는 여기서 걸러지므로,
+     * 내려간 장소를 수정해도 행이 되살아나지 않는다 — "행이 있는 장소 = 목록에 나와도 되는 장소"가
+     * 이 문장 하나로 유지된다. 그래서 세 경로가 분기 없이 같은 문장을 부를 수 있다.
+     *
+     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 카운트와
+     * {@code count_calculated_at}, 그리고 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고
+     * 북마크 수가 0으로 돌아가거나 잔행 판정의 기준이 밀리면 안 된다. 반대로 <b>신규 행</b>은 카운트
+     * 0·평점 NULL·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
+     * (최신순에는 즉시 나온다 — 그 비대칭의 근거는
+     * {@code PlaceListDbQueryRepository#findPopularRows}).
+     *
+     * <p>{@code count_calculated_at}에 이번 호출 시각을 넣어도 잔행 판정과 충돌하지 않는다. 다음
+     * 카운트 회차의 {@link #upsertCounts}가 활성 장소 전량의 값을 같은 회차 값으로 덮으므로,
+     * 이 행도 그때 함께 갱신돼 {@link #deleteStaleRows}의 대상이 되지 않는다.
+     *
+     * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다</b> — 근거와 가드는
+     * {@link #upsertCounts} javadoc과 같다.
+     *
+     * @param placeIds     비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
+     * @param calculatedAt 새로 만들어지는 행의 {@code count_calculated_at}. 보통 호출 시각이다
+     * @return 영향 행 수 (MySQL은 INSERT를 1, UPDATE를 2로 센다)
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+        INSERT INTO place_stats (
+            place_id, town_id, created_at, tag_bitmask,
+            bookmark_count, review_count, avg_rating, count_calculated_at)
+        SELECT p.id,
+               p.town_id,
+               p.created_at,
+               COALESCE(t.mask, 0),
+               0,
+               0,
+               NULL,
+               :calculatedAt
+        FROM places p
+        LEFT JOIN (
+            SELECT pt.place_id AS place_id,
+                   BIT_OR(1 << pt.tag_id) AS mask
+            FROM place_tag pt
+            WHERE pt.place_id IN (:placeIds)
+            GROUP BY pt.place_id
+        ) t ON t.place_id = p.id
+        WHERE p.id IN (:placeIds)
+          AND p.active = 1
+        ON DUPLICATE KEY UPDATE
+            town_id     = VALUES(town_id),
+            created_at  = VALUES(created_at),
+            tag_bitmask = VALUES(tag_bitmask)
+        """, nativeQuery = true)
+    int upsertRowsForActivePlaces(
+            @Param("placeIds") List<Long> placeIds,
+            @Param("calculatedAt") LocalDateTime calculatedAt);
+
+    /**
+     * 지정한 장소들의 행을 <b>즉시</b> 지운다 = 어드민이 내린 장소를 목록에서 그 자리에서 빼는 경로.
+     *
+     * <p>두 정렬 모두 place_stats가 기준 테이블이라 여기 행이 남아 있는 동안 노출된다. 배치의
      * {@link #deleteStaleRows}만 믿으면 그 창이 최대 1시간인데, <b>"안 보이는 것"은 아쉬움이지만
      * "보이면 안 되는 게 보이는 것"은 사고다</b> — 폐업했거나 신고로 내린 장소가 한 시간 노출된다.
      * 그래서 내리는 쪽만 즉시로 당긴다.
      *
-     * <p><b>되살리는 쪽은 당기지 않는다.</b> 재활성 장소는 다음 카운트 배치가 행을 만들고 그 행은
-     * 미채점이라 인기순에는 다음 점수 배치까지 나오지 않는다 — 미채점 행을 인기순에 넣으면 음수
-     * 점수 장소보다 위로 올라오기 때문이며, 근거는 {@code PlaceListDbQueryRepository#findPopularRows}
-     * javadoc에 있다. 노출 창은 0, 미노출 창은 ≤24h로 갈린 것이 의도다.
+     * <p><b>되살리는 쪽도 행은 즉시 만든다 (V34).</b> 최신순의 기준 테이블이 place_stats가 되면서
+     * 행이 없는 재활성 장소는 <em>최신순에서도</em> 사라지는데, 그것은 대가가 아니라 버그다 —
+     * {@code AdminPlaceService#activatePlacesByTownIds}가 그 자리에서 미채점 행을 만든다.
+     * 다만 그 행은 미채점이라 <b>인기순</b>에는 다음 점수 배치까지 나오지 않는다(≤24h). 미채점 행을
+     * 인기순에 넣으면 음수 점수 장소보다 위로 올라오기 때문이며, 근거는
+     * {@code PlaceListDbQueryRepository#findPopularRows} javadoc에 있다.
      *
      * <p><b>{@link #deleteStaleRows}의 계약을 건드리지 않는다.</b> 이 문장은
      * {@code count_calculated_at}을 읽지도 쓰지도 않으므로 잔행 판정에 관여하지 않고, 이미 없는

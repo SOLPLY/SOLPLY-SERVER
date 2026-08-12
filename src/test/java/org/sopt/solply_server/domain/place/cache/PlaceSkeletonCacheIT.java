@@ -207,9 +207,12 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
     @Test
     void 미스로_읽은_장소는_스냅샷에_들어가지_않는다() {
         long newPlace = createPlace("골격신규", true);
+        // 최신순의 기준 테이블도 place_stats라(V34) 행이 있어야 목록에 뜬다. 스냅샷은 다시 짓지
+        // 않으므로 이 장소는 목록에는 있고 스냅샷에는 없는 상태 = 확실한 미스가 된다.
+        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
         int sizeBefore = snapshot.current().size();
 
-        // 최신순은 기준 테이블이 places라 배치 없이도 신규 장소가 맨 앞에 뜬다 = 확실한 미스
+        // 신규 장소가 맨 앞에 뜨고, 그 골격은 스냅샷이 아니라 미스 경로가 채운다
         PlaceFilterGetResponse response =
                 placeService.getPlaces(me, request(PlaceSortType.LATEST, null, null));
 
@@ -352,12 +355,20 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
     private static int tagSeq = 0;
     private static int userSeq = 0;
 
+    /**
+     * <b>태그 id를 auto-increment에 맡기지 않는다.</b> V34부터 태그 id가 곧
+     * {@code place_stats.tag_bitmask}의 비트 자리라 62를 넘으면 안 되는데
+     * ({@code TagBitmask}), auto-increment 카운터는 롤백해도 되돌아가지 않아 같은 싱글턴 컨테이너를
+     * 나눠 쓰는 IT가 늘수록 상한에 다가간다. {@code MAX(id) + 1}은 뒷정리를 따라 되돌아간다.
+     */
     private long createTag(String type, boolean active) {
         String name = TAG_NAME_PREFIX + (++tagSeq);
+        Long tagId = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM tags", Long.class);
         jdbcTemplate.update("""
-                INSERT INTO tags (name, type, parent_id, active, tag_usage)
-                VALUES (?, ?, NULL, ?, 'PLACE')""", name, type, active);
-        return jdbcTemplate.queryForObject("SELECT id FROM tags WHERE name = ?", Long.class, name);
+                INSERT INTO tags (id, name, type, parent_id, active, tag_usage)
+                VALUES (?, ?, ?, NULL, ?, 'PLACE')""", tagId, name, type, active);
+        return tagId;
     }
 
     private String tagName(long tagId) {

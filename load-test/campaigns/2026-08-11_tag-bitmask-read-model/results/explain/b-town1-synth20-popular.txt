@@ -1,0 +1,29 @@
+################################################################
+# B · popular · town1 · synth20 · p1
+# towns: 301
+# 채취: 2026-08-11 18:32:43
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301)
+  AND ps.score_calculated_at IS NOT NULL
+
+  AND (ps.tag_bitmask & 1099511627776) != 0
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=10.7 rows=11) (actual time=0.0501..0.0501 rows=0 loops=1)
+    -> Filter: ((ps.score_calculated_at is not null) and ((ps.tag_bitmask & 1099511627776) <> 0))  (cost=10.7 rows=90) (actual time=0.0498..0.0498 rows=0 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=10.7 rows=100) (actual time=0.0294..0.0432 rows=100 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=10.7 rows=11) (actual time=0.037..0.037 rows=0 loops=1)
+    -> Filter: ((ps.score_calculated_at is not null) and ((ps.tag_bitmask & 1099511627776) <> 0))  (cost=10.7 rows=90) (actual time=0.0368..0.0368 rows=0 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=10.7 rows=100) (actual time=0.0169..0.0307 rows=100 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=10.7 rows=11) (actual time=0.0647..0.0647 rows=0 loops=1)
+    -> Filter: ((ps.score_calculated_at is not null) and ((ps.tag_bitmask & 1099511627776) <> 0))  (cost=10.7 rows=90) (actual time=0.0644..0.0644 rows=0 loops=1)
+        -> Covering index lookup on ps using idx_place_stats_town_score (town_id=301)  (cost=10.7 rows=100) (actual time=0.036..0.0557 rows=100 loops=1)

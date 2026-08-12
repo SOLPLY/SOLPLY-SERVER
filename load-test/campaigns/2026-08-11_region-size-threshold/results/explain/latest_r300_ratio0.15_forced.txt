@@ -1,0 +1,47 @@
+################################################################
+# latest · R=300 · ratio=0.15 · tag_size=45 (tag_id=9001) · forced
+# towns: 301,302,303
+# 채취: 2026-08-11 11:49:56
+################################################################
+--- SQL ---
+SELECT /*+ JOIN_PREFIX(p) */ p.id, p.created_at, COALESCE(ps.bookmark_count, 0),
+       COALESCE(ps.review_count, 0), ps.avg_rating
+FROM places p
+LEFT JOIN place_stats ps
+       ON ps.place_id = p.id
+WHERE p.town_id IN (301,302,303)
+  AND p.active = 1
+
+  AND EXISTS (SELECT 1 FROM place_tag pt
+               WHERE pt.place_id = p.id AND pt.tag_id = 9001)
+ORDER BY p.created_at DESC, p.id DESC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=270 rows=11) (actual time=0.386..0.479 rows=2 loops=1)
+    -> Nested loop left join  (cost=270 rows=300) (actual time=0.386..0.478 rows=2 loops=1)
+        -> Nested loop inner join  (cost=165 rows=300) (actual time=0.382..0.472 rows=2 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=60.5 rows=300) (actual time=0.17..0.183 rows=300 loops=1)
+                -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303)))  (cost=60.5 rows=300) (actual time=0.0246..0.12 rows=300 loops=1)
+                    -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (town_id = 303 AND active = 1)  (cost=60.5 rows=300) (actual time=0.0225..0.0938 rows=300 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=9001)  (cost=0.25 rows=1) (actual time=877e-6..877e-6 rows=0.00667 loops=300)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.0025..0.00254 rows=1 loops=2)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=270 rows=11) (actual time=0.412..0.504 rows=2 loops=1)
+    -> Nested loop left join  (cost=270 rows=300) (actual time=0.412..0.504 rows=2 loops=1)
+        -> Nested loop inner join  (cost=165 rows=300) (actual time=0.407..0.498 rows=2 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=60.5 rows=300) (actual time=0.179..0.191 rows=300 loops=1)
+                -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303)))  (cost=60.5 rows=300) (actual time=0.0327..0.127 rows=300 loops=1)
+                    -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (town_id = 303 AND active = 1)  (cost=60.5 rows=300) (actual time=0.0295..0.101 rows=300 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=9001)  (cost=0.25 rows=1) (actual time=934e-6..934e-6 rows=0.00667 loops=300)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.00271..0.00273 rows=1 loops=2)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=270 rows=11) (actual time=0.376..0.463 rows=2 loops=1)
+    -> Nested loop left join  (cost=270 rows=300) (actual time=0.375..0.462 rows=2 loops=1)
+        -> Nested loop inner join  (cost=165 rows=300) (actual time=0.37..0.456 rows=2 loops=1)
+            -> Sort: p.created_at DESC, p.id DESC  (cost=60.5 rows=300) (actual time=0.162..0.173 rows=300 loops=1)
+                -> Filter: ((p.`active` = 1) and (p.town_id in (301,302,303)))  (cost=60.5 rows=300) (actual time=0.0283..0.115 rows=300 loops=1)
+                    -> Index range scan on p using idx_places_town_active_created over (town_id = 301 AND active = 1) OR (town_id = 302 AND active = 1) OR (town_id = 303 AND active = 1)  (cost=60.5 rows=300) (actual time=0.0259..0.0903 rows=300 loops=1)
+            -> Single-row covering index lookup on pt using uk_place_tag_place_tag (place_id=p.id, tag_id=9001)  (cost=0.25 rows=1) (actual time=863e-6..863e-6 rows=0.00667 loops=300)
+        -> Single-row index lookup on ps using PRIMARY (place_id=p.id)  (cost=0.25 rows=1) (actual time=0.00306..0.00306 rows=1 loops=2)

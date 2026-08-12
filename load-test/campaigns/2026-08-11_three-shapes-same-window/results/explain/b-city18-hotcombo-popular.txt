@@ -1,0 +1,35 @@
+################################################################
+# B · popular · city18 · hotcombo · p1
+# 태그 그룹: [1;7+8+9+10;11+12+13+14+15+16] (그룹 2개, 그룹 안 OR · 그룹 사이 AND)
+# 기반 형상: V34
+# towns: 301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318 / 1페이지 기준 매치 행 수: 211
+# 채취: 2026-08-11 23:38:12
+################################################################
+--- SQL ---
+SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
+       ps.review_count, ps.avg_rating
+FROM place_stats ps
+WHERE ps.town_id IN (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)
+  AND ps.score_calculated_at IS NOT NULL
+  AND (ps.tag_bitmask & 2) != 0
+  AND (ps.tag_bitmask & 1920) != 0
+  AND (ps.tag_bitmask & 129024) != 0
+ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT 11
+
+--- EXPLAIN ANALYZE (run 1) ---
+-> Limit: 11 row(s)  (cost=374 rows=11) (actual time=0.748..0.749 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=374 rows=1800) (actual time=0.748..0.748 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null) and ((ps.tag_bitmask & 2) <> 0) and ((ps.tag_bitmask & 1920) <> 0) and ((ps.tag_bitmask & 129024) <> 0))  (cost=374 rows=1800) (actual time=0.0373..0.706 rows=211 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=374 rows=1800) (actual time=0.032..0.555 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 2) ---
+-> Limit: 11 row(s)  (cost=374 rows=11) (actual time=0.827..0.828 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=374 rows=1800) (actual time=0.827..0.827 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null) and ((ps.tag_bitmask & 2) <> 0) and ((ps.tag_bitmask & 1920) <> 0) and ((ps.tag_bitmask & 129024) <> 0))  (cost=374 rows=1800) (actual time=0.0375..0.783 rows=211 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=374 rows=1800) (actual time=0.033..0.614 rows=1800 loops=1)
+
+--- EXPLAIN ANALYZE (run 3) ---
+-> Limit: 11 row(s)  (cost=374 rows=11) (actual time=0.757..0.757 rows=11 loops=1)
+    -> Sort: ps.popular_score DESC, ps.place_id, limit input to 11 row(s) per chunk  (cost=374 rows=1800) (actual time=0.756..0.757 rows=11 loops=1)
+        -> Filter: ((ps.town_id in (301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318)) and (ps.score_calculated_at is not null) and ((ps.tag_bitmask & 2) <> 0) and ((ps.tag_bitmask & 1920) <> 0) and ((ps.tag_bitmask & 129024) <> 0))  (cost=374 rows=1800) (actual time=0.043..0.717 rows=211 loops=1)
+            -> Index range scan on ps using idx_place_stats_town_score over (town_id = 301) OR (town_id = 302) OR (16 more)  (cost=374 rows=1800) (actual time=0.038..0.545 rows=1800 loops=1)
