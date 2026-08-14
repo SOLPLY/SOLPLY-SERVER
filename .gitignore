@@ -119,3 +119,8 @@ load-test/bench/results/metrics/*
 # 예외: 인기순 벤치 서버 측 지표 (docs/perf/2026-07-place-popular-sort-benchmark.md §3·§4 근거)
 !load-test/bench/results/metrics/popular-v*
 load-test/campaigns/**/bench/node_modules
+
+# 로컬 성능 진단 자료
+# 기존에 이미 추적 중인 파일은 유지하고, 새로 생성되는 문서·캠페인은 커밋하지 않는다.
+/docs/perf/
+/load-test/
