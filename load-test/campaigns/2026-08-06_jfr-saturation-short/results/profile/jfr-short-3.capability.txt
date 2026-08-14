@@ -1,2 +1,0 @@
-jdk.jfr@21.0.11
--rw-r--r-- 1 root root 111016 Aug  6 16:45 /tmp/solply-saturation.jfr

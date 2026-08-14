@@ -1,5 +1,0 @@
-pids: 83309 83347 
-interval_cpu_percent: 87.6%  (cputime 51.44s -> 55.82s over 5s)
---- per-process (lifetime avg %cpu, rss KB) ---
-83309   0.0   6656 npm exec artillery run campaigns/2026-08-02_post-removal-regression/scenarios/place-list-popular-120.yml -o campaigns/2026-08-02_post-removal-regression/results/reports/regression2-r2.json
-83347  95.1 400864 node
