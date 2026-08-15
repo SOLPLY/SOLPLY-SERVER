@@ -115,9 +115,12 @@ public class PlaceStatsFacade {
         // 않는다 — 즉 회차마다 이 줄은 클러스터 전체에서 정확히 한 번 찍힌다.
         log.info("인기순 카운트 배치 시작 - calculatedAt={}", calculatedAt);
         try {
-            // 이제 문장이 순수 UPDATE라 affectedRows가 곧 place_stats 행 수 = 목록 노출 대상
-            // 장소 수다. UPSERT였던 시절에는 MySQL이 INSERT를 1, UPDATE를 2로 세어 장소 수의
-            // 약 2배가 찍혔다 — 옛 로그를 비교할 때 그 차이를 감안할 것.
+            // affectedRows는 문장이 걸린 행 수(matched)이고, 순수 UPDATE인 지금은 그것이 곧
+            // place_stats 행 수 = 목록 노출 대상 장소 수다. 배치가 실제로 쓴 행 수가 아니다 —
+            // 회차 시각 컬럼을 걷어낸 뒤로(V35) 실제 쓰기는 카운트가 달라진 장소로 좁혀졌는데,
+            // 이 수치는 그와 무관하게 전 행을 센다. 둘이 갈라진 것이 V35의 실익 그 자체다.
+            // UPSERT였던 시절에는 MySQL이 INSERT를 1, UPDATE를 2로 세어 장소 수의 약 2배가
+            // 찍혔다 — 옛 로그를 비교할 때 그 차이를 감안할 것.
             int affected = batchProcessor.recalculateCounts(calculatedAt);
             log.info("인기순 카운트 배치 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms",
                     calculatedAt, affected,
