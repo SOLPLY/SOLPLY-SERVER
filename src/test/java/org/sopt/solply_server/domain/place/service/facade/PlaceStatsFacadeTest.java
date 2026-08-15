@@ -6,12 +6,14 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.AfterEach;
@@ -51,12 +53,21 @@ class PlaceStatsFacadeTest {
      */
     private final PlaceListProperties placeListProperties = new PlaceListProperties();
 
+    /**
+     * 실물을 쓰는 이유는 위와 같다 — 재시도 횟수의 <b>기본값</b>이 그대로 도는 것을 보려는 것이다.
+     * mock이면 {@code getBatchMaxAttempts()}가 0을 돌려줘 회차가 한 번도 안 돈다.
+     */
+    private final PlaceStatsProperties placeStatsProperties = new PlaceStatsProperties();
+
     private PlaceStatsFacade placeStatsFacade;
 
     @BeforeEach
     void createFacade() {
-        placeStatsFacade =
-                new PlaceStatsFacade(batchProcessor, placeSkeletonLoader, placeListProperties);
+        // 시도 횟수는 기본값(3)을 그대로 쓰고 대기만 지운다. 대기를 남기면 실패 경로를 거치는
+        // 테스트마다 (시도 횟수 - 1) × 5초를 잠든다.
+        placeStatsProperties.setBatchRetryDelay(Duration.ZERO);
+        placeStatsFacade = new PlaceStatsFacade(
+                batchProcessor, placeSkeletonLoader, placeListProperties, placeStatsProperties);
     }
 
     /**
@@ -115,7 +126,100 @@ class PlaceStatsFacadeTest {
 
         placeStatsFacade.recalculatePlaceCounts();
 
+        verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
+                .recalculateCounts(any(LocalDateTime.class));
+    }
+
+    // === 회차 내 재시도 ===
+
+    /**
+     * <b>재시도가 안전한 근거는 멱등성 하나이고, 그 멱등성은 기준 시각을 고정할 때만 성립한다.</b>
+     * 집계에 {@code created_at <= :calculatedAt} 상한이 있어 같은 시각으로 다시 돌리면 결과가 같다.
+     * 시도마다 {@code now()}를 새로 잡으면 그 사이 들어온 북마크·리뷰가 결과를 바꿔, 재시도가
+     * "같은 회차를 다시 돌리는 것"이 아니라 "다른 회차를 도는 것"이 된다.
+     *
+     * <p>이 테스트가 깨지면 재시도의 전제가 깨진 것이다 — 횟수보다 이쪽이 본질이다.
+     */
+    @Test
+    void 재시도는_첫_시도와_같은_기준_시각을_쓴다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        ArgumentCaptor<LocalDateTime> captor = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
+                .recalculateCounts(captor.capture());
+        assertThat(captor.getAllValues()).containsOnly(captor.getAllValues().getFirst());
+    }
+
+    /**
+     * 재시도로 복구되면 그 회차는 <b>성공</b>이다. 앞선 실패가 error로 남으면 알림이 울리고,
+     * 사람이 멀쩡히 복구된 회차를 들여다보게 된다 — 중간 실패는 warn, 최종 실패만 error다.
+     */
+    @Test
+    void 중간에_성공하면_더_돌지_않고_실패는_warn으로만_남는다() {
+        given(batchProcessor.recalculateCounts(any(LocalDateTime.class)))
+                .willThrow(new RuntimeException("boom"))
+                .willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(batchProcessor, times(2)).recalculateCounts(any(LocalDateTime.class));
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.ERROR)
+                .isEmpty();
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.WARN)
+                .singleElement()
+                .satisfies(event -> assertThat(event.getFormattedMessage()).contains("재시도"));
+    }
+
+    /**
+     * 복구된 회차는 스냅샷까지 간다. 재시도를 넣으면서 성공 경로가 갈라지기 쉬운 자리다.
+     */
+    @Test
+    void 재시도로_복구된_카운트_회차도_골격_스냅샷을_교체한다() {
+        given(batchProcessor.recalculateCounts(any(LocalDateTime.class)))
+                .willThrow(new RuntimeException("boom"))
+                .willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(placeSkeletonLoader).rebuild();
+    }
+
+    /**
+     * 점수 회차에도 같은 장치가 걸려 있어야 한다 — 회차 간격이 24시간이라 한 번 죽으면 하루치
+     * 점수가 낡고, 점수는 정렬 축이라 그 낡음이 표시값이 아니라 순서로 드러난다.
+     */
+    @Test
+    void 점수_회차도_실패하면_재시도한다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateScores(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePopularScores();
+
+        verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
+                .recalculateScores(any(LocalDateTime.class));
+    }
+
+    /**
+     * {@code batch-max-attempts: 1}은 재시도를 끄는 유효한 설정이다. 루프가 그 값을 무시하고
+     * 최소 한 번은 더 도는 형태로 쓰이면 끌 방법이 없어진다.
+     */
+    @Test
+    void 최대_시도_1이면_재시도하지_않는다() {
+        placeStatsProperties.setBatchMaxAttempts(1);
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePlaceCounts();
+
         verify(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.WARN)
+                .isEmpty();
     }
 
     // === 골격 스냅샷 훅 ===

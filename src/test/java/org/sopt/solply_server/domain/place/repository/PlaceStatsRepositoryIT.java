@@ -59,20 +59,6 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
                 ((Number) row[1]).longValue());
     }
 
-    /** 시드에서 활성 장소 여러 개를 빌려 온다 — 잔행 판정처럼 "지운 것과 남은 것"이 함께 필요할 때 쓴다 */
-    @SuppressWarnings("unchecked")
-    private List<Long> anyPlaceIds(int size) {
-        List<Number> ids = em.createNativeQuery(
-                "SELECT p.id FROM places p WHERE p.active = true ORDER BY p.id")
-                .setMaxResults(size)
-                .getResultList();
-        return ids.stream().map(Number::longValue).toList();
-    }
-
-    private static final LocalDateTime COUNT_CALCULATED_AT =
-            LocalDateTime.of(2026, 7, 30, 2, 30, 0);
-
-    /** 점수 회차는 카운트 회차와 <b>다른 시각</b>이다 — 두 컬럼을 뒤바꾼 매핑을 값으로 구분한다 */
     private static final LocalDateTime SCORE_CALCULATED_AT =
             LocalDateTime.of(2026, 7, 30, 1, 0, 0);
 
@@ -95,8 +81,6 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         assertThat(stats.getBookmarkCount()).isEqualTo(7);
         assertThat(stats.getReviewCount()).isEqualTo(2);
         assertThat(stats.getAvgRating()).isEqualByComparingTo(new BigDecimal("4.50"));
-        // 두 계산 시각은 서로 다른 배치의 표식이다 — 한 칸으로 합치거나 뒤바꾸면 여기서 갈린다
-        assertThat(stats.getCountCalculatedAt()).isEqualTo(COUNT_CALCULATED_AT);
         assertThat(stats.getScoreCalculatedAt()).isEqualTo(SCORE_CALCULATED_AT);
     }
 
@@ -127,12 +111,10 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
 
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, created_at, bookmark_count, review_count, avg_rating,
-                     count_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 0, 0, NULL, :countAt
+                    (place_id, town_id, created_at, bookmark_count, review_count, avg_rating)
+                SELECT p.id, p.town_id, p.created_at, 0, 0, NULL
                 FROM places p WHERE p.id = :placeId
                 """)
-                .setParameter("countAt", COUNT_CALCULATED_AT)
                 .setParameter("placeId", placeId)
                 .executeUpdate();
         em.clear();
@@ -150,11 +132,11 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>어드민이 장소를 내리면 배치를 기다리지 않고 행이 사라진다.</b> 인기순은 place_stats가
-     * 기준 테이블이라 행이 남아 있는 동안 노출되고, 배치의 잔행 삭제만 믿으면 그 창이 ≤1h가 된다.
+     * <b>어드민의 삭제가 목록에서 장소를 빼는 유일한 경로다.</b> 두 정렬 모두 place_stats가 기준
+     * 테이블이라 행이 남아 있는 동안 노출되고, 뒤를 받쳐 주던 배치의 잔행 삭제는 이제 없다.
      *
-     * <p>두 번 불러 0을 확인하는 것이 요점이다 — 즉시 삭제와 배치의 잔행 삭제는 <b>같은 행을
-     * 노리는 두 문장</b>이라, 이미 없는 행을 지우는 것이 무해해야 둘이 공존한다.
+     * <p>두 번 불러 0을 확인하는 것은 재호출이 무해해야 하기 때문이다 — 어드민 경로가 이미 없는
+     * 행을 지우는 상황(배치가 아직 행을 만들지 않은 장소)이 정상 흐름에 있다.
      */
     @Test
     void 즉시_삭제는_행을_지우고_두_번_불러도_무해하다() {
@@ -167,35 +149,14 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         assertThat(placeStatsRepository.deleteByPlaceIds(List.of(placeId))).isZero();
     }
 
-    /**
-     * <b>즉시 삭제가 배치의 잔행 판정을 흐리지 않는다.</b> 잔행 삭제의 근거는
-     * {@code count_calculated_at <> :calculatedAt} 하나인데, 즉시 삭제는 그 컬럼을 읽지도 쓰지도
-     * 않으므로 한쪽이 먼저 지운 장소가 있어도 나머지 잔행은 그대로 걸려야 한다.
-     */
-    @Test
-    void 즉시_삭제_뒤에도_배치의_잔행_삭제는_그대로_동작한다() {
-        List<Long> placeIds = anyPlaceIds(2);
-        insertStats(placeIds.get(0));
-        insertStats(placeIds.get(1));
-        em.clear();
-
-        placeStatsRepository.deleteByPlaceIds(List.of(placeIds.get(0)));
-
-        // 남은 한 행은 이번 회차가 건드리지 않은 잔행이다 — 배치가 여전히 그것을 지운다
-        assertThat(placeStatsRepository.deleteStaleRows(COUNT_CALCULATED_AT.plusHours(1)))
-                .isEqualTo(1);
-        assertThat(placeStatsRepository.count()).isZero();
-    }
-
     private void insertStats(long placeId) {
         em.createNativeQuery("""
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
-                     avg_rating, count_calculated_at, score_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 12.5, 7, 2, 4.50, :countAt, :scoreAt
+                     avg_rating, score_calculated_at)
+                SELECT p.id, p.town_id, p.created_at, 12.5, 7, 2, 4.50, :scoreAt
                 FROM places p WHERE p.id = :placeId
                 """)
-                .setParameter("countAt", COUNT_CALCULATED_AT)
                 .setParameter("scoreAt", SCORE_CALCULATED_AT)
                 .setParameter("placeId", placeId)
                 .executeUpdate();

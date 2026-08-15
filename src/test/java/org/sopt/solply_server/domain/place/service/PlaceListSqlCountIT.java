@@ -70,7 +70,10 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
             createPlace("SQL수IT장소" + i);
         }
         me = createUser();
-        // 두 회차를 모두 돌린다 — 카운트가 행을 만들고 점수가 그 행을 채점한다.
+        // 행을 짓는 것은 어드민 쓰기 트랜잭션의 몫이라 배치가 대신해 주지 않는다 —
+        // 어드민 경로를 거치지 않는 이 픽스처는 원본 재구축 문장으로 그 자리를 채운다.
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
+        // 두 회차를 모두 돌린다 — 카운트가 표시 값을 채우고 점수가 채점한다.
         // 점수 회차를 빼면 전 장소가 0점이라 인기순이 id 순으로 흐르고, 커서 페이지 단언이
         // 검증하려던 "점수 경계"를 실제로는 밟지 않게 된다.
         batchProcessor.recalculateCounts(CALCULATED_AT);

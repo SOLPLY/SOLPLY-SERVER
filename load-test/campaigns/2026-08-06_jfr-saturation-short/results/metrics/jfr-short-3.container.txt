@@ -1,2 +1,0 @@
-before image=docker-bench-app nano=2000000000 mem=2147483648 restart=0
-profile image=docker-bench-app nano=2000000000 mem=2147483648 restart=0

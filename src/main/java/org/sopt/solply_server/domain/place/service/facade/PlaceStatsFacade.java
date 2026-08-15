@@ -3,12 +3,14 @@ package org.sopt.solply_server.domain.place.service.facade;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.OptionalInt;
+import java.util.function.IntSupplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
+import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -24,11 +26,10 @@ import org.springframework.stereotype.Component;
  * <p><b>주기를 가른 이유는 두 값의 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>
  *   <li><b>카운트 — 매시 30분.</b> 화면에 찍히는 북마크 수·리뷰 수·평점이고, 방금 누른 북마크가
- *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. 파생 컬럼({@code town_id}·
- *       {@code tag_bitmask}·{@code created_at})과 행의 존재 여부는 어드민 쓰기 경로가 같은
- *       트랜잭션에서 이미 맞추므로(V34, {@code AdminPlaceService}), 여기 회차는 <b>어드민을 지나친
- *       변경</b>의 드리프트 상한이다 — 그 경우에만 동네를 옮긴 장소가 이전 동네 목록에 끼거나
- *       뗀 태그로 계속 검색되는 창이 열리고, 상한이 이 간격이다.</li>
+ *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. <b>이 회차가 만지는 것은 그 세 값뿐이고,
+ *       그중에서도 값이 실제로 달라진 행뿐이다</b> (V35) — 파생 컬럼({@code town_id}·
+ *       {@code tag_bitmask}·{@code created_at})과 행의 존재 여부는 어드민 쓰기 트랜잭션의 소유라
+ *       여기서 손대지 않는다 ({@code AdminPlaceService}).</li>
  *   <li><b>인기 점수 — 매일 01:00 (KST).</b> 반감기 90일에서 하루의 감쇠 변화는
  *       {@code 1 - 0.5^(1/90) = 0.77%}라 순위를 흔들지 못한다. 잦게 돌 이유가 없는 대신,
  *       <b>점수가 갈리는 순간이 곧 커서 좌표계가 갈리는 순간</b>이라 그 창을 트래픽 최저 시각의
@@ -40,10 +41,11 @@ import org.springframework.stereotype.Component;
  * 자유</b>이고, 그 대가는 하루 1회의 추가 스캔이다.
  *
  * <p><b>두 배치는 겹치지 않는다.</b> 점수 배치가 {@code place_stats} 전 행에 X 락을 커밋까지 들고
- * 있으므로 같은 시각에 카운트 배치가 돌면 서로를 기다린다. 01:00(점수)과 01:30(카운트)은 실측
- * 배치 소요 6초의 300배 간격이라 구조적으로 만나지 않는다. <b>주기를 바꿀 때 이 간격을 함께
- * 확인할 것.</b> 락 이름을 나눠 둔 것은 그 반대 이유다 — 하나로 묶으면 정시에 겹친 두 회차 중
- * 하나가 통째로 건너뛰어진다.
+ * 있으므로 같은 시각에 카운트 배치가 돌면 서로를 기다린다. 01:00(점수)과 01:30(카운트)은 30분
+ * 간격인데, 재시도까지 다 쓴 회차의 최장 시간이 약 21초라 여전히 85배 여유다(카운트 실측
+ * 3.5초 기준). <b>주기나 {@code batch-max-attempts}를 바꿀 때 이 간격을 함께 확인할 것.</b>
+ * 락 이름을 나눠 둔 것은 그 반대 이유다 — 하나로 묶으면 정시에 겹친 두 회차 중 하나가 통째로
+ * 건너뛰어진다.
  *
  * <p><b>정각이 아니라 30분인 이유</b>는 장소 임베딩(03:00)·코스 임베딩(04:00)과의 스케줄러
  * 스레드 경합 회피다. {@code @Scheduled} 기본 실행기는 단일 스레드라 정각에 겹치면 한쪽이 밀린다.
@@ -88,6 +90,7 @@ public class PlaceStatsFacade {
     private final PlaceStatsBatchProcessor batchProcessor;
     private final PlaceSkeletonLoader placeSkeletonLoader;
     private final PlaceListProperties placeListProperties;
+    private final PlaceStatsProperties placeStatsProperties;
 
     /**
      * 표시 카운트 회차 — 매시 30분 (KST).
@@ -98,9 +101,13 @@ public class PlaceStatsFacade {
      * 다음 사람이 "카운트는 서버 시간대, 점수는 KST"라는 있지도 않은 비대칭을 읽는다. 실제 계약은
      * "두 회차 모두 KST 벽시계"이고, 아래 30분 간격이 그 위에서만 성립한다.
      *
-     * <p>{@code lockAtMostFor PT10M} — 락 보유 인스턴스가 죽었을 때의 자동 해제 상한. 배치 실측
-     * 6초의 100배 여유다. 다음 회차 간격(60분)보다 짧아야 페일오버가 성립한다 — 길게 잡으면
-     * 죽은 인스턴스의 락이 다음 회차까지 살아 배치가 통째로 건너뛰어진다.
+     * <p>{@code lockAtMostFor PT10M} — 락 보유 인스턴스가 죽었을 때의 자동 해제 상한.
+     * <b>재시도가 들어온 뒤로는 회차 하나의 최장 시간을 담을 수 있어야 한다</b> —
+     * 최대 시도 3회 × 실측 3.5초 + 대기 2회 × 5초 ≈ 21초로 약 29배 여유다
+     * (2026-08-15 실측, `docs/perf/2026-08-15-count-batch-duration-lock.md`).
+     * 다음 회차 간격(60분)보다는 짧아야 페일오버가 성립한다 — 길게 잡으면 죽은 인스턴스의 락이
+     * 다음 회차까지 살아 배치가 통째로 건너뛰어진다.
+     * <b>{@code batch-max-attempts}를 올릴 때 이 상한을 함께 볼 것.</b>
      *
      * <p>{@code lockAtLeastFor PT1M} — 배치가 6초 만에 끝나도 1분간은 락을 유지한다.
      * 인스턴스 간 발화 시각이 수 초 어긋나도 뒤늦게 깨어난 쪽이 "이미 풀린 락"을 잡아
@@ -110,24 +117,90 @@ public class PlaceStatsFacade {
     @SchedulerLock(name = "place-stats-count", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
     public void recalculatePlaceCounts() {
         LocalDateTime calculatedAt = LocalDateTime.now();
-        long startNanos = System.nanoTime();
         // 시작 로그가 없으면 "배치가 도는 중"과 "스케줄이 애초에 안 돌은 상태"를 로그로 구분할 수
         // 없다. 다중 인스턴스에서 락을 못 잡은 쪽은 블록 없이 회차를 건너뛰므로 이 줄도 남기지
         // 않는다 — 즉 회차마다 이 줄은 클러스터 전체에서 정확히 한 번 찍힌다.
         log.info("인기순 카운트 배치 시작 - calculatedAt={}", calculatedAt);
-        try {
-            // affectedRows는 장소 수가 아니다 — MySQL이 INSERT를 1, UPDATE를 2로 세므로
-            // 정상 운영(전부 UPDATE) 상태에서는 장소 수의 약 2배가 찍힌다. 장소 수로 오해하지 말 것.
-            int affected = batchProcessor.recalculateCounts(calculatedAt);
-            log.info("인기순 카운트 배치 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms",
-                    calculatedAt, affected,
-                    Duration.ofNanos(System.nanoTime() - startNanos).toMillis());
-        } catch (Exception e) {
-            // 전량 재계산이라 다음 회차가 전부 복원한다. 스케줄러 스레드로 예외를 흘리지 않는다.
-            log.error("인기순 카운트 배치 실패 - calculatedAt={}", calculatedAt, e);
-            return;
+
+        // affectedRows는 문장이 걸린 행 수(matched)이고, 순수 UPDATE인 지금은 그것이 곧
+        // place_stats 행 수 = 목록 노출 대상 장소 수다. 배치가 실제로 쓴 행 수가 아니다 —
+        // 회차 시각 컬럼을 걷어낸 뒤로(V35) 실제 쓰기는 카운트가 달라진 장소로 좁혀졌는데,
+        // 이 수치는 그와 무관하게 전 행을 센다. 둘이 갈라진 것이 V35의 실익 그 자체다.
+        // UPSERT였던 시절에는 MySQL이 INSERT를 1, UPDATE를 2로 세어 장소 수의 약 2배가
+        // 찍혔다 — 옛 로그를 비교할 때 그 차이를 감안할 것.
+        boolean succeeded = runWithRetry(
+                "인기순 카운트 배치", calculatedAt, () -> batchProcessor.recalculateCounts(calculatedAt));
+
+        // 실패한 회차의 스냅샷을 다시 짓지 않는다. 카운트가 안 바뀌었으므로 새로 지어도 같은
+        // 사진이고, 로그만 "빌드했다"로 남아 회차가 성공한 것처럼 읽힌다.
+        if (succeeded) {
+            rebuildPlaceSkeletonSnapshot();
         }
-        rebuildPlaceSkeletonSnapshot();
+    }
+
+    /**
+     * 회차를 <b>재시도까지 포함해</b> 돌린다. 한 번이라도 성공하면 {@code true}.
+     *
+     * <p><b>여기가 트랜잭션 밖이라는 것이 이 메서드의 전제다.</b> 프로세서가 시도마다 자기
+     * 트랜잭션을 열고 닫으므로, 실패한 시도는 온전히 롤백된 뒤 다음 시도가 깨끗한 상태에서
+     * 시작한다. 이 루프를 트랜잭션 안으로 옮기면 실패한 문장 뒤에 계속 쓰는 모양이 된다.
+     *
+     * <p><b>{@code calculatedAt}을 인자로 받아 모든 시도에 같은 값을 넘기는 것이 계약이다.</b>
+     * 집계에 {@code created_at <= :calculatedAt} 상한이 있어 기준 시각이 같으면 결과가 같다 —
+     * 재시도가 안전한 근거가 그 멱등성 하나다. 시도마다 {@code LocalDateTime.now()}를 새로
+     * 잡으면 그 사이 들어온 북마크·리뷰가 결과를 바꿔 "다시 돌려도 같다"가 깨진다.
+     *
+     * <p>마지막 시도까지 실패하면 {@code error}, 중간 실패는 {@code warn}으로 남긴다. 둘을 가르지
+     * 않으면 "재시도로 복구된 회차"와 "끝내 죽은 회차"가 알림에서 같은 무게로 울린다.
+     *
+     * <p>예외를 스케줄러 스레드로 흘리지 않는 것은 예전과 같다. 여기서 던지면
+     * {@code @Scheduled} 기본 실행기가 단일 스레드라 이후 회차의 등록에까지 영향을 준다.
+     */
+    private boolean runWithRetry(String label, LocalDateTime calculatedAt, IntSupplier attempt) {
+        int maxAttempts = placeStatsProperties.getBatchMaxAttempts();
+        for (int n = 1; n <= maxAttempts; n++) {
+            long startNanos = System.nanoTime();
+            try {
+                int affected = attempt.getAsInt();
+                log.info("{} 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms, 시도={}/{}",
+                        label, calculatedAt, affected,
+                        Duration.ofNanos(System.nanoTime() - startNanos).toMillis(), n, maxAttempts);
+                return true;
+            } catch (Exception e) {
+                if (n == maxAttempts) {
+                    log.error("{} 실패 - {}회 시도 모두 실패해 회차를 포기한다, calculatedAt={}",
+                            label, maxAttempts, calculatedAt, e);
+                    return false;
+                }
+                Duration delay = placeStatsProperties.getBatchRetryDelay();
+                log.warn("{} 실패 - {}ms 뒤 재시도한다 (시도 {}/{}), calculatedAt={}",
+                        label, delay.toMillis(), n, maxAttempts, calculatedAt, e);
+                if (!sleepBeforeRetry(label, delay)) {
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 시도 사이 대기. 중단되면 {@code false}를 돌려 회차를 그 자리에서 접는다.
+     *
+     * <p>인터럽트는 대개 종료 신호다. 삼키고 재시도를 이어가면 셧다운이 그만큼 늦어지고,
+     * 플래그를 복원하지 않으면 상위가 종료 중임을 영영 알 수 없다.
+     */
+    private boolean sleepBeforeRetry(String label, Duration delay) {
+        if (delay.isZero() || delay.isNegative()) {
+            return true;
+        }
+        try {
+            Thread.sleep(delay.toMillis());
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("{} 재시도 대기가 중단됐다 - 회차를 접는다", label);
+            return false;
+        }
     }
 
     /**
@@ -179,16 +252,10 @@ public class PlaceStatsFacade {
     @SchedulerLock(name = "place-stats-score", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
     public void recalculatePopularScores() {
         LocalDateTime calculatedAt = LocalDateTime.now();
-        long startNanos = System.nanoTime();
         log.info("인기점수 배치 시작 - calculatedAt={}", calculatedAt);
-        try {
-            int affected = batchProcessor.recalculateScores(calculatedAt);
-            log.info("인기점수 배치 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms",
-                    calculatedAt, affected,
-                    Duration.ofNanos(System.nanoTime() - startNanos).toMillis());
-        } catch (Exception e) {
-            log.error("인기점수 배치 실패 - calculatedAt={}", calculatedAt, e);
-        }
+        // 재시도가 카운트보다 여기서 더 값어치 있다 — 회차 간격이 24시간이라 한 번 죽으면
+        // 하루치 점수가 낡는다. 점수는 정렬 축이라 그 낡음이 표시값이 아니라 순서로 드러난다.
+        runWithRetry("인기점수 배치", calculatedAt, () -> batchProcessor.recalculateScores(calculatedAt));
     }
 
     /**
@@ -202,7 +269,7 @@ public class PlaceStatsFacade {
      * 테이블을 재생성만 하고 백필하지 않으므로 여기가 유일한 즉시 복구 경로다.
      *
      * <p><b>Flyway 백필 마이그레이션을 쓰지 않은 이유:</b> Flyway는 자기 트랜잭션(기본 RR)에서
-     * 돌아 {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#upsertCounts}
+     * 돌아 {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#rebuildRowsFromSource}
      * javadoc이 실측으로 경고한 {@code bookmarks} next-key 락을 그대로 건다. 무중단 배포 중이면
      * 동시 북마크 INSERT가 {@code ERROR 1205}로 죽는다. 이 경로는 이미 검증된 프로세서의
      * READ_COMMITTED 경계를 그대로 재사용한다.

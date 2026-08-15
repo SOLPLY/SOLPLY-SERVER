@@ -11,79 +11,130 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /**
- * {@code place_stats}의 쓰기·읽기 문장 모음. 장소당 행 하나이고 주인이 둘이다 —
- * 컬럼별 소유 배치는 {@link PlaceStats} javadoc의 표에 있다.
+ * {@code place_stats}의 쓰기·읽기 문장 모음. 장소당 행 하나이고 주인이 셋이다 —
+ * 컬럼별 소유 주체는 {@link PlaceStats} javadoc의 표에 있다.
  *
- * <p><b>두 UPSERT/UPDATE의 대입 목록이 서로 겹치면 안 된다.</b> 겹치는 순간 늦게 도는 배치가
- * 상대의 신선한 값을 자기 회차의 낡은 값으로 되돌린다. 이 계약은 SQL의 {@code SET}·
+ * <p><b>세 주체의 대입 목록이 서로 겹치면 안 된다.</b> 겹치는 순간 늦게 도는 쪽이 상대의 신선한
+ * 값을 자기가 읽은 낡은 스냅샷으로 되돌린다. 이 계약은 SQL의 {@code SET}·
  * {@code ON DUPLICATE KEY UPDATE} 목록에만 존재하므로 컬럼을 더할 때 반드시 어느 쪽 소유인지
- * 먼저 정할 것 ({@code PlaceStatsBatchProcessorIT}의 소유권 테스트 두 건이 감시한다).
+ * 먼저 정할 것 ({@code PlaceStatsBatchProcessorIT}의 소유권 테스트들이 감시한다).
  */
 public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
-     * 목록 조회가 읽는 값 전부를 원본에서 재계산해 활성 장소 전량에 적재한다. <b>행의 존재 자체를
-     * 정하는 문장이자 카운트 배치의 1단계</b>이며, {@code popular_score}·
-     * {@code score_calculated_at}은 건드리지 않는다.
+     * 표시 카운트 셋을 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다 = 매시 카운트 회차의
+     * 전부다. 문장 하나라 원자성을 물을 지점이 없다.
      *
-     * <p><b>표시 카운트만의 문장이 아니다 (V34).</b> 목록 조회가 place_stats 단독이 되면서
-     * {@code created_at}(최신순의 정렬 축)과 {@code tag_bitmask}(태그 필터의 유일한 근거)도 여기서
-     * 다시 계산한다. 어드민 쓰기 경로가 이미 같은 값을 같은 트랜잭션에서 유지하므로 이쪽은
-     * <b>안전망</b>이다 — 어드민을 지나친 변경(직접 SQL 수정, 배포 중 유실)의 드리프트 수명을 회차
-     * 간격(≤1h)으로 자른다. 두 계산이 같은 원본을 보므로 서로를 되돌릴 수 없다.
+     * <p><b>UPDATE이지 UPSERT가 아닌 것이 이 문장의 요점이다.</b> 행의 존재와 파생 세 칸
+     * ({@code town_id}·{@code created_at}·{@code tag_bitmask})의 주인은 어드민 쓰기 트랜잭션
+     * 하나이고({@code AdminPlaceService}), 배치는 거기에 손대지 않는다. 예전에는 이 회차가 활성
+     * 장소 전량을 원본에서 다시 지어 그 세 칸까지 덮었는데, 그것은 안전망이 아니라 <b>어드민이
+     * 방금 커밋한 값을 배치가 읽은 낡은 스냅샷으로 되돌릴 수 있는 경로</b>였다.
      *
-     * <p><b>{@code WHERE p.active = 1}이 조회의 불변식을 만든다</b> — 비활성 장소는 이번 회차에
-     * 아예 들어가지 않으므로 목록 쿼리가 places를 되짚지 않아도 된다. 다만 이 문장은 "새로
-     * 넣지 않을" 뿐 이미 있는 행을 지우지 않는다. 짝이 되는 삭제가
-     * {@link #deleteStaleRows}이고, <b>둘은 반드시 한 트랜잭션에</b> 있어야 한다.
+     * <p>그래서 {@code places}·{@code place_tag}가 이 문장에 없다. 딸려 사라진 것이 둘이다 —
+     * FK 부모 검사가 {@code places}에 남기던 S 락(어드민의 동네 일괄 작업을 배치 시간만큼 세우던
+     * 유일한 차단)과, 태그 비트마스크를 매 회차 다시 짓던 {@code BIT_OR} 집계.
      *
      * <p><b>{@code created_at <= :calculatedAt} 상한을 지우지 말 것.</b> 잃는 것은 성능이 아니라
      * 멱등성이라는 문장의 참/거짓이다 — 같은 기준 시각으로 다시 돌렸을 때 그 사이 들어온 활동이
      * 결과를 바꾼다면 "회차를 재실행해도 안전하다"가 성립하지 않는다.
      *
-     * <p><b>{@code ON DUPLICATE KEY UPDATE}는 평시 경로다.</b> 장소당 행이 하나뿐이라 두 번째
-     * 회차부터는 전부 UPDATE로 흐른다. 여기 나열된 일곱 컬럼이 카운트 배치의 소유 목록 전부이며,
-     * {@code popular_score}가 여기 끼면 매시 배치가 새벽에 계산한 점수를 0으로 되돌린다.
+     * <p><b>{@code avg_rating}에 COALESCE를 걸지 않는다.</b> 리뷰가 없으면 NULL이 정확한 답이고,
+     * 0으로 채우는 순간 "평점 0점"으로 읽힌다. 카운트 둘은 반대로 0이 정답이라 COALESCE를 건다.
+     *
+     * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> 두 소스 테이블을 훑는 성질은
+     * {@link #updateScores}와 같다 — REPEATABLE READ면 스캔 행에 shared next-key 락이 걸려 동시
+     * 북마크·리뷰 INSERT가 {@code ERROR 1205}로 죽는다(벤치 실측 1,063만 건 대 0건).
+     *
+     * <p>인덱스 전제: 북마크 축은 {@code idx_bookmark_target}(V23), 리뷰 축은
+     * {@code idx_place_reviews_place_created_rating}(V22)로 각각 인덱스 전용 스캔이어야 한다.
+     *
+     * <p><b>SET 목록에 회차 시각을 넣지 말 것 (V35).</b> InnoDB는 새 값이 기존 값과 전부 같은 행의
+     * 쓰기를 생략하는데, 회차마다 반드시 달라지는 값이 하나라도 끼면 그 판정이 전 행에서 무조건
+     * 실패한다 — 한 시간 동안 아무 활동도 없던 장소까지 매시 다시 쓰이고 undo·redo·binlog가
+     * 그만큼 따라온다. 지금 이 문장이 실제로 건드리는 것은 <b>카운트가 달라진 장소뿐</b>이다.
+     * 배치가 마지막으로 돈 시각이 필요하면 {@code shedlock} 테이블(V27)의
+     * {@code place-stats-count} 행을 볼 것.
+     *
+     * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
+     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
+     *         아니다 — Connector/J의 기본값({@code useAffectedRows=false})이 changed가 아니라
+     *         matched를 돌려주므로, 위 최적화로 쓰기가 줄어도 이 수치는 장소 수를 그대로 센다
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE place_stats ps
+        LEFT JOIN (
+            SELECT bm.target_id AS place_id,
+                   COUNT(*) AS cnt
+            FROM bookmarks bm
+            WHERE bm.target_type = 'PLACE'
+              AND bm.created_at <= :calculatedAt
+            GROUP BY bm.target_id
+        ) b ON b.place_id = ps.place_id
+        LEFT JOIN (
+            SELECT pr.place_id AS place_id,
+                   COUNT(*) AS cnt,
+                   AVG(pr.rating) AS avg_rating
+            FROM place_reviews pr
+            WHERE pr.created_at <= :calculatedAt
+            GROUP BY pr.place_id
+        ) r ON r.place_id = ps.place_id
+        SET ps.bookmark_count = COALESCE(b.cnt, 0),
+            ps.review_count   = COALESCE(r.cnt, 0),
+            ps.avg_rating     = r.avg_rating
+        """, nativeQuery = true)
+    int updateCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
+
+    /**
+     * 활성 장소 전량의 행을 원본에서 다시 짓는다 = <b>기동 시 최초 적재와 운영 복구의 문장</b>.
+     * 정기 회차는 이 문장을 쓰지 않는다 ({@link #updateCounts}).
+     *
+     * <p>필요한 자리가 둘이다. 하나는 V32·V34처럼 {@code place_stats}를 재생성한 배포 직후 —
+     * 테이블이 비어 있고 어드민이 다시 저장해 줄 장소가 없다. 다른 하나는 운영자가 DB에 직접
+     * SQL을 날려 어드민 트랜잭션을 지나친 뒤, 파생 컬럼을 원본 기준으로 되맞출 때다.
+     *
+     * <p><b>{@code WHERE p.active = 1}이 조회의 불변식("행이 있는 장소 = 목록에 나와도 되는
+     * 장소")의 출발점을 만든다</b> — 비활성 장소는 여기서 아예 들어가지 않으므로 목록 쿼리가
+     * places를 되짚어 활성 여부를 묻지 않아도 된다. 다만 이 문장은 "새로 넣지 않을" 뿐 이미 있는
+     * 행을 지우지 않는다. 지우는 주체는 {@link #deleteByPlaceIds} 하나다.
+     *
+     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 필요한 이유는 재실행 가능성 하나다.</b> 최초 적재의
+     * 가드는 리더 선출이 아니라 단순 카운트 검사라 두 인스턴스가 동시에 통과할 수 있고, 그때
+     * 뒤에 온 쪽이 중복 키로 죽는 대신 같은 값을 덮어써야 한다. {@code popular_score}가 이 목록에
+     * 끼면 재실행이 새벽에 계산한 점수를 0으로 되돌린다.
      *
      * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다.</b> 넘으면 다른 태그의 자리를
      * 조용히 덮어써 필터 결과가 틀린다. 그 상한을 지키는 것은 {@code AdminTagService#createTag}의
      * 가드이고, 읽기 쪽 {@code TagBitmask}가 같은 상한에서 예외를 던진다.
      *
      * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> {@code INSERT ... SELECT}는
-     * REPEATABLE READ에서 두 소스 테이블 <em>전체</em>에 shared next-key 락을 걸어 동시
-     * 북마크·리뷰 INSERT를 {@code ERROR 1205}로 죽인다(벤치 실측 1,063만 건 대 0건). RC에서도
-     * FK 부모 검사로 {@code places}에는 갱신 행 수만큼 S 락이 커밋까지 남아, 어드민의 동네 일괄
-     * 비활성화가 배치 시간만큼 대기한다 — RC에서 유일하게 남는 차단이다.
+     * REPEATABLE READ에서 소스 테이블 <em>전체</em>에 shared next-key 락을 걸어 동시
+     * 북마크·리뷰 INSERT를 {@code ERROR 1205}로 죽인다. RC에서도 FK 부모 검사로 {@code places}에
+     * 갱신 행 수만큼 S 락이 커밋까지 남아 어드민의 동네 일괄 작업이 대기한다 — 이 문장이 기동·복구
+     * 전용인 지금은 그 대기가 정기적으로 일어나지 않는다.
      * 전제: {@code binlog_format = ROW}. STATEMENT/MIXED면 이 문장 자체가 {@code ERROR 1665}로 거부된다.
-     *
-     * <p><b>{@code avg_rating}에 COALESCE를 걸지 않는다.</b> 리뷰가 없으면 NULL이 정확한 답이고,
-     * 0으로 채우는 순간 "평점 0점"으로 읽힌다. 카운트 둘은 반대로 0이 정답이라 COALESCE를 건다.
      *
      * <p>{@code VALUES(col)}은 deprecated라 실행마다 {@code Warning 1287}이 참조 수만큼 뜬다.
      * {@code INSERT ... SELECT}에서는 행 별칭 문법이 {@code ERROR 1054}로 깨져 쓸 수 없고,
      * 대안은 SELECT 전체를 파생 테이블로 감싸는 형태뿐이다 — MySQL 8.4 이상으로 올려 함수가
      * 실제로 제거될 때 그 형태로 교체할 것.
      *
-     * <p>인덱스 전제: 북마크 축은 {@code idx_bookmark_target}(V23), 리뷰 축은
-     * {@code idx_place_reviews_place_created_rating}(V22)로 각각 인덱스 전용 스캔이어야 한다.
-     *
-     * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>. 모든 행의
-     *                     {@code count_calculated_at}이 이 값이 되며, 그것이 곧 잔행 판정의 기준이다
+     * @param calculatedAt 기준 시각이자 <b>집계 대상의 상한</b>
      * @return 영향 행 수 (MySQL은 INSERT를 1, UPDATE를 2로 센다)
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
-            bookmark_count, review_count, avg_rating, count_calculated_at)
+            bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
-               r.avg_rating,
-               :calculatedAt
+               r.avg_rating
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -109,42 +160,14 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         ) r ON r.place_id = p.id
         WHERE p.active = 1
         ON DUPLICATE KEY UPDATE
-            town_id             = VALUES(town_id),
-            created_at          = VALUES(created_at),
-            tag_bitmask         = VALUES(tag_bitmask),
-            bookmark_count      = VALUES(bookmark_count),
-            review_count        = VALUES(review_count),
-            avg_rating          = VALUES(avg_rating),
-            count_calculated_at = VALUES(count_calculated_at)
+            town_id        = VALUES(town_id),
+            created_at     = VALUES(created_at),
+            tag_bitmask    = VALUES(tag_bitmask),
+            bookmark_count = VALUES(bookmark_count),
+            review_count   = VALUES(review_count),
+            avg_rating     = VALUES(avg_rating)
         """, nativeQuery = true)
-    int upsertCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
-
-    /**
-     * 이번 회차가 건드리지 않은 행을 지운다 = <b>비활성화·삭제된 장소의 잔행 청소</b>.
-     * 카운트 배치의 2단계이며 {@link #upsertCounts}와 <b>같은 트랜잭션</b>이어야 한다.
-     *
-     * <p>갈라지면 두 문장 사이에 "활성 장소는 새 회차 값, 비활성 장소는 옛 회차 값"이 공존하는
-     * 구간이 생기고, 적재만 커밋된 채 삭제가 죽으면 내려간 장소가 다음 회차까지 인기순에 남는다.
-     *
-     * <p>V29까지 이 책임은 {@code deleteVersionsOtherThan}이 겸업했다 — 옛 버전이 통째로 죽으면서
-     * 비활성 장소의 행도 함께 사라졌다. 버전이 없어진 지금은 이 문장이 배치 쪽의 유일한 청소
-     * 경로다. <b>지우면 {@code active}만 내려간 장소의 행이 인기순에 영구히 남는다</b>
-     * (최대 1시간이 아니라 영구다). 장소를 <em>지우는</em> 경로는 {@link #deleteByPlaceIds}가
-     * 그 자리에서 행까지 지우므로 이 문장을 기다리지 않는다 — 둘은 대체 관계가 아니라
-     * 앞뒤 관계다.
-     *
-     * <p>{@code count_calculated_at}이 {@code NOT NULL}이라 {@code <>} 비교에 NULL 함정이 없다.
-     *
-     * @param calculatedAt 방금 {@link #upsertCounts}에 넘긴 것과 <b>같은 값</b>이어야 한다.
-     *                     다르면 이번 회차가 방금 적재한 행까지 전부 지운다
-     * @return 지운 행 수
-     */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query(value = """
-        DELETE FROM place_stats
-         WHERE count_calculated_at <> :calculatedAt
-        """, nativeQuery = true)
-    int deleteStaleRows(@Param("calculatedAt") LocalDateTime calculatedAt);
+    int rebuildRowsFromSource(@Param("calculatedAt") LocalDateTime calculatedAt);
 
     /**
      * 지정한 <b>활성</b> 장소들의 행을 원본에서 다시 지어 넣는다 = 어드민 쓰기 경로가 목록을
@@ -154,37 +177,31 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 내려간 장소를 수정해도 행이 되살아나지 않는다 — "행이 있는 장소 = 목록에 나와도 되는 장소"가
      * 이 문장 하나로 유지된다. 그래서 세 경로가 분기 없이 같은 문장을 부를 수 있다.
      *
-     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 카운트와
-     * {@code count_calculated_at}, 그리고 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고
-     * 북마크 수가 0으로 돌아가거나 잔행 판정의 기준이 밀리면 안 된다. 반대로 <b>신규 행</b>은 카운트
+     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 표시 카운트 셋과
+     * 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
+     * 반대로 <b>신규 행</b>은 카운트
      * 0·평점 NULL·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
      * (최신순에는 즉시 나온다 — 그 비대칭의 근거는
      * {@code PlaceListDbQueryRepository#findPopularRows}).
      *
-     * <p>{@code count_calculated_at}에 이번 호출 시각을 넣어도 잔행 판정과 충돌하지 않는다. 다음
-     * 카운트 회차의 {@link #upsertCounts}가 활성 장소 전량의 값을 같은 회차 값으로 덮으므로,
-     * 이 행도 그때 함께 갱신돼 {@link #deleteStaleRows}의 대상이 되지 않는다.
-     *
      * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다</b> — 근거와 가드는
-     * {@link #upsertCounts} javadoc과 같다.
+     * {@link #rebuildRowsFromSource} javadoc과 같다.
      *
-     * @param placeIds     비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
-     * @param calculatedAt 새로 만들어지는 행의 {@code count_calculated_at}. 보통 호출 시각이다
+     * @param placeIds 비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
      * @return 영향 행 수 (MySQL은 INSERT를 1, UPDATE를 2로 센다)
      */
     @Modifying(flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
-            bookmark_count, review_count, avg_rating, count_calculated_at)
+            bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
                0,
                0,
-               NULL,
-               :calculatedAt
+               NULL
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -200,17 +217,15 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             created_at  = VALUES(created_at),
             tag_bitmask = VALUES(tag_bitmask)
         """, nativeQuery = true)
-    int upsertRowsForActivePlaces(
-            @Param("placeIds") List<Long> placeIds,
-            @Param("calculatedAt") LocalDateTime calculatedAt);
+    int upsertRowsForActivePlaces(@Param("placeIds") List<Long> placeIds);
 
     /**
-     * 지정한 장소들의 행을 <b>즉시</b> 지운다 = 어드민이 내린 장소를 목록에서 그 자리에서 빼는 경로.
+     * 지정한 장소들의 행을 지운다 = <b>목록에서 장소를 빼는 유일한 경로</b>.
      *
-     * <p>두 정렬 모두 place_stats가 기준 테이블이라 여기 행이 남아 있는 동안 노출된다. 배치의
-     * {@link #deleteStaleRows}만 믿으면 그 창이 최대 1시간인데, <b>"안 보이는 것"은 아쉬움이지만
-     * "보이면 안 되는 게 보이는 것"은 사고다</b> — 폐업했거나 신고로 내린 장소가 한 시간 노출된다.
-     * 그래서 내리는 쪽만 즉시로 당긴다.
+     * <p>두 정렬 모두 place_stats가 기준 테이블이라 여기 행이 남아 있는 동안 노출된다. 예전에는
+     * 카운트 배치의 잔행 삭제가 뒤를 받쳤지만, 배치가 행의 존재에서 손을 뗀 지금은 이 문장이
+     * 전부다 — <b>어드민 쓰기 경로가 이것을 부르지 않으면 내린 장소가 영구히 노출된다.</b>
+     * {@code places.active}를 내리는 경로를 새로 만든다면 반드시 여기를 함께 부를 것.
      *
      * <p><b>되살리는 쪽도 행은 즉시 만든다 (V34).</b> 최신순의 기준 테이블이 place_stats가 되면서
      * 행이 없는 재활성 장소는 <em>최신순에서도</em> 사라지는데, 그것은 대가가 아니라 버그다 —
@@ -219,10 +234,10 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 인기순에 넣으면 음수 점수 장소보다 위로 올라오기 때문이며, 근거는
      * {@code PlaceListDbQueryRepository#findPopularRows} javadoc에 있다.
      *
-     * <p><b>{@link #deleteStaleRows}의 계약을 건드리지 않는다.</b> 이 문장은
-     * {@code count_calculated_at}을 읽지도 쓰지도 않으므로 잔행 판정에 관여하지 않고, 이미 없는
-     * 행을 지우면 0을 돌려줄 뿐이다. 반대로 여기서 지운 행을 다음 회차가 되살릴지는
-     * {@link #upsertCounts}의 {@code WHERE p.active = 1}이 원본에서 다시 판단한다.
+     * <p><b>여기서 지운 행을 정기 회차가 되살리지 않는다.</b> {@link #updateCounts}는 이미 있는
+     * 행만 갱신하기 때문이다. 되살리는 것은 어드민의 재활성 경로
+     * ({@link #upsertRowsForActivePlaces})이거나 기동·복구의 {@link #rebuildRowsFromSource}이고,
+     * 둘 다 {@code p.active = 1}을 원본에서 다시 판단한다. 이미 없는 행을 지우면 0을 돌려줄 뿐이다.
      *
      * <p><b>{@code clearAutomatically}를 켜지 않는다.</b> 호출부는 같은 트랜잭션에서 방금 로드한
      * {@code Place}를 이어서 지우는데, 컨텍스트를 비우면 그 엔티티가 detach돼 삭제가 merge(불필요한
@@ -248,11 +263,10 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 조정평점 = (Σ평점 + m × C) / (리뷰 수 + m),   C = 전체 평균 평점
      * </pre>
      *
-     * <p><b>INSERT가 아니라 UPDATE인 것이 소유권 계약이다.</b> 행을 만드는 주체는 카운트 배치
-     * 하나뿐이고, 이 문장은 그 행의 점수 두 칸만 정한다. INSERT로 바꾸면 {@code town_id}·
-     * {@code count_calculated_at}에 값을 지어내야 하고, 그 순간 잔행 판정이 무너진다.
-     * 아직 카운트 배치가 닿지 않은 신규 장소는 여기서도 대상이 아니다 — 그 장소는 다음 카운트
-     * 배치가 0점 행으로 만들고, 그 다음 새벽에 점수를 받는다.
+     * <p><b>INSERT가 아니라 UPDATE인 것이 소유권 계약이다.</b> 행을 만드는 주체는 어드민 쓰기
+     * 트랜잭션이고, 이 문장은 그 행의 점수 두 칸만 정한다. INSERT로 바꾸면 {@code town_id}·
+     * {@code tag_bitmask}에 값을 지어내야 하고, 그 순간 어드민이 소유한 칸을 배치가 침범한다.
+     * 어드민이 방금 만든 미채점 행은 여기서 0이 아닌 실제 점수를 받아 인기순에 합류한다.
      *
      * <p><b>감쇠가 북마크에만 걸리는 것은 의도적 비대칭이다</b> — 인기(북마크)는 최근 활동이라
      * 감쇠하고, 평판(리뷰)은 시점 무관한 누적 판단이라 1건이 1표씩 들어간다.
@@ -299,7 +313,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 리뷰를 한 장소에만 넣으면 {@code C}가 그 장소의 평균과 같아져 기여가 항상 0이 된다.
      *
      * <p><b>⚠️ 이 문장도 {@code READ_COMMITTED}에서 호출할 것.</b> 소스 테이블 스캔의 락 성질은
-     * {@link #upsertCounts}와 같다. 다만 여기서는 갱신 대상이 {@code place_stats} 전 행이라
+     * {@link #updateCounts}와 같다. 다만 여기서는 갱신 대상이 {@code place_stats} 전 행이라
      * 그 X 락이 커밋까지 남는다 — 그래서 두 배치가 겹쳐 돌지 않게 시각을 갈라 뒀다
      * ({@code PlaceStatsFacade} 참조).
      *

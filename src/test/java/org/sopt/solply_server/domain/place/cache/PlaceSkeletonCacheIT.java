@@ -120,6 +120,9 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
         placeInactive = createPlace("골격E", false);
         insertImage(placeInactive, "골격E_이미지", 1);
 
+        // 행을 짓는 것은 운영에서 어드민 쓰기 트랜잭션의 몫이고 배치는 값 칸만 정한다 —
+        // 어드민 경로를 거치지 않는 이 픽스처는 원본 재구축 문장으로 그 자리를 채운다.
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
         loader.rebuild();
@@ -209,7 +212,7 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
         long newPlace = createPlace("골격신규", true);
         // 최신순의 기준 테이블도 place_stats라(V34) 행이 있어야 목록에 뜬다. 스냅샷은 다시 짓지
         // 않으므로 이 장소는 목록에는 있고 스냅샷에는 없는 상태 = 확실한 미스가 된다.
-        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
         int sizeBefore = snapshot.current().size();
 
         // 신규 장소가 맨 앞에 뜨고, 그 골격은 스냅샷이 아니라 미스 경로가 채운다

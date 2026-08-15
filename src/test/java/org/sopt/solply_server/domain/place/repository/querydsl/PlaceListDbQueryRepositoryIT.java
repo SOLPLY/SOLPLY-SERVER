@@ -64,8 +64,8 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     /** 페이지 크기를 넘길 일이 없는 넉넉한 한도 — "정렬 결과 전체"를 뜻한다 */
     private static final int NO_LIMIT = 100;
 
-    /** 픽스처 행의 카운트 회차 기준 시각. 이 경로는 잔행 판정을 하지 않아 값 자체에 뜻은 없다 */
-    private static final LocalDateTime COUNT_CALCULATED_AT = BASE;
+    /** 픽스처 행의 채점 시각. 조회는 NULL 여부만 보므로 값 자체에 뜻은 없다 */
+    private static final LocalDateTime SCORED_AT = BASE;
 
     private long townId;
     private long placeA;   // BASE 1분 전 — 이 town에서 유일하게 오래된 장소
@@ -236,19 +236,19 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>이 쿼리는 활성 여부를 묻지 않는다.</b> "행이 있으면 활성"이라는 불변식을 카운트 배치가
-     * 지키므로 ({@code upsertCounts}의 {@code WHERE p.active = 1} + {@code deleteStaleRows})
-     * 조회는 places를 되짚지 않는다.
+     * <b>이 쿼리는 활성 여부를 묻지 않는다.</b> "행이 있으면 활성"이라는 불변식을 어드민 쓰기
+     * 경로가 지키므로 (행을 짓는 {@code upsertRowsForActivePlaces}의 {@code WHERE p.active = 1}과
+     * 행을 지우는 {@code deleteByPlaceIds}) 조회는 places를 되짚지 않는다.
      * 여기서 검증하는 것은 그 <em>구조</em>다 — 가드가 몰래 되살아나면 placeC가 사라져 깨진다.
      *
-     * <p>비활성화가 실제로 목록에서 사라지는 것은 카운트 배치 1회를 거친 뒤이며, 그 끝-끝 계약은
-     * {@code PlaceListFlowIT.비활성화된_장소는_카운트_배치_1회_뒤_인기순에서_사라진다}가 문다.
+     * <p>목록에서 실제로 사라지는 것은 어드민 삭제 경로를 거친 뒤이며, 그 끝-끝 계약은
+     * {@code PlaceListFlowIT.어드민이_삭제한_장소는_배치를_기다리지_않고_인기순에서_사라진다}가 문다.
      */
     @Test
-    void 조회는_활성_여부를_묻지_않는다_불변식은_배치가_지킨다() {
+    void 조회는_활성_여부를_묻지_않는다_불변식은_쓰기_경로가_지킨다() {
         insertStats(placeA, townId, 4.0, 0);
         insertStats(placeB, townId, 2.0, 0);
-        insertStats(placeC, townId, 6.0, 0);   // 배치가 아직 지우지 않은 잔행
+        insertStats(placeC, townId, 6.0, 0);   // 어드민 경로를 지나쳐 플래그만 내려간 행
         deactivatePlace(placeC);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
@@ -716,7 +716,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 성질이라({@code AdminPlaceService}가 태그를 flush한 뒤 마스크를 짓는다) 이 제약 자체가 계약이다.
      */
     private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
-        insertStatsRow(placeId, townId, score, bookmarkCount, COUNT_CALCULATED_AT);
+        insertStatsRow(placeId, townId, score, bookmarkCount, SCORED_AT);
     }
 
     /**
@@ -734,13 +734,13 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask,
                                          popular_score, bookmark_count,
                                          review_count, avg_rating,
-                                         count_calculated_at, score_calculated_at)
+                                         score_calculated_at)
                 SELECT p.id,
                        :townId,
                        p.created_at,
                        COALESCE((SELECT BIT_OR(1 << pt.tag_id)
                                  FROM place_tag pt WHERE pt.place_id = p.id), 0),
-                       :score, :cnt, 0, NULL, :calculatedAt, :scoreAt
+                       :score, :cnt, 0, NULL, :scoreAt
                 FROM places p
                 WHERE p.id = :placeId
                 """)
@@ -748,7 +748,6 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .setParameter("townId", townId)
                 .setParameter("score", score)
                 .setParameter("cnt", bookmarkCount)
-                .setParameter("calculatedAt", COUNT_CALCULATED_AT)
                 .setParameter("scoreAt", scoreCalculatedAt)
                 .executeUpdate();
     }

@@ -1,7 +1,0 @@
-sort,region,size,mode,driving_table,sort_node,materialize,dependent_subq,run1_ms,run2_ms,run3_ms,median_ms,hint_warning_count
-popular,city,combo_cafe_opt1_opt2,forced_base,ps,y,y,n,1.96,2,2.05,2,0
-popular,city,combo_cafe_opt1_opt2,forced_nosemijoin,ps,y,n,y,3.52,3.36,3.58,3.52,0
-popular,city,combo_cafe_opt1_opt2,forced_sjfirstmatch,ps,y,n,n,0.973,1.03,1.14,1.03,0
-latest,city,combo_cafe_opt1_opt2,forced_base,p,y,y,n,3.16,1.91,1.89,1.91,0
-latest,city,combo_cafe_opt1_opt2,forced_nosemijoin,p,y,n,y,3.03,3.55,3.73,3.55,0
-latest,city,combo_cafe_opt1_opt2,forced_sjfirstmatch,p,y,n,n,1,0.854,0.889,0.889,0
