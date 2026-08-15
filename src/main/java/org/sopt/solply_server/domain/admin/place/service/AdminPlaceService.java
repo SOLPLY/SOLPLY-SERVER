@@ -31,6 +31,7 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyValidator;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -254,10 +255,21 @@ public class AdminPlaceService {
      * {@code fk_place_stats_place}가 같은 행을 지우는 것은 맞다. 다만 그 보장은 place_stats를
      * 통째로 재생성한 마이그레이션마다(V29·V32) 다시 써야 하는 DDL 한 줄에 걸려 있어, 한 번
      * 빠뜨리면 노출 창이 조용히 되돌아온다 — 조회 계약을 지키는 책임은 그것을 결정한 층에 둔다.
+     *
+     * <p><b>⚠️ 두 테이블을 반드시 places → place_stats 순으로 잠글 것.</b> 나머지 어드민 경로
+     * (생성·수정·재활성)는 places를 먼저 갱신하고 place_stats를 뒤에 짓는다. 여기만 순서가
+     * 뒤집히면 같은 장소를 걸친 두 어드민 요청이 서로의 락을 마주 보고 {@code ERROR 1213}으로
+     * 죽는다 — 특히 {@link #activatePlacesByTownIds}는 동네 장소를 통째로 잠그므로 겹칠 자리가
+     * 넓다. 아래 {@code lock}이 그 순서를 맞추는 장치다: 이 줄이 없으면 JPA가 places DELETE를
+     * 커밋 flush까지 미뤄, 실제 잠금 순서가 place_stats → places가 된다.
+     *
+     * <p>{@code delete}를 먼저 부르는 것으로는 대체할 수 없다 — 그러면 place_stats 행이 FK
+     * CASCADE로 지워져 위에서 밝힌 "CASCADE에 기대지 않는다"는 계약이 무너진다.
      */
     @Transactional
     public void deletePlace(final Long placeId) {
         Place place = adminEntityLoader.getPlace(placeId);
+        entityManager.lock(place, LockModeType.PESSIMISTIC_WRITE);
 
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
