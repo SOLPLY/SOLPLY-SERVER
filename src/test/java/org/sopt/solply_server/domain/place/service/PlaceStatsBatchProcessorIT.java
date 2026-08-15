@@ -265,10 +265,14 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * 한 회차 = 카운트 + 점수. 리포지토리를 직접 부르지 않고 프로세서를 거치는 이유는 설정 주입
-     * 경로(properties → SQL 파라미터)까지 함께 검증하기 위해서다. 가중치·반감기를 인자로 받지
-     * 않는 것은 프로세서가 그 값을 {@link PlaceStatsProperties}에서 가져오기 때문이고, 기본값이
+     * 한 회차 = 행 짓기 + 카운트 + 점수. 리포지토리를 직접 부르지 않고 프로세서를 거치는 이유는
+     * 설정 주입 경로(properties → SQL 파라미터)까지 함께 검증하기 위해서다. 가중치·반감기를 인자로
+     * 받지 않는 것은 프로세서가 그 값을 {@link PlaceStatsProperties}에서 가져오기 때문이고, 기본값이
      * 위 상수와 같다는 것은 {@code 기본_설정값은_설계에서_정한_가중치와_반감기다}가 못 박는다.
+     *
+     * <p><b>맨 앞의 행 짓기가 운영에서는 어드민 쓰기 트랜잭션의 몫이다.</b> 두 배치 어느 쪽도 행을
+     * 만들지 않으므로, 이 IT처럼 어드민 경로를 거치지 않는 픽스처는 행을 따로 세워야 한다. 원본에서
+     * 짓는 문장이 그 대역이고, 그것이 곧 기동 백필·운영 복구의 진입점이다.
      *
      * <p>순서가 카운트 → 점수인 것은 계약이다 — 점수 회차는 이미 있는 행만 갱신한다.
      */
@@ -278,6 +282,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /** 기준 시각을 지정해 한 회차를 돌린다. */
     private int runBatchAt(LocalDateTime calculatedAt) {
+        batchProcessor.rebuildRowsFromSource(calculatedAt);
         int affected = batchProcessor.recalculateCounts(calculatedAt);
         batchProcessor.recalculateScores(calculatedAt);
         return affected;
@@ -357,6 +362,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         insertBookmark(placeA, 0);
         insertReview(placeA, 5, 0);
         insertReview(placeB, 1, 0);
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         PlaceStats counted = statsOf(placeA);
         assertThat(counted.getBookmarkCount()).isEqualTo(1);
@@ -376,8 +382,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>점수 회차는 행을 만들지 않는다.</b> 행의 주인은 카운트 회차 하나여야 잔행 판정
-     * ({@code count_calculated_at} 비교)이 성립한다. 점수 SQL을 INSERT로 바꾸면 여기서 깨진다.
+     * <b>점수 회차는 행을 만들지 않는다.</b> 행의 주인은 어드민 쓰기 트랜잭션 하나이고, 두 배치는
+     * 각자의 값 칸만 정한다. 점수 SQL을 INSERT로 바꾸면 여기서 깨진다.
      */
     @Test
     void 점수_회차는_행을_새로_만들지_않는다() {
@@ -390,55 +396,63 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(placeStatsRepository.count()).isZero();
     }
 
-    // === 잔행 청소 ===
+    /**
+     * <b>카운트 회차도 행을 만들지 않는다.</b> 위 테스트의 짝이자, 정기 회차를 UPSERT에서 순수
+     * UPDATE로 바꾼 이 커밋의 계약 그 자체다. INSERT로 되돌리면 여기서 깨진다.
+     */
+    @Test
+    void 카운트_회차는_행을_새로_만들지_않는다() {
+        clearStats();
+        insertBookmark(placeA, 0);
+
+        int affected = batchProcessor.recalculateCounts(CALCULATED_AT);
+
+        assertThat(affected).isZero();
+        assertThat(placeStatsRepository.count()).isZero();
+    }
 
     /**
-     * <b>비활성화한 장소의 행은 카운트 회차 1회로 사라진다.</b> 버전 행 시절에는 옛 버전이 통째로
-     * 죽으면서 이 청소가 함께 일어났는데(V29), 버전이 사라진 지금은 {@code deleteStaleRows}가
-     * 유일한 경로다. <b>이 테스트가 없으면 어드민이 내린 장소가 인기순에 영구히 남는다.</b>
+     * <b>카운트 회차는 어드민 소유의 세 칸을 덮지 않는다.</b> {@code town_id}·{@code created_at}·
+     * {@code tag_bitmask}는 어드민 쓰기 트랜잭션이 원본과 함께 정하는 값이고, 배치가 같은 칸을
+     * 다시 쓰면 <b>어드민이 방금 커밋한 값을 배치가 읽은 낡은 스냅샷으로 되돌릴 수 있다</b>.
      *
-     * <p>적재의 {@code WHERE p.active = 1}만 있고 삭제가 없으면 잔행이 남아 첫 단언이 깨지고,
-     * 삭제만 있고 필터가 없으면 다시 적재돼 역시 깨진다 — 둘이 짝이어야 성립한다.
+     * <p>센티널을 심어 두고 회차를 돌린 뒤 그대로인지 보는 형태다. 세 칸이 배치의 대입 목록에
+     * 하나라도 되돌아오면 원본 값으로 덮여 즉시 드러난다.
      */
     @Test
-    void 비활성화한_장소의_잔행은_카운트_회차_1회로_사라진다() {
+    void 카운트_회차는_어드민_소유_컬럼을_덮지_않는다() {
         clearStats();
-        runBatch();
-        assertThat(existsStats(placeC)).isTrue();   // 잔행이 될 행을 만들어 둔다
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
+        em.createNativeQuery("""
+                UPDATE place_stats
+                   SET town_id = 777, tag_bitmask = 777, created_at = :sentinelAt
+                 WHERE place_id = :placeId
+                """)
+                .setParameter("sentinelAt", CALCULATED_AT.minusYears(1))
+                .setParameter("placeId", placeA)
+                .executeUpdate();
+        em.clear();
+        insertBookmark(placeA, 0);
 
-        setActive(placeC, false);
         batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
 
-        assertThat(existsStats(placeC)).isFalse();
-        assertThat(existsStats(placeA)).isTrue();   // 활성 장소는 그대로 남는다
+        PlaceStats after = statsOf(placeA);
+        assertThat(after.getTownId()).isEqualTo(777L);
+        assertThat(after.getTagBitmask()).isEqualTo(777L);
+        assertThat(after.getCreatedAt()).isEqualTo(CALCULATED_AT.minusYears(1));
+        // 카운트 쪽은 실제로 갱신됐다 — 아무것도 안 한 상태와 구분한다
+        assertThat(after.getBookmarkCount()).isEqualTo(1);
     }
 
     /**
-     * 재활성화도 대칭이다 — 삭제가 영구 배제가 아니라 <b>그 회차의 상태 반영</b>임을 못 박는다.
-     * 삭제를 "지운 뒤 다시 안 만든다"로 구현하면 여기서 깨진다.
-     */
-    @Test
-    void 재활성화한_장소는_다음_회차에_복귀한다() {
-        clearStats();
-        setActive(placeC, false);
-        runBatch();
-        assertThat(existsStats(placeC)).isFalse();
-
-        setActive(placeC, true);
-        batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
-
-        assertThat(existsStats(placeC)).isTrue();
-    }
-
-    /**
-     * <b>{@code count_calculated_at}은 회차마다 갱신된다.</b> 잔행 판정의 기준이 이 값이라,
-     * 갱신이 멈추면 다음 회차가 <em>자기가 방금 적재한 행까지</em> 전부 지운다.
+     * <b>{@code count_calculated_at}은 회차마다 갱신된다.</b> 표시 카운트가 언제 것인지 말해 주는
+     * 유일한 값이라, 갱신이 멈추면 배치가 죽은 것과 정상 동작이 로그 밖에서 구분되지 않는다.
      * 값이 실제로 앞으로 나아가는지 두 회차에 걸쳐 본다.
      */
     @Test
     void 카운트_회차는_기준시각을_행마다_갱신한다() {
         clearStats();
-        batchProcessor.recalculateCounts(CALCULATED_AT);
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         assertThat(statsOf(placeA).getCountCalculatedAt()).isEqualTo(CALCULATED_AT);
 
         batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
@@ -720,9 +734,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /**
      * 전량 재계산의 핵심 주장은 "이전 값이 무엇이든 원본 기준으로 덮어쓴다"이다.
-     * 나머지 테스트는 대부분 place_stats가 빈 상태에서 시작해 INSERT 경로만 타고,
-     * 멱등성 테스트는 입력이 같아 ON DUPLICATE KEY UPDATE에서 컬럼 하나가 통째로 빠져도 통과한다.
-     * 이 테스트만이 UPDATE 분기에서 값이 실제로 새 값으로 바뀌는지 본다.
+     * 나머지 테스트는 대부분 place_stats가 빈 상태에서 시작하고, 멱등성 테스트는 입력이 같아
+     * 대입 목록에서 컬럼 하나가 통째로 빠져도 통과한다.
+     * 이 테스트만이 이미 값이 실린 행에서 값이 실제로 새 값으로 바뀌는지 본다.
      */
     @Test
     void 재실행하면_이전_값이_새_값으로_덮어써진다() {
@@ -767,11 +781,12 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /**
      * town_id는 places에서 비정규화해 오는 값이고, 낡으면 순위가 아니라 소속이 틀린다
-     * (V24·PlaceStats 주석 참고). 정렬 인덱스의 선행 컬럼이라 배치가 이 값을 놓치면
-     * 목록 경로가 통째로 어긋난다. <b>카운트 회차의 소유 컬럼</b>이다.
+     * (V24·PlaceStats 주석 참고). 정렬 인덱스의 선행 컬럼이라 이 값을 놓치면 목록 경로가 통째로
+     * 어긋난다. 운영에서 이 칸을 채우는 것은 어드민 쓰기 트랜잭션이고, 여기서는 그 대역인
+     * <b>원본 재구축 문장</b>이 같은 복사를 하는지 본다.
      */
     @Test
-    void 장소의_town_id를_그대로_복사한다() {
+    void 원본_재구축은_장소의_town_id를_그대로_복사한다() {
         long expectedTownId = ((Number) em.createNativeQuery(
                 "SELECT town_id FROM places WHERE id = :id")
                 .setParameter("id", placeA)
@@ -783,11 +798,11 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>불변식의 절반 — 필터.</b> 비활성 장소는 새 회차에 아예 들어가지 않는다.
+     * <b>불변식의 출발점 — 필터.</b> 비활성 장소는 원본 재구축에 아예 들어가지 않는다.
      * 이것이 인기순 쿼리가 places 조인 없이 서빙되는 근거다.
      */
     @Test
-    void 배치는_비활성_장소에_행을_만들지_않는다() {
+    void 원본_재구축은_비활성_장소에_행을_만들지_않는다() {
         clearStats();
         setActive(placeC, false);
 
@@ -939,8 +954,11 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     void 최초_적재_트랜잭션도_READ_COMMITTED로_열린다() {
         batchProcessor.recalculateCountsIfEmpty(CALCULATED_AT);
         batchProcessor.recalculateScoresIfNeverScored(CALCULATED_AT);
+        // 가드 없는 재구축 진입점도 같은 문장을 쏘므로 같은 계약을 진다
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
 
-        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED", "READ-COMMITTED");
+        assertThat(OBSERVED_ISOLATIONS)
+                .containsExactly("READ-COMMITTED", "READ-COMMITTED", "READ-COMMITTED");
     }
 
     /**
@@ -1073,7 +1091,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     void 채점된_행이_하나도_없으면_최초_채점이_돈다() {
         clearStats();
         insertBookmark(placeA, 0);
-        batchProcessor.recalculateCounts(CALCULATED_AT);
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         assertThat(statsOf(placeA).getPopularScore().doubleValue()).isZero();
 
         OptionalInt affected = batchProcessor.recalculateScoresIfNeverScored(CALCULATED_AT);
@@ -1147,7 +1165,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     /** "모든 장소"가 아니라 <b>모든 활성 장소</b>다 — 그 차이가 곧 조회의 불변식이다 */
     @Test
-    void 배치는_모든_활성_장소에_대해_행을_남긴다() {
+    void 원본_재구축은_모든_활성_장소에_대해_행을_남긴다() {
         clearStats();
         setActive(placeC, false);
         long activeCount = activePlaceCount();

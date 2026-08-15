@@ -59,16 +59,6 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
                 ((Number) row[1]).longValue());
     }
 
-    /** 시드에서 활성 장소 여러 개를 빌려 온다 — 잔행 판정처럼 "지운 것과 남은 것"이 함께 필요할 때 쓴다 */
-    @SuppressWarnings("unchecked")
-    private List<Long> anyPlaceIds(int size) {
-        List<Number> ids = em.createNativeQuery(
-                "SELECT p.id FROM places p WHERE p.active = true ORDER BY p.id")
-                .setMaxResults(size)
-                .getResultList();
-        return ids.stream().map(Number::longValue).toList();
-    }
-
     private static final LocalDateTime COUNT_CALCULATED_AT =
             LocalDateTime.of(2026, 7, 30, 2, 30, 0);
 
@@ -150,11 +140,11 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>어드민이 장소를 내리면 배치를 기다리지 않고 행이 사라진다.</b> 인기순은 place_stats가
-     * 기준 테이블이라 행이 남아 있는 동안 노출되고, 배치의 잔행 삭제만 믿으면 그 창이 ≤1h가 된다.
+     * <b>어드민의 삭제가 목록에서 장소를 빼는 유일한 경로다.</b> 두 정렬 모두 place_stats가 기준
+     * 테이블이라 행이 남아 있는 동안 노출되고, 뒤를 받쳐 주던 배치의 잔행 삭제는 이제 없다.
      *
-     * <p>두 번 불러 0을 확인하는 것이 요점이다 — 즉시 삭제와 배치의 잔행 삭제는 <b>같은 행을
-     * 노리는 두 문장</b>이라, 이미 없는 행을 지우는 것이 무해해야 둘이 공존한다.
+     * <p>두 번 불러 0을 확인하는 것은 재호출이 무해해야 하기 때문이다 — 어드민 경로가 이미 없는
+     * 행을 지우는 상황(배치가 아직 행을 만들지 않은 장소)이 정상 흐름에 있다.
      */
     @Test
     void 즉시_삭제는_행을_지우고_두_번_불러도_무해하다() {
@@ -165,26 +155,6 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         assertThat(placeStatsRepository.deleteByPlaceIds(List.of(placeId))).isEqualTo(1);
         assertThat(placeStatsRepository.findById(placeId)).isEmpty();
         assertThat(placeStatsRepository.deleteByPlaceIds(List.of(placeId))).isZero();
-    }
-
-    /**
-     * <b>즉시 삭제가 배치의 잔행 판정을 흐리지 않는다.</b> 잔행 삭제의 근거는
-     * {@code count_calculated_at <> :calculatedAt} 하나인데, 즉시 삭제는 그 컬럼을 읽지도 쓰지도
-     * 않으므로 한쪽이 먼저 지운 장소가 있어도 나머지 잔행은 그대로 걸려야 한다.
-     */
-    @Test
-    void 즉시_삭제_뒤에도_배치의_잔행_삭제는_그대로_동작한다() {
-        List<Long> placeIds = anyPlaceIds(2);
-        insertStats(placeIds.get(0));
-        insertStats(placeIds.get(1));
-        em.clear();
-
-        placeStatsRepository.deleteByPlaceIds(List.of(placeIds.get(0)));
-
-        // 남은 한 행은 이번 회차가 건드리지 않은 잔행이다 — 배치가 여전히 그것을 지운다
-        assertThat(placeStatsRepository.deleteStaleRows(COUNT_CALCULATED_AT.plusHours(1)))
-                .isEqualTo(1);
-        assertThat(placeStatsRepository.count()).isZero();
     }
 
     private void insertStats(long placeId) {

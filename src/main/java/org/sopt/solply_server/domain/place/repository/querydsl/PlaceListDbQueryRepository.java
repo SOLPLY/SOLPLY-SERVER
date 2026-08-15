@@ -23,11 +23,11 @@ import org.springframework.stereotype.Repository;
  * ({@code load-test/campaigns/2026-08-11_region-size-threshold}), 대신 선택지 자체를 없앴다.
  *
  * <p><b>불변식: place_stats에 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 그래서 두 쿼리 어느
- * 쪽도 {@code places}를 되짚어 활성 여부를 묻지 않는다. 지키는 주체가 둘이다 — 어드민의 삭제
- * 경로가 그 자리에서 행을 지우고({@code AdminPlaceService#deletePlace}), 카운트 배치가
- * {@code upsertCounts}의 {@code WHERE p.active = 1} + {@code deleteStaleRows}로 뒤를 받친다.
- * <b>내리는 쪽의 노출 창은 즉시</b>이고, 어드민을 지나쳐 {@code active}만 내려간 행이 생기더라도
- * 다음 회차(≤1h)가 지운다.
+ * 쪽도 {@code places}를 되짚어 활성 여부를 묻지 않는다. 지키는 주체는 어드민 쓰기 경로 하나다 —
+ * 생성·수정·재활성이 행을 짓고({@code PlaceStatsRepository#upsertRowsForActivePlaces}의
+ * {@code WHERE p.active = 1}), 삭제가 그 자리에서 행을 지운다
+ * ({@code AdminPlaceService#deletePlace}). <b>노출 창은 양쪽 다 즉시</b>다.
+ * 두 배치는 값 칸만 정할 뿐 행의 존재에 관여하지 않는다.
  *
  * <p><b>커서 계약.</b> {@code PlaceListCursor} v4. sortKey는 POPULAR이 점수의 double,
  * LATEST가 createdAt의 epoch 초(UTC)이고, 정렬은 POPULAR (점수 DESC, id ASC) /

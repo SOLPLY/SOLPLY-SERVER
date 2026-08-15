@@ -41,10 +41,13 @@ import org.springframework.test.context.DynamicPropertySource;
  * <p>덮는 정렬 축은 POPULAR·LATEST 둘이고, 커서 왕복·필터 지문 거부도 여기서 사슬 수준으로 문다.
  * 북마크 검색(페이징 없는 별도 조립)도 같은 무대에서 걷는다.
  *
- * <p><b>두 배치를 항상 함께 돌리는 것이 이 파일의 픽스처 규약이다.</b> 카운트 회차가 행을 만들고
- * 점수 회차가 그 행을 채점하므로, 하나만 돌리면 "행은 있는데 전부 0점"이 되어 순위 단언이 통째로
+ * <p><b>두 배치를 항상 함께 돌리는 것이 이 파일의 픽스처 규약이다.</b> 카운트 회차가 표시 값을
+ * 채우고 점수 회차가 채점하므로, 하나만 돌리면 "행은 있는데 전부 0점"이 되어 순위 단언이 통째로
  * id 순으로 흐른다. 두 배치가 서로의 칸을 침범하지 않는다는 것은
  * {@code PlaceStatsBatchProcessorIT}의 소유권 테스트가 따로 문다.
+ *
+ * <p><b>행 자체는 배치가 만들지 않는다.</b> 어드민 경로로 만든 장소는 그 트랜잭션이 행을 짓고,
+ * DB 직행 픽스처는 {@link #createPlace}가 같은 자리를 채운다.
  *
  * <p><b>계약: 단언은 PlaceService 응답 DTO 수준으로만 한다.</b> 내부 표현(네이티브 SQL의 컬럼 순서,
  * 레포지토리 record 모양)이 바뀌는 리팩터링에서 이 파일은 수정 없이 그린이어야 한다.
@@ -226,49 +229,12 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>{@code active}만 내려간 행은 카운트 배치가 지운다 — 배치는 안전망으로 남는다.</b>
-     * 인기순 쿼리에서 places 조인이 사라졌으므로("행이 있으면 목록에 나와도 되는 장소"가 불변식)
-     * 어드민 경로를 지나쳐 플래그만 바뀐 행은 다음 카운트 배치까지 목록에 남는다.
+     * <b>어드민의 삭제가 목록에서 장소를 빼는 유일한 경로다.</b> 두 정렬 모두 place_stats가 기준
+     * 테이블이고("행이 있으면 목록에 나와도 되는 장소"가 불변식) 두 배치 어느 쪽도 행을 지우지
+     * 않으므로, 이 경로가 빠지면 내린 장소가 영구히 노출된다.
      *
-     * <p>여기서 {@code UPDATE places}를 직접 쏘는 것은 그 우회를 재현하기 위해서다 — 어드민 API로
-     * 장소를 내리면 그 자리에서 행이 사라진다
-     * ({@link #어드민이_삭제한_장소는_배치를_기다리지_않고_인기순에서_사라진다}).
-     *
-     * <p><b>여기서 카운트 배치만 돌리는 것이 핵심이다.</b> 잔행 삭제는 카운트 회차의 책임이고
-     * ({@code deleteStaleRows}), 점수 회차는 행을 만들지도 지우지도 않는다. 두 배치를 함께
-     * 돌리면 어느 쪽이 지웠는지 구분되지 않아 그 책임 분담이 검증에서 빠진다.
-     *
-     * <p>배치 1회로 <b>사라지는 것</b>과 그 다음 1회로 <b>돌아오는 것</b>을 함께 문다.
-     * 삭제만 있고 필터가 없으면 첫 단언이, 필터만 있고 삭제가 없으면(잔행이 남아) 역시 첫 단언이 깨진다.
-     */
-    @Test
-    void 비활성화된_장소는_카운트_배치_1회_뒤_인기순에서_사라진다() {
-        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
-
-        jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeC);
-        // 플래그만 내린 직후에는 아직 보인다 — 배치가 안전망이라는 사실 자체가 이 창의 존재다
-        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
-
-        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
-
-        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
-                .containsExactly(placeA, placeB);
-
-        // 재활성화는 대칭이 아니다 — 카운트 배치가 행을 되살리지만 그 행은 미채점이라
-        // 인기순에는 아직 안 나온다. 점수 배치까지 돌아야 복귀한다(아래 테스트가 그 계약을 문다).
-        jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeC);
-        runBothBatches(CALCULATED_AT.plusHours(2));
-
-        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(placeC);
-    }
-
-    /**
-     * <b>어드민이 내린 장소는 배치를 기다리지 않는다.</b> 위 테스트가 무는 ≤1h 창은 플래그만 바뀐
-     * 행에 남아 있는 안전망이고, 실제 어드민 경로는 place_stats 행을 그 자리에서 지운다 —
-     * 폐업했거나 신고로 내린 장소가 한 시간 노출되는 것이 이 결함의 값이었다.
-     *
-     * <p><b>배치를 한 번도 돌리지 않고 단언하는 것이 요점이다.</b> 삭제 뒤 어떤 회차라도 끼우면
-     * 잔행 삭제가 대신 지워 주어 "즉시"인지 "≤1h"인지가 구분되지 않는다.
+     * <p><b>배치를 한 번도 돌리지 않고 단언하는 것이 요점이다.</b> 삭제 뒤 회차를 끼우면 "즉시
+     * 사라진 것"인지 "배치가 지운 것"인지 구분되지 않는다.
      *
      * <p>이 장소에 북마크를 달지 말 것 — {@code bookmarks}는 다형 {@code target_id}라 places에
      * FK가 없어 장소를 지워도 남고, 그 잔행이 {@code @AfterAll}의 users 삭제를
@@ -421,8 +387,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * <p>비대칭이 완전히 사라진 것은 아니다 — 새로 만든 행은 미채점이라 <b>인기순</b>에는 다음 점수
      * 배치까지 나오지 않는다. 그 잔여 비대칭도 여기서 값으로 확인한다.
      *
-     * <p>중간의 카운트 배치 <b>두 번</b>이 각각 다른 일을 한다: 첫 번째는 행을 만들고, 두 번째는
-     * 비활성화된 장소의 잔행을 지운다(사라진 상태를 실제로 만든다). 그 뒤로는 배치를 돌리지 않는다.
+     * <p>"사라진 상태"는 행을 직접 지워 만든다 — 어드민의 삭제 경로가 하는 일과 같고, 배치는
+     * 행의 존재에 관여하지 않으므로 회차를 아무리 돌려도 이 상태가 만들어지지 않는다.
+     * 그 뒤로는 배치를 돌리지 않는다.
      */
     @Test
     void 재활성화된_장소는_배치_없이_최신순에_즉시_돌아온다() {
@@ -433,7 +400,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 .containsExactly(placeId);
 
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeId);
-        batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(2));
+        jdbcTemplate.update("DELETE FROM place_stats WHERE place_id = ?", placeId);
         assertThat(statsRowExists(placeId)).isFalse();
 
         jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeId);
@@ -758,7 +725,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
     /**
      * 한 회차 = 카운트 + 점수. 픽스처는 늘 둘을 함께 돌린다 (클래스 javadoc의 규약).
-     * 순서가 카운트 → 점수인 것은 점수 회차가 <b>이미 있는 행만</b> 갱신하기 때문이다.
+     * 두 회차 모두 <b>이미 있는 행만</b> 갱신하므로 행은 미리 서 있어야 한다.
      */
     private void runBothBatches(LocalDateTime calculatedAt) {
         batchProcessor.recalculateCounts(calculatedAt);
@@ -834,12 +801,30 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         return jdbcTemplate.queryForObject("SELECT MAX(id) FROM towns", Long.class);
     }
 
+    /**
+     * 장소 하나를 DB에 직행으로 심고 <b>place_stats 행까지 함께</b> 만든다.
+     *
+     * <p>운영에서 그 행을 만드는 것은 어드민 쓰기 트랜잭션이다
+     * ({@code PlaceStatsRepository#upsertRowsForActivePlaces}). 두 배치 어느 쪽도 행을 만들지
+     * 않으므로, 어드민 경로를 거치지 않는 이 픽스처가 그 자리를 대신 채워야 한다 — 안 채우면
+     * 여기서 만든 장소는 두 정렬 어디에도 나오지 않는다.
+     *
+     * <p>{@code tag_bitmask}는 0이다. 이 헬퍼는 태그를 달지 않으며, 태그 필터가 걸린 시나리오는
+     * 전부 어드민 파사드로 장소를 만든다.
+     */
     private long createPlace(long town, String name, LocalDateTime createdAt) {
         // created_by는 DEFAULT 1 — V2 시드의 admin 유저(id=1)라 FK가 성립한다
         jdbcTemplate.update("""
                 INSERT INTO places (name, introduction, town_id, active, created_at)
                 VALUES (?, 'db직행IT', ?, true, ?)""", name, town, createdAt);
-        return jdbcTemplate.queryForObject("SELECT MAX(id) FROM places", Long.class);
+        long placeId = jdbcTemplate.queryForObject("SELECT MAX(id) FROM places", Long.class);
+        jdbcTemplate.update("""
+                INSERT INTO place_stats
+                    (place_id, town_id, created_at, tag_bitmask, bookmark_count, review_count,
+                     avg_rating, count_calculated_at)
+                SELECT p.id, p.town_id, p.created_at, 0, 0, 0, NULL, p.created_at
+                FROM places p WHERE p.id = ? AND p.active = 1""", placeId);
+        return placeId;
     }
 
     // static인 이유: 이 IT는 커밋을 남기고(@Transactional 롤백 없음) JUnit은 테스트마다 새 인스턴스를

@@ -24,11 +24,10 @@ import org.springframework.stereotype.Component;
  * <p><b>주기를 가른 이유는 두 값의 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>
  *   <li><b>카운트 — 매시 30분.</b> 화면에 찍히는 북마크 수·리뷰 수·평점이고, 방금 누른 북마크가
- *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. 파생 컬럼({@code town_id}·
- *       {@code tag_bitmask}·{@code created_at})과 행의 존재 여부는 어드민 쓰기 경로가 같은
- *       트랜잭션에서 이미 맞추므로(V34, {@code AdminPlaceService}), 여기 회차는 <b>어드민을 지나친
- *       변경</b>의 드리프트 상한이다 — 그 경우에만 동네를 옮긴 장소가 이전 동네 목록에 끼거나
- *       뗀 태그로 계속 검색되는 창이 열리고, 상한이 이 간격이다.</li>
+ *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. <b>이 회차가 만지는 것은 그 세 값과
+ *       {@code count_calculated_at}뿐이다</b> — 파생 컬럼({@code town_id}·{@code tag_bitmask}·
+ *       {@code created_at})과 행의 존재 여부는 어드민 쓰기 트랜잭션의 소유라 여기서 손대지 않는다
+ *       ({@code AdminPlaceService}).</li>
  *   <li><b>인기 점수 — 매일 01:00 (KST).</b> 반감기 90일에서 하루의 감쇠 변화는
  *       {@code 1 - 0.5^(1/90) = 0.77%}라 순위를 흔들지 못한다. 잦게 돌 이유가 없는 대신,
  *       <b>점수가 갈리는 순간이 곧 커서 좌표계가 갈리는 순간</b>이라 그 창을 트래픽 최저 시각의
@@ -116,8 +115,9 @@ public class PlaceStatsFacade {
         // 않는다 — 즉 회차마다 이 줄은 클러스터 전체에서 정확히 한 번 찍힌다.
         log.info("인기순 카운트 배치 시작 - calculatedAt={}", calculatedAt);
         try {
-            // affectedRows는 장소 수가 아니다 — MySQL이 INSERT를 1, UPDATE를 2로 세므로
-            // 정상 운영(전부 UPDATE) 상태에서는 장소 수의 약 2배가 찍힌다. 장소 수로 오해하지 말 것.
+            // 이제 문장이 순수 UPDATE라 affectedRows가 곧 place_stats 행 수 = 목록 노출 대상
+            // 장소 수다. UPSERT였던 시절에는 MySQL이 INSERT를 1, UPDATE를 2로 세어 장소 수의
+            // 약 2배가 찍혔다 — 옛 로그를 비교할 때 그 차이를 감안할 것.
             int affected = batchProcessor.recalculateCounts(calculatedAt);
             log.info("인기순 카운트 배치 완료 - calculatedAt={}, affectedRows={}, elapsed={}ms",
                     calculatedAt, affected,
@@ -202,7 +202,7 @@ public class PlaceStatsFacade {
      * 테이블을 재생성만 하고 백필하지 않으므로 여기가 유일한 즉시 복구 경로다.
      *
      * <p><b>Flyway 백필 마이그레이션을 쓰지 않은 이유:</b> Flyway는 자기 트랜잭션(기본 RR)에서
-     * 돌아 {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#upsertCounts}
+     * 돌아 {@link org.sopt.solply_server.domain.place.repository.PlaceStatsRepository#rebuildRowsFromSource}
      * javadoc이 실측으로 경고한 {@code bookmarks} next-key 락을 그대로 건다. 무중단 배포 중이면
      * 동시 북마크 INSERT가 {@code ERROR 1205}로 죽는다. 이 경로는 이미 검증된 프로세서의
      * READ_COMMITTED 경계를 그대로 재사용한다.

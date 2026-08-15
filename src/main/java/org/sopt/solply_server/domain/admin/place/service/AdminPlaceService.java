@@ -247,8 +247,8 @@ public class AdminPlaceService {
 
     /**
      * 장소를 지우면 <b>목록에서도 그 자리에서 빠져야 한다.</b> 두 정렬 모두 place_stats가 기준
-     * 테이블이라 행이 남아 있는 동안 노출되고, 매시 카운트 배치의 잔행 삭제만 믿으면 내린 장소가
-     * 최대 1시간 더 보인다 ({@code PlaceStatsRepository#deleteByPlaceIds}에 그 결정의 근거).
+     * 테이블이라 행이 남아 있는 동안 노출되고, <b>행을 지우는 경로는 이것 하나뿐이다</b> —
+     * 카운트 배치가 잔행을 청소하던 시절은 지났다 ({@code PlaceStatsRepository#deleteByPlaceIds}).
      *
      * <p><b>FK의 {@code ON DELETE CASCADE}가 있는데도 명시적으로 지우는 이유.</b>
      * {@code fk_place_stats_place}가 같은 행을 지우는 것은 맞다. 다만 그 보장은 place_stats를

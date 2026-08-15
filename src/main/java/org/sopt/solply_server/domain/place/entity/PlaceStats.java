@@ -22,33 +22,36 @@ import lombok.NoArgsConstructor;
  * <table>
  *   <caption>컬럼별 소유 주체</caption>
  *   <tr><th>주체</th><th>주기</th><th>소유 컬럼</th></tr>
+ *   <tr><td>어드민 쓰기 트랜잭션</td><td>즉시(같은 트랜잭션)</td>
+ *       <td><b>행의 존재 자체</b>, {@code town_id}, {@code created_at}, {@code tag_bitmask}
+ *           ({@code AdminPlaceService})</td></tr>
  *   <tr><td>카운트 배치</td><td>매시 30분</td>
- *       <td>{@code town_id}, {@code created_at}, {@code tag_bitmask}, {@code bookmark_count},
- *           {@code review_count}, {@code avg_rating}, {@code count_calculated_at}
- *           + <b>행의 존재 자체</b></td></tr>
+ *       <td>{@code bookmark_count}, {@code review_count}, {@code avg_rating},
+ *           {@code count_calculated_at}</td></tr>
  *   <tr><td>인기점수 배치</td><td>매일 01:00 (KST)</td>
  *       <td>{@code popular_score}, {@code score_calculated_at}</td></tr>
- *   <tr><td>어드민 쓰기 경로</td><td>즉시(같은 트랜잭션)</td>
- *       <td>카운트 배치와 같은 칸 — 생성·수정·재활성·삭제가 행과 파생 컬럼을 동기 유지한다
- *           ({@code AdminPlaceService})</td></tr>
  * </table>
  * 리뷰 평점이 두 배치에 다 나오는 것은 <b>쓰임이 둘이기 때문</b>이다 — 화면에 찍히는
  * {@code avg_rating}은 표시값이라 카운트 배치가, 점수의 리뷰 축(베이지안 조정 평점)은 순위 재료라
  * 인기점수 배치가 각자 원본에서 계산한다. 한쪽이 다른 쪽 값을 재활용하면 두 배치의 신선도가 섞인다.
  *
- * <p>어드민 경로와 카운트 배치가 같은 칸을 나눠 쓰는 것은 위 계약과 충돌하지 않는다 — 둘은 같은
- * 원본(places·place_tag)에서 같은 값을 계산하므로 서로를 되돌릴 수 없고, 배치는 어드민이 지나친
- * 경로(직접 SQL 수정 등)의 안전망으로 남는다. 드리프트 수명이 곧 배치 간격(≤1h)이다.
+ * <p><b>세 주체의 칸이 겹치지 않는다는 것이 계약의 전부다.</b> 예전에는 카운트 배치가 회차마다
+ * 활성 장소 전량을 원본에서 다시 지어 어드민 소유의 세 칸까지 덮었다. "같은 원본을 보니 같은 값이
+ * 나온다"는 이유로 안전망이라 불렀지만, 실제로는 어드민이 방금 커밋한 값을 배치가 문장 시작 시점에
+ * 읽은 낡은 스냅샷으로 되돌릴 수 있는 경로였다. 지금은 그 겹침이 없다.
  *
  * <p><b>불변식: 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 두 정렬 어느 쪽도 places를 되짚어
- * 활성 여부를 묻지 않는 근거다. 지키는 주체가 둘이다 — 어드민의 삭제·비활성 경로가 그 자리에서
- * 행을 지우고 ({@code PlaceStatsRepository#deleteByPlaceIds}), 카운트 배치의
- * {@code WHERE p.active = 1} + 잔행 삭제가 뒤를 받친다.
+ * 활성 여부를 묻지 않는 근거다. 지키는 주체가 어드민 쓰기 경로 하나다 — 생성·수정·재활성이
+ * {@code PlaceStatsRepository#upsertRowsForActivePlaces}로 행을 짓고(그 문장의
+ * {@code WHERE p.active = 1}이 비활성 장소를 거른다), 삭제가
+ * {@code PlaceStatsRepository#deleteByPlaceIds}로 행을 지운다.
+ * <b>{@code places.active}를 내리는 경로를 새로 만든다면 반드시 후자를 함께 부를 것</b> —
+ * 뒤를 받쳐 줄 배치가 이제 없다.
  *
  * <p><b>파생 컬럼이 낡으면 순위가 아니라 소속·매칭이 틀린다.</b> {@code town_id}가 낡으면 동네를
  * 옮긴 장소가 이전 동네 목록에 끼고, {@code tag_bitmask}가 낡으면 태그를 뗀 장소가 그 태그 필터에
- * 계속 잡힌다. 그래서 어드민 쓰기 경로가 같은 트랜잭션에서 둘을 갱신하고, 배치 간격은 그 창의
- * 상한이 아니라 <b>어드민을 지나친 변경의</b> 상한이다.
+ * 계속 잡힌다. 그래서 어드민 쓰기 경로가 같은 트랜잭션에서 둘을 갱신한다 — 그 트랜잭션이 원자적인
+ * 한 낡을 창 자체가 없다.
  *
  * <p>쓰기 API(세터·정적 팩토리)를 두지 않는다. 쓰기 경로는 전부 네이티브 SQL이고,
  * 여기 필드는 스키마 정합 검증(ddl-auto=validate)과 테스트 단언용이다.
@@ -112,10 +115,12 @@ public class PlaceStats {
     private long tagBitmask;
 
     /**
-     * 카운트 배치가 이 행을 마지막으로 건드린 회차의 기준 시각.
+     * 카운트 배치가 이 행을 마지막으로 건드린 회차의 기준 시각. 관측용이다 — 이 값이 밀려 있으면
+     * 배치가 돌지 않았다는 뜻이고, 표시 카운트가 그만큼 낡았다.
      *
-     * <p><b>잔행 삭제의 유일한 근거다.</b> 회차마다 활성 장소 전량이 이 값을 새로 받으므로,
-     * 값이 이번 회차와 다른 행은 그 목록에 없던 장소 — 비활성화되었거나 삭제된 장소다.
+     * <p>V34까지는 잔행 삭제({@code count_calculated_at <> :calculatedAt})의 판정 기준이기도
+     * 했다. 배치가 행의 존재에서 손을 떼면서 그 쓰임은 사라졌고, 지금은 전 행이 매 회차 같은 값을
+     * 받는다.
      */
     @Column(name = "count_calculated_at", nullable = false)
     private LocalDateTime countCalculatedAt;
@@ -123,8 +128,8 @@ public class PlaceStats {
     /**
      * 인기점수 배치가 이 행의 {@code popularScore}를 마지막으로 정한 시각.
      *
-     * <p>NULL은 "아직 채점 전"이고 그때 {@code popularScore}는 컬럼 기본값 0이다. 카운트 배치가
-     * 새로 만든 행(신규·재활성 장소)이 그 상태다.
+     * <p>NULL은 "아직 채점 전"이고 그때 {@code popularScore}는 컬럼 기본값 0이다. 어드민 쓰기
+     * 경로가 새로 만든 행(신규·재활성 장소)이 그 상태다.
      *
      * <p><b>그 0을 점수로 읽으면 안 된다 — 이 컬럼이 존재하는 이유의 절반이 그것이다.</b> 리뷰 축이
      * {@code w₂ × (조정평점 − C)}라 저평점 장소의 점수는 <em>실제로 음수</em>이고, 미채점 0을 순위에

@@ -236,19 +236,19 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>이 쿼리는 활성 여부를 묻지 않는다.</b> "행이 있으면 활성"이라는 불변식을 카운트 배치가
-     * 지키므로 ({@code upsertCounts}의 {@code WHERE p.active = 1} + {@code deleteStaleRows})
-     * 조회는 places를 되짚지 않는다.
+     * <b>이 쿼리는 활성 여부를 묻지 않는다.</b> "행이 있으면 활성"이라는 불변식을 어드민 쓰기
+     * 경로가 지키므로 (행을 짓는 {@code upsertRowsForActivePlaces}의 {@code WHERE p.active = 1}과
+     * 행을 지우는 {@code deleteByPlaceIds}) 조회는 places를 되짚지 않는다.
      * 여기서 검증하는 것은 그 <em>구조</em>다 — 가드가 몰래 되살아나면 placeC가 사라져 깨진다.
      *
-     * <p>비활성화가 실제로 목록에서 사라지는 것은 카운트 배치 1회를 거친 뒤이며, 그 끝-끝 계약은
-     * {@code PlaceListFlowIT.비활성화된_장소는_카운트_배치_1회_뒤_인기순에서_사라진다}가 문다.
+     * <p>목록에서 실제로 사라지는 것은 어드민 삭제 경로를 거친 뒤이며, 그 끝-끝 계약은
+     * {@code PlaceListFlowIT.어드민이_삭제한_장소는_배치를_기다리지_않고_인기순에서_사라진다}가 문다.
      */
     @Test
-    void 조회는_활성_여부를_묻지_않는다_불변식은_배치가_지킨다() {
+    void 조회는_활성_여부를_묻지_않는다_불변식은_쓰기_경로가_지킨다() {
         insertStats(placeA, townId, 4.0, 0);
         insertStats(placeB, townId, 2.0, 0);
-        insertStats(placeC, townId, 6.0, 0);   // 배치가 아직 지우지 않은 잔행
+        insertStats(placeC, townId, 6.0, 0);   // 어드민 경로를 지나쳐 플래그만 내려간 행
         deactivatePlace(placeC);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
