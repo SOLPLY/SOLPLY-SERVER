@@ -59,10 +59,6 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
                 ((Number) row[1]).longValue());
     }
 
-    private static final LocalDateTime COUNT_CALCULATED_AT =
-            LocalDateTime.of(2026, 7, 30, 2, 30, 0);
-
-    /** 점수 회차는 카운트 회차와 <b>다른 시각</b>이다 — 두 컬럼을 뒤바꾼 매핑을 값으로 구분한다 */
     private static final LocalDateTime SCORE_CALCULATED_AT =
             LocalDateTime.of(2026, 7, 30, 1, 0, 0);
 
@@ -85,8 +81,6 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         assertThat(stats.getBookmarkCount()).isEqualTo(7);
         assertThat(stats.getReviewCount()).isEqualTo(2);
         assertThat(stats.getAvgRating()).isEqualByComparingTo(new BigDecimal("4.50"));
-        // 두 계산 시각은 서로 다른 배치의 표식이다 — 한 칸으로 합치거나 뒤바꾸면 여기서 갈린다
-        assertThat(stats.getCountCalculatedAt()).isEqualTo(COUNT_CALCULATED_AT);
         assertThat(stats.getScoreCalculatedAt()).isEqualTo(SCORE_CALCULATED_AT);
     }
 
@@ -117,12 +111,10 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
 
         em.createNativeQuery("""
                 INSERT INTO place_stats
-                    (place_id, town_id, created_at, bookmark_count, review_count, avg_rating,
-                     count_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 0, 0, NULL, :countAt
+                    (place_id, town_id, created_at, bookmark_count, review_count, avg_rating)
+                SELECT p.id, p.town_id, p.created_at, 0, 0, NULL
                 FROM places p WHERE p.id = :placeId
                 """)
-                .setParameter("countAt", COUNT_CALCULATED_AT)
                 .setParameter("placeId", placeId)
                 .executeUpdate();
         em.clear();
@@ -161,11 +153,10 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         em.createNativeQuery("""
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
-                     avg_rating, count_calculated_at, score_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 12.5, 7, 2, 4.50, :countAt, :scoreAt
+                     avg_rating, score_calculated_at)
+                SELECT p.id, p.town_id, p.created_at, 12.5, 7, 2, 4.50, :scoreAt
                 FROM places p WHERE p.id = :placeId
                 """)
-                .setParameter("countAt", COUNT_CALCULATED_AT)
                 .setParameter("scoreAt", SCORE_CALCULATED_AT)
                 .setParameter("placeId", placeId)
                 .executeUpdate();

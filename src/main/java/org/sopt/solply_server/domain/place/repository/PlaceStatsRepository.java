@@ -49,9 +49,17 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p>인덱스 전제: 북마크 축은 {@code idx_bookmark_target}(V23), 리뷰 축은
      * {@code idx_place_reviews_place_created_rating}(V22)로 각각 인덱스 전용 스캔이어야 한다.
      *
-     * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>. 모든 행의
-     *                     {@code count_calculated_at}이 이 값이 된다
-     * @return 갱신된 행 수 = 그 시점의 목록 노출 대상 장소 수
+     * <p><b>SET 목록에 회차 시각을 넣지 말 것 (V35).</b> InnoDB는 새 값이 기존 값과 전부 같은 행의
+     * 쓰기를 생략하는데, 회차마다 반드시 달라지는 값이 하나라도 끼면 그 판정이 전 행에서 무조건
+     * 실패한다 — 한 시간 동안 아무 활동도 없던 장소까지 매시 다시 쓰이고 undo·redo·binlog가
+     * 그만큼 따라온다. 지금 이 문장이 실제로 건드리는 것은 <b>카운트가 달라진 장소뿐</b>이다.
+     * 배치가 마지막으로 돈 시각이 필요하면 {@code shedlock} 테이블(V27)의
+     * {@code place-stats-count} 행을 볼 것.
+     *
+     * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
+     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
+     *         아니다 — Connector/J의 기본값({@code useAffectedRows=false})이 changed가 아니라
+     *         matched를 돌려주므로, 위 최적화로 쓰기가 줄어도 이 수치는 장소 수를 그대로 센다
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
@@ -72,10 +80,9 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             WHERE pr.created_at <= :calculatedAt
             GROUP BY pr.place_id
         ) r ON r.place_id = ps.place_id
-        SET ps.bookmark_count      = COALESCE(b.cnt, 0),
-            ps.review_count        = COALESCE(r.cnt, 0),
-            ps.avg_rating          = r.avg_rating,
-            ps.count_calculated_at = :calculatedAt
+        SET ps.bookmark_count = COALESCE(b.cnt, 0),
+            ps.review_count   = COALESCE(r.cnt, 0),
+            ps.avg_rating     = r.avg_rating
         """, nativeQuery = true)
     int updateCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
 
@@ -120,15 +127,14 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
-            bookmark_count, review_count, avg_rating, count_calculated_at)
+            bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
-               r.avg_rating,
-               :calculatedAt
+               r.avg_rating
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -154,13 +160,12 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         ) r ON r.place_id = p.id
         WHERE p.active = 1
         ON DUPLICATE KEY UPDATE
-            town_id             = VALUES(town_id),
-            created_at          = VALUES(created_at),
-            tag_bitmask         = VALUES(tag_bitmask),
-            bookmark_count      = VALUES(bookmark_count),
-            review_count        = VALUES(review_count),
-            avg_rating          = VALUES(avg_rating),
-            count_calculated_at = VALUES(count_calculated_at)
+            town_id        = VALUES(town_id),
+            created_at     = VALUES(created_at),
+            tag_bitmask    = VALUES(tag_bitmask),
+            bookmark_count = VALUES(bookmark_count),
+            review_count   = VALUES(review_count),
+            avg_rating     = VALUES(avg_rating)
         """, nativeQuery = true)
     int rebuildRowsFromSource(@Param("calculatedAt") LocalDateTime calculatedAt);
 
@@ -172,37 +177,31 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 내려간 장소를 수정해도 행이 되살아나지 않는다 — "행이 있는 장소 = 목록에 나와도 되는 장소"가
      * 이 문장 하나로 유지된다. 그래서 세 경로가 분기 없이 같은 문장을 부를 수 있다.
      *
-     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 카운트와
-     * {@code count_calculated_at}, 그리고 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고
-     * 북마크 수가 0으로 돌아가거나 잔행 판정의 기준이 밀리면 안 된다. 반대로 <b>신규 행</b>은 카운트
+     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 표시 카운트 셋과
+     * 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
+     * 반대로 <b>신규 행</b>은 카운트
      * 0·평점 NULL·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
      * (최신순에는 즉시 나온다 — 그 비대칭의 근거는
      * {@code PlaceListDbQueryRepository#findPopularRows}).
      *
-     * <p>{@code count_calculated_at}에 이번 호출 시각을 넣는다. 다음 카운트 회차의
-     * {@link #updateCounts}가 전 행의 값을 그 회차 시각으로 덮으므로 이 값은 "아직 첫 회차를 만나지
-     * 않은 행"임을 뜻할 뿐이다.
-     *
      * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다</b> — 근거와 가드는
      * {@link #rebuildRowsFromSource} javadoc과 같다.
      *
-     * @param placeIds     비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
-     * @param calculatedAt 새로 만들어지는 행의 {@code count_calculated_at}. 보통 호출 시각이다
+     * @param placeIds 비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
      * @return 영향 행 수 (MySQL은 INSERT를 1, UPDATE를 2로 센다)
      */
     @Modifying(flushAutomatically = true)
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
-            bookmark_count, review_count, avg_rating, count_calculated_at)
+            bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
                0,
                0,
-               NULL,
-               :calculatedAt
+               NULL
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -218,9 +217,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             created_at  = VALUES(created_at),
             tag_bitmask = VALUES(tag_bitmask)
         """, nativeQuery = true)
-    int upsertRowsForActivePlaces(
-            @Param("placeIds") List<Long> placeIds,
-            @Param("calculatedAt") LocalDateTime calculatedAt);
+    int upsertRowsForActivePlaces(@Param("placeIds") List<Long> placeIds);
 
     /**
      * 지정한 장소들의 행을 지운다 = <b>목록에서 장소를 빼는 유일한 경로</b>.

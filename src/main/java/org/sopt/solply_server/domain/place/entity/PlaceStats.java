@@ -26,8 +26,7 @@ import lombok.NoArgsConstructor;
  *       <td><b>행의 존재 자체</b>, {@code town_id}, {@code created_at}, {@code tag_bitmask}
  *           ({@code AdminPlaceService})</td></tr>
  *   <tr><td>카운트 배치</td><td>매시 30분</td>
- *       <td>{@code bookmark_count}, {@code review_count}, {@code avg_rating},
- *           {@code count_calculated_at}</td></tr>
+ *       <td>{@code bookmark_count}, {@code review_count}, {@code avg_rating}</td></tr>
  *   <tr><td>인기점수 배치</td><td>매일 01:00 (KST)</td>
  *       <td>{@code popular_score}, {@code score_calculated_at}</td></tr>
  * </table>
@@ -113,17 +112,6 @@ public class PlaceStats {
      */
     @Column(name = "tag_bitmask", nullable = false)
     private long tagBitmask;
-
-    /**
-     * 카운트 배치가 이 행을 마지막으로 건드린 회차의 기준 시각. 관측용이다 — 이 값이 밀려 있으면
-     * 배치가 돌지 않았다는 뜻이고, 표시 카운트가 그만큼 낡았다.
-     *
-     * <p>V34까지는 잔행 삭제({@code count_calculated_at <> :calculatedAt})의 판정 기준이기도
-     * 했다. 배치가 행의 존재에서 손을 떼면서 그 쓰임은 사라졌고, 지금은 전 행이 매 회차 같은 값을
-     * 받는다.
-     */
-    @Column(name = "count_calculated_at", nullable = false)
-    private LocalDateTime countCalculatedAt;
 
     /**
      * 인기점수 배치가 이 행의 {@code popularScore}를 마지막으로 정한 시각.

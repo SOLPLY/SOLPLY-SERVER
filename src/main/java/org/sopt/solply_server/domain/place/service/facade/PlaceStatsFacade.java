@@ -24,10 +24,10 @@ import org.springframework.stereotype.Component;
  * <p><b>주기를 가른 이유는 두 값의 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>
  *   <li><b>카운트 — 매시 30분.</b> 화면에 찍히는 북마크 수·리뷰 수·평점이고, 방금 누른 북마크가
- *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. <b>이 회차가 만지는 것은 그 세 값과
- *       {@code count_calculated_at}뿐이다</b> — 파생 컬럼({@code town_id}·{@code tag_bitmask}·
- *       {@code created_at})과 행의 존재 여부는 어드민 쓰기 트랜잭션의 소유라 여기서 손대지 않는다
- *       ({@code AdminPlaceService}).</li>
+ *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. <b>이 회차가 만지는 것은 그 세 값뿐이고,
+ *       그중에서도 값이 실제로 달라진 행뿐이다</b> (V35) — 파생 컬럼({@code town_id}·
+ *       {@code tag_bitmask}·{@code created_at})과 행의 존재 여부는 어드민 쓰기 트랜잭션의 소유라
+ *       여기서 손대지 않는다 ({@code AdminPlaceService}).</li>
  *   <li><b>인기 점수 — 매일 01:00 (KST).</b> 반감기 90일에서 하루의 감쇠 변화는
  *       {@code 1 - 0.5^(1/90) = 0.77%}라 순위를 흔들지 못한다. 잦게 돌 이유가 없는 대신,
  *       <b>점수가 갈리는 순간이 곧 커서 좌표계가 갈리는 순간</b>이라 그 창을 트래픽 최저 시각의

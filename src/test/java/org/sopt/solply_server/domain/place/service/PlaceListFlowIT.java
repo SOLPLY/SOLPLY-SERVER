@@ -821,8 +821,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         jdbcTemplate.update("""
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, tag_bitmask, bookmark_count, review_count,
-                     avg_rating, count_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 0, 0, 0, NULL, p.created_at
+                     avg_rating)
+                SELECT p.id, p.town_id, p.created_at, 0, 0, 0, NULL
                 FROM places p WHERE p.id = ? AND p.active = 1""", placeId);
         return placeId;
     }

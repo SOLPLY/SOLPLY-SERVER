@@ -1,6 +1,5 @@
 package org.sopt.solply_server.domain.admin.place.service;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -310,7 +309,7 @@ public class AdminPlaceService {
         if (placeIds.isEmpty()) {
             return;
         }
-        placeStatsRepository.upsertRowsForActivePlaces(placeIds, LocalDateTime.now());
+        placeStatsRepository.upsertRowsForActivePlaces(placeIds);
     }
 
 

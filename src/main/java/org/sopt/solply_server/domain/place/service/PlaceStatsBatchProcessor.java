@@ -49,12 +49,13 @@ public class PlaceStatsBatchProcessor {
      * 카운트 회차 = 표시 카운트 셋의 재계산. <b>문장 하나</b>라 원자성을 물을 지점이 없다.
      *
      * <p>예전에는 "활성 장소 전량 적재 + 잔행 삭제" 두 문장이었다. 적재가 원본에서 행을 다시
-     * 지으면서 어드민 소유의 파생 칸까지 덮었고, 잔행 삭제는 그 적재가 만든
-     * {@code count_calculated_at}을 기준으로 삼는 짝이었다. 행의 주인이 어드민 트랜잭션 하나로
-     * 정리되면서 둘 다 필요가 없어졌다 ({@code PlaceStatsRepository#updateCounts}).
+     * 지으면서 어드민 소유의 파생 칸까지 덮었고, 잔행 삭제는 그 적재가 회차마다 전 행에 찍던
+     * 표식({@code count_calculated_at})을 기준으로 삼는 짝이었다. 행의 주인이 어드민 트랜잭션
+     * 하나로 정리되면서 둘 다 필요가 없어졌고, 표식도 함께 걷어냈다 (V35).
      *
      * @param calculatedAt 이 회차의 기준 시각. 호출자가 정해 넘기므로 같은 값이면 결과가 같다
-     * @return 갱신된 행 수 = 그 시점의 목록 노출 대상 장소 수
+     * @return 조건에 걸린 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
+     *         아니다 — 근거는 {@link PlaceStatsRepository#updateCounts}
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public int recalculateCounts(LocalDateTime calculatedAt) {

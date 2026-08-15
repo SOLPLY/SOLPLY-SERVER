@@ -64,8 +64,8 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     /** 페이지 크기를 넘길 일이 없는 넉넉한 한도 — "정렬 결과 전체"를 뜻한다 */
     private static final int NO_LIMIT = 100;
 
-    /** 픽스처 행의 카운트 회차 기준 시각. 이 경로는 잔행 판정을 하지 않아 값 자체에 뜻은 없다 */
-    private static final LocalDateTime COUNT_CALCULATED_AT = BASE;
+    /** 픽스처 행의 채점 시각. 조회는 NULL 여부만 보므로 값 자체에 뜻은 없다 */
+    private static final LocalDateTime SCORED_AT = BASE;
 
     private long townId;
     private long placeA;   // BASE 1분 전 — 이 town에서 유일하게 오래된 장소
@@ -716,7 +716,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 성질이라({@code AdminPlaceService}가 태그를 flush한 뒤 마스크를 짓는다) 이 제약 자체가 계약이다.
      */
     private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
-        insertStatsRow(placeId, townId, score, bookmarkCount, COUNT_CALCULATED_AT);
+        insertStatsRow(placeId, townId, score, bookmarkCount, SCORED_AT);
     }
 
     /**
@@ -734,13 +734,13 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask,
                                          popular_score, bookmark_count,
                                          review_count, avg_rating,
-                                         count_calculated_at, score_calculated_at)
+                                         score_calculated_at)
                 SELECT p.id,
                        :townId,
                        p.created_at,
                        COALESCE((SELECT BIT_OR(1 << pt.tag_id)
                                  FROM place_tag pt WHERE pt.place_id = p.id), 0),
-                       :score, :cnt, 0, NULL, :calculatedAt, :scoreAt
+                       :score, :cnt, 0, NULL, :scoreAt
                 FROM places p
                 WHERE p.id = :placeId
                 """)
@@ -748,7 +748,6 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .setParameter("townId", townId)
                 .setParameter("score", score)
                 .setParameter("cnt", bookmarkCount)
-                .setParameter("calculatedAt", COUNT_CALCULATED_AT)
                 .setParameter("scoreAt", scoreCalculatedAt)
                 .executeUpdate();
     }

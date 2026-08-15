@@ -376,7 +376,6 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(after.getBookmarkCount()).isEqualTo(1);
         assertThat(after.getReviewCount()).isEqualTo(1);
         assertThat(after.getAvgRating()).isEqualByComparingTo(counted.getAvgRating());
-        assertThat(after.getCountCalculatedAt()).isEqualTo(CALCULATED_AT);
         // 점수 쪽은 실제로 갱신됐다 — 아무것도 안 한 상태와 구분한다
         assertThat(after.getScoreCalculatedAt()).isEqualTo(NEXT_CALCULATED_AT);
     }
@@ -445,20 +444,51 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>{@code count_calculated_at}은 회차마다 갱신된다.</b> 표시 카운트가 언제 것인지 말해 주는
-     * 유일한 값이라, 갱신이 멈추면 배치가 죽은 것과 정상 동작이 로그 밖에서 구분되지 않는다.
-     * 값이 실제로 앞으로 나아가는지 두 회차에 걸쳐 본다.
+     * <b>카운트 회차는 값이 달라진 행만 실제로 쓴다 (V35).</b> InnoDB는 새 값이 기존 값과 전부 같은
+     * 행의 쓰기를 생략하는데, 회차마다 반드시 달라지는 값을 SET에 하나라도 끼우면 그 판정이 전
+     * 행에서 무조건 실패한다 — {@code count_calculated_at}이 그랬고, 그래서 아무 활동도 없던
+     * 장소까지 매시 다시 쓰였다.
+     *
+     * <p>그 성질은 행의 <em>값</em>으로 드러나지 않아 단언할 곳이 여기밖에 없다. 재계산 결과가
+     * 같으면 값 단언은 최적화가 있든 없든 똑같이 통과한다. 그래서 서버가 실제로 몇 행을 썼는지를
+     * {@code Innodb_rows_updated}의 델타로 직접 묻는다.
+     *
+     * <p>같은 회차를 두 번 돌린 뒤가 아니라 <b>원본이 그대로인 다음 회차</b>를 재는 것이 요점이다 —
+     * 기준 시각이 앞으로 가도 쓸 것이 없어야 한다. 뒤이어 북마크 1건을 넣고 다시 재는 것은 "그냥
+     * 아무것도 안 쓰는 문장"과 구분하기 위해서다.
      */
     @Test
-    void 카운트_회차는_기준시각을_행마다_갱신한다() {
+    void 카운트_회차는_값이_달라진_행만_쓴다() {
         clearStats();
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
-        assertThat(statsOf(placeA).getCountCalculatedAt()).isEqualTo(CALCULATED_AT);
+        batchProcessor.recalculateCounts(CALCULATED_AT);
 
+        long beforeIdleRound = innodbRowsUpdated();
         batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
+        long idleRoundWrites = innodbRowsUpdated() - beforeIdleRound;
 
-        assertThat(statsOf(placeA).getCountCalculatedAt()).isEqualTo(NEXT_CALCULATED_AT);
+        insertBookmark(placeA, 0);
+        long beforeRealRound = innodbRowsUpdated();
+        batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
+        long realRoundWrites = innodbRowsUpdated() - beforeRealRound;
+
+        assertThat(idleRoundWrites).isZero();
+        assertThat(realRoundWrites).isEqualTo(1);
+        assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(1);
         assertThat(placeStatsRepository.count()).isEqualTo(activePlaceCount());
+    }
+
+    /**
+     * 서버가 실제로 갱신한 행의 누적 수. 문장이 몇 행에 <em>걸렸는지</em>(matched)가 아니라 몇 행을
+     * <em>썼는지</em>(changed)를 세는 유일한 값이다 — JDBC의 반환값은 Connector/J 기본값
+     * ({@code useAffectedRows=false})이 matched를 돌려주므로 이 구분에 쓸 수 없다.
+     */
+    private long innodbRowsUpdated() {
+        Object value = em.createNativeQuery("""
+                SELECT VARIABLE_VALUE FROM performance_schema.global_status
+                 WHERE VARIABLE_NAME = 'Innodb_rows_updated'
+                """).getSingleResult();
+        return Long.parseLong(String.valueOf(value));
     }
 
     // === 공식 ===
@@ -1046,12 +1076,11 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         em.createNativeQuery("""
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
-                     avg_rating, count_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 777.000000, 777, 0, NULL, :calculatedAt
+                     avg_rating)
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 777, 0, NULL
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
-                .setParameter("calculatedAt", CALCULATED_AT)
                 .executeUpdate();
         insertBookmark(placeA, 0);   // 재계산이 돌면 카운트가 777이 아니라 1이 된다
 
@@ -1116,9 +1145,8 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         em.createNativeQuery("""
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
-                     avg_rating, count_calculated_at, score_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 777.000000, 0, 0, NULL,
-                       :calculatedAt, :calculatedAt
+                     avg_rating, score_calculated_at)
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 0, 0, NULL, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
@@ -1195,7 +1223,6 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                            CONCAT_WS('|', place_id, town_id, popular_score,
                                      bookmark_count, review_count,
                                      IFNULL(avg_rating, 'NULL'),
-                                     count_calculated_at,
                                      IFNULL(score_calculated_at, 'NULL'))
                            ORDER BY place_id SEPARATOR ';')
                 FROM place_stats
