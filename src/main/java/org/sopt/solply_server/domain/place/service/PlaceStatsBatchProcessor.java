@@ -21,8 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
  * ({@code AdminPlaceService}), 여기 두 회차는 각자의 값 칸만 정한다. 원본에서 행을 다시 짓는
  * 문장은 기동 백필과 운영 복구의 것으로만 남아 있다.
  *
- * <p>청크로 나누지 않는 이유: 집계가 단일 SQL이라 나눌 지점이 없고, 부분 반영된 상태가 오히려
- * 순위를 어긋나게 만든다. 실패하면 직전 값이 그대로 남고 다음 회차가 정답을 알려준다.
+ * <p><b>청크로 나누지 않는 이유는 2026-08-15에 실측으로 정리됐다.</b> 청킹이 준다던 것 둘이
+ * 모두 무너졌다 — 락은 줄일 것이 없었고(배치 중 어드민 쓰기 86회 시도, 대기 0), 실패 재시도는
+ * 전체를 다시 도는 것이 3.5초라 쪼갤 값어치가 없었다. 반면 범위 술어를 붙이는 대가가 매 회차
+ * +22%다. 실패 복구는 청킹이 아니라 {@code PlaceStatsFacade}의 회차 내 재시도가 맡는다.
+ * 근거와 재검토 조건: {@code docs/perf/2026-08-15-count-batch-duration-lock.md}.
  *
  * <p><b>READ_COMMITTED가 이 클래스에서 가장 중요한 한 줄이다</b> — REPEATABLE READ면 소스 테이블
  * 스캔 행이 잠겨 동시 북마크 쓰기가 죽는다. 실측 수치와 {@code binlog_format} 전제는

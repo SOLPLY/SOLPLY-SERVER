@@ -1,8 +1,10 @@
 package org.sopt.solply_server.domain.place.config;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
+import java.time.Duration;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -77,6 +79,47 @@ public class PlaceStatsProperties {
      */
     @NotBlank
     private String scoreCron = "0 0 1 * * *";
+
+    /**
+     * 한 회차의 최대 시도 횟수 (초회 포함). 3이면 실패 시 두 번 더 돌린다.
+     *
+     * <p><b>재시도가 값어치 있는 이유는 회차 간격이 실패의 대가이기 때문이다.</b> 카운트 회차가
+     * 한 번 죽으면 다음 회차까지 1시간, 점수 회차는 24시간 낡은 값이 남는다. 재시도가 없던
+     * 시절에는 그 창을 통째로 감수했다.
+     *
+     * <p><b>전체를 다시 도는 것이 맞다 — 청크로 쪼개 실패 구간부터 재개하지 않는다.</b>
+     * 2026-08-15 실측에서 카운트 회차가 3,514ms였다. 청킹은 범위 술어 때문에 매 회차 +22%를
+     * 상시로 물고 실패 한 번에 1.4초쯤을 아끼므로, 본전이 되려면 회차마다 두 번씩 실패해야 한다.
+     * 같은 측정에서 "배치가 어드민 쓰기를 막는다"는 청킹의 다른 근거도 무너졌다 —
+     * 파생 테이블을 먼저 만들고 행을 잠그는 구간은 마지막 짧은 순간뿐이라 대기가 0이었다.
+     * (원천 행 수가 자릿수로 늘면 다시 열린다: {@code docs/design/2026-08-15-bookmark-count-supply.md} 5장)
+     *
+     * <p><b>재시도가 안전한 근거는 멱등성이고, 그 멱등성은 {@code calculatedAt}을 고정할 때만
+     * 성립한다.</b> 집계에 {@code created_at <= :calculatedAt} 상한이 있어 같은 기준 시각으로
+     * 다시 돌리면 같은 결과가 나온다. 시도마다 시각을 새로 잡으면 그 사이 들어온 활동이 결과를
+     * 바꾸므로 "재실행해도 안전하다"가 성립하지 않는다 — {@code PlaceStatsFacade}가 첫 시도의
+     * 값을 모든 시도에 넘기는 이유다.
+     *
+     * <p>3을 넘겨 잡지 말 것. 실패가 일시적이지 않다면(스키마 불일치·데이터 오류) 몇 번을 돌려도
+     * 같고, 시도 사이 대기가 {@code @Scheduled} 단일 스레드를 그만큼 붙잡는다.
+     * {@code lockAtMostFor}(카운트 10분)도 최대 시도 시간을 담을 수 있어야 한다.
+     */
+    @Positive
+    private int batchMaxAttempts = 3;
+
+    /**
+     * 시도 사이 대기. 있는 이유는 실패 직후 같은 자원을 곧바로 다시 치지 않기 위해서다 —
+     * 락 경합이나 순간 장애가 가라앉을 틈을 준다.
+     *
+     * <p>정확한 값이 중요한 자리는 아니다. 회차 간격이 1시간·24시간인데 몇 초를 조정해서 달라지는
+     * 것이 없다. 그럼에도 프로퍼티인 이유는 <b>0을 넣을 수 있어야 하기 때문이다</b> — 대기가 상수면
+     * 실패 경로를 검증하는 테스트가 시도 횟수만큼 잠들고, 그 비용이 붙은 테스트는 결국 지워진다.
+     *
+     * <p>{@code batch-max-attempts}와 함께 회차 하나의 최장 시간을 정하므로
+     * {@code lockAtMostFor}(카운트 10분) 안에 들어와야 한다.
+     */
+    @NotNull
+    private Duration batchRetryDelay = Duration.ofSeconds(5);
 
     /**
      * 감쇠 반감기(일). 90일이면 30일 경과 시 79%, 1년 경과 시 6%가 남는다.
