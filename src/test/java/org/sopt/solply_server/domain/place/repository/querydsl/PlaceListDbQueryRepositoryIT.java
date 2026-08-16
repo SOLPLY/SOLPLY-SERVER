@@ -516,24 +516,50 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>평점이 없는 장소는 평점순에 나오지 않는다.</b> {@code avg_rating IS NOT NULL}이 그 일을 한다.
+     * <b>리뷰가 없는 장소는 0점으로 맨 뒤에 실린다 (V37).</b> 하루 전 스펙은 반대였다 —
+     * {@code avg_rating IS NOT NULL}이 그 행들을 끊었고, 근거는 NULL이 커서 seek을 무너뜨린다는
+     * 것이었다. 저장이 NOT NULL 0으로 바뀌면서 그 근거가 사라졌고 술어도 함께 사라졌다.
      *
-     * <p>술어를 지우면 NULL 행이 첫 페이지 <em>끝</em>에는 붙지만(DESC에서 NULL이 마지막) 커서 seek은
-     * NULL 비교가 전부 NULL이라 두 번째 페이지부터 통째로 사라진다 — "첫 페이지에만 보이는 장소"가
-     * 생기는 셈이다. 그래서 아래 두 단언을 함께 세운다: 첫 페이지에도 없어야 하고, 커서 페이지에도
-     * 없어야 한다.
+     * <p>그래서 <b>커서 페이지까지 함께 문다</b>. 옛 버그의 형태가 "첫 페이지에만 보이는 장소"였으므로,
+     * 첫 페이지에 있는 것만으로는 회귀를 못 잡는다.
      */
     @Test
-    void 평점이_없는_장소는_평점순에서_제외된다() {
-        insertRatedStats(placeA, townId, null, 0, 7);   // 리뷰 0건 → 평점 NULL
+    void 리뷰가_없는_장소는_0점으로_평점순_맨_뒤에_실린다() {
+        insertRatedStats(placeA, townId, 0.00, 0, 7);   // 리뷰 0건 → 평점 0
         insertRatedStats(placeB, townId, 4.50, 3, 0);
         insertRatedStats(placeC, townId, 3.00, 1, 0);
 
         List<RatingRow> page1 = findRating(null, null, null, NO_LIMIT);
         List<RatingRow> page2 = findRating(4.50, 3L, placeB, NO_LIMIT);
 
-        assertThat(ratingIdsOf(page1)).containsExactly(placeB, placeC);
-        assertThat(ratingIdsOf(page2)).containsExactly(placeC);
+        assertThat(ratingIdsOf(page1)).containsExactly(placeB, placeC, placeA);
+        assertThat(ratingIdsOf(page2)).containsExactly(placeC, placeA);
+    }
+
+    /**
+     * <b>0점 동점이 여럿이어도 커서가 그 구간을 정확히 가른다.</b> 리뷰 0건 장소가 목록에 들어오면서
+     * 새로 생긴 구간이다 — 평점도 0, 리뷰 수도 0이라 앞의 두 겹이 전부 등호로 걸리고 타이브레이크가
+     * 사실상 {@code place_id ASC} 하나에 걸린다.
+     *
+     * <p>한 칸씩 끊어 세 페이지를 걷어 중복·누락이 없음을 본다. 등호 분기가 하나라도 빠지면 여기서
+     * 같은 장소가 두 번 나오거나 구간이 통째로 사라진다.
+     */
+    @Test
+    void 평점순_커서는_0점_동점_구간도_중복_누락_없이_가른다() {
+        insertRatedStats(placeA, townId, 0.00, 0, 0);
+        insertRatedStats(placeB, townId, 0.00, 0, 0);
+        insertRatedStats(placeC, townId, 0.00, 0, 0);
+        insertRatedStats(placeD, townId, 4.00, 2, 0);
+
+        List<RatingRow> page1 = findRating(null, null, null, 1);
+        List<RatingRow> page2 = findRating(4.00, 2L, placeD, 1);
+        List<RatingRow> page3 = findRating(0.00, 0L, placeA, 1);
+        List<RatingRow> page4 = findRating(0.00, 0L, placeB, NO_LIMIT);
+
+        assertThat(ratingIdsOf(page1)).containsExactly(placeD);
+        assertThat(ratingIdsOf(page2)).containsExactly(placeA);
+        assertThat(ratingIdsOf(page3)).containsExactly(placeB);
+        assertThat(ratingIdsOf(page4)).containsExactly(placeC);
     }
 
     /** 평점순도 표시값(북마크 수)을 같은 행에서 실어 온다 — 추가 조회가 없다는 계약 */
@@ -574,7 +600,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         insertRatedStats(placeA, townId, 4.00, 9, 0);
         insertRatedStats(placeB, townId, 4.00, 9, 0);
         insertRatedStats(placeC, townId, 4.00, 5, 0);
-        insertRatedStats(placeD, townId, null, 0, 0);   // 리뷰 0건도 결과에는 남는다
+        insertRatedStats(placeD, townId, 0.00, 0, 0);   // 리뷰 0건도 결과에는 남는다
 
         List<CountRow> rows = repository.findReviewCountRows(
                 List.of(townId), null, null, null, null, null, NO_LIMIT);
@@ -654,7 +680,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     @Test
     void 거리순_후보는_좌표가_없는_장소를_제외하고_표시값을_함께_싣는다() {
         insertRatedStats(placeA, townId, 4.50, 3, 7);
-        insertRatedStats(placeB, townId, null, 0, 0);
+        insertRatedStats(placeB, townId, 0.00, 0, 0);
         insertRatedStats(placeC, townId, 4.00, 1, 0);
         setCoordinates(placeA, 37.5665, 126.9780);
         setCoordinates(placeB, 37.5, null);        // 경도만 없어도 후보가 아니다
@@ -681,8 +707,8 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     void 거리순_후보에도_같은_태그_필터가_적용된다() {
         long mainTagId = createMainTag("db모드메인거리");
         linkTag(placeA, mainTagId);
-        insertRatedStats(placeA, townId, null, 0, 0);
-        insertRatedStats(placeB, townId, null, 0, 0);
+        insertRatedStats(placeA, townId, 0.00, 0, 0);
+        insertRatedStats(placeB, townId, 0.00, 0, 0);
         setCoordinates(placeA, 37.1, 127.1);
         setCoordinates(placeB, 37.2, 127.2);
 
@@ -955,7 +981,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 성질이라({@code AdminPlaceService}가 태그를 flush한 뒤 마스크를 짓는다) 이 제약 자체가 계약이다.
      */
     private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
-        insertStatsRow(placeId, townId, score, bookmarkCount, 0, null, SCORED_AT);
+        insertStatsRow(placeId, townId, score, bookmarkCount, 0, 0.0, SCORED_AT);
     }
 
     /**
@@ -963,22 +989,23 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 어드민 생성·재활성이 만드는 행과 카운트 배치가 만든 신규 행이 이 형태다.
      */
     private void insertUnscoredStats(long placeId, long townId, long bookmarkCount) {
-        insertStatsRow(placeId, townId, 0.0, bookmarkCount, 0, null, null);
+        insertStatsRow(placeId, townId, 0.0, bookmarkCount, 0, 0.0, null);
     }
 
     /**
-     * 평점 축 픽스처. {@code avgRating}이 null이면 "리뷰가 없어 평점도 없는 장소"다 — 평점순이
-     * 그 행을 어떻게 다루는지가 이 정렬의 핵심 계약이라 null을 픽스처로 직접 세운다.
+     * 평점 축 픽스처. {@code avgRating}이 0이면 "리뷰가 없어 평점이 0인 장소"다 — 컬럼이 NOT NULL
+     * DEFAULT 0이고(V37) 척도가 1~5라 0은 그 뜻으로만 쓰인다. 평점순이 그 행을 <b>맨 뒤에 싣는지</b>가
+     * 이 정렬의 핵심 계약이라 0을 픽스처로 직접 세운다.
      * 미채점 행으로 두는 것은 인기순 술어와 얽히지 않게 하기 위해서다.
      */
     private void insertRatedStats(
-            long placeId, long townId, Double avgRating, long reviewCount, long bookmarkCount) {
+            long placeId, long townId, double avgRating, long reviewCount, long bookmarkCount) {
         insertStatsRow(placeId, townId, 0.0, bookmarkCount, reviewCount, avgRating, null);
     }
 
     private void insertStatsRow(
             long placeId, long townId, double score, long bookmarkCount,
-            long reviewCount, Double avgRating, LocalDateTime scoreCalculatedAt) {
+            long reviewCount, double avgRating, LocalDateTime scoreCalculatedAt) {
         em.createNativeQuery("""
                 INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask,
                                          popular_score, bookmark_count,

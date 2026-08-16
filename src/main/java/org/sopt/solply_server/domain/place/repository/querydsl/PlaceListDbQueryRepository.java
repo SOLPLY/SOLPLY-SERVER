@@ -56,8 +56,8 @@ public class PlaceListDbQueryRepository {
     private final EntityManager em;
 
     /**
-     * {@code avgRating}은 null을 유지한다 — "리뷰가 없다"와 "평점이 0이다"는 다른 말이고,
-     * 여기서 0으로 뭉개면 응답까지 그 구분이 사라진다.
+     * {@code avgRating}은 컬럼 값 그대로다 — V37부터 NOT NULL이고 리뷰가 없으면 0이다.
+     * "리뷰 없음"으로 되돌리는 것은 응답을 만드는 쪽의 일이다 ({@code PlacePreviewDto#of}).
      */
     public record PopularRow(long placeId, double popularScore, long bookmarkCount,
                              long reviewCount, BigDecimal avgRating) {}
@@ -180,8 +180,8 @@ public class PlaceListDbQueryRepository {
      * 그래서 등호 분기의 타이브레이크({@code ps.place_id < :cursorPlaceId})가 필수다 — 없으면 같은
      * 초의 장소들이 페이지 경계에서 조용히 누락된다.
      *
-     * <p>카운트에 COALESCE를 걸지 않는 것은 컬럼이 {@code NOT NULL}이기 때문이다. {@code avg_rating}만
-     * nullable로 남는데, 0으로 채우면 "평점 0점"으로 읽히므로 그대로 흘려보낸다.
+     * <p>표시 세 값 어디에도 COALESCE를 걸지 않는다 — 셋 다 {@code NOT NULL}이다
+     * ({@code avg_rating}은 V37부터, 리뷰가 없으면 0).
      *
      * @param cursorEpochSecond 커서의 sortKey(생성일 epoch 초, UTC 기준). null이면 첫 페이지
      * @param cursorPlaceId     커서의 장소 id. null이면 첫 페이지
@@ -234,7 +234,7 @@ public class PlaceListDbQueryRepository {
 
     /**
      * 평점순 row. 정렬 키가 둘(평점·리뷰 수)이라 그 둘이 앞자리에 온다.
-     * {@code avgRating}이 null인 행은 이 정렬에 애초에 실리지 않는다 ({@link #findRatingRows}).
+     * {@code avgRating}은 <b>절대 null이 아니다</b> — 컬럼이 NOT NULL이고 리뷰 0건이면 0이다 (V37).
      */
     public record RatingRow(long placeId, BigDecimal avgRating, long reviewCount,
                             long bookmarkCount) {}
@@ -252,11 +252,13 @@ public class PlaceListDbQueryRepository {
      * (town_id, avg_rating DESC, review_count DESC, place_id, tag_bitmask, bookmark_count)가
      * 필터·정렬·타이브레이크를 흡수하고 말단 둘이 커버링을 만든다 (V36).
      *
-     * <p><b>⚠️ {@code avg_rating IS NOT NULL}을 지우지 말 것.</b> 리뷰가 없는 장소의 평점은 NULL이고
-     * 그것은 "0점"이 아니라 "평점이 없다"는 뜻이라 평점 순서 위에 자리가 없다. 더 결정적인 이유는
-     * <b>커서</b>다 — seek 조건은 NULL과의 비교가 전부 NULL이라, 술어를 빼면 그 행들이 첫 페이지에만
-     * 나타났다가 두 번째 페이지부터 조용히 사라진다. 어차피 못 싣는다면 술어로 끊는 편이 정직하다.
-     * 인기순의 {@code score_calculated_at IS NOT NULL}과 같은 성질의 선택이다.
+     * <p><b>술어가 하나도 없다 — 리뷰 0건 장소도 0점으로 맨 뒤에 실린다 (V37).</b> 하루 전까지는
+     * 여기에 {@code avg_rating IS NOT NULL}이 있었다. 리뷰가 없는 장소의 평점이 NULL이라
+     * 커서 seek이 NULL 비교로 전부 무너져 그 행들이 두 번째 페이지부터 조용히 사라졌고, 어차피
+     * 못 실을 바에는 술어로 끊는 편이 정직하다는 판단이었다. 뒤집은 것은 프로덕트 결정이다 —
+     * 리뷰가 아직 없는 장소도 목록에 보여야 한다. 그래서 <b>저장을 NOT NULL 0으로 바꿔</b>
+     * 사라지는 원인 자체를 없앴다(조회에 {@code COALESCE}를 씌우는 안은 정렬식이 컬럼이 아니게
+     * 되어 인덱스가 정렬을 못 만든다 — V37 주석에 근거).
      *
      * <p><b>seek이 2단인 이유.</b> 평점은 DECIMAL(3,2)라 동점이 흔하고, 동점을 리뷰 수로 한 번 더
      * 가르므로 커서 조건도 {@code (r < cr) OR (r = cr AND (c < cc OR (c = cc AND id > cid)))}로
@@ -279,7 +281,6 @@ public class PlaceListDbQueryRepository {
                 SELECT ps.place_id, ps.avg_rating, ps.review_count, ps.bookmark_count
                 FROM place_stats ps
                 WHERE ps.town_id IN (:townIds)
-                  AND ps.avg_rating IS NOT NULL
                 """);
         appendTagFilters(sql, masks);
         if (useCursor) {
@@ -318,8 +319,8 @@ public class PlaceListDbQueryRepository {
 
     /**
      * 리뷰 많은 순. {@code idx_place_stats_town_reviews}가 정렬을 만든다 (V36).
-     * 술어를 하나도 걸지 않는 것이 평점순과의 차이다 — {@code review_count}는 NOT NULL이고
-     * 0은 "리뷰가 0개"라는 정확한 사실이라 맨 뒤에 놓이면 그만이다.
+     * 평점순과 마찬가지로 술어가 하나도 없다 — {@code review_count}는 NOT NULL이고 0은
+     * "리뷰가 0개"라는 정확한 사실이라 맨 뒤에 놓이면 그만이다.
      */
     public List<CountRow> findReviewCountRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
@@ -403,8 +404,11 @@ public class PlaceListDbQueryRepository {
      * 룩업뿐이라 계획이 흔들릴 자유도가 없다 — 세미조인도 아니고 LIMIT 조기 종료도 없다.
      *
      * <p><b>좌표가 NULL인 장소는 여기서 걸러 낸다.</b> 거리를 잴 수 없는 장소를 "거리 무한대"로
-     * 뒤에 붙이면 커서 seek이 NULL 비교에 걸려 페이지 경계에서 조용히 사라진다 — 평점순이
-     * {@code avg_rating IS NOT NULL}을 거는 것과 같은 이유다. WHERE에서 끊는 편이 정직하다.
+     * 뒤에 붙이면 커서 seek이 NULL 비교에 걸려 페이지 경계에서 조용히 사라진다.
+     *
+     * <p>평점순은 같은 문제를 반대로 풀었다 — 저장을 NOT NULL 0으로 바꿔 NULL 자체를 없앴다(V37).
+     * 여기서 그 수를 못 쓰는 것은 <b>대체할 값이 없기 때문</b>이다. 평점은 척도가 1~5라 0이
+     * "리뷰 없음"과만 대응하지만, 위도·경도 0은 기니만의 실재 좌표라 "좌표 없음"과 구분되지 않는다.
      */
     @SuppressWarnings("unchecked")
     public List<DistanceCandidateRow> findDistanceCandidates(

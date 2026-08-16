@@ -630,7 +630,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(stats.getPopularScore().doubleValue()).isCloseTo(0.0, within(SCORE_TOLERANCE));
         assertThat(stats.getBookmarkCount()).isZero();
         assertThat(stats.getReviewCount()).isZero();
-        assertThat(stats.getAvgRating()).isNull();
+        // 리뷰가 없으면 평점은 0이다 (V37) — COALESCE(AVG(rating), 0)이 그 자리를 채운다.
+        // "평점 없음"으로 되돌리는 것은 응답 매핑의 일이고, 저장은 정렬을 위해 실값을 갖는다.
+        assertThat(stats.getAvgRating()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     /**
@@ -778,7 +780,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
         assertThat(before.getBookmarkCount()).isEqualTo(1);
         assertThat(before.getReviewCount()).isZero();
-        assertThat(before.getAvgRating()).isNull();
+        assertThat(before.getAvgRating()).isEqualByComparingTo(BigDecimal.ZERO);
 
         // 1회차 이후 원본이 늘었다 — 북마크 +1, 리뷰 +1. placeB의 1점이 C를 3.0으로 붙든다
         insertBookmark(placeA, 0);
@@ -1077,7 +1079,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
                      avg_rating)
-                SELECT p.id, p.town_id, p.created_at, 777.000000, 777, 0, NULL
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 777, 0, 0
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
@@ -1146,7 +1148,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
                      avg_rating, score_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 777.000000, 0, 0, NULL, :calculatedAt
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 0, 0, 0, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
@@ -1221,8 +1223,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         Object result = em.createNativeQuery("""
                 SELECT GROUP_CONCAT(
                            CONCAT_WS('|', place_id, town_id, popular_score,
-                                     bookmark_count, review_count,
-                                     IFNULL(avg_rating, 'NULL'),
+                                     bookmark_count, review_count, avg_rating,
                                      IFNULL(score_calculated_at, 'NULL'))
                            ORDER BY place_id SEPARATOR ';')
                 FROM place_stats

@@ -559,17 +559,21 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
     /**
      * <b>평점 높은 순.</b> setUp 픽스처가 그대로 이 정렬의 무대가 된다 —
-     * placeC는 5점 5건(평점 5.00), placeB는 1점 5건(평점 1.00), placeA는 리뷰가 없어 평점이 NULL이다.
+     * placeC는 5점 5건(평점 5.00), placeB는 1점 5건(평점 1.00), placeA는 리뷰가 없어 평점이 0이다.
      *
-     * <p>그래서 이 한 테스트가 두 가지를 함께 문다: 평점 내림차순이라는 순서와, <b>평점이 없는
-     * 장소(placeA)가 아예 나오지 않는다</b>는 계약. placeA는 북마크가 4건이나 되는 장소라
-     * "활동이 없어서 빠진 것"이 아님이 픽스처로 드러난다.
+     * <p>그래서 이 한 테스트가 두 가지를 함께 문다: 평점 내림차순이라는 순서와, <b>리뷰가 없는
+     * 장소(placeA)가 0점으로 맨 뒤에 실린다</b>는 계약(V37). 하루 전 스펙은 정반대로 그 장소를
+     * 목록에서 끊었고, 뒤집은 것은 프로덕트 판단이다.
      *
      * <p>페이지 크기를 1로 두어 커서가 실제로 발급·소비되게 한다 — 커서 키가 (평점, 리뷰 수) 둘인
      * 유일한 정렬이라, 한 칸만 실리면 여기서 두 번째 페이지가 비거나 첫 항목이 되돌아온다.
+     * 마지막 페이지는 <b>커서로 0점 구간에 실제로 진입</b>하는 자리이기도 하다.
+     *
+     * <p>마지막 단언이 <b>표시 계약</b>이다 — 저장이 0이 된 뒤에도 응답의 평점은 여전히 null이다.
+     * 화면에서 "평점 0점"과 "아직 평가 없음"은 다른 말이고, 그 되돌림은 {@code PlacePreviewDto#of}가 한다.
      */
     @Test
-    void 평점순은_평점_내림차순이고_평점_없는_장소는_빠지며_커서가_이어진다() {
+    void 평점순은_평점_내림차순이고_리뷰_없는_장소는_0점으로_맨_뒤에_실린다() {
         PlaceFilterGetResponse page1 =
                 placeService.getPlaces(me, sortRequest(townId, PlaceSortType.RATING, null, 1));
 
@@ -583,15 +587,22 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 me, sortRequest(townId, PlaceSortType.RATING, page1.nextCursor(), 1));
 
         assertThat(ids(page2)).containsExactly(placeB);
-        // placeA(평점 NULL)는 어느 페이지에도 없다
-        assertThat(page2.nextCursor()).isNull();
+        assertThat(page2.nextCursor()).isNotNull();
+
+        PlaceFilterGetResponse page3 = placeService.getPlaces(
+                me, sortRequest(townId, PlaceSortType.RATING, page2.nextCursor(), 1));
+
+        assertThat(ids(page3)).containsExactly(placeA);
+        assertThat(page3.nextCursor()).isNull();
+        assertThat(previewOf(page3, placeA).avgRating()).isNull();
+        assertThat(previewOf(page3, placeA).reviewCount()).isZero();
     }
 
     /**
      * <b>리뷰 많은 순.</b> placeB·placeC가 나란히 5건이라 <b>1위 자리가 동점</b>이고, 그 경계를
      * 페이지가 가른다 — 타이브레이크(id ASC)가 없거나 등호 분기가 빠지면 placeC가 통째로 누락되거나
-     * 두 페이지에 겹쳐 나온다. 리뷰가 없는 placeA는 0건으로 맨 뒤에 남는다(평점순과 달리 제외하지
-     * 않는다 — 0은 "리뷰가 0개"라는 정확한 사실이다).
+     * 두 페이지에 겹쳐 나온다. 리뷰가 없는 placeA는 0건으로 맨 뒤에 남는다 — 평점순도 V37부터
+     * 같은 규칙이라, 이제 두 정렬 모두 리뷰 0건 장소를 끊지 않는다.
      */
     @Test
     void 리뷰순은_리뷰수_내림차순이고_동점_경계에서_항목을_흘리지_않는다() {
@@ -981,7 +992,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, tag_bitmask, bookmark_count, review_count,
                      avg_rating)
-                SELECT p.id, p.town_id, p.created_at, 0, 0, 0, NULL
+                SELECT p.id, p.town_id, p.created_at, 0, 0, 0, 0
                 FROM places p WHERE p.id = ? AND p.active = 1""", placeId);
         return placeId;
     }

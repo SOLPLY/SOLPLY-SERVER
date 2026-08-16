@@ -39,8 +39,11 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 멱등성이라는 문장의 참/거짓이다 — 같은 기준 시각으로 다시 돌렸을 때 그 사이 들어온 활동이
      * 결과를 바꾼다면 "회차를 재실행해도 안전하다"가 성립하지 않는다.
      *
-     * <p><b>{@code avg_rating}에 COALESCE를 걸지 않는다.</b> 리뷰가 없으면 NULL이 정확한 답이고,
-     * 0으로 채우는 순간 "평점 0점"으로 읽힌다. 카운트 둘은 반대로 0이 정답이라 COALESCE를 건다.
+     * <p><b>세 값 모두 COALESCE로 0을 채운다 (V37).</b> {@code avg_rating}은 예전에 NULL을 그대로
+     * 흘려보냈지만, 평점순이 리뷰 0건 장소를 0점으로 맨 뒤에 싣게 되면서 컬럼이 NOT NULL로 조여졌다.
+     * <b>저장 시점의 COALESCE는 인덱스와 무관하다</b> — 인덱스가 못 견디는 것은 조회의 정렬식에
+     * COALESCE가 끼는 경우이고, 여기서는 컬럼에 실값이 들어갈 뿐이다. "평점 0점"과 "리뷰 없음"의
+     * 구분은 응답 매핑이 맡는다 ({@code PlacePreviewDto}).
      *
      * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> 두 소스 테이블을 훑는 성질은
      * {@link #updateScores}와 같다 — REPEATABLE READ면 스캔 행에 shared next-key 락이 걸려 동시
@@ -82,7 +85,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         ) r ON r.place_id = ps.place_id
         SET ps.bookmark_count = COALESCE(b.cnt, 0),
             ps.review_count   = COALESCE(r.cnt, 0),
-            ps.avg_rating     = r.avg_rating
+            ps.avg_rating     = COALESCE(r.avg_rating, 0)
         """, nativeQuery = true)
     int updateCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
 
@@ -134,7 +137,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
                COALESCE(t.mask, 0),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
-               r.avg_rating
+               COALESCE(r.avg_rating, 0)
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -180,7 +183,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 표시 카운트 셋과
      * 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
      * 반대로 <b>신규 행</b>은 카운트
-     * 0·평점 NULL·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
+     * 0·평점 0·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
      * (최신순에는 즉시 나온다 — 그 비대칭의 근거는
      * {@code PlaceListDbQueryRepository#findPopularRows}).
      *
@@ -201,7 +204,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
                COALESCE(t.mask, 0),
                0,
                0,
-               NULL
+               0
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -288,10 +291,13 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      *
      * <p><b>표시용 {@code review_count}·{@code avg_rating}을 재활용하지 않고 리뷰를 다시 훑는
      * 이유.</b> 두 값의 신선도가 이 배치와 다르다(카운트는 ≤1h, 점수는 ≤24h). 재활용하면 점수가
-     * "한 시간 전 카운트 + 지금 계산한 감쇠"라는 섞인 시점 위에 서고, 무엇보다
-     * {@code cnt × avg_rating}으로 조정 평점의 분자를 대신하는 순간 리뷰 0건 장소에서
-     * {@code 0 × NULL = NULL}이 되어 {@code NOT NULL} 컬럼에 걸려 배치 전체가 터진다.
+     * "한 시간 전 카운트 + 지금 계산한 감쇠"라는 섞인 시점 위에 선다. 게다가
+     * {@code cnt × avg_rating}으로 조정 평점의 분자를 대신하면 {@code avg_rating}이
+     * {@code DECIMAL(3,2)}로 이미 반올림된 값이라 리뷰 수를 곱한 만큼 오차가 커진다.
      * 그래서 여기서도 {@code SUM(rating)}을 따로 뽑는다.
+     * (V37 전에는 이 자리에 더 급한 이유가 하나 더 있었다 — 리뷰 0건 장소의 {@code avg_rating}이
+     * NULL이라 {@code 0 × NULL = NULL}이 {@code NOT NULL} 점수 컬럼에 걸려 배치가 통째로 터졌다.
+     * 평점이 0으로 채워지면서 그 경로는 사라졌고, 위의 두 이유는 그대로다.)
      *
      * <p><b>⚠️ NULL이 조용히 번지는 자리가 둘 더 있다. 아래 두 장치를 지우지 말 것.</b>
      * <ol>

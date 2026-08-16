@@ -55,8 +55,11 @@ import lombok.NoArgsConstructor;
  * <p>쓰기 API(세터·정적 팩토리)를 두지 않는다. 쓰기 경로는 전부 네이티브 SQL이고,
  * 여기 필드는 스키마 정합 검증(ddl-auto=validate)과 테스트 단언용이다.
  *
- * <p>{@code avg_rating}이 NULL인 것은 "리뷰가 없다"는 뜻이며 0점과 구분해야 한다 —
- * 응답까지 NULL로 흘려보낸다.
+ * <p><b>{@code avg_rating}은 NOT NULL이고, 리뷰가 없으면 0이다 (V37).</b> 평점 척도가 1~5라
+ * 실제 평균은 0이 될 수 없고, 그래서 0은 "리뷰가 없다"와만 대응한다. 이 저장 표현은 평점순이
+ * 인덱스로 정렬하기 위한 것이고 — NULL이면 커서 seek이 성립하지 않는다 —
+ * <b>응답의 표시 규칙과는 별개다</b>: 리뷰 0건 장소의 평점은 응답에서 여전히 null로 나간다
+ * ({@code PlacePreviewDto}).
  */
 @Entity
 @Table(
@@ -92,7 +95,7 @@ public class PlaceStats {
     @Column(name = "review_count", nullable = false)
     private int reviewCount;
 
-    @Column(name = "avg_rating", precision = 3, scale = 2)
+    @Column(name = "avg_rating", nullable = false, precision = 3, scale = 2)
     private BigDecimal avgRating;
 
     /**

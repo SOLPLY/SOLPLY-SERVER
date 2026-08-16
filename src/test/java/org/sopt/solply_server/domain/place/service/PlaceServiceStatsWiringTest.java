@@ -340,8 +340,8 @@ class PlaceServiceStatsWiringTest {
   }
 
   /**
-   * <b>평점 없음은 0이 아니라 null이다.</b> 리뷰가 없거나(avg_rating NULL) 배치가 아직 닿지 않은
-   * 장소를 0으로 채우면 "평점 0점"이 되어 최하위 평가와 구분되지 않는다. 리뷰 <em>수</em>는
+   * <b>평점 없음은 0이 아니라 null이다.</b> 배치가 아직 닿지 않아 place_stats에 행이 없는 장소를
+   * 0으로 채우면 "평점 0점"이 되어 최하위 평가와 구분되지 않는다. 리뷰 <em>수</em>는
    * 반대로 0이 정확한 답이라 0이어야 한다 — 두 컬럼의 빈 값 규칙이 다르다는 것이 요점이다.
    */
   @Test
@@ -354,5 +354,30 @@ class PlaceServiceStatsWiringTest {
 
     assertThat(preview.avgRating()).isNull();
     assertThat(preview.reviewCount()).isZero();
+  }
+
+  /**
+   * <b>저장은 0, 응답은 null (V37).</b> 위 테스트가 "행이 없는" 경우라면 이쪽은 <b>행이 있고 값이
+   * 실제로 0인</b> 경우다 — 평점순이 리뷰 0건 장소를 맨 뒤에 실으려고 컬럼을 NOT NULL 0으로 조이면서
+   * 정상 상태가 됐다. 그 저장 표현이 화면까지 새어 나가면 "평점 0점"으로 읽히므로 여기서 막는다.
+   *
+   * <p>판정 기준은 평점 값이 아니라 <b>리뷰 수</b>다. 0점이라는 값 자체를 트리거로 삼으면 언젠가
+   * 척도가 바뀌었을 때 실제 0점 평가를 함께 지운다.
+   */
+  @Test
+  @DisplayName("리뷰 0건 행의 평점 0은 응답에서 null로 되돌아간다")
+  void hidesZeroRatingWhenNoReviews() {
+    Place place = placeEntity();
+    given(placeListDbQueryRepository.findRatingRows(
+        List.of(TOWN_ID), null, null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+        .willReturn(List.of(new RatingRow(1L, BigDecimal.ZERO, 0L, 7L)));
+    given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
+
+    PlacePreviewDto preview = getPlaces(false, PlaceSortType.RATING).places().get(0);
+
+    assertThat(preview.avgRating()).isNull();
+    assertThat(preview.reviewCount()).isZero();
+    // 표시 계약이 다른 값까지 지우지는 않는다
+    assertThat(preview.bookmarkCount()).isEqualTo(7L);
   }
 }

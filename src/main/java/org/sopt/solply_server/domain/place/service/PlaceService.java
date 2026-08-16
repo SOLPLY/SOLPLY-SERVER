@@ -591,7 +591,8 @@ public class PlaceService {
               p.getTown().getId(),
               stats == null ? 0L : stats.bookmarkCount(),
               stats == null ? 0L : stats.reviewCount(),
-              // 행이 없으면 평점도 없다 — 0으로 채우면 "평점 0점"이 된다 (PlacePreviewDto javadoc)
+              // 행이 없으면 평점도 없다. 행이 있어도 리뷰 0건이면 저장값 0이 응답에서 null이 된다 —
+              // 그 되돌림은 PlacePreviewDto#of가 리뷰 수를 보고 한 자리에서 한다
               stats == null ? null : stats.avgRating());
         })
         .toList();
