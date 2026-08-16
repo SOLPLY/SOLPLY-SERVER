@@ -9,7 +9,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.util.TagBitmask;
+import org.sopt.solply_server.domain.place.util.TagMasks;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -443,29 +443,6 @@ public class PlaceListDbQueryRepository {
                     (BigDecimal) row[5]));
         }
         return result;
-    }
-
-    /**
-     * 요청의 태그 조건을 그룹별 마스크 <b>셋</b>으로 옮긴 것. 0은 "이 그룹의 술어를 붙이지 않는다".
-     *
-     * <p>세 그룹은 AND로 엮이므로 <b>한 마스크로 합치면 안 된다</b> — 합치는 순간 OR가 되어 의미가
-     * 뒤집힌다. 그룹 안의 OR만 마스크가 흡수한다 ({@code TagBitmask} 참조).
-     *
-     * <p>메인 태그가 없으면 서브 조건은 통째로 버린다. 북마크 검색의 {@code PlaceTagMatcher}가
-     * {@code mainTagId == null}이면 원본을 그대로 돌려주는 것과 같은 규칙이고, 두 경로가 여기서
-     * 갈리면 같은 요청이 경로마다 다른 답을 낸다.
-     */
-    private record TagMasks(long main, long subA, long subB) {
-
-        static TagMasks of(Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds) {
-            if (mainTagId == null) {
-                return new TagMasks(0L, 0L, 0L);
-            }
-            return new TagMasks(
-                    TagBitmask.of(mainTagId),
-                    TagBitmask.ofAny(subTagAIds),
-                    TagBitmask.ofAny(subTagBIds));
-        }
     }
 
     /**
