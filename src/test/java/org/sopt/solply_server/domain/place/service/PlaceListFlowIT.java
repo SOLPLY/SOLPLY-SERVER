@@ -38,8 +38,14 @@ import org.springframework.test.context.DynamicPropertySource;
  * 걷는다. 조각별 테스트(배치 IT·쿼리 IT·커서 단위 테스트)는 이음새를 못 지키는데, 이 기능의 실제
  * 버그 2건(LATEST 커서 누락, 표시 이중 계산)이 전부 이음새에서 났다.
  *
- * <p>덮는 정렬 축은 POPULAR·LATEST 둘이고, 커서 왕복·필터 지문 거부도 여기서 사슬 수준으로 문다.
- * 북마크 검색(페이징 없는 별도 조립)도 같은 무대에서 걷는다.
+ * <p>덮는 정렬 축은 여섯이고(POPULAR·LATEST·RATING·REVIEW_COUNT·BOOKMARK_COUNT·DISTANCE),
+ * 커서 왕복·필터 지문 거부도 여기서 사슬 수준으로 문다. 북마크 검색(페이징 없는 별도 조립)도
+ * 같은 무대에서 걷는다.
+ *
+ * <p><b>setUp 픽스처 하나가 새 정렬 넷의 무대를 겸한다.</b> 인기 점수를 만들려고 심은 북마크·리뷰가
+ * 그대로 카운트 축과 평점 축의 값이 되고(리뷰 5건씩 두 장소 · 북마크 5건과 4건 · 평점 5.00과 1.00),
+ * 덕분에 각 정렬의 순서가 <b>서로 다르게</b> 나온다 — 같은 순서를 내는 픽스처에서는 정렬 분기가
+ * 통째로 뒤바뀌어도 전부 그린이다.
  *
  * <p><b>두 배치를 항상 함께 돌리는 것이 이 파일의 픽스처 규약이다.</b> 카운트 회차가 표시 값을
  * 채우고 점수 회차가 채점하므로, 하나만 돌리면 "행은 있는데 전부 0점"이 되어 순위 단언이 통째로
@@ -432,7 +438,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         assertThat(issued.sort()).isEqualTo(PlaceSortType.POPULAR);
         assertThat(issued.placeId()).isEqualTo(placeA);
         // placeA의 점수 ≈1.609434 — 커서가 placeC(2.0)의 좌표를 실으면 placeA가 다음 페이지에 중복된다
-        assertThat(issued.sortKey()).isCloseTo(1.609434, within(0.00001));
+        assertThat(issued.key(0)).isCloseTo(1.609434, within(0.00001));
     }
 
     /**
@@ -491,9 +497,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         long mainTagId = createMainTag();
 
         PlaceFilterGetRequest otherTown = new PlaceFilterGetRequest(
-                otherTownId, false, null, null, null, PlaceSortType.POPULAR, cursor, 2);
+                otherTownId, false, null, null, null, PlaceSortType.POPULAR, cursor, 2, null, null);
         PlaceFilterGetRequest otherTag = new PlaceFilterGetRequest(
-                townId, false, mainTagId, null, null, PlaceSortType.POPULAR, cursor, 2);
+                townId, false, mainTagId, null, null, PlaceSortType.POPULAR, cursor, 2, null, null);
 
         assertThatThrownBy(() -> placeService.getPlaces(me, otherTown))
                 .isInstanceOf(BusinessException.class)
@@ -547,6 +553,147 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_PLACE_CURSOR);
+    }
+
+    // === 정렬 확장 4종 (2026-08-16) ===
+
+    /**
+     * <b>평점 높은 순.</b> setUp 픽스처가 그대로 이 정렬의 무대가 된다 —
+     * placeC는 5점 5건(평점 5.00), placeB는 1점 5건(평점 1.00), placeA는 리뷰가 없어 평점이 NULL이다.
+     *
+     * <p>그래서 이 한 테스트가 두 가지를 함께 문다: 평점 내림차순이라는 순서와, <b>평점이 없는
+     * 장소(placeA)가 아예 나오지 않는다</b>는 계약. placeA는 북마크가 4건이나 되는 장소라
+     * "활동이 없어서 빠진 것"이 아님이 픽스처로 드러난다.
+     *
+     * <p>페이지 크기를 1로 두어 커서가 실제로 발급·소비되게 한다 — 커서 키가 (평점, 리뷰 수) 둘인
+     * 유일한 정렬이라, 한 칸만 실리면 여기서 두 번째 페이지가 비거나 첫 항목이 되돌아온다.
+     */
+    @Test
+    void 평점순은_평점_내림차순이고_평점_없는_장소는_빠지며_커서가_이어진다() {
+        PlaceFilterGetResponse page1 =
+                placeService.getPlaces(me, sortRequest(townId, PlaceSortType.RATING, null, 1));
+
+        assertThat(ids(page1)).containsExactly(placeC);
+        assertThat(page1.nextCursor()).isNotNull();
+        // 커서가 두 칸(평점 5.00, 리뷰 5건)을 싣는다 — 동점 구간에서 seek이 재개될 좌표다
+        assertThat(PlaceListCursor.decode(page1.nextCursor()).sortKeys())
+                .containsExactly(5.0, 5.0);
+
+        PlaceFilterGetResponse page2 = placeService.getPlaces(
+                me, sortRequest(townId, PlaceSortType.RATING, page1.nextCursor(), 1));
+
+        assertThat(ids(page2)).containsExactly(placeB);
+        // placeA(평점 NULL)는 어느 페이지에도 없다
+        assertThat(page2.nextCursor()).isNull();
+    }
+
+    /**
+     * <b>리뷰 많은 순.</b> placeB·placeC가 나란히 5건이라 <b>1위 자리가 동점</b>이고, 그 경계를
+     * 페이지가 가른다 — 타이브레이크(id ASC)가 없거나 등호 분기가 빠지면 placeC가 통째로 누락되거나
+     * 두 페이지에 겹쳐 나온다. 리뷰가 없는 placeA는 0건으로 맨 뒤에 남는다(평점순과 달리 제외하지
+     * 않는다 — 0은 "리뷰가 0개"라는 정확한 사실이다).
+     */
+    @Test
+    void 리뷰순은_리뷰수_내림차순이고_동점_경계에서_항목을_흘리지_않는다() {
+        PlaceFilterGetResponse page1 =
+                placeService.getPlaces(me, sortRequest(townId, PlaceSortType.REVIEW_COUNT, null, 1));
+
+        assertThat(ids(page1)).containsExactly(placeB);   // 동점 5건 중 id가 작은 쪽
+
+        PlaceFilterGetResponse page2 = placeService.getPlaces(
+                me, sortRequest(townId, PlaceSortType.REVIEW_COUNT, page1.nextCursor(), 2));
+
+        assertThat(ids(page2)).containsExactly(placeC, placeA);
+        assertThat(ids(page1)).doesNotContainAnyElementsOf(ids(page2));
+    }
+
+    /**
+     * <b>북마크 많은 순 — 인기순과 다른 축이다.</b> 픽스처의 북마크 수는 B 5건 · A 4건 · C 0건인데
+     * 인기 점수 순서는 C · A · B라, 두 정렬이 같은 SQL을 쓰면 순서가 정확히 뒤집혀 드러난다.
+     * 그 대비를 한 테스트 안에서 함께 단언한다.
+     *
+     * <p>placeC에 대한 내 북마크는 배치 <em>이후</em>라 이번 회차 카운트에 없다 — 정렬도 표시값과
+     * 같은 place_stats 값을 보므로 0건 취급이 맞다.
+     */
+    @Test
+    void 북마크순은_누적_북마크수_내림차순이고_인기순과_순서가_다르다() {
+        PlaceFilterGetResponse byBookmark = placeService.getPlaces(
+                me, sortRequest(townId, PlaceSortType.BOOKMARK_COUNT, null, 3));
+
+        assertThat(ids(byBookmark)).containsExactly(placeB, placeA, placeC);
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 3))))
+                .containsExactly(placeC, placeA, placeB);
+    }
+
+    /** 새 정렬도 커서의 필터 지문 검증을 그대로 받는다 — 지문은 정렬과 직교한 장치다 */
+    @Test
+    void 새_정렬의_커서도_다른_필터_요청에_재사용하면_거부한다() {
+        String cursor = placeService
+                .getPlaces(me, sortRequest(townId, PlaceSortType.BOOKMARK_COUNT, null, 1))
+                .nextCursor();
+        long otherTownId = createTown(TOWN_NAME_PREFIX + "북마크순");
+
+        assertThatThrownBy(() -> placeService.getPlaces(
+                me, sortRequest(otherTownId, PlaceSortType.BOOKMARK_COUNT, cursor, 1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PLACE_CURSOR);
+    }
+
+    /**
+     * <b>거리순은 기준점 없이 성립하지 않는다.</b> 좌표가 없으면 400(PLACE-005)으로 끊는다 —
+     * 임의의 기준점(동네 중심 등)을 지어내면 "가까운 순"이라는 말이 사용자 위치와 무관해진다.
+     *
+     * <p>위도만 온 요청도 같은 취급이다. 한쪽만으로는 점을 찍을 수 없으므로 "좌표가 없다"와
+     * 구분할 이유가 없다.
+     *
+     * <p>다른 정렬은 좌표를 요구하지 않는다는 것도 함께 확인한다 — 거절 조건이 정렬 밖으로 새면
+     * 기존 요청이 통째로 400이 된다.
+     */
+    @Test
+    void 거리순은_좌표가_없으면_거절하고_다른_정렬은_영향받지_않는다() {
+        assertThatThrownBy(() ->
+                placeService.getPlaces(me, distanceRequest(townId, null, 2, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_PLACE_COORDINATES);
+
+        assertThatThrownBy(() ->
+                placeService.getPlaces(me, distanceRequest(townId, null, 2, 37.5, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_PLACE_COORDINATES);
+
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 2))))
+                .containsExactly(placeC, placeA);
+    }
+
+    /**
+     * <b>거리순의 순서·커서 계약.</b> 기준점에서 가까운 순으로 나오고, 두 번째 페이지는 커서에
+     * 박제된 기준 좌표로 이어진다 — 2페이지 요청이 <em>다른</em> 좌표를 보내도(걸어서 이동) 순서가
+     * 흔들리지 않아야 한다는 것이 이 정렬의 핵심 계약이다.
+     *
+     * <p>좌표가 없는 placeC는 어느 페이지에도 나오지 않는다.
+     */
+    @Test
+    void 거리순은_가까운_순이고_커서의_기준_좌표가_파라미터보다_우선한다() {
+        // 기준점(37.50, 127.00)에서 A → B → (C는 좌표 없음)
+        jdbcTemplate.update(
+                "UPDATE places SET latitude = 37.501, longitude = 127.001 WHERE id = ?", placeA);
+        jdbcTemplate.update(
+                "UPDATE places SET latitude = 37.510, longitude = 127.010 WHERE id = ?", placeB);
+
+        PlaceFilterGetResponse page1 = placeService.getPlaces(
+                me, distanceRequest(townId, null, 1, 37.50, 127.00));
+
+        assertThat(ids(page1)).containsExactly(placeA);
+        assertThat(page1.nextCursor()).isNotNull();
+
+        // 2페이지는 기준점에서 멀찍이 떨어진 좌표를 보낸다 — 무시되고 커서의 기준점이 이긴다
+        PlaceFilterGetResponse page2 = placeService.getPlaces(
+                me, distanceRequest(townId, page1.nextCursor(), 5, 38.90, 128.90));
+
+        assertThat(ids(page2)).containsExactly(placeB);
     }
 
     /**
@@ -752,15 +899,28 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     private PlaceFilterGetRequest popularRequest(long town, String cursor, Integer size) {
+        return sortRequest(town, PlaceSortType.POPULAR, cursor, size);
+    }
+
+    /** 좌표 없는 목록 요청. 거리순 외의 정렬은 좌표를 읽지 않는다 */
+    private PlaceFilterGetRequest sortRequest(
+            long town, PlaceSortType sort, String cursor, Integer size) {
         return new PlaceFilterGetRequest(
-                town, false, null, null, null, PlaceSortType.POPULAR, cursor, size);
+                town, false, null, null, null, sort, cursor, size, null, null);
+    }
+
+    /** 거리순 요청. 좌표를 null로 주면 "좌표 없는 거리순"이 되어 거절 경로를 밟는다 */
+    private PlaceFilterGetRequest distanceRequest(
+            long town, String cursor, Integer size, Double lat, Double lng) {
+        return new PlaceFilterGetRequest(
+                town, false, null, null, null, PlaceSortType.DISTANCE, cursor, size, lat, lng);
     }
 
     /** 최신순 + 태그 필터. 마스크가 0으로 남는 회귀는 무필터 조회로는 보이지 않는다. */
     private PlaceFilterGetRequest latestTagRequest(long town, long option1TagId) {
         return new PlaceFilterGetRequest(
                 town, false, SEED_MAIN_TAG, List.of(option1TagId), null,
-                PlaceSortType.LATEST, null, 10);
+                PlaceSortType.LATEST, null, 10, null, null);
     }
 
     /**
@@ -775,14 +935,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     private PlaceFilterGetRequest latestRequest(long town, String cursor, Integer size) {
-        return new PlaceFilterGetRequest(
-                town, false, null, null, null, PlaceSortType.LATEST, cursor, size);
+        return sortRequest(town, PlaceSortType.LATEST, cursor, size);
     }
 
     /** 북마크 검색은 커서를 발급하지 않으므로 인자에도 두지 않는다 (size는 무시됨을 보이려고 남긴다) */
     private PlaceFilterGetRequest bookmarkRequest(PlaceSortType sort, Long mainTagId, Integer size) {
         return new PlaceFilterGetRequest(
-                townId, true, mainTagId, null, null, sort, null, size);
+                townId, true, mainTagId, null, null, sort, null, size, null, null);
     }
 
     private List<Long> ids(PlaceFilterGetResponse response) {

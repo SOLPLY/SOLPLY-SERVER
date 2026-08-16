@@ -134,7 +134,8 @@ class PlaceServiceSkeletonCacheTest {
 
     private List<PlacePreviewDto> listPlaces() {
         return placeService.getPlaces(USER_ID, new PlaceFilterGetRequest(
-                TOWN_ID, false, null, null, null, PlaceSortType.POPULAR, null, null)).places();
+                TOWN_ID, false, null, null, null, PlaceSortType.POPULAR, null, null, null, null))
+                .places();
     }
 
     /**

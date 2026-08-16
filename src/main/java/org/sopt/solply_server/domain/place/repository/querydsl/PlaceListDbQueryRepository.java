@@ -15,24 +15,34 @@ import org.springframework.stereotype.Repository;
 /**
  * 장소 목록을 DB에서 정렬·필터·페이징한다 — 목록 조회의 <b>유일한</b> 경로다.
  *
- * <p><b>두 정렬 모두 place_stats 단독이다 (V34).</b> 기준 테이블도, 정렬 축도, 필터 축도, 표시값도
- * 전부 한 테이블 안에 있어 <b>조인이 하나도 없다.</b> 그것이 이 설계의 목적 그 자체다 — 조인이
+ * <p><b>정적 정렬 다섯은 place_stats 단독이다 (V34·V36).</b> 기준 테이블도, 정렬 축도, 필터 축도,
+ * 표시값도 전부 한 테이블 안에 있어 <b>조인이 하나도 없다.</b> 그것이 이 설계의 목적 그 자체다 — 조인이
  * 있으면 옵티마이저에게 조인 순서·세미조인 전략의 자유도가 생기고, 그 선택은 LIMIT 조기 종료를
  * 비용에 세지 못하는 맹점에 노출돼 입력(태그 규모 × 지역 크기)에 따라 계획이 흔들린다. 조건부
  * 힌트로 그 맹점을 우회하는 안은 임계가 요청 형상 한 점에서만 유효함이 실측으로 확정돼 철회했고
  * ({@code load-test/campaigns/2026-08-11_region-size-threshold}), 대신 선택지 자체를 없앴다.
  *
- * <p><b>불변식: place_stats에 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 그래서 두 쿼리 어느
- * 쪽도 {@code places}를 되짚어 활성 여부를 묻지 않는다. 지키는 주체는 어드민 쓰기 경로 하나다 —
+ * <p><b>거리순만 예외다 — {@code places}와 조인한다.</b> 좌표는 place_stats에 없고, 비정규화해도
+ * 인덱스가 만들어 줄 수 있는 순서가 없다(기준점이 요청마다 다르다). 그래서 이 경로는 정렬·LIMIT을
+ * DB에 맡기지 않고 <b>후보 전량을 커버링으로 훑어</b> 앱에서 정렬한다. 옵티마이저에게 남는 선택지가
+ * 없다는 성질은 여기서도 유지된다 — LIMIT이 없으니 "조기 종료를 못 세는 맹점"이 애초에 성립하지
+ * 않는다.
+ *
+ * <p><b>불변식: place_stats에 행이 있는 장소 = 목록에 나와도 되는 장소.</b> 그래서 어느 쿼리도
+ * {@code places}를 되짚어 활성 여부를 묻지 않는다(거리순의 조인도 좌표만 읽는다).
+ * 지키는 주체는 어드민 쓰기 경로 하나다 —
  * 생성·수정·재활성이 행을 짓고({@code PlaceStatsRepository#upsertRowsForActivePlaces}의
  * {@code WHERE p.active = 1}), 삭제가 그 자리에서 행을 지운다
  * ({@code AdminPlaceService#deletePlace}). <b>노출 창은 양쪽 다 즉시</b>다.
  * 두 배치는 값 칸만 정할 뿐 행의 존재에 관여하지 않는다.
  *
- * <p><b>커서 계약.</b> {@code PlaceListCursor} v4. sortKey는 POPULAR이 점수의 double,
- * LATEST가 createdAt의 epoch 초(UTC)이고, 정렬은 POPULAR (점수 DESC, id ASC) /
- * LATEST (생성일 DESC, id DESC)다. 발급하는 쪽({@code PlaceService})과 해석하는 쪽(여기)이
- * 한 쌍이라 한쪽만 바꾸면 페이징이 조용히 어긋난다.
+ * <p><b>커서 계약.</b> {@code PlaceListCursor} v5 — 정렬 키가 <b>튜플</b>이다. 정렬과 커서 키:
+ * POPULAR (점수 DESC, id ASC / 키: 점수) · LATEST (생성일 DESC, id DESC / 키: epoch 초 UTC) ·
+ * RATING (평점 DESC, 리뷰 수 DESC, id ASC / 키: 평점·리뷰 수) ·
+ * REVIEW_COUNT·BOOKMARK_COUNT (카운트 DESC, id ASC / 키: 카운트) ·
+ * DISTANCE (거리 ASC, id ASC / 키: 기준 위도·경도·거리, 정렬은 여기가 아니라 앱에서).
+ * 발급하는 쪽({@code PlaceService})과 해석하는 쪽(여기)이 한 쌍이라 한쪽만 바꾸면 페이징이
+ * 조용히 어긋난다.
  *
  * <p>태그 필터 의미론은 북마크 검색의 {@code PlaceTagMatcher}와 같다 (타입 내 OR, 타입 간 AND,
  * 메인 태그가 없으면 서브 태그는 무시).
@@ -218,6 +228,215 @@ public class PlaceListDbQueryRepository {
                     ((Number) row[2]).longValue(),
                     ((Number) row[3]).longValue(),
                     (BigDecimal) row[4]));
+        }
+        return result;
+    }
+
+    /**
+     * 평점순 row. 정렬 키가 둘(평점·리뷰 수)이라 그 둘이 앞자리에 온다.
+     * {@code avgRating}이 null인 행은 이 정렬에 애초에 실리지 않는다 ({@link #findRatingRows}).
+     */
+    public record RatingRow(long placeId, BigDecimal avgRating, long reviewCount,
+                            long bookmarkCount) {}
+
+    /** 리뷰 수·북마크 수 정렬의 공용 row — 정렬 키가 이미 표시값 안에 있어 따로 실을 것이 없다 */
+    public record CountRow(long placeId, long bookmarkCount, long reviewCount,
+                           BigDecimal avgRating) {}
+
+    /** 거리순 후보. 정렬은 앱이 하므로 여기서는 좌표와 표시값만 실어 나른다 */
+    public record DistanceCandidateRow(long placeId, double latitude, double longitude,
+                                       long bookmarkCount, long reviewCount, BigDecimal avgRating) {}
+
+    /**
+     * 평점 높은 순. {@code idx_place_stats_town_rating}
+     * (town_id, avg_rating DESC, review_count DESC, place_id, tag_bitmask, bookmark_count)가
+     * 필터·정렬·타이브레이크를 흡수하고 말단 둘이 커버링을 만든다 (V36).
+     *
+     * <p><b>⚠️ {@code avg_rating IS NOT NULL}을 지우지 말 것.</b> 리뷰가 없는 장소의 평점은 NULL이고
+     * 그것은 "0점"이 아니라 "평점이 없다"는 뜻이라 평점 순서 위에 자리가 없다. 더 결정적인 이유는
+     * <b>커서</b>다 — seek 조건은 NULL과의 비교가 전부 NULL이라, 술어를 빼면 그 행들이 첫 페이지에만
+     * 나타났다가 두 번째 페이지부터 조용히 사라진다. 어차피 못 싣는다면 술어로 끊는 편이 정직하다.
+     * 인기순의 {@code score_calculated_at IS NOT NULL}과 같은 성질의 선택이다.
+     *
+     * <p><b>seek이 2단인 이유.</b> 평점은 DECIMAL(3,2)라 동점이 흔하고, 동점을 리뷰 수로 한 번 더
+     * 가르므로 커서 조건도 {@code (r < cr) OR (r = cr AND (c < cc OR (c = cc AND id > cid)))}로
+     * 세 겹이 된다. 안쪽 두 겹 중 하나라도 빠지면 <b>같은 평점·같은 리뷰 수 구간이 통째로 누락되거나
+     * 중복된다</b> — 동점이 흔한 축이라 실제로 밟는 경로다.
+     *
+     * <p>커서 평점을 double로 바인딩하는 근거는 인기순과 같다 ({@link #findPopularRows} javadoc).
+     * 리뷰 수는 INT라 double 왕복에서 값이 상하지 않는다.
+     */
+    @SuppressWarnings("unchecked")
+    public List<RatingRow> findRatingRows(
+            List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
+            Double cursorRating, Long cursorReviewCount, Long cursorPlaceId, int limit) {
+
+        TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
+        boolean useCursor =
+                cursorRating != null && cursorReviewCount != null && cursorPlaceId != null;
+
+        StringBuilder sql = new StringBuilder("""
+                SELECT ps.place_id, ps.avg_rating, ps.review_count, ps.bookmark_count
+                FROM place_stats ps
+                WHERE ps.town_id IN (:townIds)
+                  AND ps.avg_rating IS NOT NULL
+                """);
+        appendTagFilters(sql, masks);
+        if (useCursor) {
+            sql.append("""
+                      AND (ps.avg_rating < :cursorRating
+                           OR (ps.avg_rating = :cursorRating
+                               AND (ps.review_count < :cursorReviewCount
+                                    OR (ps.review_count = :cursorReviewCount
+                                        AND ps.place_id > :cursorPlaceId))))
+                    """);
+        }
+        sql.append(
+                "ORDER BY ps.avg_rating DESC, ps.review_count DESC, ps.place_id ASC LIMIT :limitSize");
+
+        Query query = em.createNativeQuery(sql.toString())
+                .setParameter("townIds", townIds)
+                .setParameter("limitSize", limit);
+        bindTagFilters(query, masks);
+        if (useCursor) {
+            query.setParameter("cursorRating", cursorRating);
+            query.setParameter("cursorReviewCount", cursorReviewCount);
+            query.setParameter("cursorPlaceId", cursorPlaceId);
+        }
+
+        List<Object[]> rows = query.getResultList();
+        List<RatingRow> result = new ArrayList<>(rows.size());
+        for (Object[] row : rows) {
+            result.add(new RatingRow(
+                    ((Number) row[0]).longValue(),
+                    (BigDecimal) row[1],
+                    ((Number) row[2]).longValue(),
+                    ((Number) row[3]).longValue()));
+        }
+        return result;
+    }
+
+    /**
+     * 리뷰 많은 순. {@code idx_place_stats_town_reviews}가 정렬을 만든다 (V36).
+     * 술어를 하나도 걸지 않는 것이 평점순과의 차이다 — {@code review_count}는 NOT NULL이고
+     * 0은 "리뷰가 0개"라는 정확한 사실이라 맨 뒤에 놓이면 그만이다.
+     */
+    public List<CountRow> findReviewCountRows(
+            List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
+            Long cursorCount, Long cursorPlaceId, int limit) {
+        return findCountRows("review_count", townIds, mainTagId, subTagAIds, subTagBIds,
+                cursorCount, cursorPlaceId, limit);
+    }
+
+    /**
+     * 북마크 많은 순. {@code idx_place_stats_town_bookmarks}가 정렬을 만든다 (V36).
+     *
+     * <p><b>인기순과 다른 정렬이다.</b> 인기 점수는 시간 감쇠와 평점을 섞은 복합 점수이고 이쪽은
+     * 누적 원값이라, 같은 동네에서도 두 순서는 갈린다.
+     */
+    public List<CountRow> findBookmarkCountRows(
+            List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
+            Long cursorCount, Long cursorPlaceId, int limit) {
+        return findCountRows("bookmark_count", townIds, mainTagId, subTagAIds, subTagBIds,
+                cursorCount, cursorPlaceId, limit);
+    }
+
+    /**
+     * 카운트 축 두 정렬의 공용 본문. 정렬 컬럼 이름만 다르고 SELECT·필터·seek·타이브레이크가 전부
+     * 같아, <b>한 문장을 공유해야</b> 두 정렬의 의미론이 구조적으로 붙어 있는다 — 복사해 두면
+     * 한쪽만 고치는 실수가 조용히 통과한다 ({@code appendTagFilters}와 같은 이유).
+     *
+     * <p>{@code countColumn}은 호출부가 리터럴로만 넘기는 값이라 외부 입력이 닿지 않는다.
+     * <b>이 메서드를 public으로 열지 말 것</b> — 그 순간 컬럼 이름이 입력이 되어 성질이 바뀐다.
+     */
+    @SuppressWarnings("unchecked")
+    private List<CountRow> findCountRows(
+            String countColumn,
+            List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
+            Long cursorCount, Long cursorPlaceId, int limit) {
+
+        TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
+        boolean useCursor = cursorCount != null && cursorPlaceId != null;
+
+        StringBuilder sql = new StringBuilder("""
+                SELECT ps.place_id, ps.bookmark_count, ps.review_count, ps.avg_rating
+                FROM place_stats ps
+                WHERE ps.town_id IN (:townIds)
+                """);
+        appendTagFilters(sql, masks);
+        if (useCursor) {
+            sql.append("  AND (ps.").append(countColumn).append(" < :cursorCount\n")
+                    .append("       OR (ps.").append(countColumn)
+                    .append(" = :cursorCount AND ps.place_id > :cursorPlaceId))\n");
+        }
+        sql.append("ORDER BY ps.").append(countColumn)
+                .append(" DESC, ps.place_id ASC LIMIT :limitSize");
+
+        Query query = em.createNativeQuery(sql.toString())
+                .setParameter("townIds", townIds)
+                .setParameter("limitSize", limit);
+        bindTagFilters(query, masks);
+        if (useCursor) {
+            query.setParameter("cursorCount", cursorCount);
+            query.setParameter("cursorPlaceId", cursorPlaceId);
+        }
+
+        List<Object[]> rows = query.getResultList();
+        List<CountRow> result = new ArrayList<>(rows.size());
+        for (Object[] row : rows) {
+            result.add(new CountRow(
+                    ((Number) row[0]).longValue(),
+                    ((Number) row[1]).longValue(),
+                    ((Number) row[2]).longValue(),
+                    (BigDecimal) row[3]));
+        }
+        return result;
+    }
+
+    /**
+     * 거리순 <b>후보</b>. 정렬도 LIMIT도 없다 — 기준점이 요청마다 달라 인덱스가 만들 수 있는 순서가
+     * 없으므로, 필터를 통과한 후보를 전량 실어 보내고 정렬은 앱({@code DistanceSort})이 맡는다.
+     * 상한은 "시 단위 후보 ~1,800건"이고, 그 규모의 커버링 스캔을 수용한다는 것은 다중 town의
+     * filesort를 수용한 근거와 같다.
+     *
+     * <p><b>이 경로만 {@code places}와 조인한다.</b> 조인의 방향은 place_stats → places의 PK
+     * 룩업뿐이라 계획이 흔들릴 자유도가 없다 — 세미조인도 아니고 LIMIT 조기 종료도 없다.
+     *
+     * <p><b>좌표가 NULL인 장소는 여기서 걸러 낸다.</b> 거리를 잴 수 없는 장소를 "거리 무한대"로
+     * 뒤에 붙이면 커서 seek이 NULL 비교에 걸려 페이지 경계에서 조용히 사라진다 — 평점순이
+     * {@code avg_rating IS NOT NULL}을 거는 것과 같은 이유다. WHERE에서 끊는 편이 정직하다.
+     */
+    @SuppressWarnings("unchecked")
+    public List<DistanceCandidateRow> findDistanceCandidates(
+            List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds) {
+
+        TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
+
+        StringBuilder sql = new StringBuilder("""
+                SELECT ps.place_id, p.latitude, p.longitude,
+                       ps.bookmark_count, ps.review_count, ps.avg_rating
+                FROM place_stats ps
+                JOIN places p ON p.id = ps.place_id
+                WHERE ps.town_id IN (:townIds)
+                  AND p.latitude IS NOT NULL
+                  AND p.longitude IS NOT NULL
+                """);
+        appendTagFilters(sql, masks);
+
+        Query query = em.createNativeQuery(sql.toString())
+                .setParameter("townIds", townIds);
+        bindTagFilters(query, masks);
+
+        List<Object[]> rows = query.getResultList();
+        List<DistanceCandidateRow> result = new ArrayList<>(rows.size());
+        for (Object[] row : rows) {
+            result.add(new DistanceCandidateRow(
+                    ((Number) row[0]).longValue(),
+                    ((Number) row[1]).doubleValue(),
+                    ((Number) row[2]).doubleValue(),
+                    ((Number) row[3]).longValue(),
+                    ((Number) row[4]).longValue(),
+                    (BigDecimal) row[5]));
         }
         return result;
     }

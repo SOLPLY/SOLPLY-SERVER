@@ -143,7 +143,8 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     }
 
     private PlaceFilterGetRequest request(PlaceSortType sort, String cursor) {
-        return new PlaceFilterGetRequest(townId, false, null, null, null, sort, cursor, 2);
+        return new PlaceFilterGetRequest(
+                townId, false, null, null, null, sort, cursor, 2, null, null);
     }
 
     private long createTown() {

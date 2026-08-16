@@ -33,7 +33,9 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.DistanceCandidateRow;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.place.sort.DistanceSort;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.PlaceTagMatcher;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
@@ -230,19 +232,23 @@ public class PlaceService {
   //=== Private Methods ===//
 
   /**
-   * 목록 경로가 다루는 <b>정렬 축의 공통 형태</b>. 두 정렬의 row는 정렬 키의 원본 타입만 다르고
-   * (popular_score의 double / createdAt의 LocalDateTime) 그 뒤 처리 — hasNext 판정, 페이지 채우기,
-   * 커서 발급 — 은 완전히 같다. 커서가 sortKey를 double 하나로 담으므로 그 지점에서 어차피
-   * 한 축으로 합쳐지고, 그 합류를 쿼리 직후로 당기면 이후 로직에 정렬 분기가 사라진다.
+   * 목록 경로가 다루는 <b>정렬 축의 공통 형태</b>. 정렬마다 row는 정렬 키의 개수와 원본 타입만
+   * 다르고 (인기순의 double 하나 / 최신순의 LocalDateTime 하나 / 평점순의 둘 / 거리순의 셋)
+   * 그 뒤 처리 — hasNext 판정, 페이지 채우기, 커서 발급 — 은 완전히 같다. 커서가 정렬 키를 double
+   * 튜플로 담으므로 그 지점에서 어차피 한 형태로 합쳐지고, 그 합류를 쿼리 직후로 당기면 이후
+   * 로직에 정렬 분기가 사라진다.
    *
    * <p>레포지토리 쪽 record를 이 형태로 통일하지 않은 것은 의도다 — 그쪽은 "어떤 컬럼을 읽었는가"를
    * 그대로 드러내는 게 맞고, "정렬 키"라는 추상은 커서를 발급하는 이 경로의 관심사다.
+   *
+   * @param sortKeys 커서에 그대로 실리는 정렬 키 튜플. 길이는 {@code PlaceSortType#keyArity()}와 같다
    */
-  private record DbListRow(long placeId, double sortKey, long bookmarkCount,
+  private record DbListRow(long placeId, List<Double> sortKeys, long bookmarkCount,
                            long reviewCount, BigDecimal avgRating) {}
 
   /**
-   * 장소 목록의 <b>유일한</b> 경로 — 두 정렬 모두 place_stats 단독으로 DB에 맡긴다 (V34).
+   * 장소 목록의 <b>유일한</b> 경로 — 정적 정렬 다섯은 place_stats 단독으로 DB에 맡기고 (V34·V36),
+   * 거리순만 후보를 훑어 앱에서 정렬한다 ({@link #distanceRows}).
    *
    * <p><b>한때 둘이었다.</b> 2026-08-01까지 이 서비스는 동네별 스냅샷을 메모리에 들고 앱에서
    * 정렬하는 캐시 경로(A)와 이 DB 직행 경로(B)를 프로퍼티로 갈라 A/B로 실측했고,
@@ -250,10 +256,15 @@ public class PlaceService {
    * {@code docs/perf/2026-08-01-cache-vs-db-direct.md}에 있다. 여기 남아 있던 "모드 등가",
    * "응답 diff 게이트" 같은 장치는 비교 대상이 사라지면서 함께 걷어냈다.
    *
-   * <p><b>남은 성질 하나는 기억할 것 — 두 정렬의 기준 테이블이 place_stats다.</b> 행이 없는 장소는
+   * <p><b>남은 성질 하나는 기억할 것 — 모든 정렬의 기준 테이블이 place_stats다.</b> 행이 없는 장소는
    * 어느 정렬에도 나오지 않는다. 어드민 생성·재활성이 같은 트랜잭션에서 행을 만들므로 그 경로에는
    * 창이 없고, 어드민을 지나친 변경만 다음 카운트 배치(≤1h)를 기다린다. 근거는
    * {@code PlaceListDbQueryRepository} javadoc.
+   *
+   * <p><b>커서 v5 — 정렬 키 튜플 (2026-08-16).</b> 정렬이 여섯으로 늘면서 "정렬 키는 컬럼 하나"라는
+   * 전제가 깨졌다. 평점순은 (평점, 리뷰 수) 2단으로 seek해야 동점 구간을 흘리지 않고, 거리순은
+   * 기준 좌표를 커서가 들고 다녀야 다음 페이지가 같은 좌표계에서 이어진다. 정렬별 튜플과
+   * 거리순 좌표 우선순위는 {@code PlaceListCursor} 참조.
    *
    * <p><b>커서 v4 — 좌표와 필터 지문 (2026-08-07).</b> v3까지는 여기에 랭킹 <b>세대</b>도 실었다.
    * 스크롤 도중 배치가 돌면 점수가 통째로 갈려 페이지가 어긋나기 때문이었는데, 인기 점수 배치를
@@ -285,45 +296,59 @@ public class PlaceService {
         request.townId(), request.mainTagId(),
         request.subTagAIdList(), request.subTagBIdList());
 
-    Double cursorScore = null;
-    Long cursorSec = null;
-    Long cursorPlaceId = null;
+    PlaceListCursor cursor = null;
     if (request.cursor() != null) {
-      PlaceListCursor cursor = PlaceListCursor.decode(request.cursor());
-      // 정렬 축이 다르면 sortKey의 뜻 자체가 다르고(점수 대 epoch 초), 필터가 다르면 이 커서가
-      // 가리키는 위치가 이 결과 집합 안에 없다. 둘 다 조용히 진행할 수 없는 상태다.
+      cursor = PlaceListCursor.decode(request.cursor());
+      // 정렬 축이 다르면 정렬 키의 뜻 자체가 다르고(점수 대 epoch 초 대 거리), 필터가 다르면
+      // 이 커서가 가리키는 위치가 이 결과 집합 안에 없다. 둘 다 조용히 진행할 수 없는 상태다.
       if (cursor.sort() != sort || !filterPrint.equals(cursor.filterPrint())) {
         throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
       }
-      // LATEST의 sortKey는 정수인 epoch 초라 long 좁힘이 값을 잃지 않는다
-      // (2^53초 ≈ 2.8억 년, DATETIME 범위가 한참 못 미친다).
-      if (sort == PlaceSortType.POPULAR) {
-        cursorScore = cursor.sortKey();
-      } else {
-        cursorSec = (long) cursor.sortKey();
-      }
-      cursorPlaceId = cursor.placeId();
     }
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
+    Long cursorPlaceId = cursor == null ? null : cursor.placeId();
 
     List<DbListRow> rows = switch (sort) {
       case POPULAR -> placeListDbQueryRepository.findPopularRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              cursorScore, cursorPlaceId, fetchSize).stream()
-          .map(r -> new DbListRow(r.placeId(), r.popularScore(), r.bookmarkCount(),
+              key(cursor, 0), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(r.placeId(), List.of(r.popularScore()), r.bookmarkCount(),
               r.reviewCount(), r.avgRating()))
           .toList();
-      // sortKey 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
+      // 정렬 키 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
       // 다른 위치를 가리킨다. 레포지토리 쪽 역변환(LocalDateTime.ofEpochSecond)과 한 쌍이라
       // 한쪽만 고치면 페이징이 조용히 어긋난다 — findLatestRows javadoc 참고.
+      // epoch 초는 정수라 double 왕복이 값을 잃지 않는다(2^53초 ≈ 2.8억 년).
       case LATEST -> placeListDbQueryRepository.findLatestRows(
               leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              cursorSec, cursorPlaceId, fetchSize).stream()
+              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
           .map(r -> new DbListRow(
-              r.placeId(), r.createdAt().toEpochSecond(ZoneOffset.UTC), r.bookmarkCount(),
-              r.reviewCount(), r.avgRating()))
+              r.placeId(), List.of((double) r.createdAt().toEpochSecond(ZoneOffset.UTC)),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
           .toList();
+      // 평점순만 커서 키가 둘이다 — 동점 구간을 리뷰 수로 한 번 더 가르므로, 그 값을 싣지 않으면
+      // 같은 평점 구간에서 seek이 재개될 자리를 찾지 못한다 (findRatingRows javadoc).
+      case RATING -> placeListDbQueryRepository.findRatingRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              key(cursor, 0), longKey(cursor, 1), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(
+              r.placeId(), List.of(r.avgRating().doubleValue(), (double) r.reviewCount()),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
+          .toList();
+      case REVIEW_COUNT -> placeListDbQueryRepository.findReviewCountRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(r.placeId(), List.of((double) r.reviewCount()),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
+          .toList();
+      case BOOKMARK_COUNT -> placeListDbQueryRepository.findBookmarkCountRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(r.placeId(), List.of((double) r.bookmarkCount()),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
+          .toList();
+      case DISTANCE -> distanceRows(leafTownIds, request, cursor, fetchSize);
     };
 
     boolean hasNext = paging && rows.size() > pageSize;
@@ -405,15 +430,97 @@ public class PlaceService {
     // 그것은 컨트롤러의 계약이지 이 메서드의 계약이 아니다.
     String nextCursor = hasNext && !rows.isEmpty()
         ? new PlaceListCursor(sort,
-            rows.get(rows.size() - 1).sortKey(),
+            rows.get(rows.size() - 1).sortKeys(),
             rows.get(rows.size() - 1).placeId(),
             filterPrint).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
 
+  /** 커서의 i번째 정렬 키. 커서가 없으면 null — 레포지토리는 그것을 "첫 페이지"로 읽는다 */
+  private static Double key(PlaceListCursor cursor, int index) {
+    return cursor == null ? null : cursor.key(index);
+  }
+
+  /**
+   * 정수 축(epoch 초·카운트)의 커서 키. 원본이 정수라 double 왕복이 값을 잃지 않으므로
+   * 좁힘이 안전하다 — 실수 축(점수·평점·거리)에는 쓰지 말 것.
+   */
+  private static Long longKey(PlaceListCursor cursor, int index) {
+    return cursor == null ? null : (long) cursor.key(index);
+  }
+
+  /**
+   * 거리순 — <b>정렬을 DB에 맡기지 않는 유일한 목록 경로다.</b> 기준점이 요청마다 달라 인덱스가
+   * 만들 수 있는 순서가 없으므로, 후보를 한 문장으로 훑고({@code findDistanceCandidates})
+   * 정렬·커서 절단은 {@code DistanceSort}가 맡는다.
+   *
+   * <p><b>기준 좌표는 커서에 박제된 것이 항상 이긴다.</b> 두 번째 페이지의 좌표 파라미터가 첫
+   * 페이지와 다른 것은 오류가 아니라 정상이다 — 사용자는 걸으면서 스크롤한다. 페이지마다 기준점을
+   * 새로 잡으면 같은 장소가 두 번 나오거나 통째로 사라지므로, 파라미터는 <b>무시</b>한다.
+   * 그래서 좌표가 필수인 것은 커서가 없는 첫 페이지뿐이다.
+   *
+   * <p>표시값은 후보 행이 이미 실어 온 place_stats 값이다 — 정렬 뒤에 다시 조회하지 않는다.
+   */
+  private List<DbListRow> distanceRows(
+      List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceListCursor cursor,
+      int fetchSize) {
+
+    double refLat;
+    double refLng;
+    Double cursorDistance = null;
+    Long cursorPlaceId = null;
+    if (cursor != null) {
+      refLat = cursor.key(0);
+      refLng = cursor.key(1);
+      cursorDistance = cursor.key(2);
+      cursorPlaceId = cursor.placeId();
+    } else {
+      if (!request.hasCoordinates()) {
+        throw new BusinessException(ErrorCode.MISSING_PLACE_COORDINATES);
+      }
+      refLat = request.latitude();
+      refLng = request.longitude();
+    }
+
+    List<DistanceCandidateRow> candidates = placeListDbQueryRepository.findDistanceCandidates(
+        leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
+    if (candidates.isEmpty()) {
+      return List.of();
+    }
+    Map<Long, DistanceCandidateRow> byId = candidates.stream()
+        .collect(Collectors.toMap(DistanceCandidateRow::placeId, Function.identity()));
+
+    // 페이징이 없는 요청의 fetchSize는 Integer.MAX_VALUE − 1이다. 그 수를 그대로 넘기면 정렬
+    // 컴포넌트가 그 크기로 버퍼를 잡을 수 있어 후보 수로 눌러 준다 — 어차피 그보다 많이 나올 수 없다.
+    List<DistanceSort.Ranked> ranked = DistanceSort.topK(
+        candidates.stream()
+            .map(c -> new DistanceSort.Candidate(c.placeId(), c.latitude(), c.longitude()))
+            .toList(),
+        refLat, refLng, cursorDistance, cursorPlaceId, Math.min(fetchSize, candidates.size()));
+
+    double baseLat = refLat;
+    double baseLng = refLng;
+    return ranked.stream()
+        .map(r -> {
+          DistanceCandidateRow row = byId.get(r.placeId());
+          return new DbListRow(
+              r.placeId(),
+              // 기준 좌표를 함께 실어야 다음 페이지가 같은 좌표계에서 이어진다
+              List.of(baseLat, baseLng, r.distanceMeters()),
+              row.bookmarkCount(), row.reviewCount(), row.avgRating());
+        })
+        .toList();
+  }
+
   /**
    * 북마크 검색: 내 북마크만, latest = 내 북마크 최신순 / popular = 점수순. 페이징 미적용.
+   *
+   * <p><b>정렬 축이 여전히 둘이다.</b> 2026-08-16에 목록 정렬이 여섯으로 늘었지만 이 경로는
+   * POPULAR만 순서를 덮고 <b>나머지는 전부 내 북마크 최신순</b>이다. 페이징이 없어 상한이 "내가
+   * 북마크한 수"이므로 새 축을 여기까지 넓힐 값어치가 없고, 거리순은 기준 좌표라는 파라미터가
+   * 하나 더 붙어 계약이 갈린다 — 그래서 좌표 요구도 목록 경로에만 있다. 넓혀야 할 날이 오면
+   * "이 경로는 앱에서 조립한다"는 성질 위에서 정렬만 얹으면 된다.
    *
    * <p><b>목록 경로와 달리 정렬을 DB에 맡기지 않는다.</b> 상한이 "한 사용자가 이 동네들에서
    * 북마크한 수"라 애초에 작고, {@code orderedIds}가 실어 오는 <em>북마크 최신순</em>은 SQL로

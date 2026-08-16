@@ -278,7 +278,10 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
      */
     @Test
     void 세_모드의_응답과_커서가_완전히_같다() {
-        for (PlaceSortType sort : PlaceSortType.values()) {
+        // 정렬 축은 이 게이트의 관심사가 아니다 — 골격 출처는 "id가 정해진 뒤" 붙는 값이라
+        // 정렬과 직교한다. 두 축이면 커서 발급까지 도는 데 충분하고, 나머지 정렬은 픽스처가
+        // 그 축의 값을 세우지 않아(평점 NULL·좌표 없음) 페이지가 비어 게이트가 공허해진다.
+        for (PlaceSortType sort : List.of(PlaceSortType.POPULAR, PlaceSortType.LATEST)) {
             PlaceFilterGetResponse snapshotPage1 =
                     withSource(SkeletonSource.SNAPSHOT, () -> get(sort, null));
             assertThat(snapshotPage1.nextCursor()).as("%s 커서", sort).isNotNull();
@@ -327,7 +330,8 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
     }
 
     private PlaceFilterGetRequest request(PlaceSortType sort, String cursor, Integer size) {
-        return new PlaceFilterGetRequest(townId, false, null, null, null, sort, cursor, size);
+        return new PlaceFilterGetRequest(
+                townId, false, null, null, null, sort, cursor, size, null, null);
     }
 
     private PlacePreviewDto previewOf(PlaceFilterGetResponse response, long placeId) {
