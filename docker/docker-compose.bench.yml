@@ -61,8 +61,14 @@ services:
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "10"
       # 기본 메모리 형상은 모든 라운드에서 고정하고, 진단 라운드만 JFR·컴파일 옵션을 덧붙인다.
       # BENCH_JAVA_TOOL_OPTIONS가 기본값 전체를 대체하면 A/B의 힙 조건이 달라질 수 있다.
+      # -Xms=-Xmx + AlwaysPreTouch: fresh JVM 벤치에서 부하 계단마다 힙 확장이 6초짜리
+      # CPU 버스트(스로틀 ~20초분)를 만들어 스로틀 비율 측정을 오염시켰다
+      # (2026-08-16_sort6-target-load r1 — 전량이 확장 1회분). 시작 시 힙을 전부 잡아
+      # 커밋해서 그 비용을 부하 전으로 밀어낸다. 2026-08-17부터의 라운드는 이 형상이다.
       JAVA_TOOL_OPTIONS: >-
+        -Xms1280m
         -Xmx1280m
+        -XX:+AlwaysPreTouch
         -XX:MaxMetaspaceSize=256m
         ${BENCH_JAVA_TOOL_OPTIONS:-}
       # 쿼리 로깅을 끈다. application.yml의 p6spy: INFO를 그대로 두면 초당 240쿼리를
