@@ -7,8 +7,12 @@ import jakarta.persistence.Query;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.CountRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.DistanceCandidateRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.LatestRow;
@@ -16,6 +20,7 @@ import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryR
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.RatingRow;
 import org.sopt.solply_server.global.config.QueryDslConfig;
 import org.sopt.solply_server.support.MySqlContainerSupport;
+import org.sopt.solply_server.support.SqlStatementProbe;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -47,21 +52,29 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({QueryDslConfig.class, PlaceListDbQueryRepository.class})
+@Import({QueryDslConfig.class, PlaceListDbQueryRepository.class, PlaceListProperties.class})
 class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     /**
      * 메서드 이름은 베이스의 {@code datasource}와 반드시 달라야 한다 (같으면 숨겨져 데이터소스
      * 설정이 통째로 사라진다). 이 클래스는 엔티티↔스키마 정합이 아니라 SQL 동작을 보므로
      * validate가 필요 없다.
+     *
+     * <p>{@code statement_inspector}는 <b>나간 문장의 원문</b>을 보기 위한 것이다 — FORCE INDEX
+     * 스위치가 꺼졌을 때 문장이 힌트 도입 전과 같은지는 결과값으로는 물을 수 없다.
      */
     @DynamicPropertySource
-    static void ddlAuto(DynamicPropertyRegistry registry) {
+    static void placeListDbProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
+        registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
+                SqlStatementProbe.class::getName);
     }
 
     @Autowired
     PlaceListDbQueryRepository repository;
+
+    @Autowired
+    PlaceListProperties placeListProperties;
 
     @Autowired
     EntityManager em;
@@ -91,6 +104,15 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         placeB = createPlace("db모드B", BASE);
         placeC = createPlace("db모드C", BASE);
         placeD = createPlace("db모드D", BASE);
+    }
+
+    /**
+     * 다음 테스트가 기본 팔(자연 계획)에서 시작하도록 되돌린다 — 빈은 롤백을 따라가지 않으므로
+     * 스위치를 켠 테스트가 뒤 테스트의 문장까지 바꿔 버린다 ({@code PlaceSortSnapshotIT}과 같은 이유).
+     */
+    @AfterEach
+    void restoreForceSortIndex() {
+        placeListProperties.setForceSortIndex(false);
     }
 
     // === POPULAR ===
@@ -719,6 +741,93 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .containsExactly(placeA);
     }
 
+    // === FORCE INDEX 스위치 (벤치의 A강제 팔) ===
+
+    /**
+     * <b>스위치를 켜도 정렬 3종의 결과가 한 행도 달라지지 않는다.</b> 팔 교대 측정의 전제 조건이다 —
+     * 여기가 빨간 상태로 낸 수치는 서로 다른 답을 낸 두 계획의 비용을 비교한 것이라 뜻이 없다
+     * ({@code PlaceSortSnapshotIT}의 모드 등가 게이트와 같은 역할·같은 근거).
+     *
+     * <p><b>기대값을 손으로 적지 않는다</b> — 두 모드를 실제로 돌려 서로 대조한다. 순서 자체의
+     * 정본은 위쪽 정렬 테스트들이 값으로 물고 있다.
+     *
+     * <p>두 페이지를 도는 이유: 커서 술어가 붙은 문장은 WHERE 형상이 달라 <b>계획이 갈리는 지점</b>이고
+     * (무힌트에서 2페이지만 의도 인덱스로 넘어가는 칸이 있었다), 그 두 문장이 같은 답을 내는지는
+     * 1페이지만 봐서는 알 수 없다.
+     */
+    @Test
+    void 강제_인덱스_스위치는_단일_동네_정렬_3종의_결과를_바꾸지_않는다() {
+        givenMixedAxisFixture();
+
+        assertForceIndexAgrees("단일 동네", List.of(townId));
+    }
+
+    /**
+     * <b>다중 동네도 같다.</b> town이 여럿이면 인덱스가 전역 순서를 만들지 못해 어느 팔에서도
+     * filesort가 남는데(무힌트·강제가 같은 형상이라는 것이 반사실 대조의 결론이었다), 그 경로에서도
+     * 답이 같은지를 따로 문다 — 단일 동네만 보면 힌트가 실제로 계획을 바꾸는 유일한 형상에서만
+     * 등가를 확인한 셈이 된다.
+     */
+    @Test
+    void 강제_인덱스_스위치는_다중_동네에서도_결과를_바꾸지_않는다() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E강제", BASE.plusMinutes(1), otherTownId);
+        givenMixedAxisFixture();
+        insertRatedStats(placeE, otherTownId, 4.50, 9, 4);   // 세 축 모두에서 동점 상대가 된다
+
+        assertForceIndexAgrees("다중 동네", List.of(townId, otherTownId));
+    }
+
+    /**
+     * <b>스위치가 꺼져 있으면 문장이 힌트 도입 전과 바이트째 같고, 켜지면 FROM의 테이블 참조
+     * 직후에만 힌트가 붙는다.</b>
+     *
+     * <p>앞 두 테스트(결과 등가)로는 이것을 물을 수 없다 — 꺼진 팔의 문장이 조금 달라져도 답은
+     * 같으므로 그린이다. 그런데 A자연 팔의 존재 이유가 "스위치를 들이기 전과 같은 문장"이라,
+     * 문장이 달라지면 캠페인의 기준선이 통째로 흔들린다.
+     *
+     * <p>대조 방식이 요점이다. 켠 문장을 손으로 적어 두면 SELECT 목록이나 개행이 바뀔 때마다
+     * 테스트가 깨질 뿐 계약을 못 지키므로, <b>꺼진 문장에서 딱 그 한 조각만 끼워 넣은 것과 같은지</b>를
+     * 묻는다 — 힌트의 위치(별칭 뒤·WHERE 앞)와 "그 밖에는 아무것도 안 바뀐다"가 한 단언에 들어온다.
+     */
+    @Test
+    void 스위치가_꺼지면_문장은_그대로이고_켜지면_FROM_뒤에만_힌트가_붙는다() {
+        insertRatedStats(placeA, townId, 4.50, 3, 7);
+
+        assertHintOnlyInFrom("idx_place_stats_town_rating",
+                () -> findRating(null, null, null, NO_LIMIT));
+        assertHintOnlyInFrom("idx_place_stats_town_reviews",
+                () -> repository.findReviewCountRows(
+                        List.of(townId), null, null, null, null, null, NO_LIMIT));
+        assertHintOnlyInFrom("idx_place_stats_town_bookmarks",
+                () -> repository.findBookmarkCountRows(
+                        List.of(townId), null, null, null, null, null, NO_LIMIT));
+    }
+
+    /**
+     * <b>인기·최신·거리는 스위치를 켜도 문장이 변하지 않는다.</b> 셋은 이미 의도한 계획으로만 돌아
+     * 힌트를 들일 이유가 없다 — 자기 인덱스에만 있는 컬럼을 SELECT해 나머지 인덱스가 커버링에서
+     * 탈락하기 때문이고(인기·최신), 거리순은 정렬을 DB에 맡기지 않는다.
+     *
+     * <p>스위치를 켠 채로 세 문장을 모두 잡아 힌트가 <b>한 글자도</b> 새지 않았는지 본다. 공용
+     * FROM 헬퍼를 세 경로에 무심코 확대하는 변경이 여기서 걸린다.
+     */
+    @Test
+    void 인기_최신_거리는_스위치를_켜도_힌트가_붙지_않는다() {
+        insertStats(placeA, townId, 4.0, 7);
+        setCoordinates(placeA, 37.5665, 126.9780);
+
+        placeListProperties.setForceSortIndex(true);
+
+        assertThat(captureListSql(() -> findPopular(null, null, NO_LIMIT)))
+                .as("인기순").doesNotContain("FORCE INDEX");
+        assertThat(captureListSql(() -> findLatest(null, null, NO_LIMIT)))
+                .as("최신순").doesNotContain("FORCE INDEX");
+        assertThat(captureListSql(
+                () -> repository.findDistanceCandidates(List.of(townId), null, null, null)))
+                .as("거리순 후보").doesNotContain("FORCE INDEX");
+    }
+
     // === 마스크 술어 ↔ EXISTS 동치 ===
 
     /**
@@ -930,6 +1039,102 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         return ((List<Object>) query.getResultList()).stream()
                 .map(v -> ((Number) v).longValue())
                 .toList();
+    }
+
+    /**
+     * 세 축(평점·리뷰 수·북마크 수)이 <b>서로 다른 순서를 내는</b> 픽스처. 축마다 동점을 하나씩 심어
+     * 타이브레이크와 커서 등호 분기가 실제로 도는 자리를 만든다 — 축이 전부 같은 순서면 힌트가
+     * 잘못 걸려도 결과가 같아 등가 단언이 공허해진다.
+     *
+     * <p>평점 동점은 A·B(4.50, 리뷰 수로 갈림) · 리뷰 수 동점은 A·C(3) · 북마크 동점은 A·B(4)다.
+     */
+    private void givenMixedAxisFixture() {
+        insertRatedStats(placeA, townId, 4.50, 3, 4);
+        insertRatedStats(placeB, townId, 4.50, 9, 4);
+        insertRatedStats(placeC, townId, 3.00, 3, 1);
+        insertRatedStats(placeD, townId, 0.00, 0, 9);
+    }
+
+    /** 정렬 3종 × 두 페이지가 두 팔에서 같은지 본다 (커서는 1페이지 마지막 행에서 발급부와 같은 식으로) */
+    private void assertForceIndexAgrees(String label, List<Long> townIds) {
+        Supplier<List<RatingRow>> ratingPage1 = () -> repository.findRatingRows(
+                townIds, null, null, null, null, null, null, 2);
+        List<RatingRow> ratingOff = withForceSortIndex(false, ratingPage1);
+        assertThat(withForceSortIndex(true, ratingPage1))
+                .as("%s 평점순 1페이지", label).isEqualTo(ratingOff);
+
+        RatingRow boundary = ratingOff.get(ratingOff.size() - 1);
+        Supplier<List<RatingRow>> ratingPage2 = () -> repository.findRatingRows(
+                townIds, null, null, null, boundary.avgRating().doubleValue(),
+                boundary.reviewCount(), boundary.placeId(), NO_LIMIT);
+        List<RatingRow> ratingPage2Off = withForceSortIndex(false, ratingPage2);
+        assertThat(ratingPage2Off).as("%s 평점순 2페이지 (비어 있으면 대조가 공허하다)", label)
+                .isNotEmpty();
+        assertThat(withForceSortIndex(true, ratingPage2))
+                .as("%s 평점순 2페이지", label).isEqualTo(ratingPage2Off);
+
+        assertCountSortAgrees(label + " 리뷰순", CountRow::reviewCount,
+                (cursorCount, cursorPlaceId, limit) -> repository.findReviewCountRows(
+                        townIds, null, null, null, cursorCount, cursorPlaceId, limit));
+        assertCountSortAgrees(label + " 북마크순", CountRow::bookmarkCount,
+                (cursorCount, cursorPlaceId, limit) -> repository.findBookmarkCountRows(
+                        townIds, null, null, null, cursorCount, cursorPlaceId, limit));
+    }
+
+    /** 카운트 축 두 정렬은 커서 키만 다르고 절차가 같다 — 정렬 컬럼을 뽑는 함수로 그 하나를 받는다 */
+    @FunctionalInterface
+    private interface CountPage {
+        List<CountRow> find(Long cursorCount, Long cursorPlaceId, int limit);
+    }
+
+    private void assertCountSortAgrees(
+            String label, ToLongFunction<CountRow> sortKey, CountPage page) {
+        Supplier<List<CountRow>> page1 = () -> page.find(null, null, 2);
+        List<CountRow> off = withForceSortIndex(false, page1);
+        assertThat(withForceSortIndex(true, page1)).as("%s 1페이지", label).isEqualTo(off);
+
+        CountRow boundary = off.get(off.size() - 1);
+        Supplier<List<CountRow>> page2 = () -> page.find(
+                sortKey.applyAsLong(boundary), boundary.placeId(), NO_LIMIT);
+        List<CountRow> page2Off = withForceSortIndex(false, page2);
+        assertThat(page2Off).as("%s 2페이지 (비어 있으면 대조가 공허하다)", label).isNotEmpty();
+        assertThat(withForceSortIndex(true, page2)).as("%s 2페이지", label).isEqualTo(page2Off);
+    }
+
+    private <T> T withForceSortIndex(boolean forced, Supplier<T> action) {
+        placeListProperties.setForceSortIndex(forced);
+        try {
+            return action.get();
+        } finally {
+            placeListProperties.setForceSortIndex(false);
+        }
+    }
+
+    /** 같은 쿼리를 두 팔에서 돌려 <b>문장 원문</b>을 대조한다 — 대조 방식의 근거는 호출부 javadoc에 있다 */
+    private void assertHintOnlyInFrom(String indexName, Runnable query) {
+        placeListProperties.setForceSortIndex(false);
+        String off = captureListSql(query);
+        placeListProperties.setForceSortIndex(true);
+        String on = captureListSql(query);
+
+        assertThat(off).as("%s: 꺼진 팔의 문장", indexName).doesNotContain("FORCE INDEX");
+        assertThat(on).as("%s: 켠 팔의 문장", indexName)
+                .isEqualTo(off.replace("FROM place_stats ps",
+                        "FROM place_stats ps FORCE INDEX (" + indexName + ")"));
+    }
+
+    /**
+     * 목록 문장 하나를 잡아 원문을 돌려준다. 픽스처가 만든 문장이 섞이지 않게 실행 직전에 비우고,
+     * <b>정확히 하나</b>임을 확인한다 — 여러 개가 잡히면 무엇을 대조했는지 말할 수 없다.
+     */
+    private String captureListSql(Runnable query) {
+        SqlStatementProbe.clear();
+        query.run();
+        List<String> listSqls = SqlStatementProbe.sqls().stream()
+                .filter(sql -> sql.contains("FROM place_stats ps"))
+                .toList();
+        assertThat(listSqls).as("잡힌 목록 문장").hasSize(1);
+        return listSqls.get(0);
     }
 
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {

@@ -9,6 +9,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.util.TagMasks;
 import org.springframework.stereotype.Repository;
 
@@ -21,6 +22,12 @@ import org.springframework.stereotype.Repository;
  * 비용에 세지 못하는 맹점에 노출돼 입력(태그 규모 × 지역 크기)에 따라 계획이 흔들린다. 조건부
  * 힌트로 그 맹점을 우회하는 안은 임계가 요청 형상 한 점에서만 유효함이 실측으로 확정돼 철회했고
  * ({@code load-test/campaigns/2026-08-11_region-size-threshold}), 대신 선택지 자체를 없앴다.
+ *
+ * <p><b>정렬 3종(평점·리뷰·북마크)에는 인덱스 강제 스위치가 걸려 있다</b>
+ * ({@code solply.place-list.force-sort-index}, 기본 false). 세 인덱스가 인기순 인덱스의 부분집합이라
+ * 옵티마이저가 순서를 못 만드는 인덱스를 고르는 문제가 실측으로 확인됐고, 그 수리안을 같은 창
+ * A/B에서 재기 위한 진단 스위치다 — 근거·계약은 {@link #appendFrom}과
+ * {@code PlaceListProperties#isForceSortIndex}에 있다. 인기·최신·거리는 걸지 않는다.
  *
  * <p><b>거리순만 예외다 — {@code places}와 조인한다.</b> 좌표는 place_stats에 없고, 비정규화해도
  * 인덱스가 만들어 줄 수 있는 순서가 없다(기준점이 요청마다 다르다). 그래서 이 경로는 정렬·LIMIT을
@@ -53,7 +60,15 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class PlaceListDbQueryRepository {
 
+    /** 평점순의 의도 인덱스 (V36) */
+    private static final String IDX_RATING = "idx_place_stats_town_rating";
+    /** 리뷰 수순의 의도 인덱스 (V36) */
+    private static final String IDX_REVIEWS = "idx_place_stats_town_reviews";
+    /** 북마크 수순의 의도 인덱스 (V36) */
+    private static final String IDX_BOOKMARKS = "idx_place_stats_town_bookmarks";
+
     private final EntityManager em;
+    private final PlaceListProperties placeListProperties;
 
     /**
      * {@code avgRating}은 컬럼 값 그대로다 — V37부터 NOT NULL이고 리뷰가 없으면 0이다.
@@ -279,9 +294,9 @@ public class PlaceListDbQueryRepository {
 
         StringBuilder sql = new StringBuilder("""
                 SELECT ps.place_id, ps.avg_rating, ps.review_count, ps.bookmark_count
-                FROM place_stats ps
-                WHERE ps.town_id IN (:townIds)
                 """);
+        appendFrom(sql, IDX_RATING);
+        sql.append("WHERE ps.town_id IN (:townIds)\n");
         appendTagFilters(sql, masks);
         if (useCursor) {
             sql.append("""
@@ -325,8 +340,8 @@ public class PlaceListDbQueryRepository {
     public List<CountRow> findReviewCountRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
             Long cursorCount, Long cursorPlaceId, int limit) {
-        return findCountRows("review_count", townIds, mainTagId, subTagAIds, subTagBIds,
-                cursorCount, cursorPlaceId, limit);
+        return findCountRows("review_count", IDX_REVIEWS, townIds, mainTagId, subTagAIds,
+                subTagBIds, cursorCount, cursorPlaceId, limit);
     }
 
     /**
@@ -338,8 +353,8 @@ public class PlaceListDbQueryRepository {
     public List<CountRow> findBookmarkCountRows(
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
             Long cursorCount, Long cursorPlaceId, int limit) {
-        return findCountRows("bookmark_count", townIds, mainTagId, subTagAIds, subTagBIds,
-                cursorCount, cursorPlaceId, limit);
+        return findCountRows("bookmark_count", IDX_BOOKMARKS, townIds, mainTagId, subTagAIds,
+                subTagBIds, cursorCount, cursorPlaceId, limit);
     }
 
     /**
@@ -347,12 +362,17 @@ public class PlaceListDbQueryRepository {
      * 같아, <b>한 문장을 공유해야</b> 두 정렬의 의미론이 구조적으로 붙어 있는다 — 복사해 두면
      * 한쪽만 고치는 실수가 조용히 통과한다 ({@code appendTagFilters}와 같은 이유).
      *
-     * <p>{@code countColumn}은 호출부가 리터럴로만 넘기는 값이라 외부 입력이 닿지 않는다.
-     * <b>이 메서드를 public으로 열지 말 것</b> — 그 순간 컬럼 이름이 입력이 되어 성질이 바뀐다.
+     * <p>{@code countColumn}과 {@code intendedIndex}는 호출부가 리터럴로만 넘기는 값이라 외부 입력이
+     * 닿지 않는다. <b>이 메서드를 public으로 열지 말 것</b> — 그 순간 컬럼·인덱스 이름이 입력이 되어
+     * 성질이 바뀐다.
+     *
+     * <p>두 값은 <b>짝</b>이다. 정렬 컬럼과 강제 인덱스가 어긋나면 스위치를 켠 팔에서 정렬이 통째로
+     * filesort로 돌아가 A강제 팔이 재려던 것을 못 재게 된다 — 짝이 맞는지는 두 공개 메서드의
+     * 호출 한 줄에서만 볼 수 있으므로 거기서 확인할 것.
      */
     @SuppressWarnings("unchecked")
     private List<CountRow> findCountRows(
-            String countColumn,
+            String countColumn, String intendedIndex,
             List<Long> townIds, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds,
             Long cursorCount, Long cursorPlaceId, int limit) {
 
@@ -361,9 +381,9 @@ public class PlaceListDbQueryRepository {
 
         StringBuilder sql = new StringBuilder("""
                 SELECT ps.place_id, ps.bookmark_count, ps.review_count, ps.avg_rating
-                FROM place_stats ps
-                WHERE ps.town_id IN (:townIds)
                 """);
+        appendFrom(sql, intendedIndex);
+        sql.append("WHERE ps.town_id IN (:townIds)\n");
         appendTagFilters(sql, masks);
         if (useCursor) {
             sql.append("  AND (ps.").append(countColumn).append(" < :cursorCount\n")
@@ -475,6 +495,32 @@ public class PlaceListDbQueryRepository {
         if (masks.subB() != 0L) {
             sql.append("  AND (ps.tag_bitmask & :subBMask) != 0\n");
         }
+    }
+
+    /**
+     * 정적 정렬 3종의 FROM 절. 스위치가 꺼져 있으면 {@code "FROM place_stats ps\n"} 한 줄이라
+     * <b>문장이 바이트째 힌트 도입 전과 같다</b> — 미발동 시 문장 불변은 {@link #appendTagFilters}가
+     * 마스크 0에서 지키는 것과 같은 계약이고, 그래야 벤치의 A자연 팔이 "스위치를 들이기 전"과
+     * 같은 문장을 돌린 것이 된다.
+     *
+     * <p><b>힌트 자리는 문법이 정한다 — {@code tbl_name [[AS] alias] [index_hint_list]}.</b>
+     * 별칭 <em>뒤</em>, WHERE <em>앞</em>이며 그 밖의 위치는 파싱 오류다. {@code FOR ORDER BY}를
+     * 붙이지 않는 것은 의도다: 이 쿼리들이 인덱스에 바라는 것은 순서만이 아니라 <b>range 조건·
+     * 커버링·순서를 한 인덱스로 동시에</b> 얻는 것이라, 용도를 좁히면 옵티마이저가 필터를 다시
+     * 다른 인덱스로 가져갈 여지가 남는다.
+     *
+     * <p>힌트가 지목한 인덱스가 없으면 MySQL은 <b>쿼리를 실패시킨다</b>(1176). 인덱스 이름은
+     * V36의 정의와 한 쌍이므로 마이그레이션에서 이름을 바꾸면 여기도 함께 바꿔야 한다 —
+     * 조용히 무시되지 않는다는 점에서 오히려 안전한 결합이다.
+     *
+     * @param intendedIndex 스위치가 켜졌을 때 고정할 인덱스 이름 (호출부가 리터럴로만 넘긴다)
+     */
+    private void appendFrom(StringBuilder sql, String intendedIndex) {
+        sql.append("FROM place_stats ps");
+        if (placeListProperties.isForceSortIndex()) {
+            sql.append(" FORCE INDEX (").append(intendedIndex).append(")");
+        }
+        sql.append("\n");
     }
 
     private void bindTagFilters(Query query, TagMasks masks) {
