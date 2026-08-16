@@ -43,8 +43,9 @@ public class PlaceListProperties {
      * 캐시가 아니라 버그이고, 그 상태로 낸 수치는 서로 다른 응답의 비용을 비교한 것이라 뜻이 없다
      * ({@code PlaceSortSnapshotIT}의 모드 등가 게이트가 판정보다 먼저 통과해야 하는 조건이다).
      *
-     * <p><b>기본값이 {@code DB}인 이유는 판정 전이기 때문이다.</b> 후보 A는 이미 완성돼 있고 B는
-     * 아직 재는 중이라, 아무것도 정하지 않은 환경이 밟는 경로는 A여야 한다.
+     * <p><b>기본값 {@code MEMORY}는 판정의 결과다</b> (2026-08-16 같은 창 세 구조 캠페인,
+     * {@code docs/perf/2026-08-16-sort6-structures-surge.md}). {@code DB}는 폴백으로 한 세대
+     * 유지한다 — V36 인덱스와 {@link #forceSortIndex}가 그 몫이다.
      *
      * <p><b>{@code MEMORY}가 아니면 스냅샷을 <em>짓지도</em> 않는다</b> — 골격 스위치와 같은
      * 근거다. 읽지 않는 값을 매시 짓는 낭비이기도 하지만, 더 중요한 것은 기준선에 빌드 시점의
@@ -53,7 +54,7 @@ public class PlaceListProperties {
      * 그 사이 조회는 DB 경로로 되돌아간다. 벤치는 재기동으로 팔을 바꾸므로 기동 워밍업이 그 자리를
      * 메운다 ({@code PlaceSortWarmup}).
      */
-    private SortSource sortSource = SortSource.DB;
+    private SortSource sortSource = SortSource.MEMORY;
 
     /**
      * 정적 정렬 3종(평점·리뷰 수·북마크 수)의 쿼리에 <b>의도 인덱스를 {@code FORCE INDEX}로 고정</b>할지.

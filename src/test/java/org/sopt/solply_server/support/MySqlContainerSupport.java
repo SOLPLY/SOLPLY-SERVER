@@ -48,5 +48,9 @@ public abstract class MySqlContainerSupport {
         registry.add("spring.jpa.properties.hibernate.dialect",
                 () -> "org.hibernate.dialect.MySQLDialect");
         registry.add("decorator.datasource.enabled", () -> "false");
+        // 목록 IT는 DB 정렬 경로로 고정한다. 픽스처가 스냅샷 재생성 트리거(어드민 afterCommit·
+        // 배치) 밖에서 행을 넣으므로 운영 기본값 memory로는 기동 시점의 빈 스냅샷을 보게 된다.
+        // memory 경로와의 등가는 PlaceSortSnapshotIT가 런타임 전환으로 두 모드를 나란히 물어 지킨다.
+        registry.add("solply.place-list.sort-source", () -> "db");
     }
 }
