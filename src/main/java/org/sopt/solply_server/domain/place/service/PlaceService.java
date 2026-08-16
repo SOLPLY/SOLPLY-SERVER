@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +15,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeleton;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonSnapshot;
+import org.sopt.solply_server.domain.place.cache.PlaceSortEntry;
+import org.sopt.solply_server.domain.place.cache.PlaceSortIndex;
+import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshot;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.SortSource;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceLatestReviewDto;
@@ -38,6 +43,7 @@ import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.place.sort.DistanceSort;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.PlaceTagMatcher;
+import org.sopt.solply_server.domain.place.util.TagMasks;
 import org.sopt.solply_server.domain.review.entity.PlaceReview;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
@@ -75,7 +81,15 @@ public class PlaceService {
   private final PlaceSkeletonSnapshot placeSkeletonSnapshot;
   /** {@code skeleton-source=projection}에서만 쓴다 — 스냅샷 로더의 산출식을 요청 시점에 돌린다 */
   private final PlaceSkeletonLoader placeSkeletonLoader;
+  /** {@code sort-source=memory}에서만 쓴다 — 정렬·필터·페이징을 메모리에서 끝낸다 */
+  private final PlaceSortSnapshot placeSortSnapshot;
   private final PlaceListProperties placeListProperties;
+
+  /**
+   * {@code sort-source=memory}인데 스냅샷이 없어 DB로 되돌아간 것을 <b>한 번만</b> 남긴다.
+   * 요청마다 찍으면 로그가 잠기고, 아예 안 찍으면 벤치가 B를 잰다고 하고 A를 재게 된다.
+   */
+  private final AtomicBoolean sortSnapshotFallbackWarned = new AtomicBoolean();
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -281,6 +295,13 @@ public class PlaceService {
    * <p><b>골격의 출처는 {@code solply.place-list.skeleton-source}로 셋 중 하나가 된다</b>
    * (snapshot / projection / entity, {@code PlaceListProperties} 참조). 어느 값이든 응답 body와
    * 커서 토큰이 같아야 한다. 다르면 캐시가 아니라 버그다.
+   *
+   * <p><b>정렬의 출처도 갈린다 — {@code solply.place-list.sort-source} (2026-08-16).</b>
+   * {@code db}는 정렬·필터·페이징을 place_stats 인덱스에 맡기고(후보 A), {@code memory}는
+   * 사전 정렬 스냅샷에서 seek·머지로 만든다(후보 B). <b>둘은 같은 캠페인에서 팔 교대로 비교되므로
+   * 응답과 커서가 바이트째 같아야 한다</b> — 갈리는 지점은 위 {@code rows}를 만드는 한 줄뿐이고,
+   * 그 아래(골격 결합·북마크 결합·hasNext·커서 발급)는 분기가 없다. 근거와 실행계획 변동성의
+   * 실측은 {@code docs/perf/2026-08-16-sort6-index-path.md}.
    */
   private PlaceFilterGetResponse listPlaces(
       Long userId, List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort) {
@@ -307,48 +328,19 @@ public class PlaceService {
     }
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
-    Long cursorPlaceId = cursor == null ? null : cursor.placeId();
+
+    // 정렬 경로의 갈림은 여기 한 줄이다. 스냅샷이 null이면 아직 한 번도 못 지은 상태라
+    // DB 경로로 되돌아간다 — 빈 인덱스를 서빙하면 목록이 통째로 비는 오답이 조용히 나간다
+    // (PlaceSortSnapshot 계약 2).
+    PlaceSortIndex sortIndex = sortIndexOrNull();
 
     List<DbListRow> rows = switch (sort) {
-      case POPULAR -> placeListDbQueryRepository.findPopularRows(
-              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              key(cursor, 0), cursorPlaceId, fetchSize).stream()
-          .map(r -> new DbListRow(r.placeId(), List.of(r.popularScore()), r.bookmarkCount(),
-              r.reviewCount(), r.avgRating()))
-          .toList();
-      // 정렬 키 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
-      // 다른 위치를 가리킨다. 레포지토리 쪽 역변환(LocalDateTime.ofEpochSecond)과 한 쌍이라
-      // 한쪽만 고치면 페이징이 조용히 어긋난다 — findLatestRows javadoc 참고.
-      // epoch 초는 정수라 double 왕복이 값을 잃지 않는다(2^53초 ≈ 2.8억 년).
-      case LATEST -> placeListDbQueryRepository.findLatestRows(
-              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
-          .map(r -> new DbListRow(
-              r.placeId(), List.of((double) r.createdAt().toEpochSecond(ZoneOffset.UTC)),
-              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
-          .toList();
-      // 평점순만 커서 키가 둘이다 — 동점 구간을 리뷰 수로 한 번 더 가르므로, 그 값을 싣지 않으면
-      // 같은 평점 구간에서 seek이 재개될 자리를 찾지 못한다 (findRatingRows javadoc).
-      case RATING -> placeListDbQueryRepository.findRatingRows(
-              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              key(cursor, 0), longKey(cursor, 1), cursorPlaceId, fetchSize).stream()
-          .map(r -> new DbListRow(
-              r.placeId(), List.of(r.avgRating().doubleValue(), (double) r.reviewCount()),
-              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
-          .toList();
-      case REVIEW_COUNT -> placeListDbQueryRepository.findReviewCountRows(
-              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
-          .map(r -> new DbListRow(r.placeId(), List.of((double) r.reviewCount()),
-              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
-          .toList();
-      case BOOKMARK_COUNT -> placeListDbQueryRepository.findBookmarkCountRows(
-              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
-              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
-          .map(r -> new DbListRow(r.placeId(), List.of((double) r.bookmarkCount()),
-              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
-          .toList();
-      case DISTANCE -> distanceRows(leafTownIds, request, cursor, fetchSize);
+      // 거리순만 두 방식이 같은 자리에서 만난다 — 정렬은 어느 쪽이든 DistanceSort가 하고,
+      // 갈리는 것은 후보를 어디서 긁어 오는가뿐이다.
+      case DISTANCE -> distanceRows(sortIndex, leafTownIds, request, cursor, fetchSize);
+      default -> sortIndex != null
+          ? memoryRows(sortIndex, leafTownIds, request, sort, cursor, fetchSize)
+          : dbRows(leafTownIds, request, sort, cursor, fetchSize);
     };
 
     boolean hasNext = paging && rows.size() > pageSize;
@@ -437,6 +429,118 @@ public class PlaceService {
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
 
+  /**
+   * 이번 요청이 쓸 정렬 스냅샷. {@code sort-source=db}이거나 스냅샷이 아직 없으면 {@code null}이고,
+   * 그때 조회는 DB 경로로 간다.
+   *
+   * <p><b>없는 스냅샷을 빈 스냅샷처럼 쓰지 않는다.</b> 골격 스냅샷은 비어도 전량 미스로 떨어져
+   * 응답이 옳지만, 정렬 스냅샷이 비면 목록 자체가 빈다 — 그것은 느린 것이 아니라 틀린 것이다.
+   *
+   * <p>되돌림을 한 번 경고하는 이유는 측정 때문이다. 조용히 넘어가면 {@code memory} 팔을 잰다고
+   * 하고 실제로는 {@code db} 팔을 재게 되고, 그 수치는 두 후보를 비교한 것이 아니게 된다.
+   */
+  private PlaceSortIndex sortIndexOrNull() {
+    if (placeListProperties.getSortSource() != SortSource.MEMORY) {
+      return null;
+    }
+    PlaceSortIndex index = placeSortSnapshot.current();
+    if (index == null && sortSnapshotFallbackWarned.compareAndSet(false, true)) {
+      log.warn("정렬 스냅샷이 없어 DB 경로로 되돌아간다 - sort-source=memory인데 스냅샷이 비어 있다. "
+          + "기동 빌드 실패 로그(PlaceSortWarmup)를 확인할 것");
+    }
+    return index;
+  }
+
+  /**
+   * 정적 정렬 다섯의 DB 경로 — 후보 A. 정렬·필터·페이징을 전부 {@code place_stats} 인덱스에 맡긴다
+   * (V34·V36).
+   *
+   * <p><b>여기의 정렬 키 튜플이 {@link #memorySortKeys}와 한 쌍이다.</b> 두 경로가 같은 커서를
+   * 발급해야 팔을 바꿔도 페이징이 이어지고, 무엇보다 응답이 바이트째 같아야 A/B 비교가 성립한다.
+   */
+  private List<DbListRow> dbRows(
+      List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceSortType sort,
+      PlaceListCursor cursor, int fetchSize) {
+
+    Long cursorPlaceId = cursor == null ? null : cursor.placeId();
+    return switch (sort) {
+      case POPULAR -> placeListDbQueryRepository.findPopularRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              key(cursor, 0), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(r.placeId(), List.of(r.popularScore()), r.bookmarkCount(),
+              r.reviewCount(), r.avgRating()))
+          .toList();
+      // 정렬 키 식(createdAt.toEpochSecond(ZoneOffset.UTC))을 바꾸면 이미 발급된 커서가
+      // 다른 위치를 가리킨다. 레포지토리 쪽 역변환(LocalDateTime.ofEpochSecond)과 한 쌍이라
+      // 한쪽만 고치면 페이징이 조용히 어긋난다 — findLatestRows javadoc 참고.
+      // epoch 초는 정수라 double 왕복이 값을 잃지 않는다(2^53초 ≈ 2.8억 년).
+      case LATEST -> placeListDbQueryRepository.findLatestRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(
+              r.placeId(), List.of((double) r.createdAt().toEpochSecond(ZoneOffset.UTC)),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
+          .toList();
+      // 평점순만 커서 키가 둘이다 — 동점 구간을 리뷰 수로 한 번 더 가르므로, 그 값을 싣지 않으면
+      // 같은 평점 구간에서 seek이 재개될 자리를 찾지 못한다 (findRatingRows javadoc).
+      case RATING -> placeListDbQueryRepository.findRatingRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              key(cursor, 0), longKey(cursor, 1), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(
+              r.placeId(), List.of(r.avgRating().doubleValue(), (double) r.reviewCount()),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
+          .toList();
+      case REVIEW_COUNT -> placeListDbQueryRepository.findReviewCountRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(r.placeId(), List.of((double) r.reviewCount()),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
+          .toList();
+      case BOOKMARK_COUNT -> placeListDbQueryRepository.findBookmarkCountRows(
+              leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList(),
+              longKey(cursor, 0), cursorPlaceId, fetchSize).stream()
+          .map(r -> new DbListRow(r.placeId(), List.of((double) r.bookmarkCount()),
+              r.bookmarkCount(), r.reviewCount(), r.avgRating()))
+          .toList();
+      // 거리순은 후보 조회부터 모양이 달라 listPlaces가 먼저 갈라 낸다
+      case DISTANCE -> throw new IllegalStateException("거리순은 distanceRows가 맡는다");
+    };
+  }
+
+  /**
+   * 정적 정렬 다섯의 메모리 경로 — 후보 B. 쿼리를 하나도 내지 않고 사전 정렬 스냅샷에서 만든다.
+   *
+   * <p>순서·타이브레이크·술어는 전부 {@code PlaceSortIndex}가 DB의 것을 그대로 옮겨 둔 것이고,
+   * 여기서 하는 일은 <b>스냅샷 엔트리를 DB 경로와 같은 행 모양으로 접는 것</b>뿐이다. 그래서 이
+   * 아래로는 — 골격 결합, 북마크 결합, hasNext 판정, 커서 발급 — 분기가 하나도 없다.
+   */
+  private List<DbListRow> memoryRows(
+      PlaceSortIndex sortIndex, List<Long> leafTownIds, PlaceFilterGetRequest request,
+      PlaceSortType sort, PlaceListCursor cursor, int fetchSize) {
+
+    TagMasks masks = TagMasks.of(
+        request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
+    return sortIndex.page(sort, leafTownIds, masks, cursor, fetchSize).stream()
+        .map(e -> new DbListRow(e.placeId(), memorySortKeys(sort, e),
+            e.bookmarkCount(), e.reviewCount(), e.avgRating()))
+        .toList();
+  }
+
+  /**
+   * 스냅샷 엔트리에서 뽑은 커서 키 튜플. <b>{@link #dbRows}가 같은 정렬에서 만드는 것과 값이 같아야
+   * 한다</b> — 한쪽만 고치면 팔을 바꿀 때 커서가 다른 자리를 가리키고, 등가 게이트가 그것을 잡는다.
+   */
+  private static List<Double> memorySortKeys(PlaceSortType sort, PlaceSortEntry entry) {
+    return switch (sort) {
+      case POPULAR -> List.of(entry.popularScore());
+      case LATEST -> List.of((double) entry.createdAtEpochSecond());
+      case RATING -> List.of(entry.avgRatingValue(), (double) entry.reviewCount());
+      case REVIEW_COUNT -> List.of((double) entry.reviewCount());
+      case BOOKMARK_COUNT -> List.of((double) entry.bookmarkCount());
+      case DISTANCE -> throw new IllegalStateException("거리순은 이 경로로 오지 않는다");
+    };
+  }
+
   /** 커서의 i번째 정렬 키. 커서가 없으면 null — 레포지토리는 그것을 "첫 페이지"로 읽는다 */
   private static Double key(PlaceListCursor cursor, int index) {
     return cursor == null ? null : cursor.key(index);
@@ -461,10 +565,16 @@ public class PlaceService {
    * 그래서 좌표가 필수인 것은 커서가 없는 첫 페이지뿐이다.
    *
    * <p>표시값은 후보 행이 이미 실어 온 place_stats 값이다 — 정렬 뒤에 다시 조회하지 않는다.
+   *
+   * <p><b>두 방식이 갈리는 것은 후보를 어디서 얻는가 하나뿐이다.</b> 정렬·커서 절단은 어느 쪽이든
+   * 같은 {@code DistanceSort.topK}가 하므로, 후보 집합만 같으면 결과가 같은 것이 구조로 보장된다.
+   * 그래서 스냅샷 쪽도 DB 문장과 <b>같은 세 조건</b>(동네·태그 마스크·좌표 non-null)으로 거른다.
+   *
+   * @param sortIndex {@code null}이면 DB에서 후보를 훑는다 (후보 A)
    */
   private List<DbListRow> distanceRows(
-      List<Long> leafTownIds, PlaceFilterGetRequest request, PlaceListCursor cursor,
-      int fetchSize) {
+      PlaceSortIndex sortIndex, List<Long> leafTownIds, PlaceFilterGetRequest request,
+      PlaceListCursor cursor, int fetchSize) {
 
     double refLat;
     double refLng;
@@ -483,8 +593,10 @@ public class PlaceService {
       refLng = request.longitude();
     }
 
-    List<DistanceCandidateRow> candidates = placeListDbQueryRepository.findDistanceCandidates(
-        leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
+    List<DistanceCandidateRow> candidates = sortIndex != null
+        ? snapshotDistanceCandidates(sortIndex, leafTownIds, request)
+        : placeListDbQueryRepository.findDistanceCandidates(
+            leafTownIds, request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
     if (candidates.isEmpty()) {
       return List.of();
     }
@@ -510,6 +622,22 @@ public class PlaceService {
               List.of(baseLat, baseLng, r.distanceMeters()),
               row.bookmarkCount(), row.reviewCount(), row.avgRating());
         })
+        .toList();
+  }
+
+  /**
+   * 거리순 후보의 스냅샷 판. DB 문장이 SELECT하던 여섯 값을 그대로 채워 <b>같은 record</b>로 내므로,
+   * 아래 정렬·조립은 후보의 출처를 알지 못한다.
+   */
+  private static List<DistanceCandidateRow> snapshotDistanceCandidates(
+      PlaceSortIndex sortIndex, List<Long> leafTownIds, PlaceFilterGetRequest request) {
+
+    TagMasks masks = TagMasks.of(
+        request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
+    return sortIndex.distanceCandidates(leafTownIds, masks).stream()
+        .map(e -> new DistanceCandidateRow(
+            e.placeId(), e.latitude(), e.longitude(),
+            e.bookmarkCount(), e.reviewCount(), e.avgRating()))
         .toList();
   }
 

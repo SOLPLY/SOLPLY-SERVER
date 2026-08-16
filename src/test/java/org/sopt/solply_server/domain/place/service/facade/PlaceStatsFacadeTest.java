@@ -29,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
+import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshotRefresher;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
@@ -46,6 +47,13 @@ class PlaceStatsFacadeTest {
 
     @Mock
     private PlaceSkeletonLoader placeSkeletonLoader;
+
+    /**
+     * mock이라 아무 일도 하지 않는다 — 이 파일의 관심사는 배치 회차의 스케줄·재시도·로그이고,
+     * 정렬 스냅샷 훅이 실제로 무엇을 짓는지는 {@code PlaceSortSnapshotIT}가 문다.
+     */
+    @Mock
+    private PlaceSortSnapshotRefresher placeSortSnapshotRefresher;
 
     /**
      * 실물을 쓴다 — 기본값이 {@code SNAPSHOT}이라서 훅이 <b>기본 경로</b>로 돌고, 값을 바꿔야 하는
@@ -67,7 +75,8 @@ class PlaceStatsFacadeTest {
         // 테스트마다 (시도 횟수 - 1) × 5초를 잠든다.
         placeStatsProperties.setBatchRetryDelay(Duration.ZERO);
         placeStatsFacade = new PlaceStatsFacade(
-                batchProcessor, placeSkeletonLoader, placeListProperties, placeStatsProperties);
+                batchProcessor, placeSkeletonLoader, placeSortSnapshotRefresher,
+                placeListProperties, placeStatsProperties);
     }
 
     /**
