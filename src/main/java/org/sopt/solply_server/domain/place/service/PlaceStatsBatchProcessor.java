@@ -1,9 +1,12 @@
 package org.sopt.solply_server.domain.place.service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.bookmark.entity.BookmarkCountEvent;
+import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.springframework.stereotype.Component;
@@ -11,14 +14,24 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@code place_stats} 집계의 트랜잭션 경계를 소유한다. 진입점이 다섯이다 —
- * 카운트 회차 둘({@link #recalculateCounts}, {@link #recalculateCountsIfEmpty}), 점수 회차
- * 둘({@link #recalculateScores}, {@link #recalculateScoresIfNeverScored}), 그리고 원본에서
- * 행을 다시 짓는 {@link #rebuildRowsFromSource}.
+ * {@code place_stats} 집계의 트랜잭션 경계를 소유한다. 진입점이 여섯이다 —
+ * 매시 카운트 회차의 리뷰 축({@link #recalculateReviewCounts}), 새벽 안전망
+ * ({@link #recalculateCountsAndClearOutbox})과 그 알맹이인 전량 재계산({@link #recalculateCounts}),
+ * 점수 회차 둘({@link #recalculateScores}, {@link #recalculateScoresIfNeverScored}), 그리고
+ * 원본에서 행을 다시 짓는 {@link #rebuildRowsFromSource}(가드판이
+ * {@link #recalculateCountsIfEmpty}).
+ * <b>매시 회차의 북마크 축은 여기 없다</b> — 아웃박스 델타 소비는
+ * {@link BookmarkCountDeltaProcessor}가 자기 트랜잭션으로 가진다.
+ *
+ * <p><b>원본에서 카운트를 다시 짓는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은
+ * 트랜잭션에서 비운다.</b> 안전망·기동 백필·운영 복구 셋 다 같은 규칙을 진다 — 원본을 통째로
+ * 센 값이 이미 들어간 토글을 다음 델타 회차가 또 더하면 안 되기 때문이다
+ * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-2 함정 2). 카운트를 다시 짓는
+ * 진입점을 새로 만든다면 이 규칙을 함께 가져갈 것.
  *
  * <p><b>정기 회차는 행을 만들지도 지우지도 않는다.</b> 행의 존재와 파생 세 칸
  * ({@code town_id}·{@code created_at}·{@code tag_bitmask})의 주인은 어드민 쓰기 트랜잭션이고
- * ({@code AdminPlaceService}), 여기 두 회차는 각자의 값 칸만 정한다. 원본에서 행을 다시 짓는
+ * ({@code AdminPlaceService}), 여기 회차들은 각자의 값 칸만 정한다. 원본에서 행을 다시 짓는
  * 문장은 기동 백필과 운영 복구의 것으로만 남아 있다.
  *
  * <p><b>청크로 나누지 않는 이유는 2026-08-15에 실측으로 정리됐다.</b> 청킹이 준다던 것 둘이
@@ -46,10 +59,32 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlaceStatsBatchProcessor {
 
     private final PlaceStatsRepository placeStatsRepository;
+    private final BookmarkCountEventRepository countEventRepository;
     private final PlaceStatsProperties properties;
 
     /**
-     * 카운트 회차 = 표시 카운트 셋의 재계산. <b>문장 하나</b>라 원자성을 물을 지점이 없다.
+     * 매시 카운트 회차의 리뷰 축 = 리뷰 수·평균 평점의 재계산. <b>문장 하나</b>라 원자성을 물을
+     * 지점이 없다.
+     *
+     * <p>같은 회차의 북마크 축은 {@link BookmarkCountDeltaProcessor#consumeAndApply}가 맡는다.
+     * 두 축이 갈린 이유와 리뷰 축만 전량 재계산으로 남은 근거는
+     * {@link PlaceStatsRepository#updateReviewCounts} javadoc에 있다.
+     *
+     * @param calculatedAt 이 회차의 기준 시각. 호출자가 정해 넘기므로 같은 값이면 결과가 같다
+     * @return 조건에 걸린 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
+     *         아니다 — 근거는 {@link PlaceStatsRepository#updateCounts}
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public int recalculateReviewCounts(LocalDateTime calculatedAt) {
+        return placeStatsRepository.updateReviewCounts(calculatedAt);
+    }
+
+    /**
+     * 표시 카운트 셋 전량 재계산. <b>문장 하나</b>라 원자성을 물을 지점이 없다.
+     *
+     * <p><b>이 메서드를 스케줄에서 직접 부르지 말 것 — 아웃박스를 비우지 않는다.</b> 정기 진입점은
+     * {@link #recalculateCountsAndClearOutbox}이고, 여기가 따로 남아 있는 이유는 "재계산만"을
+     * 그 자체로 검증·재사용할 자리가 있기 때문이다.
      *
      * <p>예전에는 "활성 장소 전량 적재 + 잔행 삭제" 두 문장이었다. 적재가 원본에서 행을 다시
      * 지으면서 어드민 소유의 파생 칸까지 덮었고, 잔행 삭제는 그 적재가 회차마다 전 행에 찍던
@@ -66,7 +101,36 @@ public class PlaceStatsBatchProcessor {
     }
 
     /**
+     * 카운트 안전망 회차 — <b>전량 재계산과 아웃박스 비우기를 한 트랜잭션으로</b> 묶는다.
+     * 매시 회차가 델타로 쌓은 표류의 상한을 하루로 잡는 마지막 겹이다.
+     *
+     * <p>순서가 계약이다: ① 전표를 잠그고 읽는다 → ② 원본에서 카운트 셋을 다시 센다 →
+     * ③ ①에서 읽은 전표만 지운다. 비우지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또
+     * 더하고, ①을 ② 뒤로 옮기면 반대로 <b>재계산에 안 들어간 전표를 지우는 유실</b>이 된다 —
+     * ②가 보는 스냅샷 이후에 커밋된 토글까지 삭제 목록에 들어가기 때문이다.
+     *
+     * <p><b>그럼에도 남는 창이 있다 — 없앨 수 없어 수용한 한계다.</b> ①과 ② 사이에 커밋된 토글은
+     * 재계산에는 이미 반영됐는데 전표가 남아 다음 델타 회차에 또 더해진다(이중 반영). 반대 방향도
+     * 있다 — {@code calculatedAt} 이후에 생긴 전표는 재계산의 상한 밖이라 반영되지 않은 채
+     * ③에 지워진다(유실). 두 창 모두 문장 사이의 밀리초이고, 이 회차는 트래픽 최저 시각에 돌며,
+     * 그렇게 생긴 표류는 <b>다음 안전망이 원본 기준으로 지운다</b>. 창을 0으로 만들려면 회차
+     * 내내 북마크 쓰기를 막아야 하는데, 쓰기 경합을 없애려고 아웃박스를 도입한 설계에서 그것은
+     * 자기부정이다.
+     *
+     * @param calculatedAt 이 회차의 기준 시각이자 집계 대상의 상한
+     * @return 재계산 문장에 걸린 행 수 — 근거는 {@link PlaceStatsRepository#updateCounts}
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public int recalculateCountsAndClearOutbox(LocalDateTime calculatedAt) {
+        List<Long> consumed = lockOutboxIds();
+        int affected = placeStatsRepository.updateCounts(calculatedAt);
+        clearOutbox(consumed);
+        return affected;
+    }
+
+    /**
      * 활성 장소 전량의 행을 원본에서 다시 짓는다 — <b>기동 백필과 운영 복구의 진입점</b>.
+     * 카운트를 원본에서 다시 세므로 같은 트랜잭션에서 아웃박스도 비운다(클래스 javadoc의 규칙).
      *
      * <p>정기 회차가 부르지 않는다. 부르는 자리는 둘이다 — 가드를 앞세운
      * {@link #recalculateCountsIfEmpty}, 그리고 운영자가 어드민 API를 지나쳐 DB를 직접 고친 뒤
@@ -77,7 +141,31 @@ public class PlaceStatsBatchProcessor {
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public int rebuildRowsFromSource(LocalDateTime calculatedAt) {
-        return placeStatsRepository.rebuildRowsFromSource(calculatedAt);
+        List<Long> consumed = lockOutboxIds();
+        int affected = placeStatsRepository.rebuildRowsFromSource(calculatedAt);
+        clearOutbox(consumed);
+        return affected;
+    }
+
+    /**
+     * 아웃박스 전표를 잠그고 그 id를 확보한다 = 원본 재계산 트랜잭션의 <b>1단계</b>.
+     *
+     * <p>id만 들고 나오는 것은 이 자리에서 쓸 것이 삭제 대상 목록뿐이기 때문이다 — 델타를 접는
+     * 쪽({@link BookmarkCountDeltaProcessor})과 달리 여기서는 전표의 내용을 보지 않는다.
+     * 원본을 다시 세는 것이 곧 모든 전표를 반영하는 것이라 종류를 가릴 이유도 없다.
+     */
+    private List<Long> lockOutboxIds() {
+        return countEventRepository.findAllForConsume().stream()
+                .map(BookmarkCountEvent::getId)
+                .toList();
+    }
+
+    /** 1단계에서 읽은 전표만 지운다 — 범위 삭제가 왜 유실인지는 {@code findAllForConsume} javadoc. */
+    private void clearOutbox(List<Long> consumedIds) {
+        if (consumedIds.isEmpty()) {
+            return;
+        }
+        countEventRepository.deleteAllByIdInBatch(consumedIds);
     }
 
     /**
@@ -110,7 +198,9 @@ public class PlaceStatsBatchProcessor {
      * (실측: 오류 0, 데드락 0). 가드는 최적화이지 정합성 장치가 아니다.
      *
      * <p>{@link #rebuildRowsFromSource}를 부르지 않고 리포지토리를 직접 쓰는 이유: 자기 호출은
-     * 프록시를 우회해 대상 메서드의 트랜잭션 속성이 적용되지 않는다.
+     * 프록시를 우회해 대상 메서드의 트랜잭션 속성이 적용되지 않는다. <b>그래서 아웃박스 비우기도
+     * 그쪽에 기대지 못하고 여기서 함께 해야 한다</b> — 카운트를 원본에서 다시 짓는 트랜잭션은
+     * 예외 없이 자기가 읽은 시점까지의 전표를 비운다(클래스 javadoc의 규칙).
      *
      * @return 적재했다면 영향받은 행 수, 이미 채워져 있어 건너뛰었다면 {@link OptionalInt#empty()}.
      *         행 수 0과 "건너뜀"은 다른 사실이라 {@code int} 하나로 뭉개지 않는다
@@ -124,7 +214,10 @@ public class PlaceStatsBatchProcessor {
             log.info("인기순 카운트 최초 적재 생략 - 기존 place_stats 행 수={}", existingRows);
             return OptionalInt.empty();
         }
-        return OptionalInt.of(placeStatsRepository.rebuildRowsFromSource(calculatedAt));
+        List<Long> consumed = lockOutboxIds();
+        int affected = placeStatsRepository.rebuildRowsFromSource(calculatedAt);
+        clearOutbox(consumed);
+        return OptionalInt.of(affected);
     }
 
     /**

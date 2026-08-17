@@ -59,6 +59,7 @@ class PlaceSkeletonCacheIT extends MySqlContainerSupport {
     static void skeletonCacheProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
     }
 

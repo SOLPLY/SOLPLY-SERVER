@@ -959,6 +959,21 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>매시 회차의 리뷰 축과 새벽 안전망도 같은 계약을 진다.</b> 안전망은 {@code bookmarks}
+     * 전량을 훑으므로 RR이면 정확히 그 next-key 락 장애가 재현되고, 리뷰 축도
+     * {@code place_reviews} 전량을 훑는다. 회차 구성이 갈리면서 어노테이션이 한쪽에만 붙는
+     * 실수가 실재하는 위험이라 함께 문다.
+     */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void 리뷰_축과_안전망_트랜잭션도_READ_COMMITTED로_열린다() {
+        batchProcessor.recalculateReviewCounts(CALCULATED_AT);
+        batchProcessor.recalculateCountsAndClearOutbox(CALCULATED_AT);
+
+        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED", "READ-COMMITTED");
+    }
+
+    /**
      * <b>점수 회차도 같은 계약을 진다.</b> 소스 테이블(bookmarks·place_reviews)을 훑는 것은
      * 카운트 회차와 같으므로 RR이면 같은 next-key 락 장애가 재현된다. 회차를 가르면서
      * 이 어노테이션이 한쪽에만 붙는 실수가 실재하는 위험이라 따로 문다.

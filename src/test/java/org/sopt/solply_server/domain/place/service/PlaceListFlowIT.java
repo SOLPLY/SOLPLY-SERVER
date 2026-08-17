@@ -66,8 +66,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * {@code @DynamicPropertySource}는 static이라 같은 이름이면 상위/동명 메서드를 <em>숨겨</em>
      * 설정이 통째로 사라진다.
      *
-     * <p><b>배치 스케줄 둘을 모두 꺼야 하는 이유.</b> {@code @SpringBootTest}는 실제 앱을 띄우므로
-     * {@code PlaceStatsFacade}의 {@code @Scheduled} 둘이 그대로 등록된다. 카운트는 매시 30분이라
+     * <p><b>배치 스케줄 셋을 모두 꺼야 하는 이유.</b> {@code @SpringBootTest}는 실제 앱을 띄우므로
+     * {@code PlaceStatsFacade}의 {@code @Scheduled} 셋이 그대로 등록된다. 카운트는 매시 30분이라
      * 스위트가 어느 시간대에 돌든 그 순간을 지나면 스케줄러가 {@code now()} 기준으로 배치를 돌려
      * 픽스처가 의존하는 place_stats를 덮어쓴다. {@code "-"}는 스프링이 "등록하지 않음"으로
      * 해석하는 센티널이다 ({@code Scheduled.CRON_DISABLED}).
@@ -76,6 +76,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     static void listFlowProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
     }
 
@@ -1104,6 +1105,10 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                     "DELETE FROM bookmarks WHERE target_type = 'COURSE' AND target_id IN ("
                             + myPlaces + ")");
             st.executeUpdate("DELETE FROM place_reviews WHERE place_id IN (" + myPlaces + ")");
+            // 이 IT는 BookmarkService를 지나며 카운트 전표를 남긴다. 남기면 뒤에 오는 IT의
+            // 소비 회차가 그 전표를 접어 자기 장소의 bookmark_count를 흔든다.
+            st.executeUpdate(
+                    "DELETE FROM bookmark_count_events WHERE target_id IN (" + myPlaces + ")");
             // courses는 towns를 FK로 참조하므로 towns보다 먼저 지운다. town_id 기준이라
             // 우연히 같은 id를 갖는 시드 코스는 건드리지 않는다.
             st.executeUpdate("DELETE FROM courses WHERE town_id IN (" + myTowns + ")");

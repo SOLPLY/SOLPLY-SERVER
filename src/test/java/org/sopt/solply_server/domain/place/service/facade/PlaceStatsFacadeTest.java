@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -33,6 +34,8 @@ import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshotRefresher;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
+import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor;
+import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor.DeltaResult;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -44,6 +47,13 @@ class PlaceStatsFacadeTest {
 
     @Mock
     private PlaceStatsBatchProcessor batchProcessor;
+
+    /**
+     * 매시 회차의 북마크 축. 리뷰 축과 <b>다른 빈</b>이라는 것 자체가 계약이라 목도 따로 둔다 —
+     * 델타 소비는 자기 트랜잭션을 가져야 하고, 그래서 파사드가 부르는 대상이 둘이다.
+     */
+    @Mock
+    private BookmarkCountDeltaProcessor deltaProcessor;
 
     @Mock
     private PlaceSkeletonLoader placeSkeletonLoader;
@@ -74,8 +84,12 @@ class PlaceStatsFacadeTest {
         // 시도 횟수는 기본값(3)을 그대로 쓰고 대기만 지운다. 대기를 남기면 실패 경로를 거치는
         // 테스트마다 (시도 횟수 - 1) × 5초를 잠든다.
         placeStatsProperties.setBatchRetryDelay(Duration.ZERO);
+        // 델타 소비의 기본 응답은 "빈 아웃박스"다. 목의 기본값(null)을 그대로 두면 파사드가
+        // 결과에서 전표 수를 꺼내다 NPE로 죽어, 회차마다 실패 로그가 하나씩 덤으로 붙는다.
+        // lenient인 것은 점수 회차만 보는 테스트들이 이 스텁을 쓰지 않기 때문이다.
+        lenient().when(deltaProcessor.consumeAndApply()).thenReturn(new DeltaResult(0, 0));
         placeStatsFacade = new PlaceStatsFacade(
-                batchProcessor, placeSkeletonLoader, placeSortSnapshotRefresher,
+                batchProcessor, deltaProcessor, placeSkeletonLoader, placeSortSnapshotRefresher,
                 placeListProperties, placeStatsProperties);
     }
 
@@ -102,15 +116,44 @@ class PlaceStatsFacadeTest {
     // === 카운트 회차 ===
 
     @Test
-    @DisplayName("카운트 배치는 하나의 기준 시각으로 프로세서를 1회 호출한다")
+    @DisplayName("카운트 배치는 하나의 기준 시각으로 리뷰 축 프로세서를 1회 호출한다")
     void runsCountBatchOnceWithSingleTimestamp() {
-        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
         placeStatsFacade.recalculatePlaceCounts();
 
         ArgumentCaptor<LocalDateTime> captor = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(batchProcessor).recalculateCounts(captor.capture());
+        verify(batchProcessor).recalculateReviewCounts(captor.capture());
         assertThat(captor.getValue()).isNotNull();
+    }
+
+    /**
+     * <b>매시 회차는 축 둘로 이루어진다 — 리뷰 축 재계산과 북마크 축 델타 소비.</b>
+     * 한쪽이 빠지면 그 축의 값이 영영 낡는데, 값 단언이 없는 이 층에서는 호출로만 드러난다.
+     */
+    @Test
+    void 카운트_배치는_리뷰_축과_북마크_델타를_모두_돌린다() {
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+        verify(deltaProcessor).consumeAndApply();
+    }
+
+    /**
+     * <b>매시 회차는 표시 카운트 셋 전량 재계산을 부르지 않는다.</b> 그 문장은 새벽 안전망으로
+     * 내려갔고, 매시에 되돌아오면 이 전환이 사려던 것(북마크 전량 스캔 제거)이 통째로 사라진다.
+     * 게다가 그 문장은 아웃박스를 비우는 짝과 함께여야 해서, 여기로 돌아오면 이중 반영도 따라온다.
+     */
+    @Test
+    void 매시_회차는_전량_재계산을_부르지_않는다() {
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(batchProcessor, never()).recalculateCounts(any(LocalDateTime.class));
+        verify(batchProcessor, never()).recalculateCountsAndClearOutbox(any(LocalDateTime.class));
     }
 
     /**
@@ -120,7 +163,7 @@ class PlaceStatsFacadeTest {
      */
     @Test
     void 카운트_배치는_점수를_건드리지_않는다() {
-        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
         placeStatsFacade.recalculatePlaceCounts();
 
@@ -131,12 +174,40 @@ class PlaceStatsFacadeTest {
     @DisplayName("카운트 프로세서가 실패해도 스케줄러 스레드로 예외를 던지지 않는다")
     void swallowsCountProcessorFailure() {
         willThrow(new RuntimeException("boom"))
-                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
         placeStatsFacade.recalculatePlaceCounts();
 
         verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
-                .recalculateCounts(any(LocalDateTime.class));
+                .recalculateReviewCounts(any(LocalDateTime.class));
+    }
+
+    /**
+     * <b>한 축이 죽어도 다른 축은 돈다.</b> 두 축은 서로 다른 트랜잭션이고 값 칸도 갈려 있어,
+     * 리뷰 축 실패가 델타 소비까지 삼키면 아무 이유 없이 북마크 수가 회차만큼 낡는다.
+     */
+    @Test
+    void 리뷰_축이_실패해도_델타_소비는_돌린다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(deltaProcessor, times(1)).consumeAndApply();
+    }
+
+    /**
+     * 델타 소비도 재시도를 받는다. 근거는 리뷰 축의 멱등성이 아니라 소비의 트랜잭션성이다 —
+     * 적용과 삭제가 한 트랜잭션이라 실패한 시도는 전표를 그대로 남기고 롤백된다.
+     */
+    @Test
+    void 델타_소비가_실패하면_재시도한다() {
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
+        willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(deltaProcessor, times(placeStatsProperties.getBatchMaxAttempts())).consumeAndApply();
     }
 
     // === 회차 내 재시도 ===
@@ -152,13 +223,13 @@ class PlaceStatsFacadeTest {
     @Test
     void 재시도는_첫_시도와_같은_기준_시각을_쓴다() {
         willThrow(new RuntimeException("boom"))
-                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
         placeStatsFacade.recalculatePlaceCounts();
 
         ArgumentCaptor<LocalDateTime> captor = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
-                .recalculateCounts(captor.capture());
+                .recalculateReviewCounts(captor.capture());
         assertThat(captor.getAllValues()).containsOnly(captor.getAllValues().getFirst());
     }
 
@@ -168,13 +239,13 @@ class PlaceStatsFacadeTest {
      */
     @Test
     void 중간에_성공하면_더_돌지_않고_실패는_warn으로만_남는다() {
-        given(batchProcessor.recalculateCounts(any(LocalDateTime.class)))
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class)))
                 .willThrow(new RuntimeException("boom"))
                 .willReturn(10);
 
         placeStatsFacade.recalculatePlaceCounts();
 
-        verify(batchProcessor, times(2)).recalculateCounts(any(LocalDateTime.class));
+        verify(batchProcessor, times(2)).recalculateReviewCounts(any(LocalDateTime.class));
         assertThat(logAppender.list)
                 .filteredOn(event -> event.getLevel() == Level.ERROR)
                 .isEmpty();
@@ -189,7 +260,7 @@ class PlaceStatsFacadeTest {
      */
     @Test
     void 재시도로_복구된_카운트_회차도_골격_스냅샷을_교체한다() {
-        given(batchProcessor.recalculateCounts(any(LocalDateTime.class)))
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class)))
                 .willThrow(new RuntimeException("boom"))
                 .willReturn(10);
 
@@ -221,11 +292,11 @@ class PlaceStatsFacadeTest {
     void 최대_시도_1이면_재시도하지_않는다() {
         placeStatsProperties.setBatchMaxAttempts(1);
         willThrow(new RuntimeException("boom"))
-                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
         placeStatsFacade.recalculatePlaceCounts();
 
-        verify(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+        verify(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
         assertThat(logAppender.list)
                 .filteredOn(event -> event.getLevel() == Level.WARN)
                 .isEmpty();
@@ -239,11 +310,26 @@ class PlaceStatsFacadeTest {
      */
     @Test
     void 카운트_배치가_성공하면_골격_스냅샷을_교체한다() {
-        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
         placeStatsFacade.recalculatePlaceCounts();
 
         verify(placeSkeletonLoader).rebuild();
+    }
+
+    /**
+     * <b>한 축만 성공해도 스냅샷을 짓는다.</b> 성공한 축의 값은 실제로 갱신됐고, 스냅샷을 미루면
+     * 그 갱신이 다음 회차까지 순서·표시에 반영되지 않는다.
+     */
+    @Test
+    void 델타_소비만_성공해도_스냅샷을_짓는다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePlaceCounts();
+
+        verify(placeSkeletonLoader).rebuild();
+        verify(placeSortSnapshotRefresher).refreshAfterCommit();
     }
 
     /**
@@ -265,7 +351,8 @@ class PlaceStatsFacadeTest {
     @Test
     void 카운트_배치가_실패하면_골격_스냅샷을_교체하지_않는다() {
         willThrow(new RuntimeException("boom"))
-                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+        willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
 
         placeStatsFacade.recalculatePlaceCounts();
 
@@ -278,7 +365,7 @@ class PlaceStatsFacadeTest {
      */
     @Test
     void 골격_스냅샷_교체가_실패해도_카운트_배치는_완료로_남는다() {
-        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
         willThrow(new RuntimeException("snapshot boom")).given(placeSkeletonLoader).rebuild();
 
         placeStatsFacade.recalculatePlaceCounts();
@@ -286,7 +373,7 @@ class PlaceStatsFacadeTest {
         assertThat(logAppender.list)
                 .filteredOn(event -> event.getLevel() == Level.INFO)
                 .extracting(ILoggingEvent::getFormattedMessage)
-                .anyMatch(message -> message.contains("카운트 배치 완료"));
+                .anyMatch(message -> message.contains("리뷰 카운트 재계산 완료"));
         assertThat(logAppender.list)
                 .filteredOn(event -> event.getLevel() == Level.ERROR)
                 .singleElement()
@@ -302,7 +389,7 @@ class PlaceStatsFacadeTest {
     @EnumSource(value = SkeletonSource.class, names = {"PROJECTION", "ENTITY"})
     void 스냅샷_모드가_아니면_카운트_배치가_골격_스냅샷을_짓지_않는다(SkeletonSource source) {
         placeListProperties.setSkeletonSource(source);
-        given(batchProcessor.recalculateCounts(any(LocalDateTime.class))).willReturn(10);
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
         placeStatsFacade.recalculatePlaceCounts();
 
@@ -318,7 +405,9 @@ class PlaceStatsFacadeTest {
         placeStatsFacade.recalculatePopularScores();
 
         verify(batchProcessor).recalculateScores(any(LocalDateTime.class));
+        verify(batchProcessor, never()).recalculateReviewCounts(any(LocalDateTime.class));
         verify(batchProcessor, never()).recalculateCounts(any(LocalDateTime.class));
+        verify(deltaProcessor, never()).consumeAndApply();
     }
 
     @Test
@@ -373,6 +462,24 @@ class PlaceStatsFacadeTest {
     }
 
     /**
+     * 안전망 회차도 <b>하루 1회</b>이고, 점수 회차와 같은 이유로 시각이 못 박혀 있다.
+     * 특히 매시 회차(01:30)와 겹치면 아웃박스 전표를 두고 서로를 기다린다.
+     */
+    @Test
+    @DisplayName("안전망 cron 플레이스홀더는 프로퍼티가 없어도 매일 01:45로 해석된다")
+    void countSafetyCronPlaceholderFallsBackToDailyOneFortyFive() throws Exception {
+        String resolved = resolvedCron("recalculatePlaceCountsSafety");
+
+        LocalDateTime first =
+                CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 45));
+        assertThat(CronExpression.parse(resolved).next(first))
+                .isEqualTo(LocalDateTime.of(2026, 7, 31, 1, 45));
+
+        assertThat(new PlaceStatsProperties().getCountSafetyCron()).isEqualTo(resolved);
+    }
+
+    /**
      * 점수 회차는 <b>하루 1회</b>여야 한다. 다음 실행을 두 번 보는 이유가 카운트 쪽과 정반대다 —
      * 여기서는 두 회가 24시간 간격임을 봐야 "매시 01분"류의 회귀가 걸린다.
      */
@@ -400,27 +507,35 @@ class PlaceStatsFacadeTest {
      * 비대칭("카운트는 서버 시간대, 점수는 KST")이 코드에 남는다.
      */
     @Test
-    void 두_배치의_시간대는_모두_KST로_고정돼_있다() throws Exception {
+    void 세_배치의_시간대는_모두_KST로_고정돼_있다() throws Exception {
         assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCounts")
+                .getAnnotation(Scheduled.class).zone()).isEqualTo("Asia/Seoul");
+        assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCountsSafety")
                 .getAnnotation(Scheduled.class).zone()).isEqualTo("Asia/Seoul");
         assertThat(PlaceStatsFacade.class.getMethod("recalculatePopularScores")
                 .getAnnotation(Scheduled.class).zone()).isEqualTo("Asia/Seoul");
     }
 
     /**
-     * <b>두 회차가 같은 시각에 겹치지 않는다.</b> 점수 문장이 {@code place_stats} 전 행에 X 락을
-     * 커밋까지 들고 있어, 겹치면 두 배치가 서로를 기다린다. 01:00(점수)과 01:30(카운트)이
-     * 그 간격을 만든다 — 한쪽 cron만 고쳐 정각으로 옮기는 회귀를 여기서 잡는다.
+     * <b>세 회차가 같은 시각에 겹치지 않는다.</b> 점수 문장은 {@code place_stats} 전 행에 X 락을
+     * 커밋까지 들고, 안전망과 매시 회차는 같은 아웃박스 전표를 {@code FOR UPDATE}로 잡는다 —
+     * 겹치면 서로를 기다린다. 01:00(점수) · 01:30(매시) · 01:45(안전망)가 그 간격을 만들고,
+     * 한쪽 cron만 고쳐 같은 분으로 옮기는 회귀를 여기서 잡는다.
      */
     @Test
-    void 두_배치의_발화_시각은_겹치지_않는다() throws Exception {
+    void 세_배치의_발화_시각은_겹치지_않는다() throws Exception {
         CronExpression count = CronExpression.parse(resolvedCron("recalculatePlaceCounts"));
+        CronExpression safety = CronExpression.parse(resolvedCron("recalculatePlaceCountsSafety"));
         CronExpression score = CronExpression.parse(resolvedCron("recalculatePopularScores"));
 
         LocalDateTime scoreFire = score.next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        // 점수 회차 직전의 카운트 발화와 직후의 카운트 발화 어느 쪽도 같은 분에 걸리지 않는다
+        LocalDateTime safetyFire = safety.next(LocalDateTime.of(2026, 7, 30, 0, 0));
+        // 다른 회차 직전의 카운트 발화와 직후의 카운트 발화 어느 쪽도 같은 분에 걸리지 않는다
         assertThat(count.next(scoreFire)).isNotEqualTo(scoreFire);
         assertThat(count.next(scoreFire.minusSeconds(1))).isNotEqualTo(scoreFire);
+        assertThat(count.next(safetyFire)).isNotEqualTo(safetyFire);
+        assertThat(count.next(safetyFire.minusSeconds(1))).isNotEqualTo(safetyFire);
+        assertThat(safetyFire).isNotEqualTo(scoreFire);
     }
 
     /** 락 이름이 갈려 있어야 두 회차가 서로의 락을 잡아먹지 않는다 — 실제 동작은 SchedulerLockIT가 문다 */
@@ -525,6 +640,8 @@ class PlaceStatsFacadeTest {
         assertThat(PlaceStatsFacade.class.getAnnotation(Transactional.class)).isNull();
         assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCounts")
                 .getAnnotation(Transactional.class)).isNull();
+        assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCountsSafety")
+                .getAnnotation(Transactional.class)).isNull();
         assertThat(PlaceStatsFacade.class.getMethod("recalculatePopularScores")
                 .getAnnotation(Transactional.class)).isNull();
         assertThat(PlaceStatsFacade.class.getMethod("backfillPlaceStatsOnStartup")
@@ -535,7 +652,7 @@ class PlaceStatsFacadeTest {
     @DisplayName("예외를 삼키더라도 원인을 담아 error 레벨로 남긴다")
     void logsFailureAtErrorLevelWithCause() {
         RuntimeException cause = new RuntimeException("boom");
-        willThrow(cause).given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+        willThrow(cause).given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
         placeStatsFacade.recalculatePlaceCounts();
 
@@ -555,14 +672,15 @@ class PlaceStatsFacadeTest {
      * 블록된다(최대 {@code innodb_lock_wait_timeout} 50초). 시작 로그가 없거나 호출 <em>뒤에</em>
      * 있으면 "배치가 매달려 있다"와 "스케줄이 애초에 안 돌았다"가 로그로 구분되지 않는다.
      *
-     * <p>프로세서가 즉시 던지게 만들어 두면, 시작 로그가 남아 있다는 사실 자체가
+     * <p>두 축이 모두 즉시 던지게 만들어 두면, 시작 로그가 남아 있다는 사실 자체가
      * "호출 전에 찍혔다"의 증거가 된다.
      */
     @Test
     @DisplayName("배치 실패 시에도 시작 로그가 먼저 남아 있다")
     void logsStartBeforeInvokingProcessor() {
         willThrow(new RuntimeException("boom"))
-                .given(batchProcessor).recalculateCounts(any(LocalDateTime.class));
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+        willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
 
         placeStatsFacade.recalculatePlaceCounts();
 
@@ -570,5 +688,53 @@ class PlaceStatsFacadeTest {
                 .filteredOn(event -> event.getLevel() == Level.INFO)
                 .singleElement()
                 .satisfies(event -> assertThat(event.getFormattedMessage()).contains("시작"));
+    }
+
+    // === 카운트 안전망 회차 ===
+
+    /**
+     * <b>안전망은 재계산과 아웃박스 비우기를 묶은 진입점 하나로만 돈다.</b> 여기서
+     * {@code recalculateCounts}(비우지 않는 쪽)를 부르면 이미 셈에 들어간 토글을 다음 델타 회차가
+     * 또 더한다 — 값이 조용히 어긋나고 오류도 로그도 없다.
+     */
+    @Test
+    void 안전망_회차는_아웃박스를_비우는_전량_재계산을_부른다() {
+        given(batchProcessor.recalculateCountsAndClearOutbox(any(LocalDateTime.class)))
+                .willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCountsSafety();
+
+        verify(batchProcessor).recalculateCountsAndClearOutbox(any(LocalDateTime.class));
+        verify(batchProcessor, never()).recalculateCounts(any(LocalDateTime.class));
+        verify(deltaProcessor, never()).consumeAndApply();
+    }
+
+    /**
+     * <b>안전망에는 정렬 스냅샷만 건다.</b> 이 회차가 고치는 카운트 셋이 곧 정렬 축이라 정렬
+     * 스냅샷은 필수이고, 골격이 담는 값(이름·썸네일·대표 태그·동네)과는 무관해 거기 걸면 하루
+     * 한 번 이유 없는 전량 재빌드가 늘 뿐이다 — 낡음 상한은 매시 회차가 지킨다.
+     */
+    @Test
+    void 안전망_회차는_정렬_스냅샷만_리프레시한다() {
+        given(batchProcessor.recalculateCountsAndClearOutbox(any(LocalDateTime.class)))
+                .willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCountsSafety();
+
+        verify(placeSortSnapshotRefresher).refreshAfterCommit();
+        verify(placeSkeletonLoader, never()).rebuild();
+    }
+
+    /** 실패한 회차의 스냅샷은 짓지 않는다 — 값이 안 바뀌었는데 로그만 "지었다"로 남는다 */
+    @Test
+    void 안전망_회차가_실패하면_정렬_스냅샷을_리프레시하지_않는다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateCountsAndClearOutbox(any(LocalDateTime.class));
+
+        placeStatsFacade.recalculatePlaceCountsSafety();
+
+        verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
+                .recalculateCountsAndClearOutbox(any(LocalDateTime.class));
+        verify(placeSortSnapshotRefresher, never()).refreshAfterCommit();
     }
 }

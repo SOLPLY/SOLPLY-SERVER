@@ -63,6 +63,7 @@ class PlaceSortSnapshotIT extends MySqlContainerSupport {
     static void sortSourceProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
     }
 

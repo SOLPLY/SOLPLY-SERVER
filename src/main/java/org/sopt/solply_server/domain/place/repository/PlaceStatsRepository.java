@@ -11,10 +11,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /**
- * {@code place_stats}의 쓰기·읽기 문장 모음. 장소당 행 하나이고 주인이 셋이다 —
+ * {@code place_stats}의 쓰기·읽기 문장 모음. 장소당 행 하나이고 칸마다 주인이 다르다 —
  * 컬럼별 소유 주체는 {@link PlaceStats} javadoc의 표에 있다.
  *
- * <p><b>세 주체의 대입 목록이 서로 겹치면 안 된다.</b> 겹치는 순간 늦게 도는 쪽이 상대의 신선한
+ * <p><b>주체들의 대입 목록이 서로 겹치면 안 된다.</b> 겹치는 순간 늦게 도는 쪽이 상대의 신선한
  * 값을 자기가 읽은 낡은 스냅샷으로 되돌린다. 이 계약은 SQL의 {@code SET}·
  * {@code ON DUPLICATE KEY UPDATE} 목록에만 존재하므로 컬럼을 더할 때 반드시 어느 쪽 소유인지
  * 먼저 정할 것 ({@code PlaceStatsBatchProcessorIT}의 소유권 테스트들이 감시한다).
@@ -22,8 +22,16 @@ import org.springframework.data.repository.query.Param;
 public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
-     * 표시 카운트 셋을 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다 = 매시 카운트 회차의
-     * 전부다. 문장 하나라 원자성을 물을 지점이 없다.
+     * 표시 카운트 셋(북마크 수·리뷰 수·평균 평점)을 원본에서 재계산해 <b>이미 존재하는 행에만</b>
+     * 덮어쓴다. 문장 하나라 원자성을 물을 지점이 없다.
+     *
+     * <p><b>매시 회차의 문장이었으나 지금은 새벽 안전망의 것이다.</b> 북마크 축이 아웃박스 델타로
+     * 넘어가면서 매시 자리는 {@link #updateReviewCounts} + 델타 소비가 맡고, 이 전량 재계산은
+     * "버그로 생긴 표류의 상한을 하루로" 잡는 마지막 겹으로 남았다
+     * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4). 세 축을 함께 덮으므로
+     * <b>부르는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은 트랜잭션에서 비워야 한다</b> —
+     * 그러지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또 더한다
+     * ({@code PlaceStatsBatchProcessor#recalculateCountsAndClearOutbox}).
      *
      * <p><b>UPDATE이지 UPSERT가 아닌 것이 이 문장의 요점이다.</b> 행의 존재와 파생 세 칸
      * ({@code town_id}·{@code created_at}·{@code tag_bitmask})의 주인은 어드민 쓰기 트랜잭션
@@ -88,6 +96,71 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             ps.avg_rating     = COALESCE(r.avg_rating, 0)
         """, nativeQuery = true)
     int updateCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
+
+    /**
+     * 리뷰 축(리뷰 수·평균 평점)만 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다 =
+     * 매시 카운트 회차의 절반. 나머지 절반인 북마크 축은 아웃박스 델타 소비가 맡는다
+     * ({@code BookmarkCountDeltaProcessor}).
+     *
+     * <p><b>{@code bookmark_count}가 SET 목록에 없는 것이 이 문장의 존재 이유다.</b> 북마크 축의
+     * 주인이 전량 재계산에서 델타 소비로 넘어갔으므로, 여기서 함께 세면 회차마다 델타가 방금 더한
+     * 값을 전량 스캔 결과로 되돌린다 — 대입 목록이 겹치면 안 된다는 이 인터페이스의 계약 그대로다.
+     *
+     * <p>리뷰 축은 델타로 만들지 않았다. 아팠던 축은 북마크뿐이고(리뷰 축은 원천 행 수가 그
+     * 1.9%, 실측 117ms — {@code docs/design/2026-08-15-bookmark-count-supply.md}), 신선도 ≤1h를
+     * 지키는 가장 단순한 수단이 매시 재계산이기 때문이다.
+     *
+     * <p>나머지 계약은 {@link #updateCounts}를 그대로 상속한다: {@code READ_COMMITTED} 필수,
+     * {@code created_at <= :calculatedAt} 상한(= 멱등성), {@code COALESCE}로 0 채우기, SET 목록에
+     * 회차 시각 금지. 근거는 옮겨 적지 않고 그쪽 javadoc <b>한 곳에만</b> 둔다.
+     *
+     * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
+     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수 — 근거는 {@link #updateCounts}
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE place_stats ps
+        LEFT JOIN (
+            SELECT pr.place_id AS place_id,
+                   COUNT(*) AS cnt,
+                   AVG(pr.rating) AS avg_rating
+            FROM place_reviews pr
+            WHERE pr.created_at <= :calculatedAt
+            GROUP BY pr.place_id
+        ) r ON r.place_id = ps.place_id
+        SET ps.review_count = COALESCE(r.cnt, 0),
+            ps.avg_rating   = COALESCE(r.avg_rating, 0)
+        """, nativeQuery = true)
+    int updateReviewCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
+
+    /**
+     * 한 장소의 북마크 수에 델타를 더한다 = <b>아웃박스 소비의 유일한 쓰기 문장</b>.
+     * 부르는 곳은 {@code BookmarkCountDeltaProcessor} 하나이고, 거기서 대상별 합으로 접은 값이
+     * 들어온다 — 전표 한 장에 한 번 부르는 형태가 아니다.
+     *
+     * <p><b>{@code GREATEST(0, …)}는 표류가 만든 음수의 방어선이다.</b> 카운트 컬럼이 signed INT라
+     * 언더플로 에러가 나지는 않으므로, 막는 것은 실패가 아니라 목록에 "북마크 −3"이 찍히는 것이다.
+     * 바닥에 물려 두면 다음 안전망 회차가 원본 기준으로 되맞출 때까지 표시만 눌러 둔다.
+     *
+     * <p><b>행이 없으면 0행 갱신이고 그것이 정상이다.</b> 비활성·삭제된 장소는 {@code place_stats}에
+     * 행이 없으므로("행이 있는 장소 = 목록에 나와도 되는 장소") 그 장소로 남은 전표는 적용될 곳
+     * 없이 버려진다. 되살아나는 경로는 어드민 재활성({@link #upsertRowsForActivePlaces})이고,
+     * 그쪽은 카운트를 0에서 다시 시작한다.
+     *
+     * <p>{@code clearAutomatically}를 켜지 않는다 — 소비 트랜잭션은 {@code PlaceStats} 엔티티를
+     * 읽지 않아 1차 캐시가 낡을 자리가 없고, 켜면 장소마다 컨텍스트를 비워 같은 트랜잭션에서
+     * 읽어 둔 전표 엔티티까지 detach된다.
+     *
+     * @param delta 대상별로 접은 합. 0이면 부르지 말 것 — 쓸 것이 없는데 행을 잠근다
+     * @return 문장이 걸린 행 수: 행이 있으면 1, 없으면 0
+     */
+    @Modifying
+    @Query(value = """
+        UPDATE place_stats ps
+        SET ps.bookmark_count = GREATEST(0, ps.bookmark_count + :delta)
+        WHERE ps.place_id = :placeId
+        """, nativeQuery = true)
+    int applyBookmarkDelta(@Param("placeId") Long placeId, @Param("delta") int delta);
 
     /**
      * 활성 장소 전량의 행을 원본에서 다시 짓는다 = <b>기동 시 최초 적재와 운영 복구의 문장</b>.
