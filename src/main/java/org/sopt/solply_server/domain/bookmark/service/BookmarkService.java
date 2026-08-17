@@ -8,7 +8,9 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
+import org.sopt.solply_server.domain.bookmark.entity.BookmarkCountEvent;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
+import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidatorRegistry;
 import org.sopt.solply_server.domain.user.entity.User;
@@ -26,16 +28,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class BookmarkService {
 
     private final BookmarkRepository bookmarkRepository;
+    private final BookmarkCountEventRepository countEventRepository;
     private final BookmarkTargetValidatorRegistry validatorRegistry;
     private final EntityLoader entityLoader;
 
     /**
      * 북마크 생성. 이미 북마크한 대상이면 409로 거절한다.
      *
-     * <p><b>여기서 이벤트를 발행하지 않는다 (2026-08-07).</b> 예전에는 {@code place_stats}
-     * 카운트를 준실시간으로 증분하는 리스너가 있었고 PLACE 북마크만 이벤트를 냈다. 증분을 폐지한
-     * 뒤로도 발행측만 남아 소비자 없는 이벤트를 계속 던지고 있었기에 함께 걷어냈다 —
-     * 카운트를 고치는 주체는 매시 카운트 배치 하나뿐이다.
+     * <p><b>INSERT가 실제로 일어났을 때만 +1 전표를 남긴다.</b> 409로 튕긴 경로는 발행하지
+     * 않는다 — 유니크 제약이 "실제 INSERT 1건 = +1 이벤트 1건"을 보장하는 자리다. 전표는 북마크와
+     * 같은 트랜잭션에 들어가므로 둘 다 남거나 둘 다 안 남는다.
+     *
+     * <p>예전에도 같은 자리에 이벤트가 있었지만 성질이 다르다. 그것은 {@code place_stats}를
+     * 준실시간으로 증분하는 <em>앱 내 리스너</em>를 향했고, 지금 것은 같은 DB에 행으로 남아
+     * 배치 하나가 회차마다 접어서 소비하는 전표다 — 요청 시점에 공유 카운터를 건드리지 않는다는
+     * 것이 이 구조의 값어치다 (docs/design/2026-08-17-bookmark-outbox-delta.md 4-3).
      *
      * <p><b>중복 가드가 두 겹인 이유.</b> 앞의 exists 검사는 흔한 경우(이미 북마크한 대상을
      * 다시 누름)를 DB 예외 없이 걸러 준다. 하지만 같은 사용자의 동시 요청 둘은 검사를 <em>둘 다</em>
@@ -56,6 +63,18 @@ public class BookmarkService {
             log.debug("북마크 중복 등록(동시 요청) - userId={}, type={}, targetId={}", userId, type, targetId);
             throw new BusinessException(alreadyBookmarked(type));
         }
+        if (publishesCountEvent(type)) {
+            countEventRepository.save(BookmarkCountEvent.increment(type, targetId));
+        }
+    }
+
+    /**
+     * 카운트 전표를 낼 대상인지. COURSE는 내지 않는다 — 코스는 카운트를 노출하지 않아 더할 곳이
+     * 없고, 소비자 없는 전표는 배치가 매 회차 읽고 지우는 쓰레기다. 코스 카운트를 노출하게 되면
+     * 이 분기를 지우는 것이 첫 작업이다.
+     */
+    private static boolean publishesCountEvent(BookmarkTargetType type) {
+        return type == BookmarkTargetType.PLACE;
     }
 
     /** 대상 종류별 중복 북마크 에러코드. 클라이언트가 장소/코스를 코드로 구분할 수 있도록 나눠 둔다. */
@@ -66,14 +85,22 @@ public class BookmarkService {
         };
     }
 
-    /** 북마크 삭제 (미존재 시 no-op). 존재 여부 검사가 없으면 없는 북마크에도 DELETE가 나간다. */
+    /**
+     * 북마크 삭제 (미존재 시 no-op).
+     *
+     * <p><b>−1 전표는 영향 행 수가 1일 때만 낸다.</b> 여기 있던 exists 사전 검사를 걷어낸 이유가
+     * 그것이다 — 동시 삭제 둘은 검사를 함께 통과할 수 있고, 그 위에 발행을 걸면 행을 지운 쪽이
+     * 하나인데 −1이 두 번 쌓인다. DELETE의 반환값은 그 착시를 겪지 않는다.
+     */
     @Transactional
     public void delete(Long userId, BookmarkTargetType type, Long targetId) {
-        boolean existed = bookmarkRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-        if (existed) {
-            bookmarkRepository.deleteByUserIdAndTargetTypeAndTargetId(userId, type, targetId);
-        } else {
+        int affected = bookmarkRepository.deleteByUserTarget(userId, type, targetId);
+        if (affected == 0) {
             log.debug("삭제할 북마크가 존재하지 않음 - userId={}, type={}, targetId={}", userId, type, targetId);
+            return;
+        }
+        if (publishesCountEvent(type)) {
+            countEventRepository.save(BookmarkCountEvent.decrement(type, targetId));
         }
     }
 

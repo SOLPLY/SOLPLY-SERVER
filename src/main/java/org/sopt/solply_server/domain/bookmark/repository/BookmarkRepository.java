@@ -7,12 +7,25 @@ import java.util.Set;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
-    void deleteByUserIdAndTargetTypeAndTargetId(Long userId, BookmarkTargetType type, Long targetId);
+    /**
+     * 북마크 1건 삭제. <b>반환값은 실제로 지워진 행 수이고, −1 카운트 이벤트의 발행 여부가 여기
+     * 걸린다.</b>
+     *
+     * <p>파생 쿼리 {@code deleteBy…}(select 후 엔티티별 삭제)가 아니라 벌크 DELETE인 이유가
+     * 그것이다 — 발행 조건을 exists 사전 검사에 걸면 같은 북마크를 동시에 지우는 요청 둘이 검사를
+     * 함께 통과해 −1이 두 번 쌓인다. 행을 실제로 지운 쪽은 하나이므로, 영향 행 수에 걸어야 카운트
+     * 표류가 원천 차단된다 (docs/design/2026-08-17-bookmark-outbox-delta.md 4-1).
+     */
+    @Modifying
+    @Query("delete from Bookmark b where b.user.id = :userId and b.targetType = :type and b.targetId = :targetId")
+    int deleteByUserTarget(@Param("userId") Long userId, @Param("type") BookmarkTargetType type,
+            @Param("targetId") Long targetId);
 
     boolean existsByUserIdAndTargetTypeAndTargetId(Long userId, BookmarkTargetType type, Long targetId);
 
