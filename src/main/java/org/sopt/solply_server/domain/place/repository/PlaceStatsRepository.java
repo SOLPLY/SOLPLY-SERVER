@@ -134,35 +134,6 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     int updateReviewCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
 
     /**
-     * 한 장소의 북마크 수에 델타를 더한다 = <b>아웃박스 소비의 유일한 쓰기 문장</b>.
-     * 부르는 곳은 {@code BookmarkCountDeltaProcessor} 하나이고, 거기서 대상별 합으로 접은 값이
-     * 들어온다 — 전표 한 장에 한 번 부르는 형태가 아니다.
-     *
-     * <p><b>{@code GREATEST(0, …)}는 표류가 만든 음수의 방어선이다.</b> 카운트 컬럼이 signed INT라
-     * 언더플로 에러가 나지는 않으므로, 막는 것은 실패가 아니라 목록에 "북마크 −3"이 찍히는 것이다.
-     * 바닥에 물려 두면 다음 안전망 회차가 원본 기준으로 되맞출 때까지 표시만 눌러 둔다.
-     *
-     * <p><b>행이 없으면 0행 갱신이고 그것이 정상이다.</b> 비활성·삭제된 장소는 {@code place_stats}에
-     * 행이 없으므로("행이 있는 장소 = 목록에 나와도 되는 장소") 그 장소로 남은 전표는 적용될 곳
-     * 없이 버려진다. 되살아나는 경로는 어드민 재활성({@link #upsertRowsForActivePlaces})이고,
-     * 그쪽은 카운트를 0에서 다시 시작한다.
-     *
-     * <p>{@code clearAutomatically}를 켜지 않는다 — 소비 트랜잭션은 {@code PlaceStats} 엔티티를
-     * 읽지 않아 1차 캐시가 낡을 자리가 없고, 켜면 장소마다 컨텍스트를 비워 같은 트랜잭션에서
-     * 읽어 둔 전표 엔티티까지 detach된다.
-     *
-     * @param delta 대상별로 접은 합. 0이면 부르지 말 것 — 쓸 것이 없는데 행을 잠근다
-     * @return 문장이 걸린 행 수: 행이 있으면 1, 없으면 0
-     */
-    @Modifying
-    @Query(value = """
-        UPDATE place_stats ps
-        SET ps.bookmark_count = GREATEST(0, ps.bookmark_count + :delta)
-        WHERE ps.place_id = :placeId
-        """, nativeQuery = true)
-    int applyBookmarkDelta(@Param("placeId") Long placeId, @Param("delta") int delta);
-
-    /**
      * 활성 장소 전량의 행을 원본에서 다시 짓는다 = <b>기동 시 최초 적재와 운영 복구의 문장</b>.
      * 정기 회차는 이 문장을 쓰지 않는다 ({@link #updateCounts}).
      *

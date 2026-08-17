@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsJdbcRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor.DeltaResult;
 import org.sopt.solply_server.global.config.QueryDslConfig;
@@ -36,7 +37,7 @@ import org.springframework.test.context.DynamicPropertySource;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({QueryDslConfig.class, BookmarkCountDeltaProcessor.class, PlaceStatsBatchProcessor.class,
-        PlaceStatsProperties.class})
+        PlaceStatsProperties.class, PlaceStatsJdbcRepository.class})
 class BookmarkCountDeltaProcessorIT extends MySqlContainerSupport {
 
     /** 안전망 회차의 기준 시각. 픽스처 북마크의 created_at을 이 시각보다 앞에 둔다. */

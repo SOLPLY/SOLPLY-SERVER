@@ -1,13 +1,14 @@
 package org.sopt.solply_server.domain.place.service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.bookmark.entity.BookmarkCountEvent;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
-import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
+import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository.ConsumableEvent;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsJdbcRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class BookmarkCountDeltaProcessor {
 
     private final BookmarkCountEventRepository countEventRepository;
-    private final PlaceStatsRepository placeStatsRepository;
+    private final PlaceStatsJdbcRepository placeStatsJdbcRepository;
 
     /**
      * 아웃박스를 한 번 비우며 {@code bookmark_count}에 반영한다. 전표가 없으면 아무 일도 하지 않는다.
@@ -55,29 +56,26 @@ public class BookmarkCountDeltaProcessor {
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public DeltaResult consumeAndApply() {
-        List<BookmarkCountEvent> consumed = countEventRepository.findAllForConsume();
+        List<ConsumableEvent> consumed = countEventRepository.findAllForConsume();
         if (consumed.isEmpty()) {
             return DeltaResult.empty();
         }
 
+        List<Long> consumedIds = new ArrayList<>(consumed.size());
         Map<Long, Integer> deltaByPlace = new LinkedHashMap<>();
-        for (BookmarkCountEvent event : consumed) {
-            if (event.getTargetType() != BookmarkTargetType.PLACE) {
+        for (ConsumableEvent event : consumed) {
+            consumedIds.add(event.getId());
+            if (!BookmarkTargetType.PLACE.name().equals(event.getTargetType())) {
                 continue;
             }
             deltaByPlace.merge(event.getTargetId(), event.getDelta(), Integer::sum);
         }
+        deltaByPlace.values().removeIf(delta -> delta == 0);
 
-        int updatedPlaces = 0;
-        for (Map.Entry<Long, Integer> entry : deltaByPlace.entrySet()) {
-            if (entry.getValue() == 0) {
-                continue;
-            }
-            updatedPlaces += placeStatsRepository.applyBookmarkDelta(entry.getKey(), entry.getValue());
-        }
-
-        countEventRepository.deleteAllByIdInBatch(
-                consumed.stream().map(BookmarkCountEvent::getId).toList());
+        int updatedPlaces = deltaByPlace.isEmpty()
+                ? 0
+                : placeStatsJdbcRepository.applyBookmarkDeltas(deltaByPlace);
+        countEventRepository.deleteAllByIdInBatch(consumedIds);
         return new DeltaResult(consumed.size(), updatedPlaces);
     }
 

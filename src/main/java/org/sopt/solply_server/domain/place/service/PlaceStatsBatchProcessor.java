@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.domain.bookmark.entity.BookmarkCountEvent;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
@@ -156,7 +155,7 @@ public class PlaceStatsBatchProcessor {
      */
     private List<Long> lockOutboxIds() {
         return countEventRepository.findAllForConsume().stream()
-                .map(BookmarkCountEvent::getId)
+                .map(BookmarkCountEventRepository.ConsumableEvent::getId)
                 .toList();
     }
 
