@@ -23,6 +23,21 @@ import org.springframework.stereotype.Repository;
  * 힌트로 그 맹점을 우회하는 안은 임계가 요청 형상 한 점에서만 유효함이 실측으로 확정돼 철회했고
  * ({@code load-test/campaigns/2026-08-11_region-size-threshold}), 대신 선택지 자체를 없앴다.
  *
+ * <p><b>정적 정렬 다섯은 동네마다 한 브랜치씩 UNION ALL로 엮는다.</b> {@code town_id IN (...)} 한
+ * 문장은 동네 구간 사이에 순서가 없어 후보 전량을 읽고 정렬해야 하므로 읽는 양이 동네당 장소 수에
+ * 정비례한다. 브랜치로 쪼개면 구간 <em>안에서는</em> 인덱스가 순서를 만들어 주므로 브랜치가 LIMIT을
+ * 채우는 자리에서 멈춘다 — 필터 통과율이 유지되는 한 읽는 깊이가 데이터 규모와 분리된다(동네당
+ * 100→200곳에서 IN은 1,812→3,615행, 브랜치는 407행 유지). 대가는 union 임시 테이블 하나와 브랜치
+ * 실행 준비인데 둘 다 규모와 무관한 상수이고, 파싱·플랜·왕복은 여전히 문장 하나 몫이다.
+ * 근거는 {@code docs/blog/2026-08-21-multi-town-query-cost-structure.md}.
+ *
+ * <p><b>동네가 하나면 브랜치도 UNION도 만들지 않는다</b> — 단일 동네는 원래 인덱스 순서로 조기
+ * 종료하므로 쪼갤 것이 없고, 임시 테이블 고정비만 더해진다.
+ *
+ * <p><b>이 경로는 정렬 스냅샷이 없을 때 서는 폴백이다</b> ({@code PlaceService#sortIndexOrNull}).
+ * 기동 직후와 스냅샷 빌드 실패 구간이 그 창이고, 그때는 트래픽이 통째로 여기로 온다 — 형상을 고를 때
+ * "여유 있을 때의 우회로"가 아니라 <b>부하가 몰리는 순간에 서는 경로</b>로 놓고 판단한다.
+ *
  * <p><b>정렬 3종(평점·리뷰·북마크)에는 인덱스 강제 스위치가 걸려 있다</b>
  * ({@code solply.place-list.force-sort-index}, 기본 false). 세 인덱스가 인기순 인덱스의 부분집합이라
  * 옵티마이저가 순서를 못 만드는 인덱스를 고르는 문제가 실측으로 확인됐고, 그 수리안을 같은 창
@@ -67,6 +82,29 @@ public class PlaceListDbQueryRepository {
     /** 북마크 수순의 의도 인덱스 (V36) */
     private static final String IDX_BOOKMARKS = "idx_place_stats_town_bookmarks";
 
+    /**
+     * 정렬별 SELECT 목록. <b>별칭이 곧 바깥 ORDER BY가 부르는 이름</b>이다 — UNION 결과에는 테이블이
+     * 없어 {@code ps.컬럼}으로 가리킬 수 없으므로, 정렬 키 컬럼은 반드시 이 목록 안에 있어야 한다.
+     * 다섯 정렬 모두 정렬 키가 이미 표시값이거나 커서 키라 새로 실을 것은 없다.
+     */
+    private static final String POPULAR_SELECT =
+            "ps.place_id AS place_id, ps.popular_score AS popular_score, "
+                    + "ps.bookmark_count AS bookmark_count, ps.review_count AS review_count, "
+                    + "ps.avg_rating AS avg_rating";
+
+    private static final String LATEST_SELECT =
+            "ps.place_id AS place_id, ps.created_at AS created_at, "
+                    + "ps.bookmark_count AS bookmark_count, ps.review_count AS review_count, "
+                    + "ps.avg_rating AS avg_rating";
+
+    private static final String RATING_SELECT =
+            "ps.place_id AS place_id, ps.avg_rating AS avg_rating, "
+                    + "ps.review_count AS review_count, ps.bookmark_count AS bookmark_count";
+
+    private static final String COUNT_SELECT =
+            "ps.place_id AS place_id, ps.bookmark_count AS bookmark_count, "
+                    + "ps.review_count AS review_count, ps.avg_rating AS avg_rating";
+
     private final EntityManager em;
     private final PlaceListProperties placeListProperties;
 
@@ -109,9 +147,10 @@ public class PlaceListDbQueryRepository {
      * <b>시간당 미채점 행만 따로 채점하는 패스를 추가하지 말 것</b> — 그 순간 "점수는 하루 1회"가
      * 깨지고 커서 좌표계가 다시 매시간 갈린다.
      *
-     * <p><b>다중 town 조회의 filesort는 수용한다.</b> 인덱스상 결과가 town별로 묶여 각 range 안에서만
-     * 점수순이라 {@code town_id IN (...)}이 여러 개면 전역 점수순을 인덱스가 만들 수 없다.
-     * 정렬 대상이 커버링 엔트리(시 단위 ~1,800건)라 싸다는 것이 수용 근거다(실측).
+     * <p><b>다중 town은 동네마다 브랜치를 만든다.</b> 인덱스상 결과가 town별로 묶여 각 range
+     * 안에서만 점수순이라 {@code town_id IN (...)}으로는 전역 점수순을 인덱스가 만들 수 없고, 후보
+     * 전량을 읽어 정렬해야 한다. 브랜치는 그 순서를 동네 단위로 되살려 {@code LIMIT}이 차는 자리에서
+     * 멈춘다 — 형상과 채택 근거는 클래스 javadoc, 결과가 같은 근거는 {@link #townBranchedSql}.
      *
      * <p><b>커서 점수를 double로 바인딩하는 이유.</b> 커서에 싣는 값은 {@code DECIMAL(18,6)}을
      * {@code doubleValue()}로 좁힌 것이고, MySQL도 DECIMAL과 DOUBLE 파라미터를 DOUBLE로 올려
@@ -129,25 +168,21 @@ public class PlaceListDbQueryRepository {
         TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
-        StringBuilder sql = new StringBuilder("""
-                SELECT ps.place_id, ps.popular_score, ps.bookmark_count,
-                       ps.review_count, ps.avg_rating
-                FROM place_stats ps
-                WHERE ps.town_id IN (:townIds)
-                  AND ps.score_calculated_at IS NOT NULL
-                """);
-        appendTagFilters(sql, masks);
+        StringBuilder predicates = new StringBuilder("  AND ps.score_calculated_at IS NOT NULL\n");
+        appendTagFilters(predicates, masks);
         if (useCursor) {
-            sql.append("""
+            predicates.append("""
                       AND (ps.popular_score < :cursorScore
                            OR (ps.popular_score = :cursorScore AND ps.place_id > :cursorPlaceId))
                     """);
         }
-        sql.append("ORDER BY ps.popular_score DESC, ps.place_id ASC LIMIT :limitSize");
 
-        Query query = em.createNativeQuery(sql.toString())
-                .setParameter("townIds", townIds)
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), POPULAR_SELECT, null, predicates.toString(),
+                        "ps.popular_score DESC, ps.place_id ASC",
+                        "popular_score DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
+        bindTownIds(query, townIds);
         bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorScore", cursorScore);
@@ -180,8 +215,9 @@ public class PlaceListDbQueryRepository {
      * (뒤에 붙는 place_id가 여전히 오름차순이라 타이브레이크가 반대) — V31·V34 주석에 실측 근거가
      * 있다. 말단 네 컬럼이 태그 술어와 표시값을 덮어 커버링이기도 하다.
      *
-     * <p>다중 town은 town별로만 순서가 만들어져 filesort가 남는다. 정렬 대상이 커버링 엔트리
-     * (시 단위 ~1,800건)라 수용한다 — 인기순과 같은 성질이다.
+     * <p>다중 town을 동네별 브랜치로 쪼개는 규칙은 인기순과 같다 — 역방향 스캔이 만드는 순서도
+     * 동네 안에서만 성립하기 때문이다. 브랜치 안의 타이브레이크가 {@code place_id DESC}인 만큼
+     * 바깥 정렬도 같은 방향이어야 한다({@link #townBranchedSql}의 전순서 계약).
      *
      * <p><b>커서를 {@code FROM_UNIXTIME}이 아니라 LocalDateTime 바인딩으로 비교하는 이유.</b>
      * {@code FROM_UNIXTIME}은 세션 {@code time_zone}을 타므로 커넥션 설정에 따라 경계가 통째로
@@ -209,24 +245,21 @@ public class PlaceListDbQueryRepository {
         TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorEpochSecond != null && cursorPlaceId != null;
 
-        StringBuilder sql = new StringBuilder("""
-                SELECT ps.place_id, ps.created_at, ps.bookmark_count,
-                       ps.review_count, ps.avg_rating
-                FROM place_stats ps
-                WHERE ps.town_id IN (:townIds)
-                """);
-        appendTagFilters(sql, masks);
+        StringBuilder predicates = new StringBuilder();
+        appendTagFilters(predicates, masks);
         if (useCursor) {
-            sql.append("""
+            predicates.append("""
                       AND (ps.created_at < :cursorCreatedAt
                            OR (ps.created_at = :cursorCreatedAt AND ps.place_id < :cursorPlaceId))
                     """);
         }
-        sql.append("ORDER BY ps.created_at DESC, ps.place_id DESC LIMIT :limitSize");
 
-        Query query = em.createNativeQuery(sql.toString())
-                .setParameter("townIds", townIds)
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), LATEST_SELECT, null, predicates.toString(),
+                        "ps.created_at DESC, ps.place_id DESC",
+                        "created_at DESC, place_id DESC"))
                 .setParameter("limitSize", limit);
+        bindTownIds(query, townIds);
         bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorCreatedAt",
@@ -292,14 +325,10 @@ public class PlaceListDbQueryRepository {
         boolean useCursor =
                 cursorRating != null && cursorReviewCount != null && cursorPlaceId != null;
 
-        StringBuilder sql = new StringBuilder("""
-                SELECT ps.place_id, ps.avg_rating, ps.review_count, ps.bookmark_count
-                """);
-        appendFrom(sql, IDX_RATING);
-        sql.append("WHERE ps.town_id IN (:townIds)\n");
-        appendTagFilters(sql, masks);
+        StringBuilder predicates = new StringBuilder();
+        appendTagFilters(predicates, masks);
         if (useCursor) {
-            sql.append("""
+            predicates.append("""
                       AND (ps.avg_rating < :cursorRating
                            OR (ps.avg_rating = :cursorRating
                                AND (ps.review_count < :cursorReviewCount
@@ -307,12 +336,13 @@ public class PlaceListDbQueryRepository {
                                         AND ps.place_id > :cursorPlaceId))))
                     """);
         }
-        sql.append(
-                "ORDER BY ps.avg_rating DESC, ps.review_count DESC, ps.place_id ASC LIMIT :limitSize");
 
-        Query query = em.createNativeQuery(sql.toString())
-                .setParameter("townIds", townIds)
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), RATING_SELECT, IDX_RATING, predicates.toString(),
+                        "ps.avg_rating DESC, ps.review_count DESC, ps.place_id ASC",
+                        "avg_rating DESC, review_count DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
+        bindTownIds(query, townIds);
         bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorRating", cursorRating);
@@ -379,23 +409,20 @@ public class PlaceListDbQueryRepository {
         TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorCount != null && cursorPlaceId != null;
 
-        StringBuilder sql = new StringBuilder("""
-                SELECT ps.place_id, ps.bookmark_count, ps.review_count, ps.avg_rating
-                """);
-        appendFrom(sql, intendedIndex);
-        sql.append("WHERE ps.town_id IN (:townIds)\n");
-        appendTagFilters(sql, masks);
+        StringBuilder predicates = new StringBuilder();
+        appendTagFilters(predicates, masks);
         if (useCursor) {
-            sql.append("  AND (ps.").append(countColumn).append(" < :cursorCount\n")
+            predicates.append("  AND (ps.").append(countColumn).append(" < :cursorCount\n")
                     .append("       OR (ps.").append(countColumn)
                     .append(" = :cursorCount AND ps.place_id > :cursorPlaceId))\n");
         }
-        sql.append("ORDER BY ps.").append(countColumn)
-                .append(" DESC, ps.place_id ASC LIMIT :limitSize");
 
-        Query query = em.createNativeQuery(sql.toString())
-                .setParameter("townIds", townIds)
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), COUNT_SELECT, intendedIndex, predicates.toString(),
+                        "ps." + countColumn + " DESC, ps.place_id ASC",
+                        countColumn + " DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
+        bindTownIds(query, townIds);
         bindTagFilters(query, masks);
         if (useCursor) {
             query.setParameter("cursorCount", cursorCount);
@@ -466,6 +493,66 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
+     * 동네마다 한 브랜치씩, 브랜치 안에서 정렬과 절단을 끝내고 UNION ALL로 엮은 목록 문장.
+     * <b>동네가 하나면 브랜치도 UNION도 만들지 않는다</b> — 채택 근거는 클래스 javadoc.
+     *
+     * <p><b>술어와 LIMIT은 반드시 브랜치 안에 있어야 한다.</b> 커서 술어를 바깥으로 빼면 브랜치가
+     * 커서 <em>앞</em>의 행으로 LIMIT을 채우고, 정작 다음 페이지에 실려야 할 행이 통째로 누락된다.
+     *
+     * <p><b>브랜치 LIMIT이 바깥 LIMIT과 같아도 결과가 온전한 이유.</b> 전역 상위 N은 언제나 동네별
+     * 상위 N의 합집합 안에 있다 — 어떤 장소가 자기 동네의 상위 N 밖이라면 같은 동네에 그보다 앞선
+     * 장소가 N개 이상이라는 뜻이고, 그들은 전역에서도 전부 앞이므로 그 장소는 전역 상위 N이 아니다.
+     * 커서 술어가 모든 브랜치에 똑같이 걸리므로 이 논증은 두 번째 페이지 이후에도 성립한다.
+     *
+     * @param intendedIndex {@code null}이면 힌트를 붙이지 않는다 ({@link #appendFrom})
+     * @param predicates    동네 조건 <b>뒤에</b> 붙는 술어 전부(태그 마스크·커서·인기순의 미채점
+     *                      제외). 줄마다 {@code "  AND "}로 시작하고 개행으로 끝나야 한다
+     * @param innerOrderBy  브랜치 안의 정렬. {@code ps.} 한정자를 붙여 인덱스가 만드는 순서와 같은
+     *                      식으로 적는다
+     * @param outerOrderBy  브랜치들을 합친 뒤의 정렬. UNION 결과에는 테이블이 없으므로 <b>SELECT
+     *                      별칭</b>으로 적으며, 안쪽과 <b>같은 전순서</b>여야 한다 — 타이브레이크
+     *                      방향까지 같아야 하고(최신순만 {@code place_id DESC}), 어긋나면 브랜치
+     *                      경계에서 동률 항목의 순서가 페이지마다 흔들린다
+     */
+    private String townBranchedSql(int townCount, String selectList, String intendedIndex,
+            String predicates, String innerOrderBy, String outerOrderBy) {
+
+        boolean branched = townCount > 1;
+        StringBuilder sql = new StringBuilder();
+        for (int i = 0; i < townCount; i++) {
+            if (i > 0) {
+                sql.append("UNION ALL\n");
+            }
+            if (branched) {
+                sql.append("(");
+            }
+            sql.append("SELECT ").append(selectList).append("\n");
+            appendFrom(sql, intendedIndex);
+            sql.append("WHERE ps.town_id = :town").append(i).append("\n")
+                    .append(predicates)
+                    .append("ORDER BY ").append(innerOrderBy).append(" LIMIT :limitSize");
+            if (branched) {
+                sql.append(")\n");
+            }
+        }
+        if (branched) {
+            sql.append("ORDER BY ").append(outerOrderBy).append(" LIMIT :limitSize");
+        }
+        return sql.toString();
+    }
+
+    /**
+     * 동네 하나에 파라미터 하나. 브랜치는 자기 동네 id만 보므로 {@code IN} 리스트 바인딩이 아니고,
+     * 이름은 브랜치 순서를 따른다({@code :town0}부터). 거리순만 여전히 리스트로 바인딩한다 —
+     * 그 문장에는 브랜치가 없다.
+     */
+    private void bindTownIds(Query query, List<Long> townIds) {
+        for (int i = 0; i < townIds.size(); i++) {
+            query.setParameter("town" + i, townIds.get(i));
+        }
+    }
+
+    /**
      * 태그 술어. 두 정렬이 같은 문자열을 <b>공유</b>해야 "정렬 축만 다르고 필터 의미론은 같다"가
      * 구조적으로 보장된다 — 복사해 두면 한쪽만 고치는 실수가 조용히 통과한다.
      *
@@ -498,7 +585,7 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
-     * 정적 정렬 3종의 FROM 절. 스위치가 꺼져 있으면 {@code "FROM place_stats ps\n"} 한 줄이라
+     * 브랜치 하나의 FROM 절. 스위치가 꺼져 있으면 {@code "FROM place_stats ps\n"} 한 줄이라
      * <b>문장이 바이트째 힌트 도입 전과 같다</b> — 미발동 시 문장 불변은 {@link #appendTagFilters}가
      * 마스크 0에서 지키는 것과 같은 계약이고, 그래야 벤치의 A자연 팔이 "스위치를 들이기 전"과
      * 같은 문장을 돌린 것이 된다.
@@ -513,11 +600,15 @@ public class PlaceListDbQueryRepository {
      * V36의 정의와 한 쌍이므로 마이그레이션에서 이름을 바꾸면 여기도 함께 바꿔야 한다 —
      * 조용히 무시되지 않는다는 점에서 오히려 안전한 결합이다.
      *
-     * @param intendedIndex 스위치가 켜졌을 때 고정할 인덱스 이름 (호출부가 리터럴로만 넘긴다)
+     * <p><b>{@code null}은 "이 정렬에는 힌트를 걸지 않는다"</b>는 뜻이다 — 인기·최신이 그렇다.
+     * 스위치 값과 무관하게 문장이 변하지 않아야 하므로 여기서 끊는다.
+     *
+     * @param intendedIndex 스위치가 켜졌을 때 고정할 인덱스 이름 (호출부가 리터럴로만 넘긴다).
+     *                      {@code null}이면 힌트를 붙이지 않는다
      */
     private void appendFrom(StringBuilder sql, String intendedIndex) {
         sql.append("FROM place_stats ps");
-        if (placeListProperties.isForceSortIndex()) {
+        if (intendedIndex != null && placeListProperties.isForceSortIndex()) {
             sql.append(" FORCE INDEX (").append(intendedIndex).append(")");
         }
         sql.append("\n");

@@ -6,6 +6,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
@@ -828,6 +829,148 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .as("거리순 후보").doesNotContain("FORCE INDEX");
     }
 
+    // === 동네별 브랜치 ===
+
+    /**
+     * <b>브랜치의 LIMIT이 바깥 LIMIT과 같아야 전역 상위 N이 온전하다.</b> 상위 세 건을 한 동네에
+     * 몰아 두면 브랜치 LIMIT을 동네 수로 나누거나 1로 잡는 실수가 여기서 결과를 잃는다 — 다른
+     * 동네가 아무리 낮은 점수를 올려도 상위 N이 한 동네에서 전부 나올 수 있어야 한다.
+     */
+    @Test
+    void 브랜치별_LIMIT은_한_동네에_몰린_상위_N을_잃지_않는다() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E", BASE, otherTownId);
+        long placeF = createPlace("db모드F", BASE, otherTownId);
+
+        insertStats(placeA, townId, 9.0, 0);
+        insertStats(placeB, townId, 8.0, 0);
+        insertStats(placeC, townId, 7.0, 0);
+        insertStats(placeE, otherTownId, 1.0, 0);
+        insertStats(placeF, otherTownId, 0.5, 0);
+
+        assertThat(placeIdsOf(repository.findPopularRows(
+                List.of(townId, otherTownId), null, null, null, null, null, 3)))
+                .containsExactly(placeA, placeB, placeC);
+    }
+
+    /**
+     * <b>동네 경계를 넘는 커서 페이징 — 최신순.</b> 브랜치는 각자 자기 동네의 상위 N만 올리므로,
+     * 커서 술어가 브랜치 <em>안</em>으로 들어가지 않으면 브랜치가 커서 앞의 행으로 LIMIT을 채우고
+     * 다음 페이지에 실려야 할 행이 조용히 사라진다.
+     *
+     * <p>대조는 "페이지를 이어붙인 것 = 한 번에 받은 전량"이다. 기대 순서를 손으로 적으면 정렬
+     * 규칙이 바뀔 때마다 깨질 뿐 경계에서 흘리는 행을 못 잡는다.
+     *
+     * <p>최신순을 고른 것은 <b>타이브레이크가 홀로 id 내림차순</b>이라서다 — 바깥 정렬을 다른 넷과
+     * 같은 방향으로 적는 실수가 있으면 같은 초의 장소들이 브랜치 경계에서 어긋난다.
+     */
+    @Test
+    void 동네_경계를_넘는_최신순_커서가_행을_흘리지_않는다() {
+        long otherTownId = createTown();
+        // 같은 초를 두 동네에 걸쳐 심는다 — 타이브레이크가 브랜치 경계에서 도는 자리다
+        long placeE = createPlace("db모드E", BASE, otherTownId);
+        long placeF = createPlace("db모드F", BASE, otherTownId);
+
+        insertStats(placeA, townId, 1.0, 0);
+        insertStats(placeB, townId, 2.0, 0);
+        insertStats(placeC, townId, 3.0, 0);
+        insertStats(placeD, townId, 4.0, 0);
+        insertStats(placeE, otherTownId, 5.0, 0);
+        insertStats(placeF, otherTownId, 6.0, 0);
+
+        List<Long> towns = List.of(townId, otherTownId);
+        List<Long> whole = latestIdsOf(
+                repository.findLatestRows(towns, null, null, null, null, null, NO_LIMIT));
+
+        List<Long> paged = new ArrayList<>();
+        Long cursorSecond = null;
+        Long cursorPlaceId = null;
+        for (int page = 0; page < whole.size() + 1; page++) {
+            List<LatestRow> rows =
+                    repository.findLatestRows(towns, null, null, null, cursorSecond, cursorPlaceId, 2);
+            if (rows.isEmpty()) {
+                break;
+            }
+            paged.addAll(latestIdsOf(rows));
+            LatestRow last = rows.get(rows.size() - 1);
+            // 발급부와 같은 식으로 만든다 — 상수로 적으면 epoch 초 왕복이 검증에서 빠진다
+            cursorSecond = last.createdAt().toEpochSecond(ZoneOffset.UTC);
+            cursorPlaceId = last.placeId();
+        }
+
+        assertThat(whole).as("전량 (비어 있으면 대조가 공허하다)").hasSize(6);
+        assertThat(paged).as("2건씩 이어받은 결과").isEqualTo(whole);
+    }
+
+    /**
+     * <b>동네 경계를 넘는 커서 페이징 — 평점순.</b> 커서 키가 둘(평점·리뷰 수)이라 브랜치 안에서
+     * 세 겹 seek이 돌아야 하고, 완전 동점을 두 동네에 걸쳐 심어 그 경계가 브랜치를 가로지르게 했다.
+     */
+    @Test
+    void 동네_경계를_넘는_평점순_커서가_행을_흘리지_않는다() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E", BASE, otherTownId);
+        long placeF = createPlace("db모드F", BASE, otherTownId);
+
+        insertRatedStats(placeA, townId, 4.50, 3, 0);
+        insertRatedStats(placeB, townId, 4.50, 3, 0);       // A와 완전 동점 → id로 갈림
+        insertRatedStats(placeC, townId, 4.50, 1, 0);       // 평점만 동점 → 리뷰 수로 갈림
+        insertRatedStats(placeD, townId, 3.00, 5, 0);
+        insertRatedStats(placeE, otherTownId, 4.50, 3, 0);  // 동점이 동네를 넘는다
+        insertRatedStats(placeF, otherTownId, 5.00, 0, 0);
+
+        List<Long> towns = List.of(townId, otherTownId);
+        List<Long> whole = ratingIdsOf(
+                repository.findRatingRows(towns, null, null, null, null, null, null, NO_LIMIT));
+
+        List<Long> paged = new ArrayList<>();
+        Double cursorRating = null;
+        Long cursorReviewCount = null;
+        Long cursorPlaceId = null;
+        for (int page = 0; page < whole.size() + 1; page++) {
+            List<RatingRow> rows = repository.findRatingRows(
+                    towns, null, null, null, cursorRating, cursorReviewCount, cursorPlaceId, 2);
+            if (rows.isEmpty()) {
+                break;
+            }
+            paged.addAll(ratingIdsOf(rows));
+            RatingRow last = rows.get(rows.size() - 1);
+            cursorRating = last.avgRating().doubleValue();
+            cursorReviewCount = last.reviewCount();
+            cursorPlaceId = last.placeId();
+        }
+
+        assertThat(whole).as("전량 (비어 있으면 대조가 공허하다)").hasSize(6);
+        assertThat(paged).as("2건씩 이어받은 결과").isEqualTo(whole);
+    }
+
+    /**
+     * <b>동네가 여럿이면 동네마다 브랜치가 하나씩, 하나면 브랜치도 UNION도 없다.</b>
+     *
+     * <p>앞 세 테스트(결과 등가)로는 이것을 물을 수 없다 — {@code IN} 한 문장으로 되돌려도 답은
+     * 같으므로 그린이다. 그런데 이 형상을 고른 이유가 "브랜치가 자기 동네에서 일찍 멈춘다"라,
+     * 문장이 합쳐지면 채택 근거가 통째로 사라진다.
+     */
+    @Test
+    void 동네가_여럿이면_브랜치를_만들고_하나면_만들지_않는다() {
+        long otherTownId = createTown();
+        insertStats(placeA, townId, 9.0, 0);
+
+        String single = captureListSql(() -> repository.findPopularRows(
+                List.of(townId), null, null, null, null, null, NO_LIMIT));
+        String branched = captureListSql(() -> repository.findPopularRows(
+                List.of(townId, otherTownId), null, null, null, null, null, NO_LIMIT));
+
+        assertThat(single).as("단일 동네").doesNotContain("UNION ALL");
+        assertThat(countOf(single, "WHERE ps.town_id = ?")).as("단일 동네의 동네 조건").isEqualTo(1);
+        assertThat(countOf(single, "LIMIT ?")).as("단일 동네의 LIMIT").isEqualTo(1);
+
+        assertThat(countOf(branched, "UNION ALL")).as("브랜치 이음매").isEqualTo(1);
+        assertThat(countOf(branched, "WHERE ps.town_id = ?")).as("브랜치 수").isEqualTo(2);
+        // 브랜치마다 하나 + 합친 뒤 하나. 브랜치 LIMIT이 빠지면 조기 종료가 사라진다
+        assertThat(countOf(branched, "LIMIT ?")).as("LIMIT").isEqualTo(3);
+    }
+
     // === 마스크 술어 ↔ EXISTS 동치 ===
 
     /**
@@ -1135,6 +1278,11 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .toList();
         assertThat(listSqls).as("잡힌 목록 문장").hasSize(1);
         return listSqls.get(0);
+    }
+
+    /** 문장 안에서 조각이 몇 번 나오는가 — 브랜치 수와 LIMIT 개수를 세는 데 쓴다 */
+    private int countOf(String sql, String fragment) {
+        return sql.split(java.util.regex.Pattern.quote(fragment), -1).length - 1;
     }
 
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {
