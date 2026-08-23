@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
+import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkRepository;
 import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidator;
 import org.sopt.solply_server.domain.bookmark.util.BookmarkTargetValidatorRegistry;
@@ -44,6 +45,10 @@ class BookmarkServiceDuplicateGuardTest {
 
     @Mock
     private BookmarkRepository bookmarkRepository;
+
+    /** 카운트 전표 발행처. 발행 규칙 자체는 BookmarkCountEventPublishIT가 DB에서 문다. */
+    @Mock
+    private BookmarkCountEventRepository countEventRepository;
 
     @Mock
     private BookmarkTargetValidatorRegistry validatorRegistry;

@@ -25,16 +25,24 @@ import lombok.NoArgsConstructor;
  *   <tr><td>어드민 쓰기 트랜잭션</td><td>즉시(같은 트랜잭션)</td>
  *       <td><b>행의 존재 자체</b>, {@code town_id}, {@code created_at}, {@code tag_bitmask}
  *           ({@code AdminPlaceService})</td></tr>
- *   <tr><td>카운트 배치</td><td>매시 30분</td>
- *       <td>{@code bookmark_count}, {@code review_count}, {@code avg_rating}</td></tr>
+ *   <tr><td>카운트 배치 — 리뷰 축 전량 재계산</td><td>매시 30분</td>
+ *       <td>{@code review_count}, {@code avg_rating}</td></tr>
+ *   <tr><td>카운트 배치 — 북마크 아웃박스 델타 소비</td><td>매시 30분</td>
+ *       <td>{@code bookmark_count}</td></tr>
+ *   <tr><td>카운트 안전망 배치</td><td>매일 01:45 (KST)</td>
+ *       <td>표시 카운트 셋 전부 (원본 전량 재계산 + 아웃박스 비우기)</td></tr>
  *   <tr><td>인기점수 배치</td><td>매일 01:00 (KST)</td>
  *       <td>{@code popular_score}, {@code score_calculated_at}</td></tr>
  * </table>
+ * <b>{@code bookmark_count}만 값을 다시 세지 않고 더한다.</b> 매시 회차가 {@code bookmarks} 전량을
+ * 훑던 것을 "지난 회차 이후의 토글만 접어서 더한다"로 바꾼 결과이고, 그래서 이 칸의 정확성은
+ * 전표 발행·소비의 규칙 위에 선다 — 표류가 생기면 새벽 안전망이 원본 기준으로 되맞춘다
+ * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md}).
  * 리뷰 평점이 두 배치에 다 나오는 것은 <b>쓰임이 둘이기 때문</b>이다 — 화면에 찍히는
  * {@code avg_rating}은 표시값이라 카운트 배치가, 점수의 리뷰 축(베이지안 조정 평점)은 순위 재료라
  * 인기점수 배치가 각자 원본에서 계산한다. 한쪽이 다른 쪽 값을 재활용하면 두 배치의 신선도가 섞인다.
  *
- * <p><b>세 주체의 칸이 겹치지 않는다는 것이 계약의 전부다.</b> 예전에는 카운트 배치가 회차마다
+ * <p><b>주체들의 칸이 겹치지 않는다는 것이 계약의 전부다.</b> 예전에는 카운트 배치가 회차마다
  * 활성 장소 전량을 원본에서 다시 지어 어드민 소유의 세 칸까지 덮었다. "같은 원본을 보니 같은 값이
  * 나온다"는 이유로 안전망이라 불렀지만, 실제로는 어드민이 방금 커밋한 값을 배치가 문장 시작 시점에
  * 읽은 낡은 스냅샷으로 되돌릴 수 있는 경로였다. 지금은 그 겹침이 없다.
@@ -55,8 +63,11 @@ import lombok.NoArgsConstructor;
  * <p>쓰기 API(세터·정적 팩토리)를 두지 않는다. 쓰기 경로는 전부 네이티브 SQL이고,
  * 여기 필드는 스키마 정합 검증(ddl-auto=validate)과 테스트 단언용이다.
  *
- * <p>{@code avg_rating}이 NULL인 것은 "리뷰가 없다"는 뜻이며 0점과 구분해야 한다 —
- * 응답까지 NULL로 흘려보낸다.
+ * <p><b>{@code avg_rating}은 NOT NULL이고, 리뷰가 없으면 0이다 (V37).</b> 평점 척도가 1~5라
+ * 실제 평균은 0이 될 수 없고, 그래서 0은 "리뷰가 없다"와만 대응한다. 이 저장 표현은 평점순이
+ * 인덱스로 정렬하기 위한 것이고 — NULL이면 커서 seek이 성립하지 않는다 —
+ * <b>응답의 표시 규칙과는 별개다</b>: 리뷰 0건 장소의 평점은 응답에서 여전히 null로 나간다
+ * ({@code PlacePreviewDto}).
  */
 @Entity
 @Table(
@@ -92,7 +103,7 @@ public class PlaceStats {
     @Column(name = "review_count", nullable = false)
     private int reviewCount;
 
-    @Column(name = "avg_rating", precision = 3, scale = 2)
+    @Column(name = "avg_rating", nullable = false, precision = 3, scale = 2)
     private BigDecimal avgRating;
 
     /**

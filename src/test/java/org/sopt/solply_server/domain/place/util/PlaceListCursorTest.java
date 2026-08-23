@@ -16,7 +16,8 @@ class PlaceListCursorTest {
     private static final String FILTER_PRINT = "10|20|1,2|3";
 
     private static PlaceListCursor cursor(double sortKey, long placeId) {
-        return new PlaceListCursor(PlaceSortType.POPULAR, sortKey, placeId, FILTER_PRINT);
+        return new PlaceListCursor(
+                PlaceSortType.POPULAR, List.of(sortKey), placeId, FILTER_PRINT);
     }
 
     @Test
@@ -34,7 +35,7 @@ class PlaceListCursorTest {
         PlaceListCursor decoded = PlaceListCursor.decode(cursor(9.5, 3L).encode());
 
         assertThat(decoded.sort()).isEqualTo(PlaceSortType.POPULAR);
-        assertThat(decoded.sortKey()).isEqualTo(9.5);
+        assertThat(decoded.key(0)).isEqualTo(9.5);
         assertThat(decoded.placeId()).isEqualTo(3L);
         assertThat(decoded.filterPrint()).isEqualTo(FILTER_PRINT);
     }
@@ -48,7 +49,7 @@ class PlaceListCursorTest {
     @Test
     void base64이지만_필드가_모자란_토큰은_예외를_던진다() {
         String bogus = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("v4:POPULAR:123:4".getBytes(StandardCharsets.UTF_8));
+                .encodeToString("v5:POPULAR:123:4".getBytes(StandardCharsets.UTF_8));
         assertThatThrownBy(() -> PlaceListCursor.decode(bogus))
                 .isInstanceOf(BusinessException.class);
     }
@@ -59,7 +60,7 @@ class PlaceListCursorTest {
 
         PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
 
-        assertThat(decoded.sortKey()).isEqualTo(1234.567891);
+        assertThat(decoded.key(0)).isEqualTo(1234.567891);
         assertThat(decoded).isEqualTo(cursor);
     }
 
@@ -83,7 +84,7 @@ class PlaceListCursorTest {
             // 값 비교로는 통과해버린다. 코덱이 실제로 약속하는 계약은 "toString 왕복은 비트 보존"이니
             // 테스트도 비트로 말한다 — 나머지 값은 ==가 이미 비트 정확이라, 이 단언이 더 세지는
             // 지점은 정확히 ±0 케이스다.
-            assertThat(Double.doubleToRawLongBits(decoded.sortKey()))
+            assertThat(Double.doubleToRawLongBits(decoded.key(0)))
                     .isEqualTo(Double.doubleToRawLongBits(value));
         }
     }
@@ -124,6 +125,78 @@ class PlaceListCursorTest {
 
         assertThatThrownBy(() -> PlaceListCursor.decode(v3Token))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    /**
+     * <b>v4는 필드 수가 v5와 같아 가장 위험하다.</b> 정렬 키 자리가 "값 하나"에서 "튜플"로 바뀌었을
+     * 뿐이라 v4 토큰은 키가 하나인 정렬(POPULAR·LATEST 등)에서 <em>형식상 멀쩡히</em> 디코딩된다.
+     * 버전 문자열 검사가 유일한 방벽이고, 그것이 없으면 옛 클라이언트의 커서가 조용히 통과한다.
+     */
+    @Test
+    void v4_토큰은_거부한다() {
+        String v4Token = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("v4:POPULAR:100.0:5:10|20|1,2|3".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> PlaceListCursor.decode(v4Token))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    // === 정렬 키 튜플 ===
+
+    /**
+     * 평점순 커서는 (평점, 리뷰 수) 두 칸이다. 두 값이 <b>순서까지</b> 왕복해야 seek이 동점 구간
+     * 한가운데서 재개된다 — 자리가 뒤바뀌면 리뷰 수를 평점으로 읽어 페이지가 통째로 어긋난다.
+     */
+    @Test
+    void 평점순_커서는_두_키를_순서대로_왕복한다() {
+        PlaceListCursor cursor = new PlaceListCursor(
+                PlaceSortType.RATING, List.of(4.5, 12.0), 7L, FILTER_PRINT);
+
+        PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
+
+        assertThat(decoded.key(0)).isEqualTo(4.5);
+        assertThat(decoded.key(1)).isEqualTo(12.0);
+        assertThat(decoded).isEqualTo(cursor);
+    }
+
+    /**
+     * 거리순 커서는 기준 좌표까지 싣는다 — 그것이 다음 페이지의 좌표계다. 음수 경도(서반구)를
+     * 세우는 것은 부호가 살아 돌아오는지 함께 보기 위해서다.
+     */
+    @Test
+    void 거리순_커서는_기준_좌표와_거리를_왕복한다() {
+        PlaceListCursor cursor = new PlaceListCursor(
+                PlaceSortType.DISTANCE, List.of(37.5665, -126.978, 1234.5), 9L, FILTER_PRINT);
+
+        PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
+
+        assertThat(decoded.sortKeys()).containsExactly(37.5665, -126.978, 1234.5);
+        assertThat(decoded.placeId()).isEqualTo(9L);
+    }
+
+    /**
+     * <b>키 개수는 정렬이 정한다.</b> 손으로 지어낸 토큰이 키를 더하거나 빼면 그 정렬의 seek 조건에
+     * 넣을 값이 모자라거나 남는다 — 어느 쪽이든 조용히 진행할 수 없으므로 코덱에서 끊는다.
+     */
+    @Test
+    void 정렬과_키_개수가_어긋난_토큰은_거부한다() {
+        String tooMany = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("v5:POPULAR:1.0,2.0:5:10|20|1,2|3".getBytes(StandardCharsets.UTF_8));
+        String tooFew = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("v5:DISTANCE:37.5,127.0:5:10|20|1,2|3".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> PlaceListCursor.decode(tooMany))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> PlaceListCursor.decode(tooFew))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    /** 발급부의 실수는 오류로 드러나야 한다 — 조용히 잘라 담으면 커서가 다른 위치를 가리킨다 */
+    @Test
+    void 정렬과_키_개수가_어긋나면_커서를_만들_수_없다() {
+        assertThatThrownBy(() -> new PlaceListCursor(
+                PlaceSortType.RATING, List.of(4.5), 1L, FILTER_PRINT))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     // === 필터 지문 ===
@@ -185,7 +258,7 @@ class PlaceListCursorTest {
     void 지문의_끝이_비어_있어도_왕복한다() {
         String print = PlaceListCursor.filterPrintOf(1L, null, null, null);
         PlaceListCursor cursor =
-                new PlaceListCursor(PlaceSortType.LATEST, 100.0, 5L, print);
+                new PlaceListCursor(PlaceSortType.LATEST, List.of(100.0), 5L, print);
 
         assertThat(PlaceListCursor.decode(cursor.encode())).isEqualTo(cursor);
     }

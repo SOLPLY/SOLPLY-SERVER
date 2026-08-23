@@ -11,10 +11,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /**
- * {@code place_stats}의 쓰기·읽기 문장 모음. 장소당 행 하나이고 주인이 셋이다 —
+ * {@code place_stats}의 쓰기·읽기 문장 모음. 장소당 행 하나이고 칸마다 주인이 다르다 —
  * 컬럼별 소유 주체는 {@link PlaceStats} javadoc의 표에 있다.
  *
- * <p><b>세 주체의 대입 목록이 서로 겹치면 안 된다.</b> 겹치는 순간 늦게 도는 쪽이 상대의 신선한
+ * <p><b>주체들의 대입 목록이 서로 겹치면 안 된다.</b> 겹치는 순간 늦게 도는 쪽이 상대의 신선한
  * 값을 자기가 읽은 낡은 스냅샷으로 되돌린다. 이 계약은 SQL의 {@code SET}·
  * {@code ON DUPLICATE KEY UPDATE} 목록에만 존재하므로 컬럼을 더할 때 반드시 어느 쪽 소유인지
  * 먼저 정할 것 ({@code PlaceStatsBatchProcessorIT}의 소유권 테스트들이 감시한다).
@@ -22,8 +22,16 @@ import org.springframework.data.repository.query.Param;
 public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
-     * 표시 카운트 셋을 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다 = 매시 카운트 회차의
-     * 전부다. 문장 하나라 원자성을 물을 지점이 없다.
+     * 표시 카운트 셋(북마크 수·리뷰 수·평균 평점)을 원본에서 재계산해 <b>이미 존재하는 행에만</b>
+     * 덮어쓴다. 문장 하나라 원자성을 물을 지점이 없다.
+     *
+     * <p><b>매시 회차의 문장이었으나 지금은 새벽 안전망의 것이다.</b> 북마크 축이 아웃박스 델타로
+     * 넘어가면서 매시 자리는 {@link #updateReviewCounts} + 델타 소비가 맡고, 이 전량 재계산은
+     * "버그로 생긴 표류의 상한을 하루로" 잡는 마지막 겹으로 남았다
+     * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4). 세 축을 함께 덮으므로
+     * <b>부르는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은 트랜잭션에서 비워야 한다</b> —
+     * 그러지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또 더한다
+     * ({@code PlaceStatsBatchProcessor#recalculateCountsAndClearOutbox}).
      *
      * <p><b>UPDATE이지 UPSERT가 아닌 것이 이 문장의 요점이다.</b> 행의 존재와 파생 세 칸
      * ({@code town_id}·{@code created_at}·{@code tag_bitmask})의 주인은 어드민 쓰기 트랜잭션
@@ -39,8 +47,11 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 멱등성이라는 문장의 참/거짓이다 — 같은 기준 시각으로 다시 돌렸을 때 그 사이 들어온 활동이
      * 결과를 바꾼다면 "회차를 재실행해도 안전하다"가 성립하지 않는다.
      *
-     * <p><b>{@code avg_rating}에 COALESCE를 걸지 않는다.</b> 리뷰가 없으면 NULL이 정확한 답이고,
-     * 0으로 채우는 순간 "평점 0점"으로 읽힌다. 카운트 둘은 반대로 0이 정답이라 COALESCE를 건다.
+     * <p><b>세 값 모두 COALESCE로 0을 채운다 (V37).</b> {@code avg_rating}은 예전에 NULL을 그대로
+     * 흘려보냈지만, 평점순이 리뷰 0건 장소를 0점으로 맨 뒤에 싣게 되면서 컬럼이 NOT NULL로 조여졌다.
+     * <b>저장 시점의 COALESCE는 인덱스와 무관하다</b> — 인덱스가 못 견디는 것은 조회의 정렬식에
+     * COALESCE가 끼는 경우이고, 여기서는 컬럼에 실값이 들어갈 뿐이다. "평점 0점"과 "리뷰 없음"의
+     * 구분은 응답 매핑이 맡는다 ({@code PlacePreviewDto}).
      *
      * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> 두 소스 테이블을 훑는 성질은
      * {@link #updateScores}와 같다 — REPEATABLE READ면 스캔 행에 shared next-key 락이 걸려 동시
@@ -82,9 +93,45 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         ) r ON r.place_id = ps.place_id
         SET ps.bookmark_count = COALESCE(b.cnt, 0),
             ps.review_count   = COALESCE(r.cnt, 0),
-            ps.avg_rating     = r.avg_rating
+            ps.avg_rating     = COALESCE(r.avg_rating, 0)
         """, nativeQuery = true)
     int updateCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
+
+    /**
+     * 리뷰 축(리뷰 수·평균 평점)만 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다 =
+     * 매시 카운트 회차의 절반. 나머지 절반인 북마크 축은 아웃박스 델타 소비가 맡는다
+     * ({@code BookmarkCountDeltaProcessor}).
+     *
+     * <p><b>{@code bookmark_count}가 SET 목록에 없는 것이 이 문장의 존재 이유다.</b> 북마크 축의
+     * 주인이 전량 재계산에서 델타 소비로 넘어갔으므로, 여기서 함께 세면 회차마다 델타가 방금 더한
+     * 값을 전량 스캔 결과로 되돌린다 — 대입 목록이 겹치면 안 된다는 이 인터페이스의 계약 그대로다.
+     *
+     * <p>리뷰 축은 델타로 만들지 않았다. 아팠던 축은 북마크뿐이고(리뷰 축은 원천 행 수가 그
+     * 1.9%, 실측 117ms — {@code docs/design/2026-08-15-bookmark-count-supply.md}), 신선도 ≤1h를
+     * 지키는 가장 단순한 수단이 매시 재계산이기 때문이다.
+     *
+     * <p>나머지 계약은 {@link #updateCounts}를 그대로 상속한다: {@code READ_COMMITTED} 필수,
+     * {@code created_at <= :calculatedAt} 상한(= 멱등성), {@code COALESCE}로 0 채우기, SET 목록에
+     * 회차 시각 금지. 근거는 옮겨 적지 않고 그쪽 javadoc <b>한 곳에만</b> 둔다.
+     *
+     * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
+     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수 — 근거는 {@link #updateCounts}
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE place_stats ps
+        LEFT JOIN (
+            SELECT pr.place_id AS place_id,
+                   COUNT(*) AS cnt,
+                   AVG(pr.rating) AS avg_rating
+            FROM place_reviews pr
+            WHERE pr.created_at <= :calculatedAt
+            GROUP BY pr.place_id
+        ) r ON r.place_id = ps.place_id
+        SET ps.review_count = COALESCE(r.cnt, 0),
+            ps.avg_rating   = COALESCE(r.avg_rating, 0)
+        """, nativeQuery = true)
+    int updateReviewCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
 
     /**
      * 활성 장소 전량의 행을 원본에서 다시 짓는다 = <b>기동 시 최초 적재와 운영 복구의 문장</b>.
@@ -134,7 +181,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
                COALESCE(t.mask, 0),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
-               r.avg_rating
+               COALESCE(r.avg_rating, 0)
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -180,7 +227,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 표시 카운트 셋과
      * 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
      * 반대로 <b>신규 행</b>은 카운트
-     * 0·평점 NULL·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
+     * 0·평점 0·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
      * (최신순에는 즉시 나온다 — 그 비대칭의 근거는
      * {@code PlaceListDbQueryRepository#findPopularRows}).
      *
@@ -201,7 +248,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
                COALESCE(t.mask, 0),
                0,
                0,
-               NULL
+               0
         FROM places p
         LEFT JOIN (
             SELECT pt.place_id AS place_id,
@@ -288,10 +335,13 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      *
      * <p><b>표시용 {@code review_count}·{@code avg_rating}을 재활용하지 않고 리뷰를 다시 훑는
      * 이유.</b> 두 값의 신선도가 이 배치와 다르다(카운트는 ≤1h, 점수는 ≤24h). 재활용하면 점수가
-     * "한 시간 전 카운트 + 지금 계산한 감쇠"라는 섞인 시점 위에 서고, 무엇보다
-     * {@code cnt × avg_rating}으로 조정 평점의 분자를 대신하는 순간 리뷰 0건 장소에서
-     * {@code 0 × NULL = NULL}이 되어 {@code NOT NULL} 컬럼에 걸려 배치 전체가 터진다.
+     * "한 시간 전 카운트 + 지금 계산한 감쇠"라는 섞인 시점 위에 선다. 게다가
+     * {@code cnt × avg_rating}으로 조정 평점의 분자를 대신하면 {@code avg_rating}이
+     * {@code DECIMAL(3,2)}로 이미 반올림된 값이라 리뷰 수를 곱한 만큼 오차가 커진다.
      * 그래서 여기서도 {@code SUM(rating)}을 따로 뽑는다.
+     * (V37 전에는 이 자리에 더 급한 이유가 하나 더 있었다 — 리뷰 0건 장소의 {@code avg_rating}이
+     * NULL이라 {@code 0 × NULL = NULL}이 {@code NOT NULL} 점수 컬럼에 걸려 배치가 통째로 터졌다.
+     * 평점이 0으로 채워지면서 그 경로는 사라졌고, 위의 두 이유는 그대로다.)
      *
      * <p><b>⚠️ NULL이 조용히 번지는 자리가 둘 더 있다. 아래 두 장치를 지우지 말 것.</b>
      * <ol>

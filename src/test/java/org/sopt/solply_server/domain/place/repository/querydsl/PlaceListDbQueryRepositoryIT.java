@@ -6,13 +6,22 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.CountRow;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.DistanceCandidateRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.LatestRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.PopularRow;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.RatingRow;
 import org.sopt.solply_server.global.config.QueryDslConfig;
 import org.sopt.solply_server.support.MySqlContainerSupport;
+import org.sopt.solply_server.support.SqlStatementProbe;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -24,8 +33,13 @@ import org.springframework.test.context.DynamicPropertySource;
  * 목록 정렬 쿼리의 계약을 실제 MySQL로 못 박는다.
  *
  * <p>검증 대상은 정렬 순서와 커서 의미론이다 — POPULAR (점수 DESC, id ASC),
- * LATEST (생성일 DESC, id DESC), 그리고 각각의 커서 경계. 이 규칙들은 커서를 <em>발급</em>하는
- * {@code PlaceService}와 한 쌍이라, 여기만 바뀌면 페이징이 조용히 어긋난다.
+ * LATEST (생성일 DESC, id DESC), RATING (평점 DESC, 리뷰 수 DESC, id ASC),
+ * REVIEW_COUNT·BOOKMARK_COUNT (카운트 DESC, id ASC), 그리고 각각의 커서 경계. 이 규칙들은 커서를
+ * <em>발급</em>하는 {@code PlaceService}와 한 쌍이라, 여기만 바뀌면 페이징이 조용히 어긋난다.
+ *
+ * <p>거리순은 이 파일에서 <b>후보 쿼리까지만</b> 본다 — 순서를 만드는 주체가 SQL이 아니라
+ * {@code DistanceSort}라서, 여기가 지킬 계약은 "무엇이 후보인가"(좌표 없는 장소 제외·태그 필터·
+ * 표시값 동승)뿐이다.
  *
  * <p><b>place_stats는 네이티브 INSERT로 직접 심는다.</b> 엔티티 생성자가 배치 전용으로 봉인돼 있고,
  * 정렬 쿼리는 배치 결과를 <em>읽을</em> 뿐이라 배치를 돌릴 이유가 없다 — 배치를 끼우면 점수 계산
@@ -39,21 +53,29 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({QueryDslConfig.class, PlaceListDbQueryRepository.class})
+@Import({QueryDslConfig.class, PlaceListDbQueryRepository.class, PlaceListProperties.class})
 class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
 
     /**
      * 메서드 이름은 베이스의 {@code datasource}와 반드시 달라야 한다 (같으면 숨겨져 데이터소스
      * 설정이 통째로 사라진다). 이 클래스는 엔티티↔스키마 정합이 아니라 SQL 동작을 보므로
      * validate가 필요 없다.
+     *
+     * <p>{@code statement_inspector}는 <b>나간 문장의 원문</b>을 보기 위한 것이다 — FORCE INDEX
+     * 스위치가 꺼졌을 때 문장이 힌트 도입 전과 같은지는 결과값으로는 물을 수 없다.
      */
     @DynamicPropertySource
-    static void ddlAuto(DynamicPropertyRegistry registry) {
+    static void placeListDbProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
+        registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
+                SqlStatementProbe.class::getName);
     }
 
     @Autowired
     PlaceListDbQueryRepository repository;
+
+    @Autowired
+    PlaceListProperties placeListProperties;
 
     @Autowired
     EntityManager em;
@@ -83,6 +105,15 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         placeB = createPlace("db모드B", BASE);
         placeC = createPlace("db모드C", BASE);
         placeD = createPlace("db모드D", BASE);
+    }
+
+    /**
+     * 다음 테스트가 기본 팔(자연 계획)에서 시작하도록 되돌린다 — 빈은 롤백을 따라가지 않으므로
+     * 스위치를 켠 테스트가 뒤 테스트의 문장까지 바꿔 버린다 ({@code PlaceSortSnapshotIT}과 같은 이유).
+     */
+    @AfterEach
+    void restoreForceSortIndex() {
+        placeListProperties.setForceSortIndex(false);
     }
 
     // === POPULAR ===
@@ -468,6 +499,478 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         assertThat(latestIdsOf(rows)).containsExactly(placeB, placeA);
     }
 
+    // === RATING (평점 높은 순) ===
+
+    /**
+     * 평점 DESC → 동점이면 리뷰 수 DESC → 그래도 같으면 id ASC.
+     *
+     * <p>2단 키가 실제로 일을 하게 세운다 — placeA·placeB·placeC의 평점이 모두 같고 리뷰 수만
+     * 다르다. 리뷰 수 축이 빠지면 이 셋의 순서가 통째로 id 순(A, B, C)으로 흘러 즉시 드러난다.
+     * placeD는 평점이 더 높아 리뷰 수와 무관하게 맨 앞이어야 한다 — 1단 키가 2단에 밀리는
+     * 역전(리뷰 수를 먼저 보는 구현)이 여기서 잡힌다.
+     */
+    @Test
+    void 평점_내림차순_동점은_리뷰수_내림차순_그다음_id_오름차순() {
+        insertRatedStats(placeA, townId, 4.50, 3, 0);
+        insertRatedStats(placeB, townId, 4.50, 9, 0);
+        insertRatedStats(placeC, townId, 4.50, 3, 0);
+        insertRatedStats(placeD, townId, 5.00, 1, 0);
+
+        List<RatingRow> rows = findRating(null, null, null, NO_LIMIT);
+
+        assertThat(ratingIdsOf(rows)).containsExactly(placeD, placeB, placeA, placeC);
+    }
+
+    /**
+     * <b>seek이 세 겹인 이유를 값으로 못 박는다.</b> 경계를 "평점도 같고 리뷰 수도 같은 구간 한가운데"
+     * (placeA)에 두면, 세 겹 중 어느 하나가 빠져도 결과가 달라진다 — 평점만 비교하면 placeB가
+     * 되돌아오고, 리뷰 수 등호 분기를 빠뜨리면 같은 (평점, 리뷰 수)인 placeC가 통째로 누락된다.
+     */
+    @Test
+    void 평점순_커서는_평점_리뷰수_id_세_겹으로_경계를_잡는다() {
+        insertRatedStats(placeA, townId, 4.50, 3, 0);
+        insertRatedStats(placeB, townId, 4.50, 9, 0);
+        insertRatedStats(placeC, townId, 4.50, 3, 0);
+        insertRatedStats(placeD, townId, 5.00, 1, 0);
+
+        List<RatingRow> page2 = findRating(4.50, 3L, placeA, NO_LIMIT);
+
+        assertThat(ratingIdsOf(page2)).containsExactly(placeC);
+    }
+
+    /**
+     * <b>리뷰가 없는 장소는 0점으로 맨 뒤에 실린다 (V37).</b> 하루 전 스펙은 반대였다 —
+     * {@code avg_rating IS NOT NULL}이 그 행들을 끊었고, 근거는 NULL이 커서 seek을 무너뜨린다는
+     * 것이었다. 저장이 NOT NULL 0으로 바뀌면서 그 근거가 사라졌고 술어도 함께 사라졌다.
+     *
+     * <p>그래서 <b>커서 페이지까지 함께 문다</b>. 옛 버그의 형태가 "첫 페이지에만 보이는 장소"였으므로,
+     * 첫 페이지에 있는 것만으로는 회귀를 못 잡는다.
+     */
+    @Test
+    void 리뷰가_없는_장소는_0점으로_평점순_맨_뒤에_실린다() {
+        insertRatedStats(placeA, townId, 0.00, 0, 7);   // 리뷰 0건 → 평점 0
+        insertRatedStats(placeB, townId, 4.50, 3, 0);
+        insertRatedStats(placeC, townId, 3.00, 1, 0);
+
+        List<RatingRow> page1 = findRating(null, null, null, NO_LIMIT);
+        List<RatingRow> page2 = findRating(4.50, 3L, placeB, NO_LIMIT);
+
+        assertThat(ratingIdsOf(page1)).containsExactly(placeB, placeC, placeA);
+        assertThat(ratingIdsOf(page2)).containsExactly(placeC, placeA);
+    }
+
+    /**
+     * <b>0점 동점이 여럿이어도 커서가 그 구간을 정확히 가른다.</b> 리뷰 0건 장소가 목록에 들어오면서
+     * 새로 생긴 구간이다 — 평점도 0, 리뷰 수도 0이라 앞의 두 겹이 전부 등호로 걸리고 타이브레이크가
+     * 사실상 {@code place_id ASC} 하나에 걸린다.
+     *
+     * <p>한 칸씩 끊어 세 페이지를 걷어 중복·누락이 없음을 본다. 등호 분기가 하나라도 빠지면 여기서
+     * 같은 장소가 두 번 나오거나 구간이 통째로 사라진다.
+     */
+    @Test
+    void 평점순_커서는_0점_동점_구간도_중복_누락_없이_가른다() {
+        insertRatedStats(placeA, townId, 0.00, 0, 0);
+        insertRatedStats(placeB, townId, 0.00, 0, 0);
+        insertRatedStats(placeC, townId, 0.00, 0, 0);
+        insertRatedStats(placeD, townId, 4.00, 2, 0);
+
+        List<RatingRow> page1 = findRating(null, null, null, 1);
+        List<RatingRow> page2 = findRating(4.00, 2L, placeD, 1);
+        List<RatingRow> page3 = findRating(0.00, 0L, placeA, 1);
+        List<RatingRow> page4 = findRating(0.00, 0L, placeB, NO_LIMIT);
+
+        assertThat(ratingIdsOf(page1)).containsExactly(placeD);
+        assertThat(ratingIdsOf(page2)).containsExactly(placeA);
+        assertThat(ratingIdsOf(page3)).containsExactly(placeB);
+        assertThat(ratingIdsOf(page4)).containsExactly(placeC);
+    }
+
+    /** 평점순도 표시값(북마크 수)을 같은 행에서 실어 온다 — 추가 조회가 없다는 계약 */
+    @Test
+    void 평점순도_표시_카운트를_같은_행에서_싣는다() {
+        insertRatedStats(placeA, townId, 4.50, 3, 7);
+
+        List<RatingRow> rows = findRating(null, null, null, NO_LIMIT);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).bookmarkCount()).isEqualTo(7);
+        assertThat(rows.get(0).reviewCount()).isEqualTo(3);
+        assertThat(rows.get(0).avgRating()).isEqualByComparingTo("4.50");
+    }
+
+    /** 평점순에도 태그 필터가 그대로 붙는다 — 정렬과 직교한 조건이다 */
+    @Test
+    void 평점순에도_같은_태그_필터가_적용된다() {
+        long mainTagId = createMainTag("db모드메인평점");
+        linkTag(placeA, mainTagId);
+        insertRatedStats(placeA, townId, 3.00, 1, 0);
+        insertRatedStats(placeB, townId, 5.00, 9, 0);   // 평점 1위지만 태그가 없다 → 탈락
+
+        List<RatingRow> rows = repository.findRatingRows(
+                List.of(townId), mainTagId, null, null, null, null, null, NO_LIMIT);
+
+        assertThat(ratingIdsOf(rows)).containsExactly(placeA);
+    }
+
+    // === REVIEW_COUNT / BOOKMARK_COUNT (카운트 축) ===
+
+    /**
+     * 리뷰 수 DESC, 동점은 id ASC. 동점을 <b>가장 큰 카운트</b>에 두어(placeA·placeB) 타이브레이크가
+     * 1위 자리에서 판정되게 한다 — id DESC로 잘못 짜면 첫 행부터 어긋난다.
+     */
+    @Test
+    void 리뷰순은_리뷰수_내림차순_동점은_id_오름차순() {
+        insertRatedStats(placeA, townId, 4.00, 9, 0);
+        insertRatedStats(placeB, townId, 4.00, 9, 0);
+        insertRatedStats(placeC, townId, 4.00, 5, 0);
+        insertRatedStats(placeD, townId, 0.00, 0, 0);   // 리뷰 0건도 결과에는 남는다
+
+        List<CountRow> rows = repository.findReviewCountRows(
+                List.of(townId), null, null, null, null, null, NO_LIMIT);
+
+        assertThat(countIdsOf(rows)).containsExactly(placeA, placeB, placeC, placeD);
+    }
+
+    /** 경계를 동점 구간 한가운데(placeA)에 둔다 — 등호 분기가 빠지면 동점인 placeB가 누락된다 */
+    @Test
+    void 리뷰순_커서는_카운트_미만_또는_동점_id_초과다() {
+        insertRatedStats(placeA, townId, 4.00, 9, 0);
+        insertRatedStats(placeB, townId, 4.00, 9, 0);
+        insertRatedStats(placeC, townId, 4.00, 5, 0);
+
+        List<CountRow> rows = repository.findReviewCountRows(
+                List.of(townId), null, null, null, 9L, placeA, NO_LIMIT);
+
+        assertThat(countIdsOf(rows)).containsExactly(placeB, placeC);
+    }
+
+    /**
+     * 북마크 수 DESC, 동점은 id ASC. <b>인기순과 다른 축</b>임을 픽스처가 직접 보인다 —
+     * 인기 점수는 placeC가 가장 높지만 북마크 수로는 꼴찌라, 두 정렬이 같은 SQL을 쓰면 순서가 뒤집힌다.
+     */
+    @Test
+    void 북마크순은_북마크수_내림차순이고_인기순과_다른_축이다() {
+        insertStats(placeA, townId, 1.0, 9);
+        insertStats(placeB, townId, 2.0, 9);
+        insertStats(placeC, townId, 9.0, 1);
+
+        List<CountRow> byBookmark = repository.findBookmarkCountRows(
+                List.of(townId), null, null, null, null, null, NO_LIMIT);
+
+        assertThat(countIdsOf(byBookmark)).containsExactly(placeA, placeB, placeC);
+        assertThat(placeIdsOf(findPopular(null, null, NO_LIMIT)))
+                .containsExactly(placeC, placeB, placeA);
+    }
+
+    @Test
+    void 북마크순_커서는_카운트_미만_또는_동점_id_초과다() {
+        insertStats(placeA, townId, 1.0, 9);
+        insertStats(placeB, townId, 2.0, 9);
+        insertStats(placeC, townId, 9.0, 1);
+
+        List<CountRow> rows = repository.findBookmarkCountRows(
+                List.of(townId), null, null, null, 9L, placeA, NO_LIMIT);
+
+        assertThat(countIdsOf(rows)).containsExactly(placeB, placeC);
+    }
+
+    /**
+     * 카운트 축 두 정렬은 한 문장을 공유하지만 <b>정렬 컬럼만</b>이 다르다. 같은 픽스처에서 두 순서가
+     * 갈리는지 한 자리에서 본다 — 컬럼 이름을 잘못 넘기면(둘 다 review_count 등) 여기서 걸린다.
+     */
+    @Test
+    void 리뷰순과_북마크순은_서로_다른_컬럼으로_정렬한다() {
+        insertRatedStats(placeA, townId, 4.00, 9, 1);
+        insertRatedStats(placeB, townId, 4.00, 1, 9);
+
+        assertThat(countIdsOf(repository.findReviewCountRows(
+                List.of(townId), null, null, null, null, null, NO_LIMIT)))
+                .containsExactly(placeA, placeB);
+        assertThat(countIdsOf(repository.findBookmarkCountRows(
+                List.of(townId), null, null, null, null, null, NO_LIMIT)))
+                .containsExactly(placeB, placeA);
+    }
+
+    // === DISTANCE 후보 ===
+
+    /**
+     * <b>좌표가 없는 장소는 후보에서 빠진다.</b> 거리를 잴 수 없는 장소를 뒤에 붙이면 커서 경계에서
+     * 조용히 사라지므로 WHERE에서 끊는다.
+     *
+     * <p>표시값이 같은 행에서 실려 오는지도 함께 본다 — 정렬만 앱으로 옮겼을 뿐 "표시값을 위한
+     * 추가 조회가 없다"는 성질은 다른 정렬과 같아야 한다.
+     */
+    @Test
+    void 거리순_후보는_좌표가_없는_장소를_제외하고_표시값을_함께_싣는다() {
+        insertRatedStats(placeA, townId, 4.50, 3, 7);
+        insertRatedStats(placeB, townId, 0.00, 0, 0);
+        insertRatedStats(placeC, townId, 4.00, 1, 0);
+        setCoordinates(placeA, 37.5665, 126.9780);
+        setCoordinates(placeB, 37.5, null);        // 경도만 없어도 후보가 아니다
+        // placeC는 두 값 모두 NULL 그대로
+
+        List<DistanceCandidateRow> rows = repository.findDistanceCandidates(
+                List.of(townId), null, null, null);
+
+        assertThat(rows).hasSize(1);
+        DistanceCandidateRow row = rows.get(0);
+        assertThat(row.placeId()).isEqualTo(placeA);
+        assertThat(row.latitude()).isEqualTo(37.5665);
+        assertThat(row.longitude()).isEqualTo(126.9780);
+        assertThat(row.bookmarkCount()).isEqualTo(7);
+        assertThat(row.reviewCount()).isEqualTo(3);
+        assertThat(row.avgRating()).isEqualByComparingTo("4.50");
+    }
+
+    /**
+     * 거리순 후보에도 <b>같은 태그 필터</b>가 붙는다. 이 경로만 places와 조인하므로 태그 술어를
+     * 통째로 빠뜨리기 쉬운 자리다 — 빠지면 결과가 2건이 된다.
+     */
+    @Test
+    void 거리순_후보에도_같은_태그_필터가_적용된다() {
+        long mainTagId = createMainTag("db모드메인거리");
+        linkTag(placeA, mainTagId);
+        insertRatedStats(placeA, townId, 0.00, 0, 0);
+        insertRatedStats(placeB, townId, 0.00, 0, 0);
+        setCoordinates(placeA, 37.1, 127.1);
+        setCoordinates(placeB, 37.2, 127.2);
+
+        List<DistanceCandidateRow> rows = repository.findDistanceCandidates(
+                List.of(townId), mainTagId, null, null);
+
+        assertThat(rows.stream().map(DistanceCandidateRow::placeId).toList())
+                .containsExactly(placeA);
+    }
+
+    // === FORCE INDEX 스위치 (벤치의 A강제 팔) ===
+
+    /**
+     * <b>스위치를 켜도 정렬 3종의 결과가 한 행도 달라지지 않는다.</b> 팔 교대 측정의 전제 조건이다 —
+     * 여기가 빨간 상태로 낸 수치는 서로 다른 답을 낸 두 계획의 비용을 비교한 것이라 뜻이 없다
+     * ({@code PlaceSortSnapshotIT}의 모드 등가 게이트와 같은 역할·같은 근거).
+     *
+     * <p><b>기대값을 손으로 적지 않는다</b> — 두 모드를 실제로 돌려 서로 대조한다. 순서 자체의
+     * 정본은 위쪽 정렬 테스트들이 값으로 물고 있다.
+     *
+     * <p>두 페이지를 도는 이유: 커서 술어가 붙은 문장은 WHERE 형상이 달라 <b>계획이 갈리는 지점</b>이고
+     * (무힌트에서 2페이지만 의도 인덱스로 넘어가는 칸이 있었다), 그 두 문장이 같은 답을 내는지는
+     * 1페이지만 봐서는 알 수 없다.
+     */
+    @Test
+    void 강제_인덱스_스위치는_단일_동네_정렬_3종의_결과를_바꾸지_않는다() {
+        givenMixedAxisFixture();
+
+        assertForceIndexAgrees("단일 동네", List.of(townId));
+    }
+
+    /**
+     * <b>다중 동네도 같다.</b> town이 여럿이면 인덱스가 전역 순서를 만들지 못해 어느 팔에서도
+     * filesort가 남는데(무힌트·강제가 같은 형상이라는 것이 반사실 대조의 결론이었다), 그 경로에서도
+     * 답이 같은지를 따로 문다 — 단일 동네만 보면 힌트가 실제로 계획을 바꾸는 유일한 형상에서만
+     * 등가를 확인한 셈이 된다.
+     */
+    @Test
+    void 강제_인덱스_스위치는_다중_동네에서도_결과를_바꾸지_않는다() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E강제", BASE.plusMinutes(1), otherTownId);
+        givenMixedAxisFixture();
+        insertRatedStats(placeE, otherTownId, 4.50, 9, 4);   // 세 축 모두에서 동점 상대가 된다
+
+        assertForceIndexAgrees("다중 동네", List.of(townId, otherTownId));
+    }
+
+    /**
+     * <b>스위치가 꺼져 있으면 문장이 힌트 도입 전과 바이트째 같고, 켜지면 FROM의 테이블 참조
+     * 직후에만 힌트가 붙는다.</b>
+     *
+     * <p>앞 두 테스트(결과 등가)로는 이것을 물을 수 없다 — 꺼진 팔의 문장이 조금 달라져도 답은
+     * 같으므로 그린이다. 그런데 A자연 팔의 존재 이유가 "스위치를 들이기 전과 같은 문장"이라,
+     * 문장이 달라지면 캠페인의 기준선이 통째로 흔들린다.
+     *
+     * <p>대조 방식이 요점이다. 켠 문장을 손으로 적어 두면 SELECT 목록이나 개행이 바뀔 때마다
+     * 테스트가 깨질 뿐 계약을 못 지키므로, <b>꺼진 문장에서 딱 그 한 조각만 끼워 넣은 것과 같은지</b>를
+     * 묻는다 — 힌트의 위치(별칭 뒤·WHERE 앞)와 "그 밖에는 아무것도 안 바뀐다"가 한 단언에 들어온다.
+     */
+    @Test
+    void 스위치가_꺼지면_문장은_그대로이고_켜지면_FROM_뒤에만_힌트가_붙는다() {
+        insertRatedStats(placeA, townId, 4.50, 3, 7);
+
+        assertHintOnlyInFrom("idx_place_stats_town_rating",
+                () -> findRating(null, null, null, NO_LIMIT));
+        assertHintOnlyInFrom("idx_place_stats_town_reviews",
+                () -> repository.findReviewCountRows(
+                        List.of(townId), null, null, null, null, null, NO_LIMIT));
+        assertHintOnlyInFrom("idx_place_stats_town_bookmarks",
+                () -> repository.findBookmarkCountRows(
+                        List.of(townId), null, null, null, null, null, NO_LIMIT));
+    }
+
+    /**
+     * <b>인기·최신·거리는 스위치를 켜도 문장이 변하지 않는다.</b> 셋은 이미 의도한 계획으로만 돌아
+     * 힌트를 들일 이유가 없다 — 자기 인덱스에만 있는 컬럼을 SELECT해 나머지 인덱스가 커버링에서
+     * 탈락하기 때문이고(인기·최신), 거리순은 정렬을 DB에 맡기지 않는다.
+     *
+     * <p>스위치를 켠 채로 세 문장을 모두 잡아 힌트가 <b>한 글자도</b> 새지 않았는지 본다. 공용
+     * FROM 헬퍼를 세 경로에 무심코 확대하는 변경이 여기서 걸린다.
+     */
+    @Test
+    void 인기_최신_거리는_스위치를_켜도_힌트가_붙지_않는다() {
+        insertStats(placeA, townId, 4.0, 7);
+        setCoordinates(placeA, 37.5665, 126.9780);
+
+        placeListProperties.setForceSortIndex(true);
+
+        assertThat(captureListSql(() -> findPopular(null, null, NO_LIMIT)))
+                .as("인기순").doesNotContain("FORCE INDEX");
+        assertThat(captureListSql(() -> findLatest(null, null, NO_LIMIT)))
+                .as("최신순").doesNotContain("FORCE INDEX");
+        assertThat(captureListSql(
+                () -> repository.findDistanceCandidates(List.of(townId), null, null, null)))
+                .as("거리순 후보").doesNotContain("FORCE INDEX");
+    }
+
+    // === 동네별 브랜치 ===
+
+    /**
+     * <b>브랜치의 LIMIT이 바깥 LIMIT과 같아야 전역 상위 N이 온전하다.</b> 상위 세 건을 한 동네에
+     * 몰아 두면 브랜치 LIMIT을 동네 수로 나누거나 1로 잡는 실수가 여기서 결과를 잃는다 — 다른
+     * 동네가 아무리 낮은 점수를 올려도 상위 N이 한 동네에서 전부 나올 수 있어야 한다.
+     */
+    @Test
+    void 브랜치별_LIMIT은_한_동네에_몰린_상위_N을_잃지_않는다() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E", BASE, otherTownId);
+        long placeF = createPlace("db모드F", BASE, otherTownId);
+
+        insertStats(placeA, townId, 9.0, 0);
+        insertStats(placeB, townId, 8.0, 0);
+        insertStats(placeC, townId, 7.0, 0);
+        insertStats(placeE, otherTownId, 1.0, 0);
+        insertStats(placeF, otherTownId, 0.5, 0);
+
+        assertThat(placeIdsOf(repository.findPopularRows(
+                List.of(townId, otherTownId), null, null, null, null, null, 3)))
+                .containsExactly(placeA, placeB, placeC);
+    }
+
+    /**
+     * <b>동네 경계를 넘는 커서 페이징 — 최신순.</b> 브랜치는 각자 자기 동네의 상위 N만 올리므로,
+     * 커서 술어가 브랜치 <em>안</em>으로 들어가지 않으면 브랜치가 커서 앞의 행으로 LIMIT을 채우고
+     * 다음 페이지에 실려야 할 행이 조용히 사라진다.
+     *
+     * <p>대조는 "페이지를 이어붙인 것 = 한 번에 받은 전량"이다. 기대 순서를 손으로 적으면 정렬
+     * 규칙이 바뀔 때마다 깨질 뿐 경계에서 흘리는 행을 못 잡는다.
+     *
+     * <p>최신순을 고른 것은 <b>타이브레이크가 홀로 id 내림차순</b>이라서다 — 바깥 정렬을 다른 넷과
+     * 같은 방향으로 적는 실수가 있으면 같은 초의 장소들이 브랜치 경계에서 어긋난다.
+     */
+    @Test
+    void 동네_경계를_넘는_최신순_커서가_행을_흘리지_않는다() {
+        long otherTownId = createTown();
+        // 같은 초를 두 동네에 걸쳐 심는다 — 타이브레이크가 브랜치 경계에서 도는 자리다
+        long placeE = createPlace("db모드E", BASE, otherTownId);
+        long placeF = createPlace("db모드F", BASE, otherTownId);
+
+        insertStats(placeA, townId, 1.0, 0);
+        insertStats(placeB, townId, 2.0, 0);
+        insertStats(placeC, townId, 3.0, 0);
+        insertStats(placeD, townId, 4.0, 0);
+        insertStats(placeE, otherTownId, 5.0, 0);
+        insertStats(placeF, otherTownId, 6.0, 0);
+
+        List<Long> towns = List.of(townId, otherTownId);
+        List<Long> whole = latestIdsOf(
+                repository.findLatestRows(towns, null, null, null, null, null, NO_LIMIT));
+
+        List<Long> paged = new ArrayList<>();
+        Long cursorSecond = null;
+        Long cursorPlaceId = null;
+        for (int page = 0; page < whole.size() + 1; page++) {
+            List<LatestRow> rows =
+                    repository.findLatestRows(towns, null, null, null, cursorSecond, cursorPlaceId, 2);
+            if (rows.isEmpty()) {
+                break;
+            }
+            paged.addAll(latestIdsOf(rows));
+            LatestRow last = rows.get(rows.size() - 1);
+            // 발급부와 같은 식으로 만든다 — 상수로 적으면 epoch 초 왕복이 검증에서 빠진다
+            cursorSecond = last.createdAt().toEpochSecond(ZoneOffset.UTC);
+            cursorPlaceId = last.placeId();
+        }
+
+        assertThat(whole).as("전량 (비어 있으면 대조가 공허하다)").hasSize(6);
+        assertThat(paged).as("2건씩 이어받은 결과").isEqualTo(whole);
+    }
+
+    /**
+     * <b>동네 경계를 넘는 커서 페이징 — 평점순.</b> 커서 키가 둘(평점·리뷰 수)이라 브랜치 안에서
+     * 세 겹 seek이 돌아야 하고, 완전 동점을 두 동네에 걸쳐 심어 그 경계가 브랜치를 가로지르게 했다.
+     */
+    @Test
+    void 동네_경계를_넘는_평점순_커서가_행을_흘리지_않는다() {
+        long otherTownId = createTown();
+        long placeE = createPlace("db모드E", BASE, otherTownId);
+        long placeF = createPlace("db모드F", BASE, otherTownId);
+
+        insertRatedStats(placeA, townId, 4.50, 3, 0);
+        insertRatedStats(placeB, townId, 4.50, 3, 0);       // A와 완전 동점 → id로 갈림
+        insertRatedStats(placeC, townId, 4.50, 1, 0);       // 평점만 동점 → 리뷰 수로 갈림
+        insertRatedStats(placeD, townId, 3.00, 5, 0);
+        insertRatedStats(placeE, otherTownId, 4.50, 3, 0);  // 동점이 동네를 넘는다
+        insertRatedStats(placeF, otherTownId, 5.00, 0, 0);
+
+        List<Long> towns = List.of(townId, otherTownId);
+        List<Long> whole = ratingIdsOf(
+                repository.findRatingRows(towns, null, null, null, null, null, null, NO_LIMIT));
+
+        List<Long> paged = new ArrayList<>();
+        Double cursorRating = null;
+        Long cursorReviewCount = null;
+        Long cursorPlaceId = null;
+        for (int page = 0; page < whole.size() + 1; page++) {
+            List<RatingRow> rows = repository.findRatingRows(
+                    towns, null, null, null, cursorRating, cursorReviewCount, cursorPlaceId, 2);
+            if (rows.isEmpty()) {
+                break;
+            }
+            paged.addAll(ratingIdsOf(rows));
+            RatingRow last = rows.get(rows.size() - 1);
+            cursorRating = last.avgRating().doubleValue();
+            cursorReviewCount = last.reviewCount();
+            cursorPlaceId = last.placeId();
+        }
+
+        assertThat(whole).as("전량 (비어 있으면 대조가 공허하다)").hasSize(6);
+        assertThat(paged).as("2건씩 이어받은 결과").isEqualTo(whole);
+    }
+
+    /**
+     * <b>동네가 여럿이면 동네마다 브랜치가 하나씩, 하나면 브랜치도 UNION도 없다.</b>
+     *
+     * <p>앞 세 테스트(결과 등가)로는 이것을 물을 수 없다 — {@code IN} 한 문장으로 되돌려도 답은
+     * 같으므로 그린이다. 그런데 이 형상을 고른 이유가 "브랜치가 자기 동네에서 일찍 멈춘다"라,
+     * 문장이 합쳐지면 채택 근거가 통째로 사라진다.
+     */
+    @Test
+    void 동네가_여럿이면_브랜치를_만들고_하나면_만들지_않는다() {
+        long otherTownId = createTown();
+        insertStats(placeA, townId, 9.0, 0);
+
+        String single = captureListSql(() -> repository.findPopularRows(
+                List.of(townId), null, null, null, null, null, NO_LIMIT));
+        String branched = captureListSql(() -> repository.findPopularRows(
+                List.of(townId, otherTownId), null, null, null, null, null, NO_LIMIT));
+
+        assertThat(single).as("단일 동네").doesNotContain("UNION ALL");
+        assertThat(countOf(single, "WHERE ps.town_id = ?")).as("단일 동네의 동네 조건").isEqualTo(1);
+        assertThat(countOf(single, "LIMIT ?")).as("단일 동네의 LIMIT").isEqualTo(1);
+
+        assertThat(countOf(branched, "UNION ALL")).as("브랜치 이음매").isEqualTo(1);
+        assertThat(countOf(branched, "WHERE ps.town_id = ?")).as("브랜치 수").isEqualTo(2);
+        // 브랜치마다 하나 + 합친 뒤 하나. 브랜치 LIMIT이 빠지면 조기 종료가 사라진다
+        assertThat(countOf(branched, "LIMIT ?")).as("LIMIT").isEqualTo(3);
+    }
+
     // === 마스크 술어 ↔ EXISTS 동치 ===
 
     /**
@@ -681,6 +1184,107 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .toList();
     }
 
+    /**
+     * 세 축(평점·리뷰 수·북마크 수)이 <b>서로 다른 순서를 내는</b> 픽스처. 축마다 동점을 하나씩 심어
+     * 타이브레이크와 커서 등호 분기가 실제로 도는 자리를 만든다 — 축이 전부 같은 순서면 힌트가
+     * 잘못 걸려도 결과가 같아 등가 단언이 공허해진다.
+     *
+     * <p>평점 동점은 A·B(4.50, 리뷰 수로 갈림) · 리뷰 수 동점은 A·C(3) · 북마크 동점은 A·B(4)다.
+     */
+    private void givenMixedAxisFixture() {
+        insertRatedStats(placeA, townId, 4.50, 3, 4);
+        insertRatedStats(placeB, townId, 4.50, 9, 4);
+        insertRatedStats(placeC, townId, 3.00, 3, 1);
+        insertRatedStats(placeD, townId, 0.00, 0, 9);
+    }
+
+    /** 정렬 3종 × 두 페이지가 두 팔에서 같은지 본다 (커서는 1페이지 마지막 행에서 발급부와 같은 식으로) */
+    private void assertForceIndexAgrees(String label, List<Long> townIds) {
+        Supplier<List<RatingRow>> ratingPage1 = () -> repository.findRatingRows(
+                townIds, null, null, null, null, null, null, 2);
+        List<RatingRow> ratingOff = withForceSortIndex(false, ratingPage1);
+        assertThat(withForceSortIndex(true, ratingPage1))
+                .as("%s 평점순 1페이지", label).isEqualTo(ratingOff);
+
+        RatingRow boundary = ratingOff.get(ratingOff.size() - 1);
+        Supplier<List<RatingRow>> ratingPage2 = () -> repository.findRatingRows(
+                townIds, null, null, null, boundary.avgRating().doubleValue(),
+                boundary.reviewCount(), boundary.placeId(), NO_LIMIT);
+        List<RatingRow> ratingPage2Off = withForceSortIndex(false, ratingPage2);
+        assertThat(ratingPage2Off).as("%s 평점순 2페이지 (비어 있으면 대조가 공허하다)", label)
+                .isNotEmpty();
+        assertThat(withForceSortIndex(true, ratingPage2))
+                .as("%s 평점순 2페이지", label).isEqualTo(ratingPage2Off);
+
+        assertCountSortAgrees(label + " 리뷰순", CountRow::reviewCount,
+                (cursorCount, cursorPlaceId, limit) -> repository.findReviewCountRows(
+                        townIds, null, null, null, cursorCount, cursorPlaceId, limit));
+        assertCountSortAgrees(label + " 북마크순", CountRow::bookmarkCount,
+                (cursorCount, cursorPlaceId, limit) -> repository.findBookmarkCountRows(
+                        townIds, null, null, null, cursorCount, cursorPlaceId, limit));
+    }
+
+    /** 카운트 축 두 정렬은 커서 키만 다르고 절차가 같다 — 정렬 컬럼을 뽑는 함수로 그 하나를 받는다 */
+    @FunctionalInterface
+    private interface CountPage {
+        List<CountRow> find(Long cursorCount, Long cursorPlaceId, int limit);
+    }
+
+    private void assertCountSortAgrees(
+            String label, ToLongFunction<CountRow> sortKey, CountPage page) {
+        Supplier<List<CountRow>> page1 = () -> page.find(null, null, 2);
+        List<CountRow> off = withForceSortIndex(false, page1);
+        assertThat(withForceSortIndex(true, page1)).as("%s 1페이지", label).isEqualTo(off);
+
+        CountRow boundary = off.get(off.size() - 1);
+        Supplier<List<CountRow>> page2 = () -> page.find(
+                sortKey.applyAsLong(boundary), boundary.placeId(), NO_LIMIT);
+        List<CountRow> page2Off = withForceSortIndex(false, page2);
+        assertThat(page2Off).as("%s 2페이지 (비어 있으면 대조가 공허하다)", label).isNotEmpty();
+        assertThat(withForceSortIndex(true, page2)).as("%s 2페이지", label).isEqualTo(page2Off);
+    }
+
+    private <T> T withForceSortIndex(boolean forced, Supplier<T> action) {
+        placeListProperties.setForceSortIndex(forced);
+        try {
+            return action.get();
+        } finally {
+            placeListProperties.setForceSortIndex(false);
+        }
+    }
+
+    /** 같은 쿼리를 두 팔에서 돌려 <b>문장 원문</b>을 대조한다 — 대조 방식의 근거는 호출부 javadoc에 있다 */
+    private void assertHintOnlyInFrom(String indexName, Runnable query) {
+        placeListProperties.setForceSortIndex(false);
+        String off = captureListSql(query);
+        placeListProperties.setForceSortIndex(true);
+        String on = captureListSql(query);
+
+        assertThat(off).as("%s: 꺼진 팔의 문장", indexName).doesNotContain("FORCE INDEX");
+        assertThat(on).as("%s: 켠 팔의 문장", indexName)
+                .isEqualTo(off.replace("FROM place_stats ps",
+                        "FROM place_stats ps FORCE INDEX (" + indexName + ")"));
+    }
+
+    /**
+     * 목록 문장 하나를 잡아 원문을 돌려준다. 픽스처가 만든 문장이 섞이지 않게 실행 직전에 비우고,
+     * <b>정확히 하나</b>임을 확인한다 — 여러 개가 잡히면 무엇을 대조했는지 말할 수 없다.
+     */
+    private String captureListSql(Runnable query) {
+        SqlStatementProbe.clear();
+        query.run();
+        List<String> listSqls = SqlStatementProbe.sqls().stream()
+                .filter(sql -> sql.contains("FROM place_stats ps"))
+                .toList();
+        assertThat(listSqls).as("잡힌 목록 문장").hasSize(1);
+        return listSqls.get(0);
+    }
+
+    /** 문장 안에서 조각이 몇 번 나오는가 — 브랜치 수와 LIMIT 개수를 세는 데 쓴다 */
+    private int countOf(String sql, String fragment) {
+        return sql.split(java.util.regex.Pattern.quote(fragment), -1).length - 1;
+    }
+
     private List<PopularRow> findPopular(Double cursorScore, Long cursorPlaceId, int limit) {
         return repository.findPopularRows(
                 List.of(townId), null, null, null, cursorScore, cursorPlaceId, limit);
@@ -691,8 +1295,22 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 List.of(townId), null, null, null, cursorSecond, cursorPlaceId, limit);
     }
 
+    private List<RatingRow> findRating(
+            Double cursorRating, Long cursorReviewCount, Long cursorPlaceId, int limit) {
+        return repository.findRatingRows(List.of(townId), null, null, null,
+                cursorRating, cursorReviewCount, cursorPlaceId, limit);
+    }
+
     private List<Long> placeIdsOf(List<PopularRow> rows) {
         return rows.stream().map(PopularRow::placeId).toList();
+    }
+
+    private List<Long> ratingIdsOf(List<RatingRow> rows) {
+        return rows.stream().map(RatingRow::placeId).toList();
+    }
+
+    private List<Long> countIdsOf(List<CountRow> rows) {
+        return rows.stream().map(CountRow::placeId).toList();
     }
 
     private List<Long> latestIdsOf(List<LatestRow> rows) {
@@ -716,7 +1334,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 성질이라({@code AdminPlaceService}가 태그를 flush한 뒤 마스크를 짓는다) 이 제약 자체가 계약이다.
      */
     private void insertStats(long placeId, long townId, double score, long bookmarkCount) {
-        insertStatsRow(placeId, townId, score, bookmarkCount, SCORED_AT);
+        insertStatsRow(placeId, townId, score, bookmarkCount, 0, 0.0, SCORED_AT);
     }
 
     /**
@@ -724,12 +1342,23 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 어드민 생성·재활성이 만드는 행과 카운트 배치가 만든 신규 행이 이 형태다.
      */
     private void insertUnscoredStats(long placeId, long townId, long bookmarkCount) {
-        insertStatsRow(placeId, townId, 0.0, bookmarkCount, null);
+        insertStatsRow(placeId, townId, 0.0, bookmarkCount, 0, 0.0, null);
+    }
+
+    /**
+     * 평점 축 픽스처. {@code avgRating}이 0이면 "리뷰가 없어 평점이 0인 장소"다 — 컬럼이 NOT NULL
+     * DEFAULT 0이고(V37) 척도가 1~5라 0은 그 뜻으로만 쓰인다. 평점순이 그 행을 <b>맨 뒤에 싣는지</b>가
+     * 이 정렬의 핵심 계약이라 0을 픽스처로 직접 세운다.
+     * 미채점 행으로 두는 것은 인기순 술어와 얽히지 않게 하기 위해서다.
+     */
+    private void insertRatedStats(
+            long placeId, long townId, double avgRating, long reviewCount, long bookmarkCount) {
+        insertStatsRow(placeId, townId, 0.0, bookmarkCount, reviewCount, avgRating, null);
     }
 
     private void insertStatsRow(
             long placeId, long townId, double score, long bookmarkCount,
-            LocalDateTime scoreCalculatedAt) {
+            long reviewCount, double avgRating, LocalDateTime scoreCalculatedAt) {
         em.createNativeQuery("""
                 INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask,
                                          popular_score, bookmark_count,
@@ -740,7 +1369,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                        p.created_at,
                        COALESCE((SELECT BIT_OR(1 << pt.tag_id)
                                  FROM place_tag pt WHERE pt.place_id = p.id), 0),
-                       :score, :cnt, 0, NULL, :scoreAt
+                       :score, :cnt, :reviewCount, :avgRating, :scoreAt
                 FROM places p
                 WHERE p.id = :placeId
                 """)
@@ -748,7 +1377,19 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .setParameter("townId", townId)
                 .setParameter("score", score)
                 .setParameter("cnt", bookmarkCount)
+                .setParameter("reviewCount", reviewCount)
+                .setParameter("avgRating", avgRating)
                 .setParameter("scoreAt", scoreCalculatedAt)
+                .executeUpdate();
+    }
+
+    /** 거리순 후보 쿼리가 읽는 유일한 places 컬럼 — 픽스처의 장소는 기본이 NULL이다 */
+    private void setCoordinates(long placeId, Double latitude, Double longitude) {
+        em.createNativeQuery(
+                "UPDATE places SET latitude = :lat, longitude = :lng WHERE id = :id")
+                .setParameter("lat", latitude)
+                .setParameter("lng", longitude)
+                .setParameter("id", placeId)
                 .executeUpdate();
     }
 

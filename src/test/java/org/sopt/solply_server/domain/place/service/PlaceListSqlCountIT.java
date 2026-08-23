@@ -43,6 +43,7 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     static void sqlCountProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
         registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
                 SqlStatementProbe.class::getName);
@@ -143,7 +144,8 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     }
 
     private PlaceFilterGetRequest request(PlaceSortType sort, String cursor) {
-        return new PlaceFilterGetRequest(townId, false, null, null, null, sort, cursor, 2);
+        return new PlaceFilterGetRequest(
+                townId, false, null, null, null, sort, cursor, 2, null, null);
     }
 
     private long createTown() {

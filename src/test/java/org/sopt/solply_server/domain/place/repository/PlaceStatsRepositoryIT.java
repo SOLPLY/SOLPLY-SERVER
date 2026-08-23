@@ -112,7 +112,7 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         em.createNativeQuery("""
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, bookmark_count, review_count, avg_rating)
-                SELECT p.id, p.town_id, p.created_at, 0, 0, NULL
+                SELECT p.id, p.town_id, p.created_at, 0, 0, 0
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeId)

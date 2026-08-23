@@ -630,7 +630,9 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         assertThat(stats.getPopularScore().doubleValue()).isCloseTo(0.0, within(SCORE_TOLERANCE));
         assertThat(stats.getBookmarkCount()).isZero();
         assertThat(stats.getReviewCount()).isZero();
-        assertThat(stats.getAvgRating()).isNull();
+        // 리뷰가 없으면 평점은 0이다 (V37) — COALESCE(AVG(rating), 0)이 그 자리를 채운다.
+        // "평점 없음"으로 되돌리는 것은 응답 매핑의 일이고, 저장은 정렬을 위해 실값을 갖는다.
+        assertThat(stats.getAvgRating()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     /**
@@ -778,7 +780,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 .isCloseTo(ONE_FRESH_BOOKMARK, within(SCORE_TOLERANCE));
         assertThat(before.getBookmarkCount()).isEqualTo(1);
         assertThat(before.getReviewCount()).isZero();
-        assertThat(before.getAvgRating()).isNull();
+        assertThat(before.getAvgRating()).isEqualByComparingTo(BigDecimal.ZERO);
 
         // 1회차 이후 원본이 늘었다 — 북마크 +1, 리뷰 +1. placeB의 1점이 C를 3.0으로 붙든다
         insertBookmark(placeA, 0);
@@ -957,6 +959,21 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>매시 회차의 리뷰 축과 새벽 안전망도 같은 계약을 진다.</b> 안전망은 {@code bookmarks}
+     * 전량을 훑으므로 RR이면 정확히 그 next-key 락 장애가 재현되고, 리뷰 축도
+     * {@code place_reviews} 전량을 훑는다. 회차 구성이 갈리면서 어노테이션이 한쪽에만 붙는
+     * 실수가 실재하는 위험이라 함께 문다.
+     */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void 리뷰_축과_안전망_트랜잭션도_READ_COMMITTED로_열린다() {
+        batchProcessor.recalculateReviewCounts(CALCULATED_AT);
+        batchProcessor.recalculateCountsAndClearOutbox(CALCULATED_AT);
+
+        assertThat(OBSERVED_ISOLATIONS).containsExactly("READ-COMMITTED", "READ-COMMITTED");
+    }
+
+    /**
      * <b>점수 회차도 같은 계약을 진다.</b> 소스 테이블(bookmarks·place_reviews)을 훑는 것은
      * 카운트 회차와 같으므로 RR이면 같은 next-key 락 장애가 재현된다. 회차를 가르면서
      * 이 어노테이션이 한쪽에만 붙는 실수가 실재하는 위험이라 따로 문다.
@@ -1077,7 +1094,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
                      avg_rating)
-                SELECT p.id, p.town_id, p.created_at, 777.000000, 777, 0, NULL
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 777, 0, 0
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
@@ -1146,7 +1163,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, popular_score, bookmark_count, review_count,
                      avg_rating, score_calculated_at)
-                SELECT p.id, p.town_id, p.created_at, 777.000000, 0, 0, NULL, :calculatedAt
+                SELECT p.id, p.town_id, p.created_at, 777.000000, 0, 0, 0, :calculatedAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("placeId", placeA)
@@ -1221,8 +1238,7 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         Object result = em.createNativeQuery("""
                 SELECT GROUP_CONCAT(
                            CONCAT_WS('|', place_id, town_id, popular_score,
-                                     bookmark_count, review_count,
-                                     IFNULL(avg_rating, 'NULL'),
+                                     bookmark_count, review_count, avg_rating,
                                      IFNULL(score_calculated_at, 'NULL'))
                            ORDER BY place_id SEPARATOR ';')
                 FROM place_stats

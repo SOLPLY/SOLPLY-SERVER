@@ -39,8 +39,10 @@ import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceTagRepository;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.CountRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.LatestRow;
 import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.PopularRow;
+import org.sopt.solply_server.domain.place.repository.querydsl.PlaceListDbQueryRepository.RatingRow;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
 import org.sopt.solply_server.domain.review.repository.PlaceReviewRepository;
 import org.sopt.solply_server.domain.tag.util.TagValidator;
@@ -144,17 +146,31 @@ class PlaceServiceStatsWiringTest {
     // placeEntity()를 willReturn 인자 안에서 부르면 스터빙이 스터빙 안에서 시작돼
     // UnfinishedStubbingException이 난다 — 반드시 먼저 만들어 둔다.
     Place place = placeEntity();
-    if (sort == PlaceSortType.POPULAR) {
-      given(placeListDbQueryRepository.findPopularRows(
+    switch (sort) {
+      case POPULAR -> given(placeListDbQueryRepository.findPopularRows(
           List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(
               new PopularRow(1L, 9.0, bookmarkCount, REVIEW_COUNT, AVG_RATING)));
-    } else {
-      given(placeListDbQueryRepository.findLatestRows(
+      case LATEST -> given(placeListDbQueryRepository.findLatestRows(
           List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
           .willReturn(List.of(
               new LatestRow(1L, LocalDateTime.of(2026, 1, 1, 0, 0), bookmarkCount,
                   REVIEW_COUNT, AVG_RATING)));
+      case RATING -> given(placeListDbQueryRepository.findRatingRows(
+          List.of(TOWN_ID), null, null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+          .willReturn(List.of(
+              new RatingRow(1L, AVG_RATING, REVIEW_COUNT, bookmarkCount)));
+      case REVIEW_COUNT -> given(placeListDbQueryRepository.findReviewCountRows(
+          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+          .willReturn(List.of(
+              new CountRow(1L, bookmarkCount, REVIEW_COUNT, AVG_RATING)));
+      case BOOKMARK_COUNT -> given(placeListDbQueryRepository.findBookmarkCountRows(
+          List.of(TOWN_ID), null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+          .willReturn(List.of(
+              new CountRow(1L, bookmarkCount, REVIEW_COUNT, AVG_RATING)));
+      // 거리순은 이 픽스처가 다루지 않는다 — 정렬이 DB가 아니라 앱(DistanceSort)에서 나고
+      // 요청에 기준 좌표가 더 붙어 계약이 다르다. 그 경로는 목록 IT가 끝-끝으로 문다.
+      case DISTANCE -> throw new IllegalArgumentException("거리순은 이 픽스처의 대상이 아니다");
     }
     given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
   }
@@ -183,7 +199,7 @@ class PlaceServiceStatsWiringTest {
 
   private PlaceFilterGetResponse getPlaces(boolean bookmarkSearch, PlaceSortType sort) {
     return placeService.getPlaces(USER_ID, new PlaceFilterGetRequest(
-        TOWN_ID, bookmarkSearch, null, null, null, sort, null, null));
+        TOWN_ID, bookmarkSearch, null, null, null, sort, null, null, null, null));
   }
 
   /**
@@ -262,11 +278,14 @@ class PlaceServiceStatsWiringTest {
    * "조회는 안 하는데 엉뚱한 값을 싣는" 변이가 통과하고, 값만 보면 "값은 맞는데 조회를
    * 한 번 더 하는" 변이가 통과한다. 둘을 함께 본다.
    *
-   * <p>두 정렬을 모두 도는 이유는 카운트를 싣는 코드가 정렬마다 다른 SQL·다른 record에서
-   * 오기 때문이다 (POPULAR는 {@code ps.bookmark_count}, LATEST는 {@code COALESCE}).
+   * <p>정렬을 모두 도는 이유는 카운트를 싣는 코드가 정렬마다 <b>다른 SQL·다른 record</b>에서 오기
+   * 때문이다 — 정렬 하나를 더할 때 그 매핑을 빠뜨리는 것이 가장 흔한 회귀다.
+   *
+   * <p>거리순만 제외한다. 그쪽은 정렬이 DB가 아니라 앱({@code DistanceSort})에서 나고 요청에 기준
+   * 좌표가 더 붙어 계약 자체가 다르다 — 여기서 함께 돌리면 이 파일이 그 컴포넌트까지 떠안는다.
    */
   @ParameterizedTest(name = "{0}")
-  @EnumSource(PlaceSortType.class)
+  @EnumSource(value = PlaceSortType.class, names = "DISTANCE", mode = EnumSource.Mode.EXCLUDE)
   @DisplayName("목록 경로는 정렬 쿼리가 실어 온 카운트를 쓰고 place_stats를 다시 읽지 않는다")
   void listPathCarriesCountAndSkipsStatsQuery(PlaceSortType sort) {
     givenListRow(sort, 42L);
@@ -283,6 +302,10 @@ class PlaceServiceStatsWiringTest {
    * 북마크 검색은 정렬 분기 <b>밖</b>에서 한 번 읽는다 — LATEST도 표시 카운트가 필요하므로
    * 정렬과 무관하게 1회다. 분기 안으로 옮기면 LATEST가 0회가 되어 카운트가 전부 0이 되고,
    * 분기마다 따로 부르면 POPULAR가 2회가 된다. 값 단언만으로는 후자가 살아남는다.
+   *
+   * <p><b>여기만 거리순까지 함께 돈다.</b> 이 경로는 좌표를 요구하지 않고(요구는 목록 경로에만
+   * 있다) POPULAR 외의 정렬은 전부 내 북마크 최신순으로 흐른다는 것이 계약이며, 그 계약이
+   * 정렬을 늘려도 유지되는지를 여섯 값 전부로 확인한다.
    */
   @ParameterizedTest(name = "{0}")
   @EnumSource(PlaceSortType.class)
@@ -302,7 +325,7 @@ class PlaceServiceStatsWiringTest {
    * 표시 항목이 늘었다고 조회가 늘지 않았음을 카운트와 함께 못 박는다.
    */
   @ParameterizedTest(name = "{0}")
-  @EnumSource(PlaceSortType.class)
+  @EnumSource(value = PlaceSortType.class, names = "DISTANCE", mode = EnumSource.Mode.EXCLUDE)
   @DisplayName("목록 경로는 평점·리뷰 수도 정렬 쿼리가 실어 온 값으로 응답한다")
   void listPathCarriesRatingAndReviewCount(PlaceSortType sort) {
     givenListRow(sort, 42L);
@@ -317,8 +340,8 @@ class PlaceServiceStatsWiringTest {
   }
 
   /**
-   * <b>평점 없음은 0이 아니라 null이다.</b> 리뷰가 없거나(avg_rating NULL) 배치가 아직 닿지 않은
-   * 장소를 0으로 채우면 "평점 0점"이 되어 최하위 평가와 구분되지 않는다. 리뷰 <em>수</em>는
+   * <b>평점 없음은 0이 아니라 null이다.</b> 배치가 아직 닿지 않아 place_stats에 행이 없는 장소를
+   * 0으로 채우면 "평점 0점"이 되어 최하위 평가와 구분되지 않는다. 리뷰 <em>수</em>는
    * 반대로 0이 정확한 답이라 0이어야 한다 — 두 컬럼의 빈 값 규칙이 다르다는 것이 요점이다.
    */
   @Test
@@ -331,5 +354,30 @@ class PlaceServiceStatsWiringTest {
 
     assertThat(preview.avgRating()).isNull();
     assertThat(preview.reviewCount()).isZero();
+  }
+
+  /**
+   * <b>저장은 0, 응답은 null (V37).</b> 위 테스트가 "행이 없는" 경우라면 이쪽은 <b>행이 있고 값이
+   * 실제로 0인</b> 경우다 — 평점순이 리뷰 0건 장소를 맨 뒤에 실으려고 컬럼을 NOT NULL 0으로 조이면서
+   * 정상 상태가 됐다. 그 저장 표현이 화면까지 새어 나가면 "평점 0점"으로 읽히므로 여기서 막는다.
+   *
+   * <p>판정 기준은 평점 값이 아니라 <b>리뷰 수</b>다. 0점이라는 값 자체를 트리거로 삼으면 언젠가
+   * 척도가 바뀌었을 때 실제 0점 평가를 함께 지운다.
+   */
+  @Test
+  @DisplayName("리뷰 0건 행의 평점 0은 응답에서 null로 되돌아간다")
+  void hidesZeroRatingWhenNoReviews() {
+    Place place = placeEntity();
+    given(placeListDbQueryRepository.findRatingRows(
+        List.of(TOWN_ID), null, null, null, null, null, null, NO_PAGING_FETCH_SIZE))
+        .willReturn(List.of(new RatingRow(1L, BigDecimal.ZERO, 0L, 7L)));
+    given(placeRepository.findPlacesWithTagsByIds(List.of(1L))).willReturn(List.of(place));
+
+    PlacePreviewDto preview = getPlaces(false, PlaceSortType.RATING).places().get(0);
+
+    assertThat(preview.avgRating()).isNull();
+    assertThat(preview.reviewCount()).isZero();
+    // 표시 계약이 다른 값까지 지우지는 않는다
+    assertThat(preview.bookmarkCount()).isEqualTo(7L);
   }
 }

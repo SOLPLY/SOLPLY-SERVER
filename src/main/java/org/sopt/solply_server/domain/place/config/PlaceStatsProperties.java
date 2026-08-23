@@ -71,6 +71,16 @@ public class PlaceStatsProperties {
     private String countCron = "0 30 * * * *";
 
     /**
+     * 카운트 안전망 배치의 cron. 매일 01:45 (KST) — 표시 카운트 셋을 원본에서 다시 세고 아웃박스를
+     * 비우는 회차이고, 시각 선정 근거는 {@code PlaceStatsFacade} javadoc에 있다.
+     *
+     * <p>필드를 남기는 이유와 <b>기본값 리터럴이 두 곳에 존재하는 것이 강제된 중복</b>이라는 사실은
+     * {@code countCron}과 같다 — 주기를 바꿀 때 두 곳을 함께 고칠 것.
+     */
+    @NotBlank
+    private String countSafetyCron = "0 45 1 * * *";
+
+    /**
      * 인기 점수 배치의 cron. 매일 01:00 (KST) — 존재 이유와 시각 선정 근거는 위 필드와 마찬가지로
      * {@code PlaceStatsFacade} javadoc에 있다.
      *

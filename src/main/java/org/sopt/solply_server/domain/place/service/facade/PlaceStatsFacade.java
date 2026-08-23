@@ -8,9 +8,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
+import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshotRefresher;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
+import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -18,34 +20,46 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * {@code place_stats} 집계 배치의 진입점. 정기 스케줄 <b>둘</b>과 부팅 시 최초 적재를 연다.
+ * {@code place_stats} 집계 배치의 진입점. 정기 스케줄 <b>셋</b>과 부팅 시 최초 적재를 연다.
  *
  * <p>카운트 회차에는 {@code PlaceSkeletonSnapshot} 교체가 딸려 있다 — 장소 골격의 낡음 상한을
  * 이 회차의 간격에 맞추는 것이 그 훅의 전부다. 근거는 {@link #rebuildPlaceSkeletonSnapshot()}.
  *
- * <p><b>주기를 가른 이유는 두 값의 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
+ * <p><b>정렬 스냅샷({@code PlaceSortSnapshot})은 세 회차 모두에 딸려 있다</b> — 골격과 달리 이쪽은
+ * 정렬 축 자체를 담기 때문이다. 카운트 회차가 바꾸는 표시 카운트 셋이 곧 정렬 축 셋이고, 점수
+ * 회차가 바꾸는 {@code popular_score}는 인기순의 축이다. 근거는 각 훅 자리의 주석.
+ *
+ * <p><b>주기를 가른 이유는 값마다 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>
  *   <li><b>카운트 — 매시 30분.</b> 화면에 찍히는 북마크 수·리뷰 수·평점이고, 방금 누른 북마크가
  *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. <b>이 회차가 만지는 것은 그 세 값뿐이고,
  *       그중에서도 값이 실제로 달라진 행뿐이다</b> (V35) — 파생 컬럼({@code town_id}·
  *       {@code tag_bitmask}·{@code created_at})과 행의 존재 여부는 어드민 쓰기 트랜잭션의 소유라
- *       여기서 손대지 않는다 ({@code AdminPlaceService}).</li>
+ *       여기서 손대지 않는다 ({@code AdminPlaceService}).
+ *       <b>회차의 구성이 2026-08-17에 둘로 갈렸다</b> — 리뷰 축은 전량 재계산(실측 117ms),
+ *       북마크 축은 아웃박스 델타 소비다. 북마크 전량 스캔(1,040만 행, 옛 회차 비용의 98%)이
+ *       빠지면서 이 회차의 비용은 총 행 수가 아니라 <b>지난 한 시간의 토글 수</b>에 붙는다.</li>
+ *   <li><b>카운트 안전망 — 매일 01:45 (KST).</b> 옛 매시 문장(표시 카운트 셋 전량 재계산)이
+ *       내려온 자리다. 델타는 발행·소비·표류 방어의 규칙 위에 서 있으므로, 버그로 어긋난 값의
+ *       상한을 하루로 잡는 겹이 하나 필요하다. 근거는
+ *       {@link #recalculatePlaceCountsSafety()}.</li>
  *   <li><b>인기 점수 — 매일 01:00 (KST).</b> 반감기 90일에서 하루의 감쇠 변화는
  *       {@code 1 - 0.5^(1/90) = 0.77%}라 순위를 흔들지 못한다. 잦게 돌 이유가 없는 대신,
  *       <b>점수가 갈리는 순간이 곧 커서 좌표계가 갈리는 순간</b>이라 그 창을 트래픽 최저 시각의
  *       수 초로 몰아 두는 편익이 크다 — 커서에서 세대 필드를 걷어낼 수 있게 된 근거가 이것이다
  *       ({@code PlaceListCursor}).</li>
  * </ol>
- * 분리가 스캔을 아끼지는 않는다. 카운트도 점수도 {@code bookmarks}·{@code place_reviews} 전량을
- * 훑으므로 오히려 각 원본을 하루에 한 번 더 훑는다. 얻는 것은 비용이 아니라 <b>주기를 따로 잡을
- * 자유</b>이고, 그 대가는 하루 1회의 추가 스캔이다.
+ * 카운트와 점수의 분리가 스캔을 아끼지는 않는다. 두 회차가 각자 {@code place_reviews}를 훑으므로
+ * 오히려 원본을 하루에 한 번 더 훑는다. 얻는 것은 비용이 아니라 <b>주기를 따로 잡을 자유</b>다.
  *
- * <p><b>두 배치는 겹치지 않는다.</b> 점수 배치가 {@code place_stats} 전 행에 X 락을 커밋까지 들고
- * 있으므로 같은 시각에 카운트 배치가 돌면 서로를 기다린다. 01:00(점수)과 01:30(카운트)은 30분
- * 간격인데, 재시도까지 다 쓴 회차의 최장 시간이 약 21초라 여전히 85배 여유다(카운트 실측
- * 3.5초 기준). <b>주기나 {@code batch-max-attempts}를 바꿀 때 이 간격을 함께 확인할 것.</b>
- * 락 이름을 나눠 둔 것은 그 반대 이유다 — 하나로 묶으면 정시에 겹친 두 회차 중 하나가 통째로
- * 건너뛰어진다.
+ * <p><b>세 회차는 시각이 갈려 있다.</b> 점수 배치가 {@code place_stats} 전 행에 X 락을 커밋까지
+ * 들고 있어 같은 시각에 카운트 쪽이 돌면 서로를 기다리고, 안전망과 매시 회차는 아웃박스 전표를
+ * {@code FOR UPDATE}로 잡아 같은 관문에서 직렬화된다. 그래서 01:00(점수) · 01:30(매시 카운트) ·
+ * 01:45(안전망)로 15분 이상씩 벌려 뒀다 — 재시도까지 다 쓴 회차의 최장 시간이 약 21초라
+ * 40배 이상 여유다(옛 카운트 실측 3.5초 기준이고, 매시 회차는 북마크 전량 스캔을 잃어 그보다
+ * 훨씬 짧다). <b>주기나 {@code batch-max-attempts}를 바꿀 때 이 간격을 함께 확인할 것.</b>
+ * 락 이름을 셋으로 나눠 둔 것은 그 반대 이유다 — 하나로 묶으면 정시에 겹친 회차 중 하나가
+ * 통째로 건너뛰어진다.
  *
  * <p><b>정각이 아니라 30분인 이유</b>는 장소 임베딩(03:00)·코스 임베딩(04:00)과의 스케줄러
  * 스레드 경합 회피다. {@code @Scheduled} 기본 실행기는 단일 스레드라 정각에 겹치면 한쪽이 밀린다.
@@ -88,12 +102,17 @@ import org.springframework.stereotype.Component;
 public class PlaceStatsFacade {
 
     private final PlaceStatsBatchProcessor batchProcessor;
+    /** 매시 회차의 북마크 축. 트랜잭션 경계를 스스로 가지므로 여기서는 부르기만 한다 */
+    private final BookmarkCountDeltaProcessor deltaProcessor;
     private final PlaceSkeletonLoader placeSkeletonLoader;
+    /** 모드 판정·실패 삼킴을 스스로 하므로 여기서는 부르기만 한다 */
+    private final PlaceSortSnapshotRefresher placeSortSnapshotRefresher;
     private final PlaceListProperties placeListProperties;
     private final PlaceStatsProperties placeStatsProperties;
 
     /**
-     * 표시 카운트 회차 — 매시 30분 (KST).
+     * 표시 카운트 회차 — 매시 30분 (KST). <b>리뷰 축 전량 재계산 + 북마크 축 델타 소비</b> 둘로
+     * 이루어진다.
      *
      * <p><b>매시 배치에 {@code zone}이 필요한가 — 발화 시각만 보면 아니다.</b> 시간대가 무엇이든
      * 매시 30분은 매시 30분이다(30분 단위 오프셋을 쓰는 지역이 아닌 한). 그럼에도 명시하는 이유는
@@ -128,13 +147,63 @@ public class PlaceStatsFacade {
         // 이 수치는 그와 무관하게 전 행을 센다. 둘이 갈라진 것이 V35의 실익 그 자체다.
         // UPSERT였던 시절에는 MySQL이 INSERT를 1, UPDATE를 2로 세어 장소 수의 약 2배가
         // 찍혔다 — 옛 로그를 비교할 때 그 차이를 감안할 것.
-        boolean succeeded = runWithRetry(
-                "인기순 카운트 배치", calculatedAt, () -> batchProcessor.recalculateCounts(calculatedAt));
+        boolean reviewSucceeded = runWithRetry("인기순 리뷰 카운트 재계산", calculatedAt,
+                () -> batchProcessor.recalculateReviewCounts(calculatedAt));
+
+        // 델타 소비의 affectedRows는 성질이 정반대다 — 장소 수가 아니라 이번 회차가 삼킨
+        // 전표 수, 곧 지난 한 시간의 토글 수다. 이 수치가 회차의 비용 그 자체이므로 로그로
+        // 남는 값도 그쪽이어야 한다.
+        // 재시도가 안전한 근거는 재계산의 멱등성이 아니라 소비의 트랜잭션성이다 — 적용과 삭제가
+        // 한 트랜잭션이라 실패한 시도는 전표를 그대로 남기고 롤백된다.
+        boolean deltaSucceeded = runWithRetry("북마크 카운트 델타 소비", calculatedAt,
+                () -> deltaProcessor.consumeAndApply().consumedEvents());
 
         // 실패한 회차의 스냅샷을 다시 짓지 않는다. 카운트가 안 바뀌었으므로 새로 지어도 같은
         // 사진이고, 로그만 "빌드했다"로 남아 회차가 성공한 것처럼 읽힌다.
-        if (succeeded) {
+        // 한쪽만 성공해도 짓는다 — 그 축의 값은 실제로 갱신됐고, 스냅샷을 미루면 성공한 축까지
+        // 다음 회차까지 낡는다.
+        if (reviewSucceeded || deltaSucceeded) {
             rebuildPlaceSkeletonSnapshot();
+            // 정렬 스냅샷도 같은 자리에 건다 — 이 회차가 바꾸는 표시 카운트 셋(북마크·리뷰·평점)이
+            // 곧 정렬 축 셋이라, 다시 짓지 않으면 순서가 회차만큼 낡는다. 트랜잭션 밖이라
+            // 리프레셔가 그 자리에서 바로 짓는다 (afterCommit 분기는 어드민 경로의 것이다).
+            placeSortSnapshotRefresher.refreshAfterCommit();
+        }
+    }
+
+    /**
+     * 카운트 안전망 회차 — 매일 01:45 (KST). <b>표시 카운트 셋을 원본에서 다시 세고 아웃박스를
+     * 같은 트랜잭션에서 비운다.</b>
+     *
+     * <p>매시 회차의 북마크 축이 델타가 되면서, 그 값의 정확성은 전표 발행·소비 규칙 위에 선다.
+     * 규칙에 버그가 생기면 카운트가 조용히 어긋나는데 <b>오류도 로그도 없다</b> — 이 회차가
+     * 그 표류의 상한을 하루로 자른다. 전량 재계산이 버려지지 않고 여기로 내려온 것이지, 새로 생긴
+     * 문장이 아니다 ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4).
+     *
+     * <p><b>01:45인 이유는 다른 배치들과 시각을 가르기 위해서다.</b> 01:00 점수 회차는
+     * {@code place_stats} 전 행에 X 락을 커밋까지 들고, 01:30 매시 회차는 같은 아웃박스 전표를
+     * {@code FOR UPDATE}로 잡는다. 03:00 장소 임베딩·04:00 코스 임베딩과도 떨어져 있어
+     * {@code @Scheduled} 단일 스레드를 두고 다투지 않는다.
+     *
+     * <p><b>골격 스냅샷은 걸지 않는다.</b> 이 회차는 카운트만 만지고 골격이 담는 값(이름·썸네일·
+     * 대표 태그·동네)과는 무관하며, 그 낡음 상한은 매시 회차가 이미 지킨다 — 여기에 걸면 하루
+     * 한 번 이유 없는 전량 재빌드가 늘 뿐이다. 정렬 스냅샷은 반대다: 이 회차가 고치는 카운트
+     * 셋이 곧 정렬 축이라 다시 짓지 않으면 되맞춘 값이 다음 매시 회차까지 순서에 반영되지 않는다.
+     *
+     * <p>{@code lockAtMostFor}·{@code lockAtLeastFor}의 근거는 매시 회차와 같다. 재계산 문장이
+     * 매시 회차에서 내려온 그 문장이므로 최장 시간의 셈도 그대로다.
+     */
+    @Scheduled(cron = "${solply.place-stats.count-safety-cron:0 45 1 * * *}", zone = "Asia/Seoul")
+    @SchedulerLock(name = "place-stats-count-safety", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
+    public void recalculatePlaceCountsSafety() {
+        LocalDateTime calculatedAt = LocalDateTime.now();
+        log.info("인기순 카운트 안전망 배치 시작 - calculatedAt={}", calculatedAt);
+
+        boolean succeeded = runWithRetry("인기순 카운트 안전망 배치", calculatedAt,
+                () -> batchProcessor.recalculateCountsAndClearOutbox(calculatedAt));
+
+        if (succeeded) {
+            placeSortSnapshotRefresher.refreshAfterCommit();
         }
     }
 
@@ -149,6 +218,10 @@ public class PlaceStatsFacade {
      * 집계에 {@code created_at <= :calculatedAt} 상한이 있어 기준 시각이 같으면 결과가 같다 —
      * 재시도가 안전한 근거가 그 멱등성 하나다. 시도마다 {@code LocalDateTime.now()}를 새로
      * 잡으면 그 사이 들어온 북마크·리뷰가 결과를 바꿔 "다시 돌려도 같다"가 깨진다.
+     *
+     * <p><b>델타 소비만 예외다 — 거기서 {@code calculatedAt}은 로그 표식일 뿐이다.</b> 그쪽의
+     * 재시도 안전성은 기준 시각이 아니라 적용과 삭제가 한 트랜잭션이라는 성질에서 나온다
+     * ({@code BookmarkCountDeltaProcessor#consumeAndApply}).
      *
      * <p>마지막 시도까지 실패하면 {@code error}, 중간 실패는 {@code warn}으로 남긴다. 둘을 가르지
      * 않으면 "재시도로 복구된 회차"와 "끝내 죽은 회차"가 알림에서 같은 무게로 울린다.
@@ -211,8 +284,9 @@ public class PlaceStatsFacade {
      * town_id 비정규화·비활성화 노출 창과 <b>같은 값</b>이라, 여기서 새로 감수하는 낡음은 없다.
      * 그래서 어드민 경로에 무효화 코드를 넣지 않는다.
      *
-     * <p><b>점수 회차(매일 01:00)에는 걸지 않는다.</b> 점수는 정렬 축이고 스냅샷이 담는 값과
-     * 아무 관계가 없다 — 거기에 걸면 하루 한 번 이유 없는 전량 재빌드가 늘 뿐이다.
+     * <p><b>새벽 두 회차(점수 01:00, 카운트 안전망 01:45)에는 걸지 않는다.</b> 두 회차가 만지는
+     * 값은 스냅샷이 담는 것과 아무 관계가 없다 — 거기에 걸면 하루 두 번 이유 없는 전량 재빌드가
+     * 늘 뿐이고, 골격의 낡음 상한은 매시 회차가 이미 지킨다.
      *
      * <p><b>Processor가 아니라 여기서 부르는 이유.</b> {@code recalculateCounts}는 자기
      * 트랜잭션(READ_COMMITTED)의 경계 그 자체다. 그 안에서 스냅샷을 지으면 (a) 카운트 배치의
@@ -255,7 +329,17 @@ public class PlaceStatsFacade {
         log.info("인기점수 배치 시작 - calculatedAt={}", calculatedAt);
         // 재시도가 카운트보다 여기서 더 값어치 있다 — 회차 간격이 24시간이라 한 번 죽으면
         // 하루치 점수가 낡는다. 점수는 정렬 축이라 그 낡음이 표시값이 아니라 순서로 드러난다.
-        runWithRetry("인기점수 배치", calculatedAt, () -> batchProcessor.recalculateScores(calculatedAt));
+        boolean succeeded = runWithRetry(
+                "인기점수 배치", calculatedAt, () -> batchProcessor.recalculateScores(calculatedAt));
+
+        // ⚠️ 골격 스냅샷과 달리 정렬 스냅샷은 이 회차에도 걸어야 한다. 골격이 담는 값(이름·썸네일·
+        // 대표 태그·동네)은 점수와 아무 관계가 없어 여기서 다시 지으면 순전한 낭비지만, 정렬
+        // 스냅샷에게 popular_score는 정렬 축 그 자체이고 미채점 여부는 인기순의 술어다 —
+        // 걸지 않으면 새벽 01:00에 갈린 점수가 다음 카운트 회차(01:30)까지 30분간 낡은 순서로
+        // 서빙되고, 그 창에서 두 방식의 응답이 갈린다.
+        if (succeeded) {
+            placeSortSnapshotRefresher.refreshAfterCommit();
+        }
     }
 
     /**
