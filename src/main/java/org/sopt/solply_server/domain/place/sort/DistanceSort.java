@@ -59,12 +59,17 @@ public final class DistanceSort {
                     cursorDistance, cursorPlaceId)) {
                 continue;
             }
-            Ranked entry = new Ranked(candidate.placeId(), distance);
             if (heap.size() < limit) {
-                heap.offer(entry);
-            } else if (NEAREST_FIRST.compare(entry, heap.peek()) < 0) {
+                heap.offer(new Ranked(candidate.placeId(), distance));
+                continue;
+            }
+            // 탈락 판정은 할당 전에 primitive로 한다 — 힙이 찬 뒤의 후보 대부분이 여기서 걸러지고,
+            // 걸러진 후보는 Ranked를 만들지 않는다. 이 비교는 NEAREST_FIRST와 같은 전순서여야 한다.
+            Ranked worst = heap.peek();
+            int byDistance = Double.compare(distance, worst.distanceMeters());
+            if (byDistance < 0 || (byDistance == 0 && candidate.placeId() < worst.placeId())) {
                 heap.poll();
-                heap.offer(entry);
+                heap.offer(new Ranked(candidate.placeId(), distance));
             }
         }
 
