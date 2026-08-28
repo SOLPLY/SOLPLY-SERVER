@@ -829,15 +829,15 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 .as("거리순 후보").doesNotContain("FORCE INDEX");
     }
 
-    // === 동네별 브랜치 ===
+    // === 다중 동네 형상 ===
 
     /**
-     * <b>브랜치의 LIMIT이 바깥 LIMIT과 같아야 전역 상위 N이 온전하다.</b> 상위 세 건을 한 동네에
-     * 몰아 두면 브랜치 LIMIT을 동네 수로 나누거나 1로 잡는 실수가 여기서 결과를 잃는다 — 다른
+     * <b>안쪽 LIMIT이 바깥 LIMIT과 같아야 전역 상위 N이 온전하다.</b> 상위 세 건을 한 동네에
+     * 몰아 두면 안쪽 LIMIT을 동네 수로 나누거나 1로 잡는 실수가 여기서 결과를 잃는다 — 다른
      * 동네가 아무리 낮은 점수를 올려도 상위 N이 한 동네에서 전부 나올 수 있어야 한다.
      */
     @Test
-    void 브랜치별_LIMIT은_한_동네에_몰린_상위_N을_잃지_않는다() {
+    void 동네별_LIMIT은_한_동네에_몰린_상위_N을_잃지_않는다() {
         long otherTownId = createTown();
         long placeE = createPlace("db모드E", BASE, otherTownId);
         long placeF = createPlace("db모드F", BASE, otherTownId);
@@ -854,20 +854,20 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>동네 경계를 넘는 커서 페이징 — 최신순.</b> 브랜치는 각자 자기 동네의 상위 N만 올리므로,
-     * 커서 술어가 브랜치 <em>안</em>으로 들어가지 않으면 브랜치가 커서 앞의 행으로 LIMIT을 채우고
-     * 다음 페이지에 실려야 할 행이 조용히 사라진다.
+     * <b>동네 경계를 넘는 커서 페이징 — 최신순.</b> 동네별 조각은 각자 자기 동네의 상위 N만
+     * 올리므로, 커서 술어가 조각 <em>안</em>으로 들어가지 않으면 조각이 커서 앞의 행으로 LIMIT을
+     * 채우고 다음 페이지에 실려야 할 행이 조용히 사라진다.
      *
      * <p>대조는 "페이지를 이어붙인 것 = 한 번에 받은 전량"이다. 기대 순서를 손으로 적으면 정렬
      * 규칙이 바뀔 때마다 깨질 뿐 경계에서 흘리는 행을 못 잡는다.
      *
      * <p>최신순을 고른 것은 <b>타이브레이크가 홀로 id 내림차순</b>이라서다 — 바깥 정렬을 다른 넷과
-     * 같은 방향으로 적는 실수가 있으면 같은 초의 장소들이 브랜치 경계에서 어긋난다.
+     * 같은 방향으로 적는 실수가 있으면 같은 초의 장소들이 동네 경계에서 어긋난다.
      */
     @Test
     void 동네_경계를_넘는_최신순_커서가_행을_흘리지_않는다() {
         long otherTownId = createTown();
-        // 같은 초를 두 동네에 걸쳐 심는다 — 타이브레이크가 브랜치 경계에서 도는 자리다
+        // 같은 초를 두 동네에 걸쳐 심는다 — 타이브레이크가 동네 경계에서 도는 자리다
         long placeE = createPlace("db모드E", BASE, otherTownId);
         long placeF = createPlace("db모드F", BASE, otherTownId);
 
@@ -903,8 +903,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>동네 경계를 넘는 커서 페이징 — 평점순.</b> 커서 키가 둘(평점·리뷰 수)이라 브랜치 안에서
-     * 세 겹 seek이 돌아야 하고, 완전 동점을 두 동네에 걸쳐 심어 그 경계가 브랜치를 가로지르게 했다.
+     * <b>동네 경계를 넘는 커서 페이징 — 평점순.</b> 커서 키가 둘(평점·리뷰 수)이라 동네별 조각
+     * 안에서 세 겹 seek이 돌아야 하고, 완전 동점을 두 동네에 걸쳐 심어 그 경계가 조각을
+     * 가로지르게 했다.
      */
     @Test
     void 동네_경계를_넘는_평점순_커서가_행을_흘리지_않는다() {
@@ -945,30 +946,56 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>동네가 여럿이면 동네마다 브랜치가 하나씩, 하나면 브랜치도 UNION도 없다.</b>
+     * <b>동네가 여럿이면 JSON_TABLE + LATERAL, 하나면 그 감싸개가 없다.</b>
      *
      * <p>앞 세 테스트(결과 등가)로는 이것을 물을 수 없다 — {@code IN} 한 문장으로 되돌려도 답은
-     * 같으므로 그린이다. 그런데 이 형상을 고른 이유가 "브랜치가 자기 동네에서 일찍 멈춘다"라,
-     * 문장이 합쳐지면 채택 근거가 통째로 사라진다.
+     * 같으므로 그린이다. 그런데 이 형상을 고른 이유가 "동네별 조각이 자기 동네에서 일찍 멈춘다"라,
+     * 문장이 합쳐지면 채택 근거가 통째로 사라진다. 안쪽 LIMIT이 빠지는 회귀도 여기서 걸린다
+     * (동네별 조기 종료가 사라진다).
      */
     @Test
-    void 동네가_여럿이면_브랜치를_만들고_하나면_만들지_않는다() {
+    void 동네가_여럿이면_LATERAL로_감싸고_하나면_감싸지_않는다() {
         long otherTownId = createTown();
         insertStats(placeA, townId, 9.0, 0);
 
         String single = captureListSql(() -> repository.findPopularRows(
                 List.of(townId), null, null, null, null, null, NO_LIMIT));
-        String branched = captureListSql(() -> repository.findPopularRows(
+        String multi = captureListSql(() -> repository.findPopularRows(
                 List.of(townId, otherTownId), null, null, null, null, null, NO_LIMIT));
 
-        assertThat(single).as("단일 동네").doesNotContain("UNION ALL");
+        assertThat(single).as("단일 동네").doesNotContain("JSON_TABLE", "LATERAL");
         assertThat(countOf(single, "WHERE ps.town_id = ?")).as("단일 동네의 동네 조건").isEqualTo(1);
         assertThat(countOf(single, "LIMIT ?")).as("단일 동네의 LIMIT").isEqualTo(1);
 
-        assertThat(countOf(branched, "UNION ALL")).as("브랜치 이음매").isEqualTo(1);
-        assertThat(countOf(branched, "WHERE ps.town_id = ?")).as("브랜치 수").isEqualTo(2);
-        // 브랜치마다 하나 + 합친 뒤 하나. 브랜치 LIMIT이 빠지면 조기 종료가 사라진다
-        assertThat(countOf(branched, "LIMIT ?")).as("LIMIT").isEqualTo(3);
+        assertThat(multi).as("다중 동네").contains("JSON_TABLE(CAST(? AS JSON)", "JOIN LATERAL (");
+        assertThat(countOf(multi, "WHERE ps.town_id = towns.town_id")).as("동네 조건").isEqualTo(1);
+        // 안쪽 하나 + 합친 뒤 하나. 안쪽 LIMIT이 빠지면 동네별 조기 종료가 사라진다
+        assertThat(countOf(multi, "LIMIT ?")).as("LIMIT").isEqualTo(2);
+    }
+
+    /**
+     * <b>문장 텍스트가 동네 수와 무관하다 — 이 형상을 고른 이유 그 자체다 (#394).</b> 동네마다
+     * SELECT 한 벌을 복제하던 앞 형상은 문장 길이가 동네 수에 정비례해 드라이버 재파싱·패킷 조립
+     * 비용을 키웠다. 동네 목록이 <b>바인드 값 하나</b>로 들어오는 한 2개든 5개든 같은 문장이다.
+     *
+     * <p>길이가 아니라 <b>문자열 동일성</b>을 묻는다 — 길이만 보면 동네 id 자릿수가 문장에 새는
+     * 회귀(리터럴 인라인)를 놓친다.
+     */
+    @Test
+    void 다중_동네_문장은_동네_수가_늘어도_같다() {
+        long town2 = createTown();
+        long town3 = createTown();
+        long town4 = createTown();
+        long town5 = createTown();
+        insertStats(placeA, townId, 9.0, 0);
+
+        String twoTowns = captureListSql(() -> repository.findPopularRows(
+                List.of(townId, town2), null, null, null, null, null, NO_LIMIT));
+        String fiveTowns = captureListSql(() -> repository.findPopularRows(
+                List.of(townId, town2, town3, town4, town5), null, null, null, null, null,
+                NO_LIMIT));
+
+        assertThat(fiveTowns).isEqualTo(twoTowns);
     }
 
     // === 마스크 술어 ↔ EXISTS 동치 ===
