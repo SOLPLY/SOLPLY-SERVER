@@ -53,7 +53,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     environment:
-      SPRING_DATASOURCE_URL: "jdbc:mysql://bench-mysql:3306/solply_bench_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8"
+      # 드라이버 문장 캐시 + 서버 prepstmt (#394 채택 구성 ③b — 2026-08-29 같은 창 4구성 비교,
+      # load-test/campaigns/2026-08-29_394-stmt-shape). 다중 동네 목록 문장(최대 9,378자)의
+      # 실행당 재파싱·전문 전송·서버 파싱을 지운다. 목표 부하 실측: 스로틀 21.6→1.4%,
+      # p95 308→7ms, 요청당 앱 2.536→2.165ms·DB 1.905→1.539ms.
+      # ⚠️ prepStmtCacheSqlLimit(기본 256자)을 빼면 정작 그 문장만 캐시에서 조용히 빠진다.
+      # prepStmtCacheSize=512는 벤치 실동작 114문장 기준 — 운영 개시 시 실트래픽 형상 수로
+      # 재산정(동네 수 축 2~18이 살아나 형상이 최대 17배). 캠페인 오버레이가 URL을 통째로
+      # 덮으므로 A/B 재실행에는 영향 없다.
+      SPRING_DATASOURCE_URL: "jdbc:mysql://bench-mysql:3306/solply_bench_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8&cachePrepStmts=true&prepStmtCacheSqlLimit=16384&prepStmtCacheSize=512&useServerPrepStmts=true"
       SPRING_DATASOURCE_USERNAME: solplyuser
       SPRING_DATASOURCE_PASSWORD: solplyuserpwd
       SERVER_PORT: "8082"
