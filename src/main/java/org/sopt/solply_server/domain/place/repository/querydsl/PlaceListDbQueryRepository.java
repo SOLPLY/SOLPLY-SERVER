@@ -8,7 +8,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.util.TagMasks;
@@ -24,21 +23,16 @@ import org.springframework.stereotype.Repository;
  * 힌트로 그 맹점을 우회하는 안은 임계가 요청 형상 한 점에서만 유효함이 실측으로 확정돼 철회했고
  * ({@code load-test/campaigns/2026-08-11_region-size-threshold}), 대신 선택지 자체를 없앴다.
  *
- * <p><b>정적 정렬 다섯은 동네마다 따로 인덱스를 타고, 그 조각들을 합쳐 다시 자른다.</b>
- * {@code town_id IN (...)} 한 문장은 동네 구간 사이에 순서가 없어 후보 전량을 읽고 정렬해야 하므로
- * 읽는 양이 동네당 장소 수에 정비례한다. 동네 단위로 쪼개면 구간 <em>안에서는</em> 인덱스가 순서를
- * 만들어 주므로 조각이 LIMIT을 채우는 자리에서 멈춘다 — 필터 통과율이 유지되는 한 읽는 깊이가
- * 데이터 규모와 분리된다(동네당 100→200곳에서 IN은 1,812→3,615행, 쪼개면 407행 유지). 대가는 임시
- * 테이블 하나와 조각별 실행 준비인데 둘 다 규모와 무관한 상수이고, 파싱·플랜·왕복은 여전히 문장
- * 하나 몫이다. 근거는 {@code docs/blog/2026-08-21-multi-town-query-cost-structure.md}.
+ * <p><b>정적 정렬 다섯은 동네마다 한 브랜치씩 UNION ALL로 엮는다.</b> {@code town_id IN (...)} 한
+ * 문장은 동네 구간 사이에 순서가 없어 후보 전량을 읽고 정렬해야 하므로 읽는 양이 동네당 장소 수에
+ * 정비례한다. 브랜치로 쪼개면 구간 <em>안에서는</em> 인덱스가 순서를 만들어 주므로 브랜치가 LIMIT을
+ * 채우는 자리에서 멈춘다 — 필터 통과율이 유지되는 한 읽는 깊이가 데이터 규모와 분리된다(동네당
+ * 100→200곳에서 IN은 1,812→3,615행, 브랜치는 407행 유지). 대가는 union 임시 테이블 하나와 브랜치
+ * 실행 준비인데 둘 다 규모와 무관한 상수이고, 파싱·플랜·왕복은 여전히 문장 하나 몫이다.
+ * 근거는 {@code docs/blog/2026-08-21-multi-town-query-cost-structure.md}.
  *
- * <p><b>쪼개는 형상은 {@code JSON_TABLE} + {@code LATERAL}이다 — 문장 텍스트가 동네 수와 무관한
- * 상수다.</b> 동네마다 완전한 SELECT 한 벌을 복제해 UNION ALL로 엮던 형상은 문장이 최대 9,378자까지
- * 부풀어, 드라이버 재파싱과 패킷 조립만으로 요청당 앱 CPU를 키웠다 (#394). 동네 목록을 JSON 배열
- * <b>값 하나</b>로 바인딩하면 같은 "동네별 조기 종료"를 문장 한 벌로 얻는다.
- *
- * <p><b>동네가 하나면 쪼개지 않는다</b> — 단일 동네는 원래 인덱스 순서로 조기 종료하므로 나눌 것이
- * 없고, 임시 테이블 고정비만 더해진다.
+ * <p><b>동네가 하나면 브랜치도 UNION도 만들지 않는다</b> — 단일 동네는 원래 인덱스 순서로 조기
+ * 종료하므로 쪼갤 것이 없고, 임시 테이블 고정비만 더해진다.
  *
  * <p><b>이 경로는 정렬 스냅샷이 없을 때 서는 폴백이다</b> ({@code PlaceService#sortIndexOrNull}).
  * 기동 직후와 스냅샷 빌드 실패 구간이 그 창이고, 그때는 트래픽이 통째로 여기로 온다 — 형상을 고를 때
@@ -89,26 +83,27 @@ public class PlaceListDbQueryRepository {
     private static final String IDX_BOOKMARKS = "idx_place_stats_town_bookmarks";
 
     /**
-     * 정렬별 SELECT 컬럼. <b>컬럼 이름이 곧 바깥 ORDER BY가 부르는 별칭</b>이다 — 안쪽을 합친 결과에는
-     * {@code ps}가 없어 {@code ps.컬럼}으로 가리킬 수 없으므로, 정렬 키 컬럼은 반드시 이 목록 안에
-     * 있어야 한다. 다섯 정렬 모두 정렬 키가 이미 표시값이거나 커서 키라 새로 실을 것은 없다.
-     *
-     * <p><b>안쪽 {@code ps.컬럼 AS 컬럼}과 바깥 {@code t.컬럼}을 이 목록 하나에서 만든다</b>
-     * ({@link #innerSelect}·{@link #outerSelect}) — 두 벌을 따로 적어 두면 컬럼을 더할 때 한쪽만
-     * 고치는 실수가 조용히 통과한다. 목록의 <b>순서가 곧 결과 열 순서</b>라 row 매핑의 인덱스와
-     * 한 쌍이다.
+     * 정렬별 SELECT 목록. <b>별칭이 곧 바깥 ORDER BY가 부르는 이름</b>이다 — UNION 결과에는 테이블이
+     * 없어 {@code ps.컬럼}으로 가리킬 수 없으므로, 정렬 키 컬럼은 반드시 이 목록 안에 있어야 한다.
+     * 다섯 정렬 모두 정렬 키가 이미 표시값이거나 커서 키라 새로 실을 것은 없다.
      */
-    private static final List<String> POPULAR_COLUMNS = List.of(
-            "place_id", "popular_score", "bookmark_count", "review_count", "avg_rating");
+    private static final String POPULAR_SELECT =
+            "ps.place_id AS place_id, ps.popular_score AS popular_score, "
+                    + "ps.bookmark_count AS bookmark_count, ps.review_count AS review_count, "
+                    + "ps.avg_rating AS avg_rating";
 
-    private static final List<String> LATEST_COLUMNS = List.of(
-            "place_id", "created_at", "bookmark_count", "review_count", "avg_rating");
+    private static final String LATEST_SELECT =
+            "ps.place_id AS place_id, ps.created_at AS created_at, "
+                    + "ps.bookmark_count AS bookmark_count, ps.review_count AS review_count, "
+                    + "ps.avg_rating AS avg_rating";
 
-    private static final List<String> RATING_COLUMNS = List.of(
-            "place_id", "avg_rating", "review_count", "bookmark_count");
+    private static final String RATING_SELECT =
+            "ps.place_id AS place_id, ps.avg_rating AS avg_rating, "
+                    + "ps.review_count AS review_count, ps.bookmark_count AS bookmark_count";
 
-    private static final List<String> COUNT_COLUMNS = List.of(
-            "place_id", "bookmark_count", "review_count", "avg_rating");
+    private static final String COUNT_SELECT =
+            "ps.place_id AS place_id, ps.bookmark_count AS bookmark_count, "
+                    + "ps.review_count AS review_count, ps.avg_rating AS avg_rating";
 
     private final EntityManager em;
     private final PlaceListProperties placeListProperties;
@@ -152,10 +147,10 @@ public class PlaceListDbQueryRepository {
      * <b>시간당 미채점 행만 따로 채점하는 패스를 추가하지 말 것</b> — 그 순간 "점수는 하루 1회"가
      * 깨지고 커서 좌표계가 다시 매시간 갈린다.
      *
-     * <p><b>다중 town은 동네마다 조각을 하나씩 돌린다.</b> 인덱스상 결과가 town별로 묶여 각 range
+     * <p><b>다중 town은 동네마다 브랜치를 만든다.</b> 인덱스상 결과가 town별로 묶여 각 range
      * 안에서만 점수순이라 {@code town_id IN (...)}으로는 전역 점수순을 인덱스가 만들 수 없고, 후보
-     * 전량을 읽어 정렬해야 한다. 동네별 조각은 그 순서를 되살려 {@code LIMIT}이 차는 자리에서
-     * 멈춘다 — 형상과 채택 근거는 클래스 javadoc, 결과가 같은 근거는 {@link #multiTownLateralSql}.
+     * 전량을 읽어 정렬해야 한다. 브랜치는 그 순서를 동네 단위로 되살려 {@code LIMIT}이 차는 자리에서
+     * 멈춘다 — 형상과 채택 근거는 클래스 javadoc, 결과가 같은 근거는 {@link #townBranchedSql}.
      *
      * <p><b>커서 점수를 double로 바인딩하는 이유.</b> 커서에 싣는 값은 {@code DECIMAL(18,6)}을
      * {@code doubleValue()}로 좁힌 것이고, MySQL도 DECIMAL과 DOUBLE 파라미터를 DOUBLE로 올려
@@ -182,8 +177,8 @@ public class PlaceListDbQueryRepository {
                     """);
         }
 
-        Query query = em.createNativeQuery(townScopedSql(
-                        townIds.size(), POPULAR_COLUMNS, null, predicates.toString(),
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), POPULAR_SELECT, null, predicates.toString(),
                         "ps.popular_score DESC, ps.place_id ASC",
                         "popular_score DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
@@ -220,9 +215,9 @@ public class PlaceListDbQueryRepository {
      * (뒤에 붙는 place_id가 여전히 오름차순이라 타이브레이크가 반대) — V31·V34 주석에 실측 근거가
      * 있다. 말단 네 컬럼이 태그 술어와 표시값을 덮어 커버링이기도 하다.
      *
-     * <p>다중 town을 동네별로 쪼개는 규칙은 인기순과 같다 — 역방향 스캔이 만드는 순서도
-     * 동네 안에서만 성립하기 때문이다. 안쪽 타이브레이크가 {@code place_id DESC}인 만큼
-     * 바깥 정렬도 같은 방향이어야 한다({@link #multiTownLateralSql}의 전순서 계약).
+     * <p>다중 town을 동네별 브랜치로 쪼개는 규칙은 인기순과 같다 — 역방향 스캔이 만드는 순서도
+     * 동네 안에서만 성립하기 때문이다. 브랜치 안의 타이브레이크가 {@code place_id DESC}인 만큼
+     * 바깥 정렬도 같은 방향이어야 한다({@link #townBranchedSql}의 전순서 계약).
      *
      * <p><b>커서를 {@code FROM_UNIXTIME}이 아니라 LocalDateTime 바인딩으로 비교하는 이유.</b>
      * {@code FROM_UNIXTIME}은 세션 {@code time_zone}을 타므로 커넥션 설정에 따라 경계가 통째로
@@ -259,8 +254,8 @@ public class PlaceListDbQueryRepository {
                     """);
         }
 
-        Query query = em.createNativeQuery(townScopedSql(
-                        townIds.size(), LATEST_COLUMNS, null, predicates.toString(),
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), LATEST_SELECT, null, predicates.toString(),
                         "ps.created_at DESC, ps.place_id DESC",
                         "created_at DESC, place_id DESC"))
                 .setParameter("limitSize", limit);
@@ -342,8 +337,8 @@ public class PlaceListDbQueryRepository {
                     """);
         }
 
-        Query query = em.createNativeQuery(townScopedSql(
-                        townIds.size(), RATING_COLUMNS, IDX_RATING, predicates.toString(),
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), RATING_SELECT, IDX_RATING, predicates.toString(),
                         "ps.avg_rating DESC, ps.review_count DESC, ps.place_id ASC",
                         "avg_rating DESC, review_count DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
@@ -422,8 +417,8 @@ public class PlaceListDbQueryRepository {
                     .append(" = :cursorCount AND ps.place_id > :cursorPlaceId))\n");
         }
 
-        Query query = em.createNativeQuery(townScopedSql(
-                        townIds.size(), COUNT_COLUMNS, intendedIndex, predicates.toString(),
+        Query query = em.createNativeQuery(townBranchedSql(
+                        townIds.size(), COUNT_SELECT, intendedIndex, predicates.toString(),
                         "ps." + countColumn + " DESC, ps.place_id ASC",
                         countColumn + " DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
@@ -498,114 +493,63 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
-     * 목록 문장 하나. <b>동네가 하나면 {@link #singleTownSql}, 여럿이면 {@link #multiTownLateralSql}</b>
-     * — 갈라 놓는 근거는 클래스 javadoc.
+     * 동네마다 한 브랜치씩, 브랜치 안에서 정렬과 절단을 끝내고 UNION ALL로 엮은 목록 문장.
+     * <b>동네가 하나면 브랜치도 UNION도 만들지 않는다</b> — 채택 근거는 클래스 javadoc.
      *
-     * @param columns       결과 열. 안팎 SELECT를 여기서 함께 만든다 ({@link #POPULAR_COLUMNS})
+     * <p><b>술어와 LIMIT은 반드시 브랜치 안에 있어야 한다.</b> 커서 술어를 바깥으로 빼면 브랜치가
+     * 커서 <em>앞</em>의 행으로 LIMIT을 채우고, 정작 다음 페이지에 실려야 할 행이 통째로 누락된다.
+     *
+     * <p><b>브랜치 LIMIT이 바깥 LIMIT과 같아도 결과가 온전한 이유.</b> 전역 상위 N은 언제나 동네별
+     * 상위 N의 합집합 안에 있다 — 어떤 장소가 자기 동네의 상위 N 밖이라면 같은 동네에 그보다 앞선
+     * 장소가 N개 이상이라는 뜻이고, 그들은 전역에서도 전부 앞이므로 그 장소는 전역 상위 N이 아니다.
+     * 커서 술어가 모든 브랜치에 똑같이 걸리므로 이 논증은 두 번째 페이지 이후에도 성립한다.
+     *
      * @param intendedIndex {@code null}이면 힌트를 붙이지 않는다 ({@link #appendFrom})
      * @param predicates    동네 조건 <b>뒤에</b> 붙는 술어 전부(태그 마스크·커서·인기순의 미채점
      *                      제외). 줄마다 {@code "  AND "}로 시작하고 개행으로 끝나야 한다
-     * @param innerOrderBy  동네 하나 안의 정렬. {@code ps.} 한정자를 붙여 인덱스가 만드는 순서와 같은
+     * @param innerOrderBy  브랜치 안의 정렬. {@code ps.} 한정자를 붙여 인덱스가 만드는 순서와 같은
      *                      식으로 적는다
-     * @param outerOrderBy  동네별 조각을 합친 뒤의 정렬. 단일 동네에서는 쓰이지 않는다
+     * @param outerOrderBy  브랜치들을 합친 뒤의 정렬. UNION 결과에는 테이블이 없으므로 <b>SELECT
+     *                      별칭</b>으로 적으며, 안쪽과 <b>같은 전순서</b>여야 한다 — 타이브레이크
+     *                      방향까지 같아야 하고(최신순만 {@code place_id DESC}), 어긋나면 브랜치
+     *                      경계에서 동률 항목의 순서가 페이지마다 흔들린다
      */
-    private String townScopedSql(int townCount, List<String> columns, String intendedIndex,
+    private String townBranchedSql(int townCount, String selectList, String intendedIndex,
             String predicates, String innerOrderBy, String outerOrderBy) {
 
-        return townCount > 1
-                ? multiTownLateralSql(columns, intendedIndex, predicates, innerOrderBy, outerOrderBy)
-                : singleTownSql(columns, intendedIndex, predicates, innerOrderBy);
-    }
-
-    /** 동네 하나. 인덱스가 순서를 그대로 만들어 주므로 감쌀 것도 합칠 것도 없다. */
-    private String singleTownSql(List<String> columns, String intendedIndex,
-            String predicates, String innerOrderBy) {
-
-        StringBuilder sql = new StringBuilder("SELECT ").append(innerSelect(columns)).append("\n");
-        appendFrom(sql, intendedIndex);
-        return sql.append("WHERE ps.town_id = :town0\n")
-                .append(predicates)
-                .append("ORDER BY ").append(innerOrderBy).append(" LIMIT :limitSize")
-                .toString();
+        boolean branched = townCount > 1;
+        StringBuilder sql = new StringBuilder();
+        for (int i = 0; i < townCount; i++) {
+            if (i > 0) {
+                sql.append("UNION ALL\n");
+            }
+            if (branched) {
+                sql.append("(");
+            }
+            sql.append("SELECT ").append(selectList).append("\n");
+            appendFrom(sql, intendedIndex);
+            sql.append("WHERE ps.town_id = :town").append(i).append("\n")
+                    .append(predicates)
+                    .append("ORDER BY ").append(innerOrderBy).append(" LIMIT :limitSize");
+            if (branched) {
+                sql.append(")\n");
+            }
+        }
+        if (branched) {
+            sql.append("ORDER BY ").append(outerOrderBy).append(" LIMIT :limitSize");
+        }
+        return sql.toString();
     }
 
     /**
-     * 동네 여럿. 동네 목록을 <b>JSON 배열 값 하나</b>로 받아 {@code JSON_TABLE}이 행으로 펼치고,
-     * {@code LATERAL}이 동네마다 같은 조각을 한 번씩 실행한다 — 문장 텍스트가 동네 수와 무관한
-     * 상수 형상이 되는 것이 이 형태를 고른 이유다 (#394).
-     *
-     * <p><b>술어와 LIMIT은 반드시 LATERAL 안에 있어야 한다.</b> 커서 술어를 바깥으로 빼면 동네별
-     * 조각이 커서 <em>앞</em>의 행으로 LIMIT을 채우고, 정작 다음 페이지에 실려야 할 행이 통째로
-     * 누락된다.
-     *
-     * <p><b>안쪽 LIMIT이 바깥 LIMIT과 같아도 결과가 온전한 이유.</b> 전역 상위 N은 언제나 동네별
-     * 상위 N의 합집합 안에 있다 — 어떤 장소가 자기 동네의 상위 N 밖이라면 같은 동네에 그보다 앞선
-     * 장소가 N개 이상이라는 뜻이고, 그들은 전역에서도 전부 앞이므로 그 장소는 전역 상위 N이 아니다.
-     * 커서 술어가 모든 동네에 똑같이 걸리므로 이 논증은 두 번째 페이지 이후에도 성립한다.
-     *
-     * <p><b>{@code CAST(... AS JSON)}을 지우지 말 것 — 첫 인자의 타입을 문장이 직접 못 박는
-     * 자리다.</b> 빼면 그 값이 어떤 문자셋으로 도착하는지에 판정이 걸리고, 조합에 따라
-     * {@code Cannot create a JSON value from a string with CHARACTER SET 'binary'}로 깨진다.
-     * 커넥션 옵션은 이 클래스가 정하지 않으므로 <b>한 조합에서 통과한 것이 근거가 되지 않는다</b>.
-     *
-     * @param outerOrderBy 합친 뒤의 정렬. LATERAL 결과에는 {@code ps}가 없으므로 <b>SELECT 별칭</b>
-     *                     으로 적으며, 안쪽과 <b>같은 전순서</b>여야 한다 — 타이브레이크 방향까지
-     *                     같아야 하고(최신순만 {@code place_id DESC}), 어긋나면 동네 경계에서 동률
-     *                     항목의 순서가 페이지마다 흔들린다
-     */
-    private String multiTownLateralSql(List<String> columns, String intendedIndex,
-            String predicates, String innerOrderBy, String outerOrderBy) {
-
-        StringBuilder sql = new StringBuilder("SELECT ").append(outerSelect(columns)).append("\n")
-                .append("FROM JSON_TABLE(CAST(:townIdsJson AS JSON), '$[*]'\n")
-                .append("       COLUMNS (town_id BIGINT PATH '$')) towns\n")
-                .append("JOIN LATERAL (\n")
-                .append("SELECT ").append(innerSelect(columns)).append("\n");
-        appendFrom(sql, intendedIndex);
-        return sql.append("WHERE ps.town_id = towns.town_id\n")
-                .append(predicates)
-                .append("ORDER BY ").append(innerOrderBy).append(" LIMIT :limitSize\n")
-                .append(") t ON TRUE\n")
-                .append("ORDER BY ").append(outerOrderBy).append(" LIMIT :limitSize")
-                .toString();
-    }
-
-    /** 안쪽 SELECT — 별칭을 컬럼 이름과 같게 붙여야 바깥이 그 이름으로 정렬할 수 있다 */
-    private static String innerSelect(List<String> columns) {
-        return columns.stream().map(c -> "ps." + c + " AS " + c).collect(Collectors.joining(", "));
-    }
-
-    /** 바깥 SELECT — LATERAL 결과 별칭 {@code t}를 통해 같은 열을 같은 순서로 다시 싣는다 */
-    private static String outerSelect(List<String> columns) {
-        return columns.stream().map(c -> "t." + c).collect(Collectors.joining(", "));
-    }
-
-    /**
-     * 동네 바인딩. 단일 동네는 값 하나({@code :town0}), 다중 동네는 <b>JSON 배열 문자열 하나</b>
-     * ({@code :townIdsJson})다 — 후자가 문장을 동네 수와 무관하게 만드는 축이다. 거리순만 여전히
-     * {@code IN} 리스트로 바인딩한다 (그 문장에는 동네별 조각이 없다).
-     *
-     * <p>목록이 비는 경우는 없다 — 상위가 {@code TownHierarchyResolver#resolveLeafTownIdsOrThrow}로
-     * 이미 막는다.
+     * 동네 하나에 파라미터 하나. 브랜치는 자기 동네 id만 보므로 {@code IN} 리스트 바인딩이 아니고,
+     * 이름은 브랜치 순서를 따른다({@code :town0}부터). 거리순만 여전히 리스트로 바인딩한다 —
+     * 그 문장에는 브랜치가 없다.
      */
     private void bindTownIds(Query query, List<Long> townIds) {
-        if (townIds.size() > 1) {
-            query.setParameter("townIdsJson", townIdsJson(townIds));
-            return;
-        }
-        query.setParameter("town0", townIds.get(0));
-    }
-
-    /** {@code [101,102,103]} — 조립은 앱이 한다. id는 전부 {@code Long}이라 따옴표도 이스케이프도 없다 */
-    private String townIdsJson(List<Long> townIds) {
-        StringBuilder json = new StringBuilder("[");
         for (int i = 0; i < townIds.size(); i++) {
-            if (i > 0) {
-                json.append(',');
-            }
-            json.append(townIds.get(i).longValue());
+            query.setParameter("town" + i, townIds.get(i));
         }
-        return json.append(']').toString();
     }
 
     /**
@@ -641,8 +585,7 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
-     * 목록 문장의 FROM 절 (다중 동네에서는 LATERAL <b>안쪽</b>의 FROM이다). 스위치가 꺼져 있으면
-     * {@code "FROM place_stats ps\n"} 한 줄이라
+     * 브랜치 하나의 FROM 절. 스위치가 꺼져 있으면 {@code "FROM place_stats ps\n"} 한 줄이라
      * <b>문장이 바이트째 힌트 도입 전과 같다</b> — 미발동 시 문장 불변은 {@link #appendTagFilters}가
      * 마스크 0에서 지키는 것과 같은 계약이고, 그래야 벤치의 A자연 팔이 "스위치를 들이기 전"과
      * 같은 문장을 돌린 것이 된다.
