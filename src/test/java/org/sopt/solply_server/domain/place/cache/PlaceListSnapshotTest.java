@@ -16,8 +16,9 @@ import org.junit.jupiter.api.Test;
  * 그 창이 통째로 짧아지므로 값으로 못 박는다.
  *
  * <p><b>회차 사이에 1ms를 재우는 이유.</b> 버전은 교체 시각(ms)이라 같은 밀리초에 두 번 교체하면
- * 두 사진이 같은 버전을 갖는다. 운영에서는 간격이 10분이라 일어날 수 없는 일이고
- * ({@code PlaceListSnapshot#replace} javadoc), 테스트만 그 전제를 어기므로 여기서 벌린다.
+ * 두 사진이 같은 버전을 갖는다. 운영에서는 전량 재생성 자체가 수십~수백 ms라 일어날 수 없는 일이고
+ * ({@code PlaceListSnapshot#replace} javadoc), 인덱스만 갈아 끼우는 이 테스트가 그 전제를 어기므로
+ * 여기서 벌린다.
  */
 class PlaceListSnapshotTest {
 

@@ -57,10 +57,15 @@ import org.springframework.test.context.DynamicPropertySource;
  * DB 직행 픽스처는 {@link #createPlace}가 같은 자리를 채운다.
  *
  * <p><b>사슬에 한 마디가 늘었다 — 회차다 (#397).</b> 조회가 읽는 곳은 목록 스냅샷 하나뿐이고,
- * DB의 변경은 <b>다음 회차가 사진을 다시 찍을 때</b> 목록에 나타난다. 그래서 이 파일의 픽스처는
- * "쓰기 → 배치 → <b>{@link #takeSnapshot()}</b> → 조회"로 걷고, 운영에서 그 자리를 채우는 것은
- * 10분 주기 타이머다({@code PlaceListSnapshotScheduler}). <b>여기서 회차를 생략하면 조회가
+ * DB의 변경은 <b>다음 회차가 사진을 다시 찍을 때</b> 목록에 나타난다. 그래서 이 파일의 DB 직행
+ * 픽스처는 "쓰기 → 배치 → <b>{@link #takeSnapshot()}</b> → 조회"로 걷고, 운영에서 그 자리를 채우는
+ * 것은 10분 주기 타이머다({@code PlaceListSnapshotScheduler}). <b>여기서 회차를 생략하면 조회가
  * 픽스처 이전의 사진을 보므로, 회차를 부르지 않은 단언은 곧 "낡은 사진을 본다"는 주장이다.</b>
+ *
+ * <p><b>어드민 경로만은 예외이고, 그 예외가 검증 대상이다.</b> 어드민 쓰기는 자기 커밋 뒤에
+ * 스스로 사진을 다시 찍으므로({@code PlaceListSnapshotRefresher}) 아래 어드민 시나리오들은
+ * {@code takeSnapshot()}을 <b>일부러 부르지 않는다</b> — 부르는 순간 "훅이 찍은 것"인지 "손으로
+ * 찍은 것"인지 구분되지 않아, 훅을 통째로 떼도 전부 그린이 된다.
  *
  * <p><b>계약: 단언은 PlaceService 응답 DTO 수준으로만 한다.</b> 내부 표현(네이티브 SQL의 컬럼 순서,
  * 레포지토리 record 모양)이 바뀌는 리팩터링에서 이 파일은 수정 없이 그린이어야 한다.
@@ -252,19 +257,16 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 테이블이고("행이 있으면 목록에 나와도 되는 장소"가 불변식) 두 배치 어느 쪽도 행을 지우지
      * 않으므로, 이 경로가 빠지면 내린 장소가 영구히 노출된다.
      *
-     * <p><b>삭제 뒤 배치를 돌리지 않는 것이 요점이다.</b> 회차를 끼우면 "삭제가 행을 지운 것"인지
-     * "배치가 지운 것"인지 구분되지 않는다 — 사진을 다시 찍는 것은 행의 존재에 관여하지 않으므로
-     * 그 구분을 흐리지 않는다.
-     *
-     * <p><b>목록에서 사라지는 시점은 다음 회차다.</b> 행은 그 자리에서 없어지지만 조회가 보는 것은
-     * 사진이라, 이 창(≤10분)이 곧 어드민 변경의 SLA다({@code PlaceListSnapshotScheduler}).
+     * <p><b>삭제 뒤에는 배치도 회차도 손으로 돌리지 않는 것이 요점이다.</b> 끼우면 장소가 사라진
+     * 이유가 "삭제가 행을 지우고 커밋 훅이 사진을 다시 찍어서"인지 "손으로 돌린 것 때문"인지
+     * 구분되지 않는다.
      *
      * <p>이 장소에 북마크를 달지 말 것 — {@code bookmarks}는 다형 {@code target_id}라 places에
      * FK가 없어 장소를 지워도 남고, 그 잔행이 {@code @AfterAll}의 users 삭제를
      * {@code fk_bookmarks_user}로 막는다.
      */
     @Test
-    void 어드민이_삭제한_장소는_행이_즉시_사라지고_다음_회차부터_인기순에서_빠진다() {
+    void 어드민이_삭제한_장소는_배치를_기다리지_않고_인기순에서_사라진다() {
         long doomed = createPlace(townId, "db직행삭제", PLACE_CREATED_AT);
         runBothBatches(CALCULATED_AT.plusHours(1));
         takeSnapshot();
@@ -274,13 +276,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         adminPlaceFacade.deletePlace(doomed);
 
-        // 행은 그 자리에서 사라진다 — 배치를 기다리지 않는다
+        // 행은 그 자리에서 사라지고, 커밋 훅이 찍은 새 사진에도 없다
         assertThat(statsRowExists(doomed)).isFalse();
-        // 사진은 아직 옛 회차라 목록에는 남아 있다 (수용한 창)
-        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(doomed);
-
-        takeSnapshot();
-
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
                 .doesNotContain(doomed);
     }
@@ -350,6 +347,36 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     // === 어드민 쓰기 경로가 place_stats를 동기 유지한다 (V34) ===
 
     /**
+     * <b>어드민 쓰기는 커밋 <em>뒤에</em> 목록 스냅샷을 다시 짓는다.</b>
+     *
+     * <p>커밋 전에 지으면 로더의 새 커넥션이 아직 커밋되지 않은 변경을 보지 못해 <b>옛 데이터</b>로
+     * 사진을 짓고, 그 낡은 사진이 다음 트리거까지 남는다 — 방금 만든 장소가 목록에서 사라지고
+     * 방금 지운 장소가 계속 나온다. 이 테스트가 정확히 그 시점을 문다: 재생성이 커밋보다 앞서면
+     * 아래 첫 단언이, 훅이 아예 없으면 둘 다 빨개진다.
+     *
+     * <p><b>생성과 삭제를 한 무대에서 걷는 이유.</b> 두 지점이 어드민이 사진의 원천을 바꾸는
+     * 경로의 전부이고({@code AdminPlaceService}의 {@code syncPlaceStats}와 {@code deletePlace}),
+     * 한쪽만 보면 나머지 훅이 빠져도 그린이다.
+     *
+     * <p>배치도 손으로 찍는 회차도 한 번도 쓰지 않는다 — 끼우는 순간 이 두 단언이 "커밋 훅이 한
+     * 일"을 보는 것인지 아닌지가 구분되지 않는다.
+     */
+    @Test
+    void 어드민_쓰기는_커밋_뒤에_목록_스냅샷을_다시_짓는다() {
+        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민커밋훅");
+
+        long created = adminPlaceFacade.createPlace(
+                ADMIN_USER_ID, upsertRequest("db직행어드민커밋훅", adminTownId, SEED_OPTION1_A)).placeId();
+
+        assertThat(ids(placeService.getPlaces(me, latestRequest(adminTownId, null, 10))))
+                .containsExactly(created);
+
+        adminPlaceFacade.deletePlace(created);
+
+        assertThat(ids(placeService.getPlaces(me, latestRequest(adminTownId, null, 10)))).isEmpty();
+    }
+
+    /**
      * <b>어드민이 만든 장소는 배치를 기다리지 않는다.</b> V34로 최신순의 기준 테이블이
      * place_stats가 되면서, 행을 안 만들면 방금 등록한 장소가 <em>최신순 맨 앞</em>에서 최대
      * 1시간 사라진다 — 대가로 수용할 수 없는 종류의 창이라 생성 경로가 같은 트랜잭션에서 행을 짓는다.
@@ -358,17 +385,16 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 무필터 조회는 통과하고 태그 조회만 조용히 비는데, 그 상태가 정확히 이 마이그레이션의
      * 대표적 실패 모양이다.
      *
-     * <p><b>배치를 한 번도 돌리지 않는다.</b> 끼우는 순간 이 장소가 목록에 뜬 이유가 "어드민
-     * 트랜잭션이 행을 지어서"인지 "배치가 지어서"인지 구분되지 않는다. 회차는 한 번 돌린다 —
-     * 그것은 행을 짓지 않고 이미 있는 행을 사진에 옮길 뿐이라 그 구분을 흐리지 않는다.
+     * <p><b>배치도 회차도 한 번도 돌리지 않는다.</b> 끼우는 순간 이 장소가 목록에 뜬 이유가
+     * "어드민 트랜잭션이 행을 짓고 커밋 훅이 사진을 다시 찍어서"인지 "손으로 돌린 것 때문"인지
+     * 구분되지 않는다.
      */
     @Test
-    void 어드민이_만든_장소는_배치_없이_다음_회차의_최신순에_나온다() {
+    void 어드민이_만든_장소는_배치_없이_최신순에_즉시_나온다() {
         long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민생성");
 
         long created = adminPlaceFacade.createPlace(
                 ADMIN_USER_ID, upsertRequest("db직행어드민생성", adminTownId, SEED_OPTION1_A)).placeId();
-        takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_A))))
                 .containsExactly(created);
@@ -381,14 +407,13 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 한쪽만 보면 마스크를 지우기만 하고 다시 채우지 않는 변이가 통과한다.
      */
     @Test
-    void 어드민의_태그_수정은_배치_없이_다음_회차의_필터에_반영된다() {
+    void 어드민의_태그_수정은_배치_없이_필터에_즉시_반영된다() {
         long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민태그수정");
         long placeId = adminPlaceFacade.createPlace(
                 ADMIN_USER_ID, upsertRequest("db직행어드민수정", adminTownId, SEED_OPTION1_A)).placeId();
 
         adminPlaceFacade.updatePlace(
                 placeId, upsertRequest("db직행어드민수정", adminTownId, SEED_OPTION1_B));
-        takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_A))))
                 .isEmpty();
@@ -402,7 +427,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 옮긴 장소가 옛 동네 목록에 계속 낀다. 배치 간격이 그 창의 상한이던 것을 V34의 동기 갱신이 닫았다.
      */
     @Test
-    void 어드민의_동네_이동은_배치_없이_다음_회차의_목록_소속에_반영된다() {
+    void 어드민의_동네_이동은_배치_없이_목록_소속에_즉시_반영된다() {
         long fromTownId = createTown(TOWN_NAME_PREFIX + "어드민이동전");
         long toTownId = createTown(TOWN_NAME_PREFIX + "어드민이동후");
         long placeId = adminPlaceFacade.createPlace(
@@ -410,7 +435,6 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         adminPlaceFacade.updatePlace(
                 placeId, upsertRequest("db직행어드민이동", toTownId, SEED_OPTION1_A));
-        takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(fromTownId, null, 10)))).isEmpty();
         assertThat(ids(placeService.getPlaces(me, latestRequest(toTownId, null, 10))))
@@ -427,10 +451,14 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      *
      * <p>"사라진 상태"는 행을 직접 지워 만든다 — 어드민의 삭제 경로가 하는 일과 같고, 배치는
      * 행의 존재에 관여하지 않으므로 회차를 아무리 돌려도 이 상태가 만들어지지 않는다.
-     * 그 뒤로는 배치를 돌리지 않는다.
+     *
+     * <p><b>지운 직후 회차를 한 번 찍는 것은 사라진 상태를 사진에까지 새기기 위해서다.</b> 안 찍으면
+     * 옛 사진이 이 장소를 그대로 들고 있어, 마지막 단언이 "재활성이 되살렸다"가 아니라 "옛 사진에
+     * 남아 있었다"로 통과한다 — 재활성 훅을 통째로 떼도 그린인 테스트가 된다. 그 뒤로는 배치도
+     * 회차도 손으로 돌리지 않는다.
      */
     @Test
-    void 재활성화된_장소는_배치_없이_다음_회차의_최신순에_돌아온다() {
+    void 재활성화된_장소는_배치_없이_최신순에_즉시_돌아온다() {
         long revivedTownId = createTown(TOWN_NAME_PREFIX + "어드민재활성");
         long placeId = createPlace(revivedTownId, "db직행재활성", PLACE_CREATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
@@ -441,10 +469,12 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeId);
         jdbcTemplate.update("DELETE FROM place_stats WHERE place_id = ?", placeId);
         assertThat(statsRowExists(placeId)).isFalse();
+        takeSnapshot();
+        assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
+                .isEmpty();
 
         jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeId);
         adminPlaceService.activatePlacesByTownIds(List.of(revivedTownId));
-        takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
                 .containsExactly(placeId);

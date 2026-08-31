@@ -14,11 +14,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * {@link PlaceListSnapshot}을 짓는 <b>유일한</b> 곳. 진입점은 {@link #rebuild()} 하나이고,
- * 그것을 부르는 것도 {@link PlaceListSnapshotScheduler} 하나다 — 기동 한 번과 주기 발화.
+ * 그것을 부르는 것은 {@link PlaceListSnapshotScheduler}(기동 한 번 · 10분 주기)와
+ * {@link PlaceListSnapshotRefresher}(어드민 커밋 뒤) 둘이다.
  *
  * <p><b>쿼리가 두 문장인 것이 이 클래스의 전부다.</b>
  * <ul>
@@ -37,8 +39,13 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>{@code @Transactional(readOnly = true)}인 이유는 두 문장이 같은 스냅샷을 보게 하기
  * 위해서다.</b> 트랜잭션이 없으면 문장마다 커넥션이 갈려, 그 사이에 커밋된 이미지 변경이 장소 목록과
- * 어긋난 조합으로 실릴 수 있다. 전파는 기본값이다 — 유일한 호출자가 트랜잭션 밖의 스케줄러라
- * 여기서 언제나 새 트랜잭션 하나가 열린다.
+ * 어긋난 조합으로 실릴 수 있다.
+ *
+ * <p><b>{@code REQUIRES_NEW}인 이유는 어드민 훅 때문이다.</b> 어드민 쓰기의 재생성은 커밋
+ * <em>뒤에</em> 도는데({@code TransactionSynchronization#afterCommit}), 그 시점에는 이미 끝난
+ * 트랜잭션의 자원이 아직 스레드에 묶여 있다. 전파를 기본값으로 두면 이 두 문장이 <b>이미 커밋된
+ * 트랜잭션에 참여</b>하는 모양이 되므로, 새 트랜잭션을 명시적으로 연다. 트랜잭션이 없는 다른
+ * 호출자(스케줄러)에게는 그냥 새 트랜잭션 하나를 여는 것과 같아 달라지는 것이 없다.
  *
  * <p><b>동치 계약 — 응답이 바뀌면 안 된다.</b> 표시 필드 둘은 엔티티 경로와 같은 값을 내야 한다.
  * <ul>
@@ -116,7 +123,7 @@ public class PlaceListSnapshotLoader {
      *
      * @return 스냅샷에 담긴 장소 수
      */
-    @Transactional(readOnly = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public int rebuild() {
         long startNanos = System.nanoTime();
 

@@ -207,8 +207,12 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
     /**
      * <b>사진은 한 회차의 것이고, 다시 짓기 전에는 새 장소를 보지 않는다.</b> 그 지연이 버그가
-     * 아니라 이 캐시의 정의라는 것을 값으로 남긴다 — 낡음의 상한을 정하는 것은 회차 주기 하나뿐이고
-     * ({@code PlaceListSnapshotScheduler}), 쓰기 경로에는 무효화 훅이 없다.
+     * 아니라 이 캐시의 정의라는 것을 값으로 남긴다.
+     *
+     * <p>여기서 지연이 보이는 것은 이 픽스처가 <b>어드민 경로를 지나치기</b> 때문이다 — 어드민
+     * 쓰기는 커밋 뒤 스스로 사진을 다시 찍으므로({@code PlaceListSnapshotRefresher}) 그 경로의
+     * 변경은 이 창을 만들지 않고, 배치가 채우는 카운트·점수만 다음 타이머 회차를 기다린다
+     * ({@code PlaceListSnapshotScheduler}).
      */
     @Test
     void 다시_짓기_전에는_새_장소가_사진에_없다() {
