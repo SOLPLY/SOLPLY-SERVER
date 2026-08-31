@@ -58,7 +58,7 @@ import org.springframework.stereotype.Repository;
  * ({@code AdminPlaceService#deletePlace}). <b>노출 창은 양쪽 다 즉시</b>다.
  * 두 배치는 값 칸만 정할 뿐 행의 존재에 관여하지 않는다.
  *
- * <p><b>커서 계약.</b> {@code PlaceListCursor} v5 — 정렬 키가 <b>튜플</b>이다. 정렬과 커서 키:
+ * <p><b>커서 계약.</b> {@code PlaceListCursor} v6 — 정렬 키가 <b>튜플</b>이다. 정렬과 커서 키:
  * POPULAR (점수 DESC, id ASC / 키: 점수) · LATEST (생성일 DESC, id DESC / 키: epoch 초 UTC) ·
  * RATING (평점 DESC, 리뷰 수 DESC, id ASC / 키: 평점·리뷰 수) ·
  * REVIEW_COUNT·BOOKMARK_COUNT (카운트 DESC, id ASC / 키: 카운트) ·

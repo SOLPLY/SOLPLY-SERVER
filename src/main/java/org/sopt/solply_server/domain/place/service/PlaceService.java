@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.cache.PlaceListEntry;
 import org.sopt.solply_server.domain.place.cache.PlaceListIndex;
+import org.sopt.solply_server.domain.place.cache.PlaceListPhoto;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
@@ -243,6 +244,14 @@ public class PlaceService {
    * 읽으면 한 응답 안에서 두 회차가 섞일 수 있다 — 요청 하나는 어느 한 회차의 <b>완결된</b> 사진만
    * 본다는 것이 이 경로의 계약이다 ({@code PlaceListSnapshot} 계약 2).
    *
+   * <p><b>스크롤 세션은 시작한 회차에 고정된다.</b> 잡을 사진을 커서가 정한다 — 커서가 없으면 최신
+   * 회차, 있으면 그 커서의 버전이 가리키는 회차이고, 발급하는 다음 커서에도 <b>같은 버전</b>을
+   * 실어 다음 페이지까지 이어진다. 보존(최근 3장) 밖으로 밀려난 버전은 조용히 최신 회차로 갈아타
+   * 항목을 흘리는 대신 {@code EXPIRED_PLACE_CURSOR}로 끊는다 ({@link #photoFor}).
+   *
+   * <p>옛 회차를 서빙하는 동안에도 {@code isBookmarked}만은 요청 시점 값이다 — 사용자별이라 사진에
+   * 담기지 않는다. 카운트·평점·순서는 전부 고정된 회차의 값이라 화면이 한 회차로 일관된다.
+   *
    * <p><b>사진이 없는 경우는 다루지 않는다.</b> 기동 시 동기 빌드가 포트를 열기 전에 끝나고 실패하면
    * 컨텍스트가 뜨지 않으므로, 요청이 {@code null}을 보는 창이 구조적으로 없다
    * ({@code PlaceListSnapshot} 계약 3). 장소가 실제로 0개면 비어 있는 인덱스가 온다.
@@ -293,11 +302,11 @@ public class PlaceService {
 
     // ⚠️ 이 회차의 사진을 여기서 한 번만 잡는다. 아래 어느 단계도 스냅샷을 다시 읽지 않는다 —
     // 다시 읽으면 한 응답이 두 회차를 섞어 볼 수 있다 (메서드 javadoc의 계약).
-    PlaceListIndex photo = placeListSnapshot.current();
+    PlaceListPhoto photo = photoFor(cursor);
 
     List<ListRow> rows = sort == PlaceSortType.DISTANCE
-        ? distanceRows(photo, leafTownIds, request, cursor, fetchSize)
-        : staticRows(photo, leafTownIds, request, sort, cursor, fetchSize);
+        ? distanceRows(photo.index(), leafTownIds, request, cursor, fetchSize)
+        : staticRows(photo.index(), leafTownIds, request, sort, cursor, fetchSize);
 
     boolean hasNext = paging && rows.size() > pageSize;
     if (hasNext) {
@@ -339,9 +348,32 @@ public class PlaceService {
         ? new PlaceListCursor(sort,
             rows.get(rows.size() - 1).sortKeys(),
             rows.get(rows.size() - 1).entry().placeId(),
-            filterPrint).encode()
+            filterPrint,
+            // 서빙한 회차를 그대로 실어 다음 페이지도 같은 사진에서 이어지게 한다
+            photo.version()).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
+  }
+
+  /**
+   * 이 요청이 볼 회차의 사진 — 커서가 없으면 최신, 있으면 커서가 박제한 버전이다.
+   *
+   * <p><b>보존 밖은 명시 만료다.</b> 버전을 찾지 못했다는 것은 그 회차가 캐시 보존(최근 3장)에서
+   * 밀려났다는 뜻이고, 그때 최신 회차로 조용히 갈아타면 커서 좌표가 다른 좌표계에서 해석돼 항목이
+   * 흘리거나 겹친다. 오류로 끊어야 클라이언트가 처음부터 다시 조회한다.
+   *
+   * <p>커서가 인스턴스 로컬 버전을 든다는 한계는 {@code PlaceListSnapshot} 참조 — 다중 인스턴스에서는
+   * sticky session 없이 성립하지 않는다.
+   */
+  private PlaceListPhoto photoFor(PlaceListCursor cursor) {
+    if (cursor == null) {
+      return placeListSnapshot.current();
+    }
+    PlaceListPhoto photo = placeListSnapshot.byVersion(cursor.version());
+    if (photo == null) {
+      throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
+    }
+    return photo;
   }
 
   /**
