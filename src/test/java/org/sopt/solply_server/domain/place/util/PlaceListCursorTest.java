@@ -15,9 +15,12 @@ class PlaceListCursorTest {
     /** 필터 지문이 검증 대상이 아닌 테스트가 쓰는 값. 네 축이 전부 채워진 형태다. */
     private static final String FILTER_PRINT = "10|20|1,2|3";
 
+    /** 회차 버전이 검증 대상이 아닌 테스트가 쓰는 값. 교체 시각(ms)이라 큰 수다 */
+    private static final long VERSION = 1_767_225_600_000L;
+
     private static PlaceListCursor cursor(double sortKey, long placeId) {
         return new PlaceListCursor(
-                PlaceSortType.POPULAR, List.of(sortKey), placeId, FILTER_PRINT);
+                PlaceSortType.POPULAR, List.of(sortKey), placeId, FILTER_PRINT, VERSION);
     }
 
     @Test
@@ -27,17 +30,37 @@ class PlaceListCursorTest {
     }
 
     /**
-     * 네 필드가 <b>따로</b> 왕복하는지 본다. record 전체 비교만 하면 정렬키와 id를 뒤바꾸거나
+     * 다섯 필드가 <b>따로</b> 왕복하는지 본다. record 전체 비교만 하면 정렬키와 id를 뒤바꾸거나
      * 지문을 다른 필드로 덮는 회귀가 통과할 수 있어(전부 원본에서 왔으므로) 값으로 하나씩 문다.
      */
     @Test
-    void 정렬축_정렬키_id_지문이_각각_왕복한다() {
+    void 정렬축_정렬키_id_지문_회차가_각각_왕복한다() {
         PlaceListCursor decoded = PlaceListCursor.decode(cursor(9.5, 3L).encode());
 
         assertThat(decoded.sort()).isEqualTo(PlaceSortType.POPULAR);
         assertThat(decoded.key(0)).isEqualTo(9.5);
         assertThat(decoded.placeId()).isEqualTo(3L);
         assertThat(decoded.filterPrint()).isEqualTo(FILTER_PRINT);
+        assertThat(decoded.version()).isEqualTo(VERSION);
+    }
+
+    /**
+     * <b>회차 버전은 정렬 키가 아니라 별도 필드다 (v6).</b> 두 자리가 섞이면 커서가 다른 회차의
+     * 사진을 가리키거나 정렬 키를 회차로 읽어, 다음 페이지가 조용히 다른 좌표계에서 재개된다.
+     *
+     * <p>버전 하나만 다른 두 커서가 <b>서로 다른 토큰</b>이라는 것까지 못 박는다 — 토큰 조립에서
+     * 버전을 빠뜨리면 두 회차의 커서가 같은 문자열이 되어 회차 고정 장치가 통째로 무력해진다.
+     */
+    @Test
+    void 회차_버전만_다른_커서는_다른_토큰이고_각각_그_회차로_왕복한다() {
+        PlaceListCursor first = new PlaceListCursor(
+                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, 100L);
+        PlaceListCursor second = new PlaceListCursor(
+                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, 200L);
+
+        assertThat(first.encode()).isNotEqualTo(second.encode());
+        assertThat(PlaceListCursor.decode(first.encode()).version()).isEqualTo(100L);
+        assertThat(PlaceListCursor.decode(second.encode()).version()).isEqualTo(200L);
     }
 
     @Test
@@ -48,8 +71,9 @@ class PlaceListCursorTest {
 
     @Test
     void base64이지만_필드가_모자란_토큰은_예외를_던진다() {
+        // 버전 문자열은 맞고 회차 필드만 빠진 형태 — 필드 수 검사가 유일한 방벽인 자리다
         String bogus = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("v5:POPULAR:123:4".getBytes(StandardCharsets.UTF_8));
+                .encodeToString("v6:POPULAR:123:4:10|20|1,2|3".getBytes(StandardCharsets.UTF_8));
         assertThatThrownBy(() -> PlaceListCursor.decode(bogus))
                 .isInstanceOf(BusinessException.class);
     }
@@ -141,6 +165,21 @@ class PlaceListCursorTest {
                 .isInstanceOf(BusinessException.class);
     }
 
+    /**
+     * <b>v5는 회차 버전 한 칸만 모자라다.</b> 필드 수가 하나 적어 형식 검사에 걸리지만, 만약
+     * 그 칸을 <em>지어내서</em> 받아 준다면 지어낸 회차는 보존 목록에 없거나(전부 만료) 엉뚱한
+     * 회차를 가리켜(항목 누락·중복) 어느 쪽이든 조용한 오답이다. 운영 전이라 하위호환이 필요 없는
+     * 만큼 코덱에서 끊는다.
+     */
+    @Test
+    void v5_토큰은_거부한다() {
+        String v5Token = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("v5:POPULAR:100.0:5:10|20|1,2|3".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> PlaceListCursor.decode(v5Token))
+                .isInstanceOf(BusinessException.class);
+    }
+
     // === 정렬 키 튜플 ===
 
     /**
@@ -150,7 +189,7 @@ class PlaceListCursorTest {
     @Test
     void 평점순_커서는_두_키를_순서대로_왕복한다() {
         PlaceListCursor cursor = new PlaceListCursor(
-                PlaceSortType.RATING, List.of(4.5, 12.0), 7L, FILTER_PRINT);
+                PlaceSortType.RATING, List.of(4.5, 12.0), 7L, FILTER_PRINT, VERSION);
 
         PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
 
@@ -166,7 +205,8 @@ class PlaceListCursorTest {
     @Test
     void 거리순_커서는_기준_좌표와_거리를_왕복한다() {
         PlaceListCursor cursor = new PlaceListCursor(
-                PlaceSortType.DISTANCE, List.of(37.5665, -126.978, 1234.5), 9L, FILTER_PRINT);
+                PlaceSortType.DISTANCE, List.of(37.5665, -126.978, 1234.5), 9L, FILTER_PRINT,
+                VERSION);
 
         PlaceListCursor decoded = PlaceListCursor.decode(cursor.encode());
 
@@ -180,10 +220,10 @@ class PlaceListCursorTest {
      */
     @Test
     void 정렬과_키_개수가_어긋난_토큰은_거부한다() {
-        String tooMany = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("v5:POPULAR:1.0,2.0:5:10|20|1,2|3".getBytes(StandardCharsets.UTF_8));
-        String tooFew = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("v5:DISTANCE:37.5,127.0:5:10|20|1,2|3".getBytes(StandardCharsets.UTF_8));
+        String tooMany = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                "v6:POPULAR:1.0,2.0:5:10|20|1,2|3:100".getBytes(StandardCharsets.UTF_8));
+        String tooFew = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                "v6:DISTANCE:37.5,127.0:5:10|20|1,2|3:100".getBytes(StandardCharsets.UTF_8));
 
         assertThatThrownBy(() -> PlaceListCursor.decode(tooMany))
                 .isInstanceOf(BusinessException.class);
@@ -195,7 +235,7 @@ class PlaceListCursorTest {
     @Test
     void 정렬과_키_개수가_어긋나면_커서를_만들_수_없다() {
         assertThatThrownBy(() -> new PlaceListCursor(
-                PlaceSortType.RATING, List.of(4.5), 1L, FILTER_PRINT))
+                PlaceSortType.RATING, List.of(4.5), 1L, FILTER_PRINT, VERSION))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -258,7 +298,7 @@ class PlaceListCursorTest {
     void 지문의_끝이_비어_있어도_왕복한다() {
         String print = PlaceListCursor.filterPrintOf(1L, null, null, null);
         PlaceListCursor cursor =
-                new PlaceListCursor(PlaceSortType.LATEST, List.of(100.0), 5L, print);
+                new PlaceListCursor(PlaceSortType.LATEST, List.of(100.0), 5L, print, VERSION);
 
         assertThat(PlaceListCursor.decode(cursor.encode())).isEqualTo(cursor);
     }

@@ -22,17 +22,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
-import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
-import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshotRefresher;
-import org.sopt.solply_server.domain.place.config.PlaceListProperties;
-import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor;
 import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor.DeltaResult;
@@ -55,22 +49,6 @@ class PlaceStatsFacadeTest {
     @Mock
     private BookmarkCountDeltaProcessor deltaProcessor;
 
-    @Mock
-    private PlaceSkeletonLoader placeSkeletonLoader;
-
-    /**
-     * mock이라 아무 일도 하지 않는다 — 이 파일의 관심사는 배치 회차의 스케줄·재시도·로그이고,
-     * 정렬 스냅샷 훅이 실제로 무엇을 짓는지는 {@code PlaceSortSnapshotIT}가 문다.
-     */
-    @Mock
-    private PlaceSortSnapshotRefresher placeSortSnapshotRefresher;
-
-    /**
-     * 실물을 쓴다 — 기본값이 {@code SNAPSHOT}이라서 훅이 <b>기본 경로</b>로 돌고, 값을 바꿔야 하는
-     * 테스트만 명시적으로 옮긴다. mock이면 기본이 null이라 훅이 도는 것을 아무도 못 본다.
-     */
-    private final PlaceListProperties placeListProperties = new PlaceListProperties();
-
     /**
      * 실물을 쓰는 이유는 위와 같다 — 재시도 횟수의 <b>기본값</b>이 그대로 도는 것을 보려는 것이다.
      * mock이면 {@code getBatchMaxAttempts()}가 0을 돌려줘 회차가 한 번도 안 돈다.
@@ -89,8 +67,7 @@ class PlaceStatsFacadeTest {
         // lenient인 것은 점수 회차만 보는 테스트들이 이 스텁을 쓰지 않기 때문이다.
         lenient().when(deltaProcessor.consumeAndApply()).thenReturn(new DeltaResult(0, 0));
         placeStatsFacade = new PlaceStatsFacade(
-                batchProcessor, deltaProcessor, placeSkeletonLoader, placeSortSnapshotRefresher,
-                placeListProperties, placeStatsProperties);
+                batchProcessor, deltaProcessor, placeStatsProperties);
     }
 
     /**
@@ -256,20 +233,6 @@ class PlaceStatsFacadeTest {
     }
 
     /**
-     * 복구된 회차는 스냅샷까지 간다. 재시도를 넣으면서 성공 경로가 갈라지기 쉬운 자리다.
-     */
-    @Test
-    void 재시도로_복구된_카운트_회차도_골격_스냅샷을_교체한다() {
-        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class)))
-                .willThrow(new RuntimeException("boom"))
-                .willReturn(10);
-
-        placeStatsFacade.recalculatePlaceCounts();
-
-        verify(placeSkeletonLoader).rebuild();
-    }
-
-    /**
      * 점수 회차에도 같은 장치가 걸려 있어야 한다 — 회차 간격이 24시간이라 한 번 죽으면 하루치
      * 점수가 낡고, 점수는 정렬 축이라 그 낡음이 표시값이 아니라 순서로 드러난다.
      */
@@ -300,100 +263,6 @@ class PlaceStatsFacadeTest {
         assertThat(logAppender.list)
                 .filteredOn(event -> event.getLevel() == Level.WARN)
                 .isEmpty();
-    }
-
-    // === 골격 스냅샷 훅 ===
-
-    /**
-     * <b>스냅샷 교체는 카운트 회차에만 딸린다.</b> 스냅샷이 담는 값(이름·썸네일·대표 태그·동네)의
-     * 낡음 상한을 카운트 배치 간격에 맞추는 것이 이 훅의 전부이고, 점수는 그 값들과 아무 관계가 없다.
-     */
-    @Test
-    void 카운트_배치가_성공하면_골격_스냅샷을_교체한다() {
-        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
-
-        placeStatsFacade.recalculatePlaceCounts();
-
-        verify(placeSkeletonLoader).rebuild();
-    }
-
-    /**
-     * <b>한 축만 성공해도 스냅샷을 짓는다.</b> 성공한 축의 값은 실제로 갱신됐고, 스냅샷을 미루면
-     * 그 갱신이 다음 회차까지 순서·표시에 반영되지 않는다.
-     */
-    @Test
-    void 델타_소비만_성공해도_스냅샷을_짓는다() {
-        willThrow(new RuntimeException("boom"))
-                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
-
-        placeStatsFacade.recalculatePlaceCounts();
-
-        verify(placeSkeletonLoader).rebuild();
-        verify(placeSortSnapshotRefresher).refreshAfterCommit();
-    }
-
-    /**
-     * 점수 회차에 걸면 하루 한 번 이유 없는 전량 재빌드가 는다. 두 회차의 훅이 갈려 있음을 못 박는다.
-     */
-    @Test
-    void 점수_배치는_골격_스냅샷을_건드리지_않는다() {
-        given(batchProcessor.recalculateScores(any(LocalDateTime.class))).willReturn(10);
-
-        placeStatsFacade.recalculatePopularScores();
-
-        verify(placeSkeletonLoader, never()).rebuild();
-    }
-
-    /**
-     * <b>카운트가 실패했으면 스냅샷도 짓지 않는다.</b> 실패한 회차 뒤에 스냅샷만 갈아 끼우면
-     * "언제의 사진인가"가 카운트 회차와 어긋난다 — 교체 시점은 성공한 회차에만 매여 있어야 한다.
-     */
-    @Test
-    void 카운트_배치가_실패하면_골격_스냅샷을_교체하지_않는다() {
-        willThrow(new RuntimeException("boom"))
-                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
-        willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
-
-        placeStatsFacade.recalculatePlaceCounts();
-
-        verify(placeSkeletonLoader, never()).rebuild();
-    }
-
-    /**
-     * 반대 방향 — 스냅샷 빌드가 죽었다고 카운트 배치가 실패로 기록되면 로그가 거짓말을 한다.
-     * 두 try/catch가 갈려 있어야 하고, 스냅샷 실패도 신호는 남아야 한다.
-     */
-    @Test
-    void 골격_스냅샷_교체가_실패해도_카운트_배치는_완료로_남는다() {
-        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
-        willThrow(new RuntimeException("snapshot boom")).given(placeSkeletonLoader).rebuild();
-
-        placeStatsFacade.recalculatePlaceCounts();
-
-        assertThat(logAppender.list)
-                .filteredOn(event -> event.getLevel() == Level.INFO)
-                .extracting(ILoggingEvent::getFormattedMessage)
-                .anyMatch(message -> message.contains("리뷰 카운트 재계산 완료"));
-        assertThat(logAppender.list)
-                .filteredOn(event -> event.getLevel() == Level.ERROR)
-                .singleElement()
-                .satisfies(event -> assertThat(event.getThrowableProxy().getMessage())
-                        .isEqualTo("snapshot boom"));
-    }
-
-    /**
-     * 골격 출처가 스냅샷이 아니면 짓지도 않는다 — 기준선 라운드에 빌드 비용이 섞이면
-     * 모드 간 차이가 캐시 효과인지 배치 잡음인지 갈라낼 수 없다.
-     */
-    @ParameterizedTest
-    @EnumSource(value = SkeletonSource.class, names = {"PROJECTION", "ENTITY"})
-    void 스냅샷_모드가_아니면_카운트_배치가_골격_스냅샷을_짓지_않는다(SkeletonSource source) {
-        placeListProperties.setSkeletonSource(source);
-        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
-
-        placeStatsFacade.recalculatePlaceCounts();
-
-        verify(placeSkeletonLoader, never()).rebuild();
     }
 
     // === 점수 회차 ===
@@ -709,25 +578,9 @@ class PlaceStatsFacadeTest {
         verify(deltaProcessor, never()).consumeAndApply();
     }
 
-    /**
-     * <b>안전망에는 정렬 스냅샷만 건다.</b> 이 회차가 고치는 카운트 셋이 곧 정렬 축이라 정렬
-     * 스냅샷은 필수이고, 골격이 담는 값(이름·썸네일·대표 태그·동네)과는 무관해 거기 걸면 하루
-     * 한 번 이유 없는 전량 재빌드가 늘 뿐이다 — 낡음 상한은 매시 회차가 지킨다.
-     */
+    /** 회차 간격이 하루라 여기서도 재시도가 값어치 있다 — 한 번 죽으면 표류 상한이 이틀이 된다 */
     @Test
-    void 안전망_회차는_정렬_스냅샷만_리프레시한다() {
-        given(batchProcessor.recalculateCountsAndClearOutbox(any(LocalDateTime.class)))
-                .willReturn(10);
-
-        placeStatsFacade.recalculatePlaceCountsSafety();
-
-        verify(placeSortSnapshotRefresher).refreshAfterCommit();
-        verify(placeSkeletonLoader, never()).rebuild();
-    }
-
-    /** 실패한 회차의 스냅샷은 짓지 않는다 — 값이 안 바뀌었는데 로그만 "지었다"로 남는다 */
-    @Test
-    void 안전망_회차가_실패하면_정렬_스냅샷을_리프레시하지_않는다() {
+    void 안전망_회차도_실패하면_최대_시도까지_재시도한다() {
         willThrow(new RuntimeException("boom"))
                 .given(batchProcessor).recalculateCountsAndClearOutbox(any(LocalDateTime.class));
 
@@ -735,6 +588,5 @@ class PlaceStatsFacadeTest {
 
         verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
                 .recalculateCountsAndClearOutbox(any(LocalDateTime.class));
-        verify(placeSortSnapshotRefresher, never()).refreshAfterCommit();
     }
 }
