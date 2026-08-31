@@ -7,10 +7,6 @@ import java.util.function.IntSupplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
-import org.sopt.solply_server.domain.place.cache.PlaceSkeletonLoader;
-import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshotRefresher;
-import org.sopt.solply_server.domain.place.config.PlaceListProperties;
-import org.sopt.solply_server.domain.place.config.PlaceListProperties.SkeletonSource;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
@@ -22,12 +18,8 @@ import org.springframework.stereotype.Component;
 /**
  * {@code place_stats} 집계 배치의 진입점. 정기 스케줄 <b>셋</b>과 부팅 시 최초 적재를 연다.
  *
- * <p>카운트 회차에는 {@code PlaceSkeletonSnapshot} 교체가 딸려 있다 — 장소 골격의 낡음 상한을
- * 이 회차의 간격에 맞추는 것이 그 훅의 전부다. 근거는 {@link #rebuildPlaceSkeletonSnapshot()}.
- *
- * <p><b>정렬 스냅샷({@code PlaceSortSnapshot})은 세 회차 모두에 딸려 있다</b> — 골격과 달리 이쪽은
- * 정렬 축 자체를 담기 때문이다. 카운트 회차가 바꾸는 표시 카운트 셋이 곧 정렬 축 셋이고, 점수
- * 회차가 바꾸는 {@code popular_score}는 인기순의 축이다. 근거는 각 훅 자리의 주석.
+ * <p><b>이 배치는 목록 캐시를 모른다.</b> 여기서 하는 일은 {@code place_stats}를 고치는 것까지이고,
+ * 그 값이 목록에 나타나는 것은 다음 스냅샷 회차다 ({@code PlaceListSnapshotScheduler}).
  *
  * <p><b>주기를 가른 이유는 값마다 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>
@@ -104,10 +96,6 @@ public class PlaceStatsFacade {
     private final PlaceStatsBatchProcessor batchProcessor;
     /** 매시 회차의 북마크 축. 트랜잭션 경계를 스스로 가지므로 여기서는 부르기만 한다 */
     private final BookmarkCountDeltaProcessor deltaProcessor;
-    private final PlaceSkeletonLoader placeSkeletonLoader;
-    /** 모드 판정·실패 삼킴을 스스로 하므로 여기서는 부르기만 한다 */
-    private final PlaceSortSnapshotRefresher placeSortSnapshotRefresher;
-    private final PlaceListProperties placeListProperties;
     private final PlaceStatsProperties placeStatsProperties;
 
     /**
@@ -147,7 +135,7 @@ public class PlaceStatsFacade {
         // 이 수치는 그와 무관하게 전 행을 센다. 둘이 갈라진 것이 V35의 실익 그 자체다.
         // UPSERT였던 시절에는 MySQL이 INSERT를 1, UPDATE를 2로 세어 장소 수의 약 2배가
         // 찍혔다 — 옛 로그를 비교할 때 그 차이를 감안할 것.
-        boolean reviewSucceeded = runWithRetry("인기순 리뷰 카운트 재계산", calculatedAt,
+        runWithRetry("인기순 리뷰 카운트 재계산", calculatedAt,
                 () -> batchProcessor.recalculateReviewCounts(calculatedAt));
 
         // 델타 소비의 affectedRows는 성질이 정반대다 — 장소 수가 아니라 이번 회차가 삼킨
@@ -155,20 +143,8 @@ public class PlaceStatsFacade {
         // 남는 값도 그쪽이어야 한다.
         // 재시도가 안전한 근거는 재계산의 멱등성이 아니라 소비의 트랜잭션성이다 — 적용과 삭제가
         // 한 트랜잭션이라 실패한 시도는 전표를 그대로 남기고 롤백된다.
-        boolean deltaSucceeded = runWithRetry("북마크 카운트 델타 소비", calculatedAt,
+        runWithRetry("북마크 카운트 델타 소비", calculatedAt,
                 () -> deltaProcessor.consumeAndApply().consumedEvents());
-
-        // 실패한 회차의 스냅샷을 다시 짓지 않는다. 카운트가 안 바뀌었으므로 새로 지어도 같은
-        // 사진이고, 로그만 "빌드했다"로 남아 회차가 성공한 것처럼 읽힌다.
-        // 한쪽만 성공해도 짓는다 — 그 축의 값은 실제로 갱신됐고, 스냅샷을 미루면 성공한 축까지
-        // 다음 회차까지 낡는다.
-        if (reviewSucceeded || deltaSucceeded) {
-            rebuildPlaceSkeletonSnapshot();
-            // 정렬 스냅샷도 같은 자리에 건다 — 이 회차가 바꾸는 표시 카운트 셋(북마크·리뷰·평점)이
-            // 곧 정렬 축 셋이라, 다시 짓지 않으면 순서가 회차만큼 낡는다. 트랜잭션 밖이라
-            // 리프레셔가 그 자리에서 바로 짓는다 (afterCommit 분기는 어드민 경로의 것이다).
-            placeSortSnapshotRefresher.refreshAfterCommit();
-        }
     }
 
     /**
@@ -185,11 +161,6 @@ public class PlaceStatsFacade {
      * {@code FOR UPDATE}로 잡는다. 03:00 장소 임베딩·04:00 코스 임베딩과도 떨어져 있어
      * {@code @Scheduled} 단일 스레드를 두고 다투지 않는다.
      *
-     * <p><b>골격 스냅샷은 걸지 않는다.</b> 이 회차는 카운트만 만지고 골격이 담는 값(이름·썸네일·
-     * 대표 태그·동네)과는 무관하며, 그 낡음 상한은 매시 회차가 이미 지킨다 — 여기에 걸면 하루
-     * 한 번 이유 없는 전량 재빌드가 늘 뿐이다. 정렬 스냅샷은 반대다: 이 회차가 고치는 카운트
-     * 셋이 곧 정렬 축이라 다시 짓지 않으면 되맞춘 값이 다음 매시 회차까지 순서에 반영되지 않는다.
-     *
      * <p>{@code lockAtMostFor}·{@code lockAtLeastFor}의 근거는 매시 회차와 같다. 재계산 문장이
      * 매시 회차에서 내려온 그 문장이므로 최장 시간의 셈도 그대로다.
      */
@@ -199,12 +170,8 @@ public class PlaceStatsFacade {
         LocalDateTime calculatedAt = LocalDateTime.now();
         log.info("인기순 카운트 안전망 배치 시작 - calculatedAt={}", calculatedAt);
 
-        boolean succeeded = runWithRetry("인기순 카운트 안전망 배치", calculatedAt,
+        runWithRetry("인기순 카운트 안전망 배치", calculatedAt,
                 () -> batchProcessor.recalculateCountsAndClearOutbox(calculatedAt));
-
-        if (succeeded) {
-            placeSortSnapshotRefresher.refreshAfterCommit();
-        }
     }
 
     /**
@@ -277,39 +244,6 @@ public class PlaceStatsFacade {
     }
 
     /**
-     * 장소 골격 스냅샷 교체 — <b>카운트 회차에만</b> 건다.
-     *
-     * <p>스냅샷이 담는 것(이름·썸네일·메인 태그·동네)의 낡음 상한을 카운트 배치 간격(≤1h)에
-     * 맞추는 것이 이 훅의 전부다. 그 창은 {@code PlaceListDbQueryRepository}가 이미 명시한
-     * town_id 비정규화·비활성화 노출 창과 <b>같은 값</b>이라, 여기서 새로 감수하는 낡음은 없다.
-     * 그래서 어드민 경로에 무효화 코드를 넣지 않는다.
-     *
-     * <p><b>새벽 두 회차(점수 01:00, 카운트 안전망 01:45)에는 걸지 않는다.</b> 두 회차가 만지는
-     * 값은 스냅샷이 담는 것과 아무 관계가 없다 — 거기에 걸면 하루 두 번 이유 없는 전량 재빌드가
-     * 늘 뿐이고, 골격의 낡음 상한은 매시 회차가 이미 지킨다.
-     *
-     * <p><b>Processor가 아니라 여기서 부르는 이유.</b> {@code recalculateCounts}는 자기
-     * 트랜잭션(READ_COMMITTED)의 경계 그 자체다. 그 안에서 스냅샷을 지으면 (a) 카운트 배치의
-     * 트랜잭션이 빌드 시간만큼 길어지고, (b) 아직 커밋되지 않은 상태를 재료로 삼게 된다.
-     * 여기는 커밋 <b>이후</b>이고 트랜잭션 밖이다.
-     *
-     * <p>try/catch가 카운트 배치의 것과 갈려 있는 것도 의도다 — 스냅샷 빌드가 죽었다고
-     * 카운트 배치가 실패로 기록되면 로그가 거짓말을 한다. 빌드가 실패하면 직전 회차의 사진이
-     * 그대로 남고, 그 사이 바뀐 장소는 미스가 아니라 <b>낡은 값</b>으로 보인다는 점이 기동 실패와
-     * 다르다. 창은 다음 회차까지 최대 1시간이다.
-     */
-    private void rebuildPlaceSkeletonSnapshot() {
-        if (placeListProperties.getSkeletonSource() != SkeletonSource.SNAPSHOT) {
-            return;
-        }
-        try {
-            placeSkeletonLoader.rebuild();
-        } catch (Exception e) {
-            log.error("장소 골격 스냅샷 교체 실패 - 직전 회차 스냅샷을 유지한다", e);
-        }
-    }
-
-    /**
      * 인기 점수 회차 — 매일 01:00 (KST).
      *
      * <p><b>{@code zone}을 명시하는 이유.</b> {@code TimezoneConfig}가 JVM 기본 시간대를 이미
@@ -329,17 +263,8 @@ public class PlaceStatsFacade {
         log.info("인기점수 배치 시작 - calculatedAt={}", calculatedAt);
         // 재시도가 카운트보다 여기서 더 값어치 있다 — 회차 간격이 24시간이라 한 번 죽으면
         // 하루치 점수가 낡는다. 점수는 정렬 축이라 그 낡음이 표시값이 아니라 순서로 드러난다.
-        boolean succeeded = runWithRetry(
+        runWithRetry(
                 "인기점수 배치", calculatedAt, () -> batchProcessor.recalculateScores(calculatedAt));
-
-        // ⚠️ 골격 스냅샷과 달리 정렬 스냅샷은 이 회차에도 걸어야 한다. 골격이 담는 값(이름·썸네일·
-        // 대표 태그·동네)은 점수와 아무 관계가 없어 여기서 다시 지으면 순전한 낭비지만, 정렬
-        // 스냅샷에게 popular_score는 정렬 축 그 자체이고 미채점 여부는 인기순의 술어다 —
-        // 걸지 않으면 새벽 01:00에 갈린 점수가 다음 카운트 회차(01:30)까지 30분간 낡은 순서로
-        // 서빙되고, 그 창에서 두 방식의 응답이 갈린다.
-        if (succeeded) {
-            placeSortSnapshotRefresher.refreshAfterCommit();
-        }
     }
 
     /**

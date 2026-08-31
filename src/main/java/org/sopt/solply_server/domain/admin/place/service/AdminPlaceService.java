@@ -18,7 +18,6 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshotRefresher;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -44,8 +43,6 @@ public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
     private final PlaceStatsRepository placeStatsRepository;
-    /** 정렬 스냅샷을 <b>커밋 뒤에</b> 다시 짓게 한다 — 시점의 근거는 리프레셔 javadoc */
-    private final PlaceSortSnapshotRefresher placeSortSnapshotRefresher;
     private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -275,7 +272,6 @@ public class AdminPlaceService {
 
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
-        placeSortSnapshotRefresher.refreshAfterCommit();
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
@@ -309,18 +305,15 @@ public class AdminPlaceService {
      * place_stats 행을 원본(places · place_tag)에서 다시 짓는다. 비활성 장소는 문장이 걸러내므로
      * 여기서 활성 여부를 묻지 않는다 ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
      *
-     * <p><b>정렬 스냅샷 재생성을 여기 함께 두는 것은 자리 선택이다.</b> 스냅샷의 원천이
-     * {@code place_stats ⋈ places}이고, 그 둘을 어드민이 바꾸는 지점은 이 문장(생성·수정·재활성)과
-     * {@link #deletePlace} 둘뿐이다. 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다.
-     * 실제 재생성은 커밋 뒤로 미뤄진다 — 커밋 전에 지으면 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어
-     * 낡은 사진으로 덮는다 ({@code PlaceSortSnapshotRefresher} javadoc).
+     * <p><b>어드민은 목록 캐시를 모른다.</b> 여기서 하는 일은 RDB를 고치는 것까지이고, 그 변경이
+     * 목록에 나타나는 것은 다음 스냅샷 회차다 — 반영 지연의 상한은
+     * {@code PlaceListSnapshotScheduler}가 SLA로 명시한다.
      */
     private void syncPlaceStats(final List<Long> placeIds) {
         if (placeIds.isEmpty()) {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        placeSortSnapshotRefresher.refreshAfterCommit();
     }
 
 

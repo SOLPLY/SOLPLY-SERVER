@@ -40,8 +40,7 @@ public class PlaceListProperties {
      *
      * <p><b>후보 A(DB 인덱스 정렬)와 후보 B(인메모리 스냅샷)를 같은 빌드에서 팔 교대로 재기 위한
      * 스위치다.</b> 이 값이 무엇이든 응답 body와 커서 토큰은 <b>바이트째</b> 같아야 한다. 다르면
-     * 캐시가 아니라 버그이고, 그 상태로 낸 수치는 서로 다른 응답의 비용을 비교한 것이라 뜻이 없다
-     * ({@code PlaceSortSnapshotIT}의 모드 등가 게이트가 판정보다 먼저 통과해야 하는 조건이다).
+     * 캐시가 아니라 버그이고, 그 상태로 낸 수치는 서로 다른 응답의 비용을 비교한 것이라 뜻이 없다.
      *
      * <p><b>기본값 {@code MEMORY}는 판정의 결과다</b> (2026-08-16 같은 창 세 구조 캠페인,
      * {@code docs/perf/2026-08-16-sort6-structures-surge.md}). {@code DB}는 폴백으로 한 세대
@@ -51,8 +50,8 @@ public class PlaceListProperties {
      * 근거다. 읽지 않는 값을 매시 짓는 낭비이기도 하지만, 더 중요한 것은 기준선에 빌드 시점의
      * CPU·풀 점유가 섞이면 방식 간 차이가 캐시 효과인지 배치 잡음인지 갈라낼 수 없다는 점이다.
      * 그래서 런타임에 {@code MEMORY}로 바꿔도 <b>다음 재생성 트리거까지는 스냅샷이 없고</b>,
-     * 그 사이 조회는 DB 경로로 되돌아간다. 벤치는 재기동으로 팔을 바꾸므로 기동 워밍업이 그 자리를
-     * 메운다 ({@code PlaceSortWarmup}).
+     * 그 사이 조회는 DB 경로로 되돌아간다. 벤치는 재기동으로 구성을 바꾸므로 기동 워밍업이 그
+     * 자리를 메운다.
      */
     private SortSource sortSource = SortSource.MEMORY;
 
