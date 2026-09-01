@@ -96,7 +96,7 @@ class PlaceServiceSnapshotSourceTest {
     private static PlaceListEntry entry(long placeId, String name) {
         return new PlaceListEntry(
                 placeId, TOWN_ID, 0L,
-                placeId, true, 1_767_225_600L + placeId,
+                placeId, 1_767_225_600L + placeId,
                 3L, 2L, new BigDecimal("4.50"), 4.5,
                 37.5, 127.0,
                 name, "https://cdn/" + name, name + "대표태그");

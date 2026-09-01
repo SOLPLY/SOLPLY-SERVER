@@ -283,64 +283,61 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>신규 장소는 카운트 배치만으로는 인기순에 오르지 않는다 — 점수 배치를 기다린다.</b>
+     * <b>신규 장소는 점수 배치를 기다리지 않는다 — 카운트 배치가 행을 만든 순간 인기순에 든다.</b>
      *
-     * <p>인기순은 {@code score_calculated_at IS NOT NULL}인 행만 본다. 카운트 배치가 만든 행의
-     * {@code popular_score}는 컬럼 기본값 0인데 그 0은 "0점"이 아니라 "아직 점수가 없다"이고,
-     * 순위에 섞으면 유효한 음수 점수 위로 올라간다(그 순위 자체는 쿼리 IT가 값으로 문다).
-     * 여기서는 <b>사슬 전체가 그 결정을 지키는지</b>를 본다 — 배치 → 조회 → 응답까지.
+     * <p>그 행의 {@code popular_score}는 컬럼 기본값 0이고, 인기순은 그 값 그대로 정렬한다.
+     * 여기서는 <b>사슬 전체가 그 결정을 지키는지</b>를 본다 — 배치 → 회차 → 조회 → 응답까지.
      *
-     * <p><b>같은 무대에서 표시 카운트는 정상이어야 한다.</b> 인기순에서 빼는 것과 "통계가 아예
-     * 없는 것처럼 보이는 것"은 다른 말이고, 후자면 이 결정이 사용자에게 손해가 된다.
-     * 최신순은 {@code score_calculated_at} 술어를 걸지 않으므로 같은 행이 맨 앞에 뜨고 카운트도
-     * 실린다 — 두 정렬의 비대칭이 여기서 값으로 드러난다.
+     * <p><b>같은 무대에서 표시 카운트도 정상이어야 한다.</b> 순위에 드는 것과 "통계가 제대로
+     * 실리는 것"은 다른 말이라 최신순 응답의 카운트까지 함께 문다.
+     *
+     * <p>점수 배치를 뒤이어 돌리는 것은 <b>채점이 자리를 흔들지 않음</b>을 남기기 위해서다 —
+     * 북마크 1건짜리 신규 장소는 채점 뒤에도 placeA 아래·placeB 위 그대로다.
      */
     @Test
-    void 신규_장소는_점수_배치_전까지_인기순에서_빠지고_최신순_카운트에는_나온다() {
+    void 신규_장소는_점수_배치_전에도_인기순에_들고_최신순_카운트에도_나온다() {
         long newPlace = createPlace(townId, "db직행신규", CALCULATED_AT.plusMinutes(5));
         insertBookmark(createUser(), newPlace, CALCULATED_AT.plusMinutes(10));
 
-        // 카운트 배치만 — 행은 생기지만 채점되지 않는다
+        // 카운트 배치만 — 행은 생기고 점수 칸은 0에 머문다
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
         takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
-                .doesNotContain(newPlace);
+                .containsExactly(placeC, placeA, newPlace, placeB);
         // 같은 시점의 최신순에는 맨 앞에 뜨고, 카운트 배치가 센 값이 그대로 실린다
         PlaceFilterGetResponse latest = placeService.getPlaces(me, latestRequest(townId, null, 10));
         assertThat(ids(latest)).startsWith(newPlace);
         assertThat(previewOf(latest, newPlace).bookmarkCount()).isEqualTo(1);
 
-        // 점수 배치가 돌고 사진을 다시 찍으면 비로소 인기순에 합류한다
+        // 점수 배치가 돌면 0이 실제 점수(북마크 1건 ≈0.69)로 바뀌지만 자리는 그대로다
         batchProcessor.recalculateScores(CALCULATED_AT.plusHours(1));
         takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
-                .contains(newPlace);
+                .containsExactly(placeC, placeA, newPlace, placeB);
     }
 
     /**
-     * <b>미채점 0이 유효한 음수 점수를 제치지 않는다 — 사슬 수준의 확인.</b>
+     * <b>점수 0이 유효한 음수 점수를 앞선다 — 사슬 수준의 확인.</b>
      *
-     * <p>픽스처의 placeB는 1점 리뷰 5건이 붙어 점수가 <em>음수</em>({@code ≈−0.747})다. 신규 장소를
-     * 카운트 배치로만 올려 두면 그 행의 {@code popular_score}는 0이라, 술어가 없을 경우 응답 순서가
-     * {@code [C, A, 신규, B]}가 되어 <b>아무 평가도 없는 장소가 평판 나쁜 장소를 앞선다</b>.
-     * 술어가 있으면 신규 장소는 아예 목록에 없고 꼬리는 placeB 그대로다.
+     * <p>픽스처의 placeB는 1점 리뷰 5건이 붙어 점수가 <em>음수</em>({@code ≈−0.747})다. 아직 아무
+     * 평가도 받지 않은 신규 장소는 0이므로 그 위에 서고, 응답 순서가 {@code [C, A, 신규, B]}가
+     * 된다 — "평가 없음"이 "평가 나쁨"보다 위라는 것이 이 정렬이 고른 순서다(스펙 결정 2026-09-01).
      *
-     * <p>꼬리를 값으로 확인하는 것이 요점이다 — 포함 여부만 보면 "신규가 빠졌다"는 알아도
-     * 그것이 <em>음수 위로 올라가는 것</em>을 막았는지는 말해주지 못한다.
+     * <p>앞 테스트와 달리 신규 장소에 북마크를 달지 않는다 — 점수 0이 <b>아직 채점 전이라서</b>여야
+     * 이 순서가 0의 자리를 말하는 것이 된다.
      */
     @Test
-    void 미채점_신규_장소가_음수_점수_장소를_앞서지_않는다() {
+    void 점수가_없는_신규_장소가_음수_점수_장소를_앞선다() {
         long newPlace = createPlace(townId, "db직행음수대조", CALCULATED_AT.plusMinutes(5));
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
         takeSnapshot();
 
         List<Long> ranked = ids(placeService.getPlaces(me, popularRequest(null, 10)));
 
-        assertThat(ranked).containsExactly(placeC, placeA, placeB);
-        assertThat(ranked).doesNotContain(newPlace);
-        // 꼬리가 음수 점수 장소다 — 미채점 0이 끼어들면 여기가 newPlace로 바뀐다
+        assertThat(ranked).containsExactly(placeC, placeA, newPlace, placeB);
+        // 꼬리는 여전히 음수 점수 장소다 — 0이 그보다 아래로 내려가면 여기가 newPlace로 바뀐다
         assertThat(ranked.get(ranked.size() - 1)).isEqualTo(placeB);
     }
 
@@ -401,6 +398,24 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>인기순에도 즉시 나온다 — 위 테스트의 짝이다.</b> 어드민이 만든 행은 아직 채점 전이라
+     * 점수가 0인데, 인기순은 그 값 그대로 정렬하므로 다음 점수 배치를 기다릴 이유가 없다
+     * (스펙 결정 2026-09-01). 채점 여부를 묻는 술어가 되살아나면 여기가 즉시 빈다.
+     *
+     * <p>최신순 짝과 같은 이유로 배치도 회차도 돌리지 않고, 같은 이유로 태그 필터를 걸어 조회한다.
+     */
+    @Test
+    void 어드민이_만든_장소는_배치_없이_인기순에도_즉시_나온다() {
+        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민생성인기");
+
+        long created = adminPlaceFacade.createPlace(
+                ADMIN_USER_ID, upsertRequest("db직행어드민생성인기", adminTownId, SEED_OPTION1_A)).placeId();
+
+        assertThat(ids(placeService.getPlaces(me, popularTagRequest(adminTownId, SEED_OPTION1_A))))
+                .containsExactly(created);
+    }
+
+    /**
      * <b>태그를 갈아 끼우면 필터 결과가 그 자리에서 갈린다.</b> {@code tag_bitmask}는 place_tag의
      * 사본이라, 수정 경로가 다시 짓지 않으면 <b>뗀 태그로 계속 검색되고 새로 붙인 태그로는 안
      * 잡히는</b> 상태가 다음 배치까지 남는다. 두 방향을 함께 단언하는 이유가 그것이다 —
@@ -446,8 +461,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 맡기던 옛 비대칭은 인기순만 place_stats를 기준으로 삼던 시절의 것이다. 최신순까지 같은 기준이
      * 된 지금 행을 안 만들면 되살린 장소가 <em>최신순에서도</em> 최대 1시간 사라진다.
      *
-     * <p>비대칭이 완전히 사라진 것은 아니다 — 새로 만든 행은 미채점이라 <b>인기순</b>에는 다음 점수
-     * 배치까지 나오지 않는다. 그 잔여 비대칭도 여기서 값으로 확인한다.
+     * <p>비대칭은 이제 남지 않는다 — 새로 만든 행은 아직 채점 전이지만 인기순도 점수 값 그대로
+     * 정렬하므로 0점 자리에 함께 돌아온다. 두 정렬을 여기서 나란히 확인한다.
      *
      * <p>"사라진 상태"는 행을 직접 지워 만든다 — 어드민의 삭제 경로가 하는 일과 같고, 배치는
      * 행의 존재에 관여하지 않으므로 회차를 아무리 돌려도 이 상태가 만들어지지 않는다.
@@ -458,7 +473,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 회차도 손으로 돌리지 않는다.
      */
     @Test
-    void 재활성화된_장소는_배치_없이_최신순에_즉시_돌아온다() {
+    void 재활성화된_장소는_배치_없이_두_정렬에_즉시_돌아온다() {
         long revivedTownId = createTown(TOWN_NAME_PREFIX + "어드민재활성");
         long placeId = createPlace(revivedTownId, "db직행재활성", PLACE_CREATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
@@ -478,9 +493,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
                 .containsExactly(placeId);
-        // 되살아난 행은 미채점이라 인기순에는 아직 없다 — 잔여 비대칭이 그대로임을 값으로 남긴다
+        // 되살아난 행은 아직 채점 전이지만 인기순에도 0점 자리로 함께 돌아온다
         assertThat(ids(placeService.getPlaces(me, popularRequest(revivedTownId, null, 10))))
-                .isEmpty();
+                .containsExactly(placeId);
     }
 
     // === 커서 v4: 좌표와 필터 지문 ===
@@ -1057,9 +1072,18 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
     /** 최신순 + 태그 필터. 마스크가 0으로 남는 회귀는 무필터 조회로는 보이지 않는다. */
     private PlaceFilterGetRequest latestTagRequest(long town, long option1TagId) {
+        return tagRequest(town, PlaceSortType.LATEST, option1TagId);
+    }
+
+    /** {@link #latestTagRequest}의 인기순 짝 */
+    private PlaceFilterGetRequest popularTagRequest(long town, long option1TagId) {
+        return tagRequest(town, PlaceSortType.POPULAR, option1TagId);
+    }
+
+    private PlaceFilterGetRequest tagRequest(long town, PlaceSortType sort, long option1TagId) {
         return new PlaceFilterGetRequest(
                 town, false, SEED_MAIN_TAG, List.of(option1TagId), null,
-                PlaceSortType.LATEST, null, 10, null, null);
+                sort, null, 10, null, null);
     }
 
     /**

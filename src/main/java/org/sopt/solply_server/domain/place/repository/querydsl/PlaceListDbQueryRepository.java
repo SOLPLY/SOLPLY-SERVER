@@ -132,20 +132,14 @@ public class PlaceListDbQueryRepository {
      * 어드민 경로를 지나쳐 생긴 장소가 통째로 빠진다(창 ≤1h). 어드민 생성·재활성은 같은
      * 트랜잭션에서 행을 만들므로 그 경로에는 창이 없다 ({@code AdminPlaceService}).
      *
-     * <p><b>⚠️ {@code score_calculated_at IS NOT NULL}을 지우지 말 것 — 인기순은 채점된 행만 본다.</b>
-     * 새로 만들어진 행의 {@code popular_score}는 컬럼 기본값 0인데, 그 0은 "점수가 0이다"가 아니라
-     * <b>"아직 점수가 없다"</b>는 뜻이다. 술어를 지우면 그 행이 <em>유효한 음수 점수</em>보다 위에
-     * 끼어든다 — 저평점 리뷰가 쌓인 장소의 점수는 실제로 음수가 되므로(리뷰 축이
-     * {@code w₂ × (조정평점 − C)}라 {@code C} 아래면 음수), 아직 아무 평가도 받지 않은 신규 장소가
-     * 평판 나쁜 장소를 제치고 올라간다. 두 값의 의미가 다른데 컬럼 하나로는 구분되지 않으므로
-     * <b>{@code score_calculated_at}의 non-NULL이 유일한 판정 근거</b>다.
+     * <p><b>인기순은 {@code popular_score} 값 그대로의 정렬이다 — 채점 여부를 묻지 않는다.</b>
+     * 아직 점수를 받지 못한 행의 {@code popular_score}는 컬럼 기본값 0이고, 그 0이 곧 그 장소의
+     * 자리다. 저평점 리뷰가 쌓인 장소는 점수가 음수가 되므로(리뷰 축이 {@code w₂ × (조정평점 − C)}라
+     * {@code C} 아래면 음수) 신규 장소가 그 위에 서는데, <b>그것이 고른 순서다 — "평가 없음"이
+     * "평가 나쁨"보다 위다</b> (스펙 결정 2026-09-01).
      *
-     * <p>그래서 신규·재활성 장소는 <b>다음 인기점수 배치(새벽 01:00)까지 인기순에서 빠진다</b> —
-     * 창의 상한이 24시간이다. 같은 장소가 최신순에는 즉시 나온다({@link #findLatestRows}는 이
-     * 술어를 걸지 않는다). "인기순에서 24시간 빠진다"와 "잘못된 순위로 24시간 노출된다" 중 앞을
-     * 고른 결정이며, 인기점수를 새벽 배치 이후 값만 관리한다는 원칙의 직접적 귀결이다.
-     * <b>시간당 미채점 행만 따로 채점하는 패스를 추가하지 말 것</b> — 그 순간 "점수는 하루 1회"가
-     * 깨지고 커서 좌표계가 다시 매시간 갈린다.
+     * <p>그래서 신규·재활성 장소는 <b>다음 인기점수 배치를 기다리지 않고 인기순에 즉시 합류한다</b>.
+     * 최신순과 갈리던 비대칭이 사라졌고, 두 정렬 모두 행이 생긴 순간부터 장소를 보여준다.
      *
      * <p><b>다중 town은 동네마다 브랜치를 만든다.</b> 인덱스상 결과가 town별로 묶여 각 range
      * 안에서만 점수순이라 {@code town_id IN (...)}으로는 전역 점수순을 인덱스가 만들 수 없고, 후보
@@ -168,7 +162,7 @@ public class PlaceListDbQueryRepository {
         TagMasks masks = TagMasks.of(mainTagId, subTagAIds, subTagBIds);
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
-        StringBuilder predicates = new StringBuilder("  AND ps.score_calculated_at IS NOT NULL\n");
+        StringBuilder predicates = new StringBuilder();
         appendTagFilters(predicates, masks);
         if (useCursor) {
             predicates.append("""
@@ -206,8 +200,8 @@ public class PlaceListDbQueryRepository {
      * 최신순. 인기순과 <b>같은 기준 테이블</b>이고 정렬 축만 다르다 (V34).
      *
      * <p><b>{@code score_calculated_at} 술어를 여기에 넣지 말 것.</b> 신규 장소는 아직 미채점인데,
-     * 신규 장소야말로 최신순의 맨 앞에 와야 할 대상이다. 인기순만 그 술어를 거는 비대칭이 의도다 —
-     * 근거는 {@link #findPopularRows} javadoc.
+     * 신규 장소야말로 최신순의 맨 앞에 와야 할 대상이다. 인기순도 같은 이유로 그 술어를 걸지
+     * 않는다 — 근거는 {@link #findPopularRows} javadoc.
      *
      * <p><b>정렬은 {@code idx_place_stats_town_created (town_id, created_at, place_id, ...)}가
      * 만든다 — 역방향 스캔이다.</b> 이 인덱스를 거꾸로 읽으면 {@code created_at DESC, place_id DESC}가
@@ -505,8 +499,8 @@ public class PlaceListDbQueryRepository {
      * 커서 술어가 모든 브랜치에 똑같이 걸리므로 이 논증은 두 번째 페이지 이후에도 성립한다.
      *
      * @param intendedIndex {@code null}이면 힌트를 붙이지 않는다 ({@link #appendFrom})
-     * @param predicates    동네 조건 <b>뒤에</b> 붙는 술어 전부(태그 마스크·커서·인기순의 미채점
-     *                      제외). 줄마다 {@code "  AND "}로 시작하고 개행으로 끝나야 한다
+     * @param predicates    동네 조건 <b>뒤에</b> 붙는 술어 전부(태그 마스크·커서).
+     *                      줄마다 {@code "  AND "}로 시작하고 개행으로 끝나야 한다
      * @param innerOrderBy  브랜치 안의 정렬. {@code ps.} 한정자를 붙여 인덱스가 만드는 순서와 같은
      *                      식으로 적는다
      * @param outerOrderBy  브랜치들을 합친 뒤의 정렬. UNION 결과에는 테이블이 없으므로 <b>SELECT

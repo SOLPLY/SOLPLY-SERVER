@@ -82,7 +82,7 @@ public class PlaceListSnapshotLoader {
      */
     private static final String LIST_SOURCE_SQL = """
             SELECT ps.place_id, ps.town_id, ps.tag_bitmask,
-                   ps.popular_score, ps.score_calculated_at, ps.created_at,
+                   ps.popular_score, ps.created_at,
                    ps.bookmark_count, ps.review_count, ps.avg_rating,
                    p.latitude, p.longitude,
                    p.name,
@@ -211,23 +211,22 @@ public class PlaceListSnapshotLoader {
      * ({@link PlaceListEntry} javadoc).
      */
     private static PlaceListEntry toEntry(Object[] row, String imageUrl) {
-        BigDecimal avgRating = (BigDecimal) row[8];
+        BigDecimal avgRating = (BigDecimal) row[7];
         return new PlaceListEntry(
                 ((Number) row[0]).longValue(),
                 ((Number) row[1]).longValue(),
                 ((Number) row[2]).longValue(),
                 ((Number) row[3]).doubleValue(),
-                row[4] != null,
-                toLocalDateTime(row[5]).toEpochSecond(ZoneOffset.UTC),
+                toLocalDateTime(row[4]).toEpochSecond(ZoneOffset.UTC),
+                ((Number) row[5]).longValue(),
                 ((Number) row[6]).longValue(),
-                ((Number) row[7]).longValue(),
                 avgRating,
                 avgRating.doubleValue(),
+                toNullableDouble(row[8]),
                 toNullableDouble(row[9]),
-                toNullableDouble(row[10]),
-                (String) row[11],
+                (String) row[10],
                 imageUrl,
-                activeTagNameOrNull(row[12], row[13]));
+                activeTagNameOrNull(row[11], row[12]));
     }
 
     /**

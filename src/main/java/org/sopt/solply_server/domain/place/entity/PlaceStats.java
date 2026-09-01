@@ -130,14 +130,12 @@ public class PlaceStats {
      * <p>NULL은 "아직 채점 전"이고 그때 {@code popularScore}는 컬럼 기본값 0이다. 어드민 쓰기
      * 경로가 새로 만든 행(신규·재활성 장소)이 그 상태다.
      *
-     * <p><b>그 0을 점수로 읽으면 안 된다 — 이 컬럼이 존재하는 이유의 절반이 그것이다.</b> 리뷰 축이
-     * {@code w₂ × (조정평점 − C)}라 저평점 장소의 점수는 <em>실제로 음수</em>이고, 미채점 0을 순위에
-     * 섞으면 아직 아무 평가도 받지 않은 신규 장소가 평판 나쁜 장소를 제치고 올라간다. 그래서 인기순
-     * 조회는 {@code score_calculated_at IS NOT NULL}인 행만 본다
-     * ({@code PlaceListDbQueryRepository#findPopularRows}) — 신규·재활성 장소는 다음 인기점수
-     * 배치까지 인기순에서 빠지고, 표시 카운트는 그 사이에도 최신순 경로로 정상 노출된다.
+     * <p><b>목록 조회는 이 컬럼을 보지 않는다.</b> 인기순은 {@code popularScore} 값 그대로의
+     * 정렬이라 아직 채점되지 않은 장소도 0점 자리에 그대로 선다 — 리뷰 축이
+     * {@code w₂ × (조정평점 − C)}라 저평점 장소의 점수는 <em>실제로 음수</em>이므로 신규 장소가
+     * 그 위에 서는데, 그것이 고른 순서다("평가 없음"이 "평가 나쁨"보다 위, 스펙 결정 2026-09-01).
      *
-     * <p>나머지 절반은 기동 시 최초 채점 판정이다
+     * <p>그래서 이 컬럼이 남아 있는 이유는 기동 시 최초 채점 판정 하나다
      * ({@code PlaceStatsBatchProcessor#recalculateScoresIfNeverScored}).
      */
     @Column(name = "score_calculated_at")

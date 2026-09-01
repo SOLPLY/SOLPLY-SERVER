@@ -288,8 +288,8 @@ public class AdminPlaceService {
      * 안 만들면 되살린 장소가 <b>최신순에서도</b> 다음 카운트 배치(≤1h)까지 사라진다 — 그것은
      * 대가가 아니라 버그다.
      *
-     * <p>비대칭이 완전히 사라지지는 않는다. 새로 만든 행은 미채점이라 인기순에는 다음 점수
-     * 배치(≤24h)까지 나오지 않는다 ({@code PlaceListDbQueryRepository#findPopularRows}).
+     * <p>비대칭은 이제 남지 않는다. 새로 만든 행은 아직 채점 전이지만 인기순도 점수 값 그대로
+     * 정렬하므로 0점 자리에 즉시 선다 ({@code PlaceListDbQueryRepository#findPopularRows}).
      *
      * <p>{@code updateActiveByTownId}가 {@code clearAutomatically}라 갱신 결과를 엔티티로 다시 읽지
      * 않고 id만 모아 넘긴다. 활성 여부 판정은 넘긴 뒤 SQL이 원본에서 다시 한다.

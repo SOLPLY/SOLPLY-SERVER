@@ -47,8 +47,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 방식이고, 그래서 순서를 손으로 적어 두 경로가 함께 틀리는 그린이 생기지 않는다. 순서 자체의
  * 정본은 {@code PlaceListFlowIT}이 값으로 물고 있다.
  *
- * <p><b>등가만 보면 두 경로가 함께 술어를 잃어도 그린이므로</b>, 규칙이 갈리는 두 자리(미채점 행 ·
- * 좌표 없는 장소)는 아래에서 값으로도 못 박는다.
+ * <p><b>등가만 보면 두 경로가 함께 규칙을 잃어도 그린이므로</b>, 규칙이 걸린 두 자리(점수 없는 행의
+ * 자리 · 좌표 없는 장소)는 아래에서 값으로도 못 박는다.
  *
  * <p><b>픽스처가 겨누는 갈림길.</b> "대충 맞는" 구현이 통과하지 못하게 정렬마다 함정을 심는다.
  * <ul>
@@ -61,7 +61,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       확인한 구멍이다). 페이지 경계가 이 동점 구간을 가르므로 방향이 어긋나면 a1이 2페이지에
  *       다시 실린다.</li>
  *   <li><b>리뷰 0건</b>(a3·a4·b2) — 평점 0으로 맨 뒤에 실리고 응답에서는 null이다 (V37).</li>
- *   <li><b>미채점 장소</b>(unscored) — 인기순에서만 빠진다.</li>
+ *   <li><b>채점 전 장소</b>(unscored)와 <b>음수 점수 장소</b>(a2) — 인기순의 0점 자리가 어디인지가
+ *       이 둘로 정해진다. 0점이 둘(a3·unscored)이라 그 동점 구간 안에서 커서 경계도 시험된다.</li>
  *   <li><b>좌표 없는 장소</b>(a3) — 거리순 후보에서만 빠진다.</li>
  *   <li><b>동네 둘</b>(가·나) — 다중 동네는 DB가 filesort로 만드는 전역 순서를 메모리는 k-way
  *       merge로 만든다. 두 전순서가 같은지가 여기서만 드러난다.</li>
@@ -112,8 +113,9 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
     private long townB;
     private long me;
 
+    private long a2;         // 1점 리뷰 3건 — 인기 점수가 <b>음수</b>인 유일한 장소다
     private long a3;         // 리뷰 0 · 북마크 0 · 태그 없음 · 좌표 없음 · a2와 같은 초 생성
-    private long unscored;   // 채점 뒤에 생긴 행 — 인기순에서만 빠진다
+    private long unscored;   // 채점 뒤에 생긴 행 — 점수 0으로 그 값 위치에 선다
 
     @BeforeEach
     void setUp() {
@@ -125,7 +127,7 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
         me = createUser();
 
         long a1 = createPlace(townA, "등가A", CALCULATED_AT.minusDays(3), 37.5010, 127.0010);
-        long a2 = createPlace(townA, "등가B", CALCULATED_AT.minusDays(2), 37.5100, 127.0100);
+        a2 = createPlace(townA, "등가B", CALCULATED_AT.minusDays(2), 37.5100, 127.0100);
         // a2와 같은 초 — 최신순의 id 내림차순 타이브레이크를 겨눈다. 좌표는 일부러 비운다
         a3 = createPlace(townA, "등가C", CALCULATED_AT.minusDays(2), null, null);
         long a4 = createPlace(townA, "등가D", CALCULATED_AT.minusDays(1), 37.5200, 127.0200);
@@ -173,7 +175,7 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
 
-        // 채점 <b>뒤에</b> 만든다 — 행은 있고 score_calculated_at은 NULL인 상태가 이 장소의 목적이다
+        // 채점 <b>뒤에</b> 만든다 — 행은 있고 점수는 컬럼 기본값 0인 상태가 이 장소의 목적이다
         unscored = createPlace(townA, "등가G", CALCULATED_AT.plusMinutes(5), 37.5300, 127.0300);
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
@@ -247,23 +249,57 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>미채점 행은 두 경로 모두 인기순에서만 빠진다.</b> 인기순의 유일한 술어
-     * ({@code score_calculated_at IS NOT NULL})가 스냅샷 쪽으로 옮겨졌는지를 값으로 문다 —
-     * 등가 비교만으로는 <b>두 경로가 함께 술어를 잃은</b> 상태가 그린이 된다.
+     * <b>채점 전 장소는 두 경로 모두 점수 0의 자리에 선다</b> — 양수 점수 장소들 뒤, 음수 점수
+     * 장소(a2) 앞이다. 등가 비교만으로는 <b>두 경로가 함께 이 규칙을 잃은</b> 상태가 그린이 되므로
+     * 자리를 값으로 문다.
      *
-     * <p>같은 장소가 최신순에는 즉시 나온다는 비대칭까지 함께 확인해야 "인기순에서만"이 검증된다.
+     * <p>점수의 부호를 픽스처가 아니라 저장된 값에서 확인하는 것이 앞단이다 — a2의 점수가 어쩌다
+     * 양수가 되면 "0이 음수 위"라는 주장이 공허해진다.
      */
     @Test
-    void 미채점_장소는_두_경로_모두_인기순에서만_빠진다() {
-        assertThat(ids(get(request(townA, PlaceSortType.POPULAR, null, null, 10))))
-                .as("스냅샷 인기순").doesNotContain(unscored);
-        assertThat(dbIds(PlaceSortType.POPULAR, townA, null, null, 10))
-                .as("DB 인기순").doesNotContain(unscored);
+    void 채점_전_장소는_두_경로_모두_인기순_0점_자리에_선다() {
+        assertThat(scoreOf(unscored)).as("채점 전 장소의 점수").isZero();
+        assertThat(scoreOf(a2)).as("저평점 장소의 점수").isNegative();
 
-        assertThat(ids(get(request(townA, PlaceSortType.LATEST, null, null, 10))))
-                .as("스냅샷 최신순").contains(unscored);
-        assertThat(dbIds(PlaceSortType.LATEST, townA, null, null, 10))
-                .as("DB 최신순").contains(unscored);
+        List<Long> ranked = ids(get(request(townA, PlaceSortType.POPULAR, null, null, 10)));
+
+        assertThat(ranked).as("스냅샷 인기순").contains(unscored);
+        assertThat(ranked.indexOf(unscored)).as("양수 점수 장소들 뒤").isPositive();
+        assertThat(ranked.indexOf(a2)).as("음수 점수 장소 앞")
+                .isGreaterThan(ranked.indexOf(unscored));
+        assertThat(ranked).as("DB 인기순과 같은 자리")
+                .isEqualTo(dbIds(PlaceSortType.POPULAR, townA, null, null, 10));
+    }
+
+    /**
+     * <b>커서 경계가 0점 구간을 지나도 두 경로가 같다.</b> 0점이 둘(a3·unscored)이라 점수만으로는
+     * 경계를 가를 수 없고 id 타이브레이크가 실제로 일한다 — 등호 분기가 빠지면 뒤쪽 0점 장소가
+     * 통째로 누락되고, 경계가 느슨하면 앞 페이지의 0점 장소가 다시 실린다.
+     *
+     * <p>페이지 크기를 <b>0점 구간이 시작되는 자리</b>로 잡아 경계가 반드시 그 구간을 지나게 한다.
+     * 숫자를 손으로 적으면 픽스처의 점수가 조금만 흔들려도 경계가 엉뚱한 곳으로 옮겨간다.
+     */
+    @Test
+    void 인기순_커서가_0점_구간을_지나도_두_경로가_같다() {
+        List<Long> ranked = ids(get(request(townA, PlaceSortType.POPULAR, null, null, 10)));
+        int pageSize = ranked.indexOf(unscored);   // 1페이지 끝이 0점 구간의 첫 장소(a3)다
+        assertThat(pageSize).as("0점 구간이 맨 앞이면 경계를 만들 수 없다").isPositive();
+
+        PlaceFilterGetResponse page1 =
+                get(request(townA, PlaceSortType.POPULAR, null, null, pageSize));
+        assertThat(ids(page1)).isEqualTo(ranked.subList(0, pageSize));
+        assertThat(page1.nextCursor()).isNotNull();
+
+        PlaceListCursor cursor = PlaceListCursor.decode(page1.nextCursor());
+        assertThat(cursor.key(0)).as("커서 좌표가 0점이다").isZero();
+
+        List<Long> page2 = ids(get(request(townA, PlaceSortType.POPULAR, null,
+                page1.nextCursor(), pageSize)));
+
+        assertThat(page2).as("같은 0점 구간에서 이어진다").startsWith(unscored);
+        assertThat(page2).as("DB 경로와 같은 페이지")
+                .isEqualTo(dbIds(PlaceSortType.POPULAR, townA, null, cursor, pageSize));
+        assertThat(ids(page1)).doesNotContainAnyElementsOf(page2);
     }
 
     /**
@@ -418,6 +454,12 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
 
     private List<Long> ids(PlaceFilterGetResponse response) {
         return response.places().stream().map(PlacePreviewDto::placeId).toList();
+    }
+
+    /** 저장된 인기 점수. 부호를 주장하는 단언이 픽스처 계산에 기대지 않게 하는 자리다 */
+    private double scoreOf(long placeId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT popular_score FROM place_stats WHERE place_id = ?", Double.class, placeId);
     }
 
     private long createTown(String name, Long parentId) {

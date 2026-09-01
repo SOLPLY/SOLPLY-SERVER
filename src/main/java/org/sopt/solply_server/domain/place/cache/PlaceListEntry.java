@@ -15,10 +15,8 @@ import java.math.BigDecimal;
  *   <li><b>정렬 축 다섯이 전부 들어 있다</b> (점수·생성일·평점·리뷰 수·북마크 수) — 이 스냅샷의
  *       존재 이유가 "정렬을 DB에 묻지 않는 것"이라 축이 하나라도 빠지면 그 정렬만 DB로 새고,
  *       그러면 두 후보의 비교가 정렬별로 갈린다.</li>
- *   <li><b>{@code scored}는 {@code score_calculated_at}의 non-NULL 여부다.</b> 값 자체가 아니라
- *       "채점됐는가"만 남긴다 — 인기순의 술어가 묻는 것이 그것뿐이다. 이 칸이 없으면 미채점 행의
- *       {@code popular_score} 0이 <em>유효한 음수 점수</em> 위로 끼어든다
- *       ({@code PlaceListDbQueryRepository#findPopularRows} javadoc).</li>
+ *   <li><b>채점 여부는 담지 않는다.</b> 미채점은 점수 0으로 그 값 위치에 정렬된다 — 채점 여부는
+ *       목록 경로의 관심사가 아니다(스펙 결정 2026-09-01).</li>
  *   <li><b>{@code createdAtEpochSecond}는 UTC 간주 epoch 초다.</b> 커서가 싣는 값과 같은 식
  *       ({@code createdAt.toEpochSecond(ZoneOffset.UTC)})으로 <b>빌드 시점에</b> 좁혀 둔다 —
  *       {@code created_at}이 초 정밀도 DATETIME이라 정보가 상하지 않고, 조회 경로에서 시각 변환을
@@ -49,7 +47,6 @@ public record PlaceListEntry(
         long townId,
         long tagBitmask,
         double popularScore,
-        boolean scored,
         long createdAtEpochSecond,
         long bookmarkCount,
         long reviewCount,

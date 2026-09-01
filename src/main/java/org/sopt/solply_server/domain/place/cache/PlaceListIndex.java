@@ -39,7 +39,13 @@ public final class PlaceListIndex {
 
     private static final PlaceListEntry[] EMPTY = new PlaceListEntry[0];
 
-    /** 동네 → 그 동네의 전 후보(정렬 없음). 거리순이 훑는 집합이다 */
+    /**
+     * 동네 → 그 동네의 전 후보(정렬 없음). 거리순이 훑는 집합이다.
+     *
+     * <p>지금은 어느 정적 정렬 배열과도 원소가 같지만, 그중 하나를 빌려 쓰지 않는다 — 정렬별
+     * 포함 규칙이 나중에 생기면 그 배열은 더 이상 "전 후보"가 아니게 되고, 그때 거리순이 조용히
+     * 좁아진다. 거리순의 후보 집합을 정렬 축과 독립으로 두는 것이 이 묶음의 존재 이유다.
+     */
     private final Map<Long, PlaceListEntry[]> byTown;
 
     /** (정적 정렬, 동네) → 그 축으로 사전 정렬된 배열 */
@@ -76,9 +82,8 @@ public final class PlaceListIndex {
         for (Axis axis : Axis.values()) {
             Map<Long, PlaceListEntry[]> perTown = new HashMap<>(grouped.size() * 2);
             for (Map.Entry<Long, List<PlaceListEntry>> town : grouped.entrySet()) {
-                PlaceListEntry[] sorted = town.getValue().stream()
-                        .filter(axis::includes)
-                        .toArray(PlaceListEntry[]::new);
+                // 정렬 축은 순서만 정한다 — 어느 축도 원소를 걸러내지 않는다
+                PlaceListEntry[] sorted = town.getValue().toArray(EMPTY);
                 Arrays.sort(sorted, axis::compare);
                 perTown.put(town.getKey(), sorted);
                 arrayCount++;
@@ -258,11 +263,9 @@ public final class PlaceListIndex {
     private enum Axis {
 
         /**
-         * 인기순 — 점수 DESC, id ASC.
-         *
-         * <p><b>미채점 행을 통째로 뺀다</b> ({@code score_calculated_at IS NOT NULL}). 새 행의
-         * {@code popular_score} 0은 "0점"이 아니라 "아직 점수가 없다"라, 남겨 두면 저평점 장소의
-         * 유효한 음수 점수를 제치고 올라간다.
+         * 인기순 — 점수 DESC, id ASC. <b>{@code popular_score} 값 그대로의 정렬이다</b>: 아직
+         * 채점되지 않은 장소는 0으로 그 값 위치에 서고(음수 점수 장소 위), 목록 경로는 채점
+         * 여부를 묻지 않는다 (스펙 결정 2026-09-01).
          */
         POPULAR(PlaceSortType.POPULAR) {
             @Override
@@ -276,17 +279,9 @@ public final class PlaceListIndex {
                 int byScore = Double.compare(cursor.key(0), entry.popularScore());
                 return byScore != 0 ? byScore : Long.compare(entry.placeId(), cursor.placeId());
             }
-
-            @Override
-            boolean includes(PlaceListEntry entry) {
-                return entry.scored();
-            }
         },
 
-        /**
-         * 최신순 — 생성일 DESC, id DESC. <b>미채점 술어를 걸지 않는다</b>: 신규 장소야말로 이 정렬의
-         * 맨 앞에 와야 할 대상이고, 그 비대칭이 인기순과 갈리는 지점이다.
-         */
+        /** 최신순 — 생성일 DESC, id DESC. 신규 장소가 맨 앞에 오는 것이 이 정렬의 전부다 */
         LATEST(PlaceSortType.LATEST) {
             @Override
             int compare(PlaceListEntry a, PlaceListEntry b) {
@@ -304,7 +299,7 @@ public final class PlaceListIndex {
             }
         },
 
-        /** 평점순 — 평점 DESC, 리뷰 수 DESC, id ASC. 술어가 없다: 리뷰 0건은 0점으로 맨 뒤다 (V37) */
+        /** 평점순 — 평점 DESC, 리뷰 수 DESC, id ASC. 리뷰 0건은 0점으로 맨 뒤다 (V37) */
         RATING(PlaceSortType.RATING) {
             @Override
             int compare(PlaceListEntry a, PlaceListEntry b) {
@@ -367,11 +362,6 @@ public final class PlaceListIndex {
 
         /** 양수면 {@code entry}가 커서 뒤 = 다음 페이지 대상이다 */
         abstract int compareToCursor(PlaceListEntry entry, PlaceListCursor cursor);
-
-        /** 사전 정렬 배열에 담을 행인가. 인기순만 걸러 낸다 */
-        boolean includes(PlaceListEntry entry) {
-            return true;
-        }
 
         static Axis of(PlaceSortType sort) {
             return switch (sort) {

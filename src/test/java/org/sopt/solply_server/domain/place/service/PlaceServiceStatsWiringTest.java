@@ -103,9 +103,6 @@ class PlaceServiceStatsWiringTest {
    * 같은 한 행이 나온다 — 정렬마다 픽스처를 갈아 끼우면 "정렬 하나에서만 카운트를 싣는" 변이가
    * 나머지 정렬의 픽스처 차이에 숨는다.
    *
-   * <p>{@code scored = true}가 아니면 인기순이 이 행을 통째로 거른다
-   * ({@code PlaceListIndex}의 인기순 술어).
-   *
    * @param bookmarkCount 엔트리가 싣고 온 {@code ps.bookmark_count} — 이 값이 곧 응답의 카운트여야 한다
    */
   private void givenListRow(long bookmarkCount) {
@@ -115,7 +112,7 @@ class PlaceServiceStatsWiringTest {
   private void givenListRow(long bookmarkCount, long reviewCount, BigDecimal avgRating) {
     PlaceListEntry entry = new PlaceListEntry(
         PLACE_ID, TOWN_ID, 0L,
-        9.0, true, 1_767_225_600L,
+        9.0, 1_767_225_600L,
         bookmarkCount, reviewCount, avgRating, avgRating.doubleValue(),
         37.5, 127.0,
         "장소1", "https://img/1", null);
