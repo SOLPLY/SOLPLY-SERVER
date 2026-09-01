@@ -26,11 +26,12 @@ import org.sopt.solply_server.domain.place.util.TagMasks;
  *
  * <p><b>거리순은 사전 정렬이 불가능하다.</b> 기준점이 요청마다 달라 미리 만들어 둘 수 있는 순서가
  * 없다 — 그래서 {@link #distanceCandidates}는 후보만 골라 내보내고 정렬은 {@code DistanceSort}가
- * 맡는다. DB 경로가 같은 이유로 같은 모양인 것과 짝이 맞는다.
+ * 맡는다. DB 경로가 같은 이유로 같은 모양인 것과 짝이 맞는다. 그 후보도 정렬 배열에서 긁어 온다
+ * ({@link #DISTANCE_SOURCE}).
  *
  * <p><b>배열의 원소는 인덱스가 아니라 엔트리 참조다.</b> 참조 하나가 8바이트라 다섯 벌을 세워도
  * 장소당 40바이트이고(6,320개 기준 약 250KB), 대신 조회 경로에 배열 한 번의 간접 참조가 사라진다.
- * 엔트리 <b>실체</b>는 장소당 하나뿐이며 여섯 자리(동네 묶음 + 정렬 다섯)가 그것을 공유한다.
+ * 엔트리 <b>실체</b>는 장소당 하나뿐이며 다섯 자리(정렬 다섯)가 그것을 공유한다.
  *
  * <p><b>공유 가변 상태가 없다.</b> 조회가 쓰는 것은 요청 로컬 힙과 리스트뿐이라, 여러 요청이 같은
  * 스냅샷을 동시에 읽어도 서로를 보지 못한다.
@@ -40,26 +41,28 @@ public final class PlaceListIndex {
     private static final PlaceListEntry[] EMPTY = new PlaceListEntry[0];
 
     /**
-     * 동네 → 그 동네의 전 후보(정렬 없음). 거리순이 훑는 집합이다.
+     * 거리순 후보를 긁어 오는 축. <b>어느 축을 골라도 결과가 같다</b> — 정렬 다섯은 순서만 정하고
+     * 원소를 걸러내지 않으므로 다섯 배열 모두가 그 동네의 전 원소다.
      *
-     * <p>지금은 어느 정적 정렬 배열과도 원소가 같지만, 그중 하나를 빌려 쓰지 않는다 — 정렬별
-     * 포함 규칙이 나중에 생기면 그 배열은 더 이상 "전 후보"가 아니게 되고, 그때 거리순이 조용히
-     * 좁아진다. 거리순의 후보 집합을 정렬 축과 독립으로 두는 것이 이 묶음의 존재 이유다.
+     * <p>그 <b>전 원소 불변식</b>이 이 선택의 유일한 근거이고, 지키는 것은
+     * {@code PlaceListIndexTest#정렬_다섯은_같은_원소_집합을_담는다}이다. 어떤 정렬에 포함 규칙이
+     * 생기면 그 테스트가 먼저 빨개지며 "거리순 후보를 별도 집합으로 분리하라"고 요구한다 —
+     * 규칙이 조용히 들어와 거리순이 좁아지는 길을 그렇게 막는다.
      */
-    private final Map<Long, PlaceListEntry[]> byTown;
+    private static final PlaceSortType DISTANCE_SOURCE = PlaceSortType.LATEST;
 
     /** (정적 정렬, 동네) → 그 축으로 사전 정렬된 배열 */
     private final Map<PlaceSortType, Map<Long, PlaceListEntry[]>> orders;
 
     private final int placeCount;
+    private final int townCount;
     private final int arrayCount;
 
-    private PlaceListIndex(Map<Long, PlaceListEntry[]> byTown,
-            Map<PlaceSortType, Map<Long, PlaceListEntry[]>> orders, int placeCount,
-            int arrayCount) {
-        this.byTown = byTown;
+    private PlaceListIndex(Map<PlaceSortType, Map<Long, PlaceListEntry[]>> orders, int placeCount,
+            int townCount, int arrayCount) {
         this.orders = orders;
         this.placeCount = placeCount;
+        this.townCount = townCount;
         this.arrayCount = arrayCount;
     }
 
@@ -73,16 +76,13 @@ public final class PlaceListIndex {
             grouped.computeIfAbsent(entry.townId(), key -> new ArrayList<>()).add(entry);
         }
 
-        Map<Long, PlaceListEntry[]> byTown = new HashMap<>(grouped.size() * 2);
-        grouped.forEach((townId, list) -> byTown.put(townId, list.toArray(EMPTY)));
-
         Map<PlaceSortType, Map<Long, PlaceListEntry[]>> orders =
                 new EnumMap<>(PlaceSortType.class);
         int arrayCount = 0;
         for (Axis axis : Axis.values()) {
             Map<Long, PlaceListEntry[]> perTown = new HashMap<>(grouped.size() * 2);
             for (Map.Entry<Long, List<PlaceListEntry>> town : grouped.entrySet()) {
-                // 정렬 축은 순서만 정한다 — 어느 축도 원소를 걸러내지 않는다
+                // 정렬 축은 순서만 정한다 — 어느 축도 원소를 걸러내지 않는다 (DISTANCE_SOURCE의 전제)
                 PlaceListEntry[] sorted = town.getValue().toArray(EMPTY);
                 Arrays.sort(sorted, axis::compare);
                 perTown.put(town.getKey(), sorted);
@@ -90,7 +90,7 @@ public final class PlaceListIndex {
             }
             orders.put(axis.sortType, perTown);
         }
-        return new PlaceListIndex(byTown, orders, entries.size(), arrayCount);
+        return new PlaceListIndex(orders, entries.size(), grouped.size(), arrayCount);
     }
 
     public int placeCount() {
@@ -98,9 +98,10 @@ public final class PlaceListIndex {
     }
 
     public int townCount() {
-        return byTown.size();
+        return townCount;
     }
 
+    /** 세워 둔 사전 정렬 배열의 수 — 정렬 다섯 × 동네다 */
     public int arrayCount() {
         return arrayCount;
     }
@@ -133,14 +134,19 @@ public final class PlaceListIndex {
     /**
      * 거리순 <b>후보</b> — 동네·태그·좌표 유무만 거른 전량이다. 정렬도 절단도 하지 않는다.
      *
+     * <p>후보를 긁는 곳은 {@link #DISTANCE_SOURCE} 축의 배열이다. 그 배열의 <b>순서</b>는 여기서
+     * 아무 의미가 없고 — 정렬은 {@code DistanceSort}가 다시 한다 — 필요한 것은 그것이 동네의
+     * <b>전 원소</b>라는 사실 하나뿐이다. 그 불변식의 근거는 {@link #DISTANCE_SOURCE} 참조.
+     *
      * <p>좌표가 없는 장소를 여기서 빼는 것은 DB 경로와 같은 이유다 — "거리 무한대"로 뒤에 붙이면
      * 커서 seek이 그 행들을 페이지 경계에서 조용히 흘린다
      * ({@code PlaceListDbQueryRepository#findDistanceCandidates} javadoc).
      */
     public List<PlaceListEntry> distanceCandidates(List<Long> townIds, TagMasks masks) {
+        Map<Long, PlaceListEntry[]> perTown = orders.get(DISTANCE_SOURCE);
         List<PlaceListEntry> candidates = new ArrayList<>();
         for (Long townId : townIds) {
-            PlaceListEntry[] town = byTown.get(townId);
+            PlaceListEntry[] town = perTown.get(townId);
             if (town == null) {
                 continue;
             }
