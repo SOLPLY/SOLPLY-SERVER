@@ -117,9 +117,21 @@ public class PlaceListSnapshotLoader {
     /**
      * 스냅샷을 통째로 다시 짓고 교체한다.
      *
+     * <p><b>버전은 여기서, 사진을 완성한 순간에, 한 번만 발급한다.</b> 이것이 "버전↔내용 1:1"
+     * 불변식의 근거다 — 남의 버전에 내 내용을 붙이는 경로가 존재하지 않으므로 "버전은 같은데 목록이
+     * 다른" 사고가 구조로 봉쇄된다. 홀더({@link PlaceListSnapshot#adopt})는 완성된 사진을 받기만
+     * 하고 버전을 찍지 않는다.
+     *
+     * <p><b>계약 — 사진 완성과 {@code adopt} 사이가 확장 설계의 삽입 지점이다.</b> 다중 인스턴스판의
+     * 아카이브 적재(Redis {@code SET})와 발행({@code PUBLISH NEW_VERSION})은 정확히 이 두 줄
+     * 사이에 들어간다({@code docs/design/2026-09-01-multi-instance-snapshot-pipeline.md} §3-1·3-2).
+     * 그 자리를 비워 두려고 버전 발급을 홀더에서 이리로 옮겼으니, 이 두 줄 사이에 다른 관심사를
+     * 끼워 넣지 말 것.
+     *
      * <p><b>아래 로그를 지우지 말 것.</b> 나중에 회차 직후 CPU 스파이크가 문제가 됐을 때
      * "몇 행을 몇 ms에 지었는가"가 남아 있지 않으면 원인을 이 경로로 좁힐 수 없다
-     * (실측 선례: 6,320개 94~302ms).
+     * (실측 선례: 6,320개 94~302ms). 버전도 함께 남긴다 — 만료를 호소하는 커서의 버전이 어느
+     * 회차였는지는 이 로그 말고 대조할 곳이 없다.
      *
      * @return 스냅샷에 담긴 장소 수
      */
@@ -128,11 +140,12 @@ public class PlaceListSnapshotLoader {
         long startNanos = System.nanoTime();
 
         PlaceListIndex fresh = PlaceListIndex.of(readEntries());
-        snapshot.replace(fresh);
+        PlaceListPhoto photo = new PlaceListPhoto(System.currentTimeMillis(), fresh);
+        snapshot.adopt(photo);
 
         long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
-        log.info("장소 목록 스냅샷 교체 완료 - places={}, towns={}, arrays={}, elapsed={}ms",
-                fresh.placeCount(), fresh.townCount(), fresh.arrayCount(), elapsedMs);
+        log.info("장소 목록 스냅샷 교체 완료 - version={}, places={}, towns={}, arrays={}, elapsed={}ms",
+                photo.version(), fresh.placeCount(), fresh.townCount(), fresh.arrayCount(), elapsedMs);
         return fresh.placeCount();
     }
 
