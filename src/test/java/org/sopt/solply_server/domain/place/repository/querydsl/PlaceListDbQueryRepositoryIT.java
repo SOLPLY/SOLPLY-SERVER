@@ -333,54 +333,49 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>채점 전 행은 인기순에서 통째로 빠진다.</b> 카운트 배치는 매시, 점수 배치는 새벽 1회라
-     * 그 사이 생긴 장소는 {@code popular_score}가 컬럼 기본값 0에 머무는데, 그 0은 "0점"이 아니라
-     * <b>"아직 점수가 없다"</b>는 뜻이다. {@code score_calculated_at IS NOT NULL}이 그것을 걸러낸다.
+     * <b>채점 전 행도 점수 0으로 인기순에 나온다.</b> 카운트 배치는 매시, 점수 배치는 새벽 1회라
+     * 그 사이 생긴 장소는 {@code popular_score}가 컬럼 기본값 0에 머무는데, 인기순은 그 값 그대로
+     * 정렬한다 — 채점 여부를 묻는 술어가 없다 (스펙 결정 2026-09-01).
      *
-     * <p>미채점 장소를 <b>id가 가장 작은 placeA</b>로 두는 것이 핵심이다 — 술어가 빠지면 A가 0점으로
-     * 결과에 끼어들고, 점수 정렬까지 함께 무너지면 맨 앞으로 올라와 두 방향 모두 드러난다.
+     * <p>채점 전 장소를 <b>id가 가장 작은 placeA</b>로 두는 것이 핵심이다 — 점수 정렬이 무너져
+     * id 순으로 흐르면 A가 맨 앞으로 올라와 즉시 드러난다.
      */
     @Test
-    void 채점_전_행은_인기순에서_제외된다() {
+    void 채점_전_행도_점수_0으로_인기순에_나온다() {
         insertUnscoredStats(placeA, townId, 3);
         insertStats(placeB, townId, 4.0, 0);
         insertStats(placeC, townId, 6.0, 0);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
 
-        assertThat(placeIdsOf(rows)).containsExactly(placeC, placeB);
+        assertThat(placeIdsOf(rows)).containsExactly(placeC, placeB, placeA);
     }
 
     /**
-     * <b>이 테스트가 술어의 존재 이유 자체다 — 미채점 0은 유효한 음수 점수보다 위에 온다.</b>
+     * <b>점수가 없는 행은 0으로 음수 점수 장소보다 위에 선다 — "평가 없음"이 "평가 나쁨"보다 위다.</b>
      *
      * <p>리뷰 축이 {@code w₂ × (조정평점 − C)}라 전체 평균 아래인 장소의 점수는 실제로 음수가 된다
      * (배치 IT의 {@code 평점은_전체_평균을_중심으로_가감된다}가 −0.666667을 값으로 남긴다).
-     * 술어를 지우면 아직 아무 평가도 받지 않은 신규 장소(0)가 평판 나쁜 장소(−2.0)를 제치고
-     * 올라가는데, 이것은 순서만 어긋나는 것이 아니라 <b>"평가가 없다"를 "평가가 보통이다"로
-     * 바꿔 읽는</b> 오답이다.
+     * 아직 아무 평가도 받지 않은 신규 장소(0)는 그 위에 서고, 그것이 이 정렬이 고른 순서다.
      *
-     * <p>앞 테스트(전부 양수)로는 이 회귀가 잡히지 않는다 — 거기서는 미채점 0이 어차피 꼴찌라
-     * 술어가 빠져도 <em>맨 뒤에 하나 더 붙을</em> 뿐이고, 페이지 크기에 따라 눈에 띄지도 않는다.
-     * 음수를 세워야 순서가 실제로 뒤집힌다.
+     * <p>앞 테스트(전부 양수)로는 이 순서가 확인되지 않는다 — 거기서는 0이 어차피 꼴찌라
+     * 맨 뒤에 하나 더 붙을 뿐이다. 음수를 세워야 0의 자리가 실제로 드러난다.
      */
     @Test
-    void 미채점_행은_음수_점수_장소보다_위로_올라오지_않는다() {
-        insertUnscoredStats(placeA, townId, 0);       // 미채점 → popular_score DEFAULT 0
+    void 점수가_없는_행은_0으로_음수_점수_장소보다_위에_선다() {
+        insertUnscoredStats(placeA, townId, 0);       // 채점 전 → popular_score DEFAULT 0
         insertStats(placeB, townId, -2.0, 0);         // 저평점이 쌓인 장소
         insertStats(placeC, townId, -0.5, 0);
 
         List<PopularRow> rows = findPopular(null, null, NO_LIMIT);
 
-        // 술어가 없으면 [A(0.0), C(−0.5), B(−2.0)]가 되어 A가 1위가 된다
-        assertThat(placeIdsOf(rows)).containsExactly(placeC, placeB);
-        assertThat(rows.get(0).popularScore()).isEqualTo(-0.5);
+        assertThat(placeIdsOf(rows)).containsExactly(placeA, placeC, placeB);
+        assertThat(rows.get(0).popularScore()).isEqualTo(0.0);
     }
 
     /**
-     * <b>음수 점수 자체는 정상값이라 걸러지지 않는다.</b> 위 테스트의 짝이다 — 술어를
-     * {@code popular_score > 0} 같은 것으로 잘못 구현하면 저평점 장소가 통째로 사라진다.
-     * 걸러야 하는 것은 "음수"가 아니라 "미채점"이다.
+     * <b>음수 점수도 0점도 그대로 나온다.</b> 위 테스트의 짝이다 — 인기순에 {@code popular_score > 0}
+     * 같은 술어를 들이면 저평점 장소가 통째로 사라진다. 이 정렬에는 거를 대상이 아예 없다.
      */
     @Test
     void 음수_점수_장소는_인기순에_그대로_나온다() {
@@ -458,18 +453,21 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>최신순은 미채점 행을 걸러내지 않는다 — 인기순과 갈리는 유일한 술어다.</b>
-     * 방금 만들어진 장소는 아직 채점 전인데, 그 장소야말로 최신순 맨 앞에 와야 한다.
-     * {@code score_calculated_at IS NOT NULL}이 이쪽에도 복사되면 최신순이 통째로 빈다.
+     * <b>채점 전 행은 두 정렬 모두에 나온다 — 인기순과 갈리던 술어가 없어졌다.</b>
+     * 방금 만들어진 장소는 아직 채점 전인데, 그 장소야말로 최신순 맨 앞에 와야 하고
+     * 인기순에서도 점수 0 자리에 서야 한다. 어느 한쪽에 채점 술어가 되살아나면 여기가 빈다.
+     *
+     * <p>인기순 쪽은 네 행이 전부 0점이라 id 오름차순이 그대로 드러난다 — 점수가 같을 때의
+     * 타이브레이크 방향이 최신순({@code id DESC})과 반대임을 한 자리에서 함께 못 박는다.
      */
     @Test
-    void LATEST는_채점_전_행도_보여준다() {
+    void 채점_전_행은_두_정렬_모두에_나온다() {
         insertUnscoredStatsForBasePlaces();
 
         assertThat(latestIdsOf(findLatest(null, null, NO_LIMIT)))
                 .containsExactly(placeD, placeC, placeB, placeA);
-        // 같은 픽스처가 인기순에서는 한 건도 나오지 않는다 — 비대칭이 의도임을 한 자리에서 못 박는다
-        assertThat(findPopular(null, null, NO_LIMIT)).isEmpty();
+        assertThat(placeIdsOf(findPopular(null, null, NO_LIMIT)))
+                .containsExactly(placeA, placeB, placeC, placeD);
     }
 
     /**
@@ -1093,7 +1091,6 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                 SELECT ps.place_id
                 FROM place_stats ps
                 WHERE ps.town_id IN (:townIds)
-                  AND ps.score_calculated_at IS NOT NULL
                 """);
         appendExistsFilters(sql, mainTagId, subA, subB);
         if (cursorScore != null) {
@@ -1349,7 +1346,6 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
      * 평점 축 픽스처. {@code avgRating}이 0이면 "리뷰가 없어 평점이 0인 장소"다 — 컬럼이 NOT NULL
      * DEFAULT 0이고(V37) 척도가 1~5라 0은 그 뜻으로만 쓰인다. 평점순이 그 행을 <b>맨 뒤에 싣는지</b>가
      * 이 정렬의 핵심 계약이라 0을 픽스처로 직접 세운다.
-     * 미채점 행으로 두는 것은 인기순 술어와 얽히지 않게 하기 위해서다.
      */
     private void insertRatedStats(
             long placeId, long townId, double avgRating, long reviewCount, long bookmarkCount) {

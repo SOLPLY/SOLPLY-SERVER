@@ -14,7 +14,7 @@ import java.util.List;
  *
  * <p><b>SQL 경로와 메모리 경로가 이 한 벌을 공유한다.</b> 목록 정렬은 DB가 하는 판
  * ({@code PlaceListDbQueryRepository}의 {@code (tag_bitmask & :mask) != 0} 술어)과 메모리가 하는 판
- * ({@code PlaceSortIndex}의 {@link #matches(long)})이 나란히 있고, 두 판의 응답은 바이트째 같아야
+ * ({@code PlaceListIndex}의 {@link #matches(long)})이 나란히 있고, 두 판의 응답은 바이트째 같아야
  * 한다. 마스크 산출식을 복사해 두면 한쪽만 고치는 실수가 조용히 통과하므로 여기 하나로 묶는다.
  */
 public record TagMasks(long main, long subA, long subB) {

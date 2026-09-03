@@ -18,7 +18,7 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.cache.PlaceSortSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -44,8 +44,8 @@ public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
     private final PlaceStatsRepository placeStatsRepository;
-    /** 정렬 스냅샷을 <b>커밋 뒤에</b> 다시 짓게 한다 — 시점의 근거는 리프레셔 javadoc */
-    private final PlaceSortSnapshotRefresher placeSortSnapshotRefresher;
+    /** 목록 사진을 <b>커밋 뒤에</b> 다시 찍게 한다 — 시점의 근거는 리프레셔 javadoc */
+    private final PlaceListSnapshotRefresher placeListSnapshotRefresher;
     private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -275,7 +275,7 @@ public class AdminPlaceService {
 
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
-        placeSortSnapshotRefresher.refreshAfterCommit();
+        placeListSnapshotRefresher.refreshAfterCommit();
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
@@ -288,8 +288,8 @@ public class AdminPlaceService {
      * 안 만들면 되살린 장소가 <b>최신순에서도</b> 다음 카운트 배치(≤1h)까지 사라진다 — 그것은
      * 대가가 아니라 버그다.
      *
-     * <p>비대칭이 완전히 사라지지는 않는다. 새로 만든 행은 미채점이라 인기순에는 다음 점수
-     * 배치(≤24h)까지 나오지 않는다 ({@code PlaceListDbQueryRepository#findPopularRows}).
+     * <p>비대칭은 이제 남지 않는다. 새로 만든 행은 아직 채점 전이지만 인기순도 점수 값 그대로
+     * 정렬하므로 0점 자리에 즉시 선다 ({@code PlaceListDbQueryRepository#findPopularRows}).
      *
      * <p>{@code updateActiveByTownId}가 {@code clearAutomatically}라 갱신 결과를 엔티티로 다시 읽지
      * 않고 id만 모아 넘긴다. 활성 여부 판정은 넘긴 뒤 SQL이 원본에서 다시 한다.
@@ -309,18 +309,19 @@ public class AdminPlaceService {
      * place_stats 행을 원본(places · place_tag)에서 다시 짓는다. 비활성 장소는 문장이 걸러내므로
      * 여기서 활성 여부를 묻지 않는다 ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
      *
-     * <p><b>정렬 스냅샷 재생성을 여기 함께 두는 것은 자리 선택이다.</b> 스냅샷의 원천이
-     * {@code place_stats ⋈ places}이고, 그 둘을 어드민이 바꾸는 지점은 이 문장(생성·수정·재활성)과
-     * {@link #deletePlace} 둘뿐이다. 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다.
-     * 실제 재생성은 커밋 뒤로 미뤄진다 — 커밋 전에 지으면 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어
-     * 낡은 사진으로 덮는다 ({@code PlaceSortSnapshotRefresher} javadoc).
+     * <p><b>어드민 쓰기는 커밋 뒤 목록 사진을 즉시 다시 찍는다.</b> 재생성을 여기 함께 두는 것은
+     * 자리 선택이다 — 사진의 원천이 {@code place_stats ⋈ places}이고, 그 둘을 어드민이 바꾸는
+     * 지점은 이 문장(생성·수정·재활성)과 {@link #deletePlace} 둘뿐이다. 호출부마다 훅을 흩으면
+     * 나중에 경로가 하나 늘 때 조용히 빠진다. 실제 재생성은 커밋 뒤로 미뤄진다 — 커밋 전에 지으면
+     * 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어 낡은 사진으로 덮는다
+     * ({@code PlaceListSnapshotRefresher} javadoc).
      */
     private void syncPlaceStats(final List<Long> placeIds) {
         if (placeIds.isEmpty()) {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        placeSortSnapshotRefresher.refreshAfterCommit();
+        placeListSnapshotRefresher.refreshAfterCommit();
     }
 
 

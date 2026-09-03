@@ -33,26 +33,32 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  * 바뀌면 같은 장소가 페이지마다 다른 거리를 가져 중복·누락이 난다. 그래서 파라미터 불일치는
  * 오류가 아니라 <b>무시</b>다 ({@code PlaceService#listPlaces}).
  *
- * <p><b>세대는 v4에서 걷어냈다 (2026-08-07).</b> v3의 세대 필드는 "스크롤 도중 배치가 돌면
- * {@code popular_score}가 통째로 갈려 좌표계가 바뀐다"를 막으려고 있었다. 그 창이 <b>매시간</b>에
- * 걸쳐 있을 때는 값어치가 있었지만, 인기 점수 배치를 새벽 01:00 1회로 내리면서 창이 트래픽 최저
- * 시각의 수 초로 줄었다. 그 순간 스크롤 중이던 소수 사용자가 겪는 항목 흘림·중복은 수용하고,
- * 대신 세대 행 2벌·메타 레지스터·current/prev 판정·만료 오류를 통째로 걷어냈다.
- * <b>배치 주기를 다시 당긴다면 이 결정부터 되짚을 것</b> — 세대 제거의 근거가 곧 주기다.
+ * <p><b>v6의 버전은 회차 고정 장치다 (2026-09-01).</b> 목록이 10분 주기로 사진을 다시 찍는데,
+ * 스크롤 세션이 그 교체를 넘으면 다음 페이지가 다른 회차에서 재개돼 항목이 흘리거나 겹친다.
+ * 그래서 커서가 <b>자기가 시작한 회차의 버전</b>을 싣고 다니고, 서버는 그 버전의 사진으로만 이어
+ * 서빙한다. 보존은 캐시가 들고 있는 최근 3장뿐이며({@code PlaceListSnapshot}) 그 밖의 버전은
+ * {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다. DB에는 아무것도 남지 않는다 — 버전은 사진을 찍은
+ * 인스턴스의 메모리에만 있다.
+ *
+ * <p><b>v3의 세대와 혼동하지 말 것.</b> 세대는 인기 점수 <b>배치</b>가 좌표계를 통째로 바꾸는 문제의
+ * 장치였고, 배치를 새벽 01:00 1회로 내려 그 창이 트래픽 최저 시각의 수 초로 줄면서 걷어냈다(v4).
+ * v6이 다시 든 것은 <b>다른 문제</b>(주기적 사진 교체를 넘는 스크롤)를 <b>다른 재료</b>(DB 세대 행이
+ * 아니라 캐시 보존 3장 + 명시 만료)로 푸는 것이다. 점수 배치 주기는 v6의 근거가 아니다.
  *
  * <p><b>필터 지문은 그대로 남는다.</b> 세대와 달리 이 구멍은 배치 주기와 무관하다 — 동네 A의
  * 커서를 동네 B 요청에 그대로 쓰면 서버는 아무 불평 없이 "동네 B에서 점수 X 아래"를 돌려주고,
  * 요청한 적 없는 페이지가 정상 응답으로 나간다.
  *
- * <p><b>v4 이하 토큰은 거부한다.</b> 받아들이면 정렬 키 자리의 해석이 달라져 어차피 오답이 되고,
- * 어느 쪽이든 오류라면 코덱 수준에서 명확히 끊는 편이 낫다. 운영 전이라 하위호환이 필요 없다.
+ * <p><b>v5 이하 토큰은 거부한다.</b> 받아들이면 정렬 키 자리와 회차 버전의 해석이 달라져 어차피
+ * 오답이 되고, 어느 쪽이든 오류라면 코덱 수준에서 명확히 끊는 편이 낫다. 운영 전이라 하위호환이
+ * 필요 없다.
  *
- * <p><b>포맷:</b> {@code v5:SORT:k1,k2,...:placeId:filterPrint}를 URL-safe base64로 감싼다.
+ * <p><b>포맷:</b> {@code v6:SORT:k1,k2,...:placeId:filterPrint:version}을 URL-safe base64로 감싼다.
  * 구분자 ':'와 충돌하는 필드가 없다 — {@code Double.toString}은 ':'를 만들지 않고(지수 표기
  * {@code 1.0E10}도 마찬가지), 지문은 숫자와 {@code '|'}·{@code ','}로만 이뤄진다.
  * 키 구분자 {@code ','}가 지문 안에서도 쓰이지만 <b>둘은 다른 필드</b>라 섞이지 않는다.
- * 다만 지문은 <b>맨 뒤에서 비어 끝날 수 있어</b>({@code "1|||"}) 디코딩의 split이 후행 빈 조각을
- * 버리면 필드 수가 모자라 보인다 — {@code split(":", -1)}의 {@code -1}이 그것을 막는다.
+ * 지문은 통째로 비거나 빈 축으로 끝날 수 있어({@code "1|||"}) 조각 수가 값에 따라 흔들리면 안 된다 —
+ * {@code split(":", -1)}의 {@code -1}이 빈 조각을 버리지 않게 고정한다.
  *
  * <p><b>정밀도:</b> 유효자릿수 약 15자리는 double 고유의 한계이고, popular_score는
  * DECIMAL(18,6) — 즉 18자리라 double보다 넓다. 그래서 좁은 쪽에 담는 셈이지만 문제되지 않는다.
@@ -71,14 +77,16 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  *
  * @param sortKeys    정렬 축의 값들. 길이는 반드시 {@link PlaceSortType#keyArity()}와 같다
  * @param filterPrint 요청 필터의 정규형. {@link #filterPrintOf}가 만든 것이어야 한다
+ * @param version     이 커서가 시작한 목록 회차. 캐시 보존 밖이면 만료다
  */
 public record PlaceListCursor(
-        PlaceSortType sort, List<Double> sortKeys, long placeId, String filterPrint) {
+        PlaceSortType sort, List<Double> sortKeys, long placeId, String filterPrint, long version) {
 
-    private static final String VERSION = "v5";
+    /** 토큰 <b>포맷</b>의 버전. 필드 {@code version}(목록 회차)과는 다른 것이다 */
+    private static final String FORMAT_VERSION = "v6";
 
-    /** 토큰의 필드 수. 버전·정렬·정렬키 튜플·id·지문 */
-    private static final int FIELD_COUNT = 5;
+    /** 토큰의 필드 수. 버전·정렬·정렬키 튜플·id·지문·회차 */
+    private static final int FIELD_COUNT = 6;
 
     private static final String FIELD_DELIMITER = ":";
 
@@ -141,11 +149,12 @@ public record PlaceListCursor(
 
     public String encode() {
         String raw = String.join(FIELD_DELIMITER,
-                VERSION,
+                FORMAT_VERSION,
                 sort.name(),
                 sortKeys.stream().map(String::valueOf).collect(Collectors.joining(KEY_DELIMITER)),
                 Long.toString(placeId),
-                filterPrint);
+                filterPrint,
+                Long.toString(version));
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
@@ -153,9 +162,9 @@ public record PlaceListCursor(
     public static PlaceListCursor decode(String token) {
         try {
             String raw = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
-            // -1: 지문이 빈 축으로 끝나면("1|||") 마지막 조각이 사라져 필드 수가 모자라 보인다
+            // -1: 지문이 비어도 조각 수가 줄지 않게 고정한다("1|||", "")
             String[] parts = raw.split(FIELD_DELIMITER, -1);
-            if (parts.length != FIELD_COUNT || !VERSION.equals(parts[0])) {
+            if (parts.length != FIELD_COUNT || !FORMAT_VERSION.equals(parts[0])) {
                 throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
             }
             // 키 개수가 정렬과 어긋나면 생성자가 IllegalArgumentException을 던지고 아래가 받는다.
@@ -164,7 +173,8 @@ public record PlaceListCursor(
                     PlaceSortType.valueOf(parts[1]),
                     parseKeys(parts[2]),
                     Long.parseLong(parts[3]),
-                    parts[4]
+                    parts[4],
+                    Long.parseLong(parts[5])
             );
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);

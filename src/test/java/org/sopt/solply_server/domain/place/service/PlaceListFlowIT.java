@@ -19,6 +19,7 @@ import org.sopt.solply_server.domain.admin.place.facade.AdminPlaceFacade;
 import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
+import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotLoader;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -55,6 +56,17 @@ import org.springframework.test.context.DynamicPropertySource;
  * <p><b>행 자체는 배치가 만들지 않는다.</b> 어드민 경로로 만든 장소는 그 트랜잭션이 행을 짓고,
  * DB 직행 픽스처는 {@link #createPlace}가 같은 자리를 채운다.
  *
+ * <p><b>사슬에 한 마디가 늘었다 — 회차다 (#397).</b> 조회가 읽는 곳은 목록 스냅샷 하나뿐이고,
+ * DB의 변경은 <b>다음 회차가 사진을 다시 찍을 때</b> 목록에 나타난다. 그래서 이 파일의 DB 직행
+ * 픽스처는 "쓰기 → 배치 → <b>{@link #takeSnapshot()}</b> → 조회"로 걷고, 운영에서 그 자리를 채우는
+ * 것은 10분 주기 타이머다({@code PlaceListSnapshotScheduler}). <b>여기서 회차를 생략하면 조회가
+ * 픽스처 이전의 사진을 보므로, 회차를 부르지 않은 단언은 곧 "낡은 사진을 본다"는 주장이다.</b>
+ *
+ * <p><b>어드민 경로만은 예외이고, 그 예외가 검증 대상이다.</b> 어드민 쓰기는 자기 커밋 뒤에
+ * 스스로 사진을 다시 찍으므로({@code PlaceListSnapshotRefresher}) 아래 어드민 시나리오들은
+ * {@code takeSnapshot()}을 <b>일부러 부르지 않는다</b> — 부르는 순간 "훅이 찍은 것"인지 "손으로
+ * 찍은 것"인지 구분되지 않아, 훅을 통째로 떼도 전부 그린이 된다.
+ *
  * <p><b>계약: 단언은 PlaceService 응답 DTO 수준으로만 한다.</b> 내부 표현(네이티브 SQL의 컬럼 순서,
  * 레포지토리 record 모양)이 바뀌는 리팩터링에서 이 파일은 수정 없이 그린이어야 한다.
  */
@@ -82,6 +94,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
+    /** 회차를 손으로 돌린다 — 운영에서 이 자리를 채우는 것은 10분 주기 타이머다 */
+    @Autowired private PlaceListSnapshotLoader snapshotLoader;
     @Autowired private JdbcTemplate jdbcTemplate;
     /** 실제 북마크 생성 경로. 리포지토리를 직접 부르면 서비스 층의 계약이 검증에서 빠진다. */
     @Autowired private BookmarkService bookmarkService;
@@ -170,6 +184,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         // 표시 보정이 되살아나면 이 조합에서만 카운트가 1로 부풀어 즉시 잡힌다.
         insertBookmark(me, placeC, CALCULATED_AT.plusMinutes(30));
 
+        // 픽스처를 다 심은 뒤 사진을 찍는다 — 조회는 이 회차만 본다
+        takeSnapshot();
     }
 
     @Test
@@ -216,6 +232,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         long l3 = createPlace(latestTownId, "db직행최신3", PLACE_CREATED_AT);
         long lOld = createPlace(latestTownId, "db직행최신0", PLACE_CREATED_AT.minusDays(2));
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
 
         PlaceFilterGetResponse page1 =
                 placeService.getPlaces(me, latestRequest(latestTownId, null, 2));
@@ -240,8 +257,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 테이블이고("행이 있으면 목록에 나와도 되는 장소"가 불변식) 두 배치 어느 쪽도 행을 지우지
      * 않으므로, 이 경로가 빠지면 내린 장소가 영구히 노출된다.
      *
-     * <p><b>배치를 한 번도 돌리지 않고 단언하는 것이 요점이다.</b> 삭제 뒤 회차를 끼우면 "즉시
-     * 사라진 것"인지 "배치가 지운 것"인지 구분되지 않는다.
+     * <p><b>삭제 뒤에는 배치도 회차도 손으로 돌리지 않는 것이 요점이다.</b> 끼우면 장소가 사라진
+     * 이유가 "삭제가 행을 지우고 커밋 훅이 사진을 다시 찍어서"인지 "손으로 돌린 것 때문"인지
+     * 구분되지 않는다.
      *
      * <p>이 장소에 북마크를 달지 말 것 — {@code bookmarks}는 다형 {@code target_id}라 places에
      * FK가 없어 장소를 지워도 남고, 그 잔행이 {@code @AfterAll}의 users 삭제를
@@ -251,77 +269,109 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     void 어드민이_삭제한_장소는_배치를_기다리지_않고_인기순에서_사라진다() {
         long doomed = createPlace(townId, "db직행삭제", PLACE_CREATED_AT);
         runBothBatches(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(doomed);
         assertThat(statsRowExists(doomed)).isTrue();
 
         adminPlaceFacade.deletePlace(doomed);
 
+        // 행은 그 자리에서 사라지고, 커밋 훅이 찍은 새 사진에도 없다
         assertThat(statsRowExists(doomed)).isFalse();
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
                 .doesNotContain(doomed);
     }
 
     /**
-     * <b>신규 장소는 카운트 배치만으로는 인기순에 오르지 않는다 — 점수 배치를 기다린다.</b>
+     * <b>신규 장소는 점수 배치를 기다리지 않는다 — 카운트 배치가 행을 만든 순간 인기순에 든다.</b>
      *
-     * <p>인기순은 {@code score_calculated_at IS NOT NULL}인 행만 본다. 카운트 배치가 만든 행의
-     * {@code popular_score}는 컬럼 기본값 0인데 그 0은 "0점"이 아니라 "아직 점수가 없다"이고,
-     * 순위에 섞으면 유효한 음수 점수 위로 올라간다(그 순위 자체는 쿼리 IT가 값으로 문다).
-     * 여기서는 <b>사슬 전체가 그 결정을 지키는지</b>를 본다 — 배치 → 조회 → 응답까지.
+     * <p>그 행의 {@code popular_score}는 컬럼 기본값 0이고, 인기순은 그 값 그대로 정렬한다.
+     * 여기서는 <b>사슬 전체가 그 결정을 지키는지</b>를 본다 — 배치 → 회차 → 조회 → 응답까지.
      *
-     * <p><b>같은 무대에서 표시 카운트는 정상이어야 한다.</b> 인기순에서 빼는 것과 "통계가 아예
-     * 없는 것처럼 보이는 것"은 다른 말이고, 후자면 이 결정이 사용자에게 손해가 된다.
-     * 최신순은 {@code score_calculated_at} 술어를 걸지 않으므로 같은 행이 맨 앞에 뜨고 카운트도
-     * 실린다 — 두 정렬의 비대칭이 여기서 값으로 드러난다.
+     * <p><b>같은 무대에서 표시 카운트도 정상이어야 한다.</b> 순위에 드는 것과 "통계가 제대로
+     * 실리는 것"은 다른 말이라 최신순 응답의 카운트까지 함께 문다.
+     *
+     * <p>점수 배치를 뒤이어 돌리는 것은 <b>채점이 자리를 흔들지 않음</b>을 남기기 위해서다 —
+     * 북마크 1건짜리 신규 장소는 채점 뒤에도 placeA 아래·placeB 위 그대로다.
      */
     @Test
-    void 신규_장소는_점수_배치_전까지_인기순에서_빠지고_최신순_카운트에는_나온다() {
+    void 신규_장소는_점수_배치_전에도_인기순에_들고_최신순_카운트에도_나온다() {
         long newPlace = createPlace(townId, "db직행신규", CALCULATED_AT.plusMinutes(5));
         insertBookmark(createUser(), newPlace, CALCULATED_AT.plusMinutes(10));
 
-        // 카운트 배치만 — 행은 생기지만 채점되지 않는다
+        // 카운트 배치만 — 행은 생기고 점수 칸은 0에 머문다
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
-                .doesNotContain(newPlace);
+                .containsExactly(placeC, placeA, newPlace, placeB);
         // 같은 시점의 최신순에는 맨 앞에 뜨고, 카운트 배치가 센 값이 그대로 실린다
         PlaceFilterGetResponse latest = placeService.getPlaces(me, latestRequest(townId, null, 10));
         assertThat(ids(latest)).startsWith(newPlace);
         assertThat(previewOf(latest, newPlace).bookmarkCount()).isEqualTo(1);
 
-        // 점수 배치가 돌면 비로소 인기순에 합류한다
+        // 점수 배치가 돌면 0이 실제 점수(북마크 1건 ≈0.69)로 바뀌지만 자리는 그대로다
         batchProcessor.recalculateScores(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
 
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
-                .contains(newPlace);
+                .containsExactly(placeC, placeA, newPlace, placeB);
     }
 
     /**
-     * <b>미채점 0이 유효한 음수 점수를 제치지 않는다 — 사슬 수준의 확인.</b>
+     * <b>점수 0이 유효한 음수 점수를 앞선다 — 사슬 수준의 확인.</b>
      *
-     * <p>픽스처의 placeB는 1점 리뷰 5건이 붙어 점수가 <em>음수</em>({@code ≈−0.747})다. 신규 장소를
-     * 카운트 배치로만 올려 두면 그 행의 {@code popular_score}는 0이라, 술어가 없을 경우 응답 순서가
-     * {@code [C, A, 신규, B]}가 되어 <b>아무 평가도 없는 장소가 평판 나쁜 장소를 앞선다</b>.
-     * 술어가 있으면 신규 장소는 아예 목록에 없고 꼬리는 placeB 그대로다.
+     * <p>픽스처의 placeB는 1점 리뷰 5건이 붙어 점수가 <em>음수</em>({@code ≈−0.747})다. 아직 아무
+     * 평가도 받지 않은 신규 장소는 0이므로 그 위에 서고, 응답 순서가 {@code [C, A, 신규, B]}가
+     * 된다 — "평가 없음"이 "평가 나쁨"보다 위라는 것이 이 정렬이 고른 순서다(스펙 결정 2026-09-01).
      *
-     * <p>꼬리를 값으로 확인하는 것이 요점이다 — 포함 여부만 보면 "신규가 빠졌다"는 알아도
-     * 그것이 <em>음수 위로 올라가는 것</em>을 막았는지는 말해주지 못한다.
+     * <p>앞 테스트와 달리 신규 장소에 북마크를 달지 않는다 — 점수 0이 <b>아직 채점 전이라서</b>여야
+     * 이 순서가 0의 자리를 말하는 것이 된다.
      */
     @Test
-    void 미채점_신규_장소가_음수_점수_장소를_앞서지_않는다() {
+    void 점수가_없는_신규_장소가_음수_점수_장소를_앞선다() {
         long newPlace = createPlace(townId, "db직행음수대조", CALCULATED_AT.plusMinutes(5));
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
 
         List<Long> ranked = ids(placeService.getPlaces(me, popularRequest(null, 10)));
 
-        assertThat(ranked).containsExactly(placeC, placeA, placeB);
-        assertThat(ranked).doesNotContain(newPlace);
-        // 꼬리가 음수 점수 장소다 — 미채점 0이 끼어들면 여기가 newPlace로 바뀐다
+        assertThat(ranked).containsExactly(placeC, placeA, newPlace, placeB);
+        // 꼬리는 여전히 음수 점수 장소다 — 0이 그보다 아래로 내려가면 여기가 newPlace로 바뀐다
         assertThat(ranked.get(ranked.size() - 1)).isEqualTo(placeB);
     }
 
     // === 어드민 쓰기 경로가 place_stats를 동기 유지한다 (V34) ===
+
+    /**
+     * <b>어드민 쓰기는 커밋 <em>뒤에</em> 목록 스냅샷을 다시 짓는다.</b>
+     *
+     * <p>커밋 전에 지으면 로더의 새 커넥션이 아직 커밋되지 않은 변경을 보지 못해 <b>옛 데이터</b>로
+     * 사진을 짓고, 그 낡은 사진이 다음 트리거까지 남는다 — 방금 만든 장소가 목록에서 사라지고
+     * 방금 지운 장소가 계속 나온다. 이 테스트가 정확히 그 시점을 문다: 재생성이 커밋보다 앞서면
+     * 아래 첫 단언이, 훅이 아예 없으면 둘 다 빨개진다.
+     *
+     * <p><b>생성과 삭제를 한 무대에서 걷는 이유.</b> 두 지점이 어드민이 사진의 원천을 바꾸는
+     * 경로의 전부이고({@code AdminPlaceService}의 {@code syncPlaceStats}와 {@code deletePlace}),
+     * 한쪽만 보면 나머지 훅이 빠져도 그린이다.
+     *
+     * <p>배치도 손으로 찍는 회차도 한 번도 쓰지 않는다 — 끼우는 순간 이 두 단언이 "커밋 훅이 한
+     * 일"을 보는 것인지 아닌지가 구분되지 않는다.
+     */
+    @Test
+    void 어드민_쓰기는_커밋_뒤에_목록_스냅샷을_다시_짓는다() {
+        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민커밋훅");
+
+        long created = adminPlaceFacade.createPlace(
+                ADMIN_USER_ID, upsertRequest("db직행어드민커밋훅", adminTownId, SEED_OPTION1_A)).placeId();
+
+        assertThat(ids(placeService.getPlaces(me, latestRequest(adminTownId, null, 10))))
+                .containsExactly(created);
+
+        adminPlaceFacade.deletePlace(created);
+
+        assertThat(ids(placeService.getPlaces(me, latestRequest(adminTownId, null, 10)))).isEmpty();
+    }
 
     /**
      * <b>어드민이 만든 장소는 배치를 기다리지 않는다.</b> V34로 최신순의 기준 테이블이
@@ -332,7 +382,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 무필터 조회는 통과하고 태그 조회만 조용히 비는데, 그 상태가 정확히 이 마이그레이션의
      * 대표적 실패 모양이다.
      *
-     * <p><b>배치를 한 번도 돌리지 않는다.</b> 끼우는 순간 "즉시"인지 "≤1h"인지가 구분되지 않는다.
+     * <p><b>배치도 회차도 한 번도 돌리지 않는다.</b> 끼우는 순간 이 장소가 목록에 뜬 이유가
+     * "어드민 트랜잭션이 행을 짓고 커밋 훅이 사진을 다시 찍어서"인지 "손으로 돌린 것 때문"인지
+     * 구분되지 않는다.
      */
     @Test
     void 어드민이_만든_장소는_배치_없이_최신순에_즉시_나온다() {
@@ -342,6 +394,24 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 ADMIN_USER_ID, upsertRequest("db직행어드민생성", adminTownId, SEED_OPTION1_A)).placeId();
 
         assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_A))))
+                .containsExactly(created);
+    }
+
+    /**
+     * <b>인기순에도 즉시 나온다 — 위 테스트의 짝이다.</b> 어드민이 만든 행은 아직 채점 전이라
+     * 점수가 0인데, 인기순은 그 값 그대로 정렬하므로 다음 점수 배치를 기다릴 이유가 없다
+     * (스펙 결정 2026-09-01). 채점 여부를 묻는 술어가 되살아나면 여기가 즉시 빈다.
+     *
+     * <p>최신순 짝과 같은 이유로 배치도 회차도 돌리지 않고, 같은 이유로 태그 필터를 걸어 조회한다.
+     */
+    @Test
+    void 어드민이_만든_장소는_배치_없이_인기순에도_즉시_나온다() {
+        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민생성인기");
+
+        long created = adminPlaceFacade.createPlace(
+                ADMIN_USER_ID, upsertRequest("db직행어드민생성인기", adminTownId, SEED_OPTION1_A)).placeId();
+
+        assertThat(ids(placeService.getPlaces(me, popularTagRequest(adminTownId, SEED_OPTION1_A))))
                 .containsExactly(created);
     }
 
@@ -391,33 +461,41 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 맡기던 옛 비대칭은 인기순만 place_stats를 기준으로 삼던 시절의 것이다. 최신순까지 같은 기준이
      * 된 지금 행을 안 만들면 되살린 장소가 <em>최신순에서도</em> 최대 1시간 사라진다.
      *
-     * <p>비대칭이 완전히 사라진 것은 아니다 — 새로 만든 행은 미채점이라 <b>인기순</b>에는 다음 점수
-     * 배치까지 나오지 않는다. 그 잔여 비대칭도 여기서 값으로 확인한다.
+     * <p>비대칭은 이제 남지 않는다 — 새로 만든 행은 아직 채점 전이지만 인기순도 점수 값 그대로
+     * 정렬하므로 0점 자리에 함께 돌아온다. 두 정렬을 여기서 나란히 확인한다.
      *
      * <p>"사라진 상태"는 행을 직접 지워 만든다 — 어드민의 삭제 경로가 하는 일과 같고, 배치는
      * 행의 존재에 관여하지 않으므로 회차를 아무리 돌려도 이 상태가 만들어지지 않는다.
-     * 그 뒤로는 배치를 돌리지 않는다.
+     *
+     * <p><b>지운 직후 회차를 한 번 찍는 것은 사라진 상태를 사진에까지 새기기 위해서다.</b> 안 찍으면
+     * 옛 사진이 이 장소를 그대로 들고 있어, 마지막 단언이 "재활성이 되살렸다"가 아니라 "옛 사진에
+     * 남아 있었다"로 통과한다 — 재활성 훅을 통째로 떼도 그린인 테스트가 된다. 그 뒤로는 배치도
+     * 회차도 손으로 돌리지 않는다.
      */
     @Test
-    void 재활성화된_장소는_배치_없이_최신순에_즉시_돌아온다() {
+    void 재활성화된_장소는_배치_없이_두_정렬에_즉시_돌아온다() {
         long revivedTownId = createTown(TOWN_NAME_PREFIX + "어드민재활성");
         long placeId = createPlace(revivedTownId, "db직행재활성", PLACE_CREATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
         assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
                 .containsExactly(placeId);
 
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeId);
         jdbcTemplate.update("DELETE FROM place_stats WHERE place_id = ?", placeId);
         assertThat(statsRowExists(placeId)).isFalse();
+        takeSnapshot();
+        assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
+                .isEmpty();
 
         jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeId);
         adminPlaceService.activatePlacesByTownIds(List.of(revivedTownId));
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
                 .containsExactly(placeId);
-        // 되살아난 행은 미채점이라 인기순에는 아직 없다 — 잔여 비대칭이 그대로임을 값으로 남긴다
+        // 되살아난 행은 아직 채점 전이지만 인기순에도 0점 자리로 함께 돌아온다
         assertThat(ids(placeService.getPlaces(me, popularRequest(revivedTownId, null, 10))))
-                .isEmpty();
+                .containsExactly(placeId);
     }
 
     // === 커서 v4: 좌표와 필터 지문 ===
@@ -443,22 +521,24 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>배치가 돌아 점수가 갈려도 커서는 거부되지 않는다 — 새 좌표계 위에서 이어진다.</b>
-     * v3까지는 이 상황에서 세대가 어긋나 {@code EXPIRED_PLACE_CURSOR}가 나갔다. 인기 점수를
-     * 새벽 1회로 내리면서 이 창을 수용하기로 했으므로, 이제는 <b>200으로 이어지는 것</b>이 계약이다.
+     * <b>스크롤 도중 사진이 교체돼도 남은 페이지는 시작한 회차에서 이어진다 (커서 v6).</b>
      *
-     * <p><b>수용한 대가를 값으로 남긴다 — placeA가 두 페이지에 겹쳐 나온다.</b> 커서가 실은 좌표는
-     * 발급 당시 placeA의 점수(≈1.609434)인데, 2회차에서 한 시간치 감쇠가 더 걸려 placeA의 새 점수가
-     * 그보다 <em>미세하게 작아진다</em>(≈1.609412). 그러면 "점수 &lt; 커서" 경계에 placeA 자신이
-     * 걸려 다시 실려 나온다. 오류가 아니라 조용한 중복이고, 새벽 배치라 마주칠 확률이 희박하다는
-     * 것이 수용 근거다.
+     * <p>여기는 하루 전까지 <b>수용한 중복</b>을 값으로 남기던 자리다. 커서가 좌표만 싣던 시절에는
+     * 회차가 바뀌면 2페이지가 <em>새</em> 좌표계에서 재개돼, 점수가 미세하게 내려앉은 placeA가
+     * 1페이지에 이어 또 나왔다(≈1.609434 → ≈1.609412). 새벽 배치라 마주칠 확률이 희박하다는 것이
+     * 그때의 근거였는데, 사진을 10분마다 다시 찍는 지금은 그 창이 <b>상시</b>가 되어 수용할 수 없다.
+     * 그래서 커서가 자기 회차를 싣고 다니고 서버는 그 회차의 사진으로만 이어 서빙한다.
+     *
+     * <p><b>중복도 누락도 없다</b>는 것이 그 장치의 결과다 — 2페이지는 옛 회차의 순서를 그대로
+     * 잇는다. 대신 옛 회차를 보므로 방금 돈 배치의 결과는 그 스크롤 세션에 반영되지 않는데,
+     * 그것이 이 설계가 고른 쪽이다(조용한 중복보다 한 세션의 일관성).
      *
      * <p>placeB에 북마크를 몰아 넣는 것은 2회차 순위를 실제로 흔들기 위해서다 — 두 회차가 똑같으면
-     * "좌표계가 갈렸다"는 전제 자체가 성립하지 않아 이 테스트가 아무것도 보지 않는다.
+     * "회차가 갈렸다"는 전제 자체가 성립하지 않아 이 테스트가 아무것도 보지 않는다.
      * (그래도 placeB가 1위가 되지는 않는다. 1점 리뷰 5건의 페널티가 −2.0으로 붙어 있다.)
      */
     @Test
-    void 배치가_돌아_점수가_갈려도_커서는_만료되지_않고_새_좌표계로_이어진다() {
+    void 스크롤_도중_회차가_바뀌어도_커서는_시작한_회차에서_이어진다() {
         PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
         assertThat(ids(page1)).containsExactly(placeC, placeA);
 
@@ -467,17 +547,46 @@ class PlaceListFlowIT extends MySqlContainerSupport {
             insertBookmark(createUser(), placeB, CALCULATED_AT.plusMinutes(10));
         }
         runBothBatches(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
 
         PlaceFilterGetResponse page2 =
                 placeService.getPlaces(me, popularRequest(page1.nextCursor(), 2));
 
-        // 오류가 아니다 — 새 좌표계에서 "점수 ≈1.609434 아래"를 정직하게 돌려준다.
-        // placeA가 그 경계 아래로 내려앉아 1페이지에 이어 또 나온다(수용한 중복).
-        assertThat(ids(page2)).containsExactly(placeA, placeB);
-        assertThat(ids(page1)).containsAnyElementsOf(ids(page2));
-        // 커서 없는 재요청은 새 순서를 그대로 준다 — 클라이언트의 복구 경로가 막히지 않았다
+        // 옛 회차에서 이어진다 — placeA가 다시 나오지 않는다
+        assertThat(ids(page2)).containsExactly(placeB);
+        assertThat(ids(page1)).doesNotContainAnyElementsOf(ids(page2));
+        // 커서 없는 재요청은 새 회차의 순서를 그대로 준다 — 새 사진이 죽어 있는 것이 아니다
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 3))))
                 .containsExactly(placeC, placeA, placeB);
+    }
+
+    /**
+     * <b>보존(최근 3장) 밖으로 밀린 회차의 커서는 명시 만료다.</b>
+     *
+     * <p>그때 최신 회차로 조용히 갈아타면 커서 좌표가 다른 좌표계에서 해석돼 항목이 흘리거나
+     * 겹친다 — 위 테스트가 막은 그 상태다. 오류로 끊어야 클라이언트가 처음부터 다시 조회한다.
+     *
+     * <p>회차 간격이 10분이므로 이 만료가 실제로 나려면 <b>한 스크롤 세션이 20~30분</b>을 넘어야
+     * 한다({@code PlaceListSnapshot} 계약 4). 여기서는 그 시간을 회차 세 번으로 대신한다.
+     */
+    @Test
+    void 보존_밖으로_밀린_회차의_커서는_만료로_끊긴다() {
+        String cursor = placeService.getPlaces(me, popularRequest(null, 2)).nextCursor();
+        assertThat(cursor).isNotNull();
+
+        // 최신 + 직전 2장이 보존이라, 세 번 더 찍으면 이 커서의 회차가 목록에서 밀려난다
+        takeSnapshot();
+        takeSnapshot();
+        takeSnapshot();
+
+        assertThatThrownBy(() -> placeService.getPlaces(me, popularRequest(cursor, 2)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
+
+        // 커서 없는 재요청은 정상이다 — 클라이언트의 복구 경로가 막히지 않았다
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 2))))
+                .containsExactly(placeC, placeA);
     }
 
     /**
@@ -543,6 +652,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         createPlace(latestTownId, "db직행지문1", PLACE_CREATED_AT);
         createPlace(latestTownId, "db직행지문2", PLACE_CREATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT.plusHours(1));
+        takeSnapshot();
 
         String cursor =
                 placeService.getPlaces(me, latestRequest(latestTownId, null, 1)).nextCursor();
@@ -694,6 +804,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 "UPDATE places SET latitude = 37.501, longitude = 127.001 WHERE id = ?", placeA);
         jdbcTemplate.update(
                 "UPDATE places SET latitude = 37.510, longitude = 127.010 WHERE id = ?", placeB);
+        // 좌표도 사진에 실려 있다 — 다시 찍지 않으면 이 요청은 좌표 없던 회차를 본다
+        takeSnapshot();
 
         PlaceFilterGetResponse page1 = placeService.getPlaces(
                 me, distanceRequest(townId, null, 1, 37.50, 127.00));
@@ -791,8 +903,10 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 그 동작에 의존하지 않는다 — 병합 함수가 빠지면 여기서 {@code IllegalStateException:
      * Duplicate key}가 난다.
      *
-     * <p>목록 경로와 북마크 검색 경로를 한 테스트에서 함께 걷는다 — {@code toMap} 호출부가 둘이고,
-     * 한쪽만 고치면 다른 쪽에서 같은 예외가 난다.
+     * <p><b>지금 그 페치 조인을 타는 것은 북마크 검색 경로뿐이다.</b> 목록 경로는 장소당 엔트리가
+     * 하나인 사진을 읽으므로 펼쳐질 행이 없다 — 그래도 두 경로를 한 테스트에서 함께 걷는 이유는,
+     * 대표 태그가 <b>둘 중 MAIN 하나로 확정</b>된다는 규칙이 두 경로에 각각 있고(사진을 짓는
+     * 파생 테이블 · {@code TagViewUtils}) 한쪽만 고치면 같은 장소가 경로마다 다르게 보이기 때문이다.
      */
     @Test
     void 태그가_두_개인_장소도_목록과_북마크_검색에_한_번만_나온다() {
@@ -802,6 +916,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         linkTag(placeA, optionTagId);
         String mainTagName = jdbcTemplate.queryForObject(
                 "SELECT name FROM tags WHERE id = ?", String.class, mainTagId);
+        takeSnapshot();
 
         PlaceFilterGetResponse page = placeService.getPlaces(me, popularRequest(null, 3));
 
@@ -856,6 +971,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      *
      * <p>이어서 카운트 배치를 돌려 값이 실제로 5가 되는 것까지 본다 — 앞 단언만 두면 "배치도
      * 카운트를 안 센다"는 회귀가 통과한다.
+     *
+     * <p><b>화면에 닿는 지연은 이제 두 마디다</b> — 배치가 place_stats를 고치고(≤1h), 다음 회차가
+     * 그 값을 사진에 옮긴다(≤10분). 아래에서 DB 값과 응답 값을 따로 확인하는 이유가 그것이다.
      */
     @Test
     void 카운트는_배치_전용이라_북마크_직후에는_변하지_않는다() throws Exception {
@@ -876,6 +994,12 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         batchProcessor.recalculateCounts(LocalDateTime.now().plusHours(1));
 
         assertThat(bookmarkCountInDb(placeA)).isEqualTo(5);
+        // 배치가 센 값도 다음 회차부터 화면에 닿는다 — 그 전까지는 옛 사진의 4다
+        assertThat(previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA)
+                .bookmarkCount()).isEqualTo(4);
+
+        takeSnapshot();
+
         assertThat(previewOf(placeService.getPlaces(userNew, popularRequest(null, 3)), placeA)
                 .bookmarkCount()).isEqualTo(5);
     }
@@ -889,6 +1013,24 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     private void runBothBatches(LocalDateTime calculatedAt) {
         batchProcessor.recalculateCounts(calculatedAt);
         batchProcessor.recalculateScores(calculatedAt);
+    }
+
+    /**
+     * 회차 하나 — 지금 DB의 상태로 사진을 다시 찍는다. 운영에서 이 자리를 채우는 것은 10분 주기
+     * 타이머이고, 여기서 이 호출을 생략한 조회는 <b>이전 회차의 사진</b>을 본다.
+     *
+     * <p><b>1ms를 재우는 이유.</b> 회차 버전이 빌드가 끝난 시각(ms)이라 같은 밀리초에 두 번 찍으면
+     * 두 회차가 같은 버전을 갖고, 그러면 나중 사진이 멱등 처리로 버려져 보존 밖 판정이 흔들린다.
+     * 운영은 전량 재생성 자체가 수십~수백 ms라 일어날 수 없는 상태이므로
+     * ({@code PlaceListSnapshot#adopt}) 테스트만 그 전제를 맞춘다.
+     */
+    private void takeSnapshot() {
+        snapshotLoader.rebuild();
+        try {
+            Thread.sleep(1);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** place_stats에 이 장소의 행이 있는가 — 인기순 노출 여부의 물리적 근거다 */
@@ -930,9 +1072,18 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
     /** 최신순 + 태그 필터. 마스크가 0으로 남는 회귀는 무필터 조회로는 보이지 않는다. */
     private PlaceFilterGetRequest latestTagRequest(long town, long option1TagId) {
+        return tagRequest(town, PlaceSortType.LATEST, option1TagId);
+    }
+
+    /** {@link #latestTagRequest}의 인기순 짝 */
+    private PlaceFilterGetRequest popularTagRequest(long town, long option1TagId) {
+        return tagRequest(town, PlaceSortType.POPULAR, option1TagId);
+    }
+
+    private PlaceFilterGetRequest tagRequest(long town, PlaceSortType sort, long option1TagId) {
         return new PlaceFilterGetRequest(
                 town, false, SEED_MAIN_TAG, List.of(option1TagId), null,
-                PlaceSortType.LATEST, null, 10, null, null);
+                sort, null, 10, null, null);
     }
 
     /**

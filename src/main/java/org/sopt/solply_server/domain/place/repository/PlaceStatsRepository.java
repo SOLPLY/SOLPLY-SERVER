@@ -227,9 +227,8 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 표시 카운트 셋과
      * 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
      * 반대로 <b>신규 행</b>은 카운트
-     * 0·평점 0·미채점으로 들어가고, 그래서 인기순에는 다음 점수 배치(≤24h)까지 나오지 않는다
-     * (최신순에는 즉시 나온다 — 그 비대칭의 근거는
-     * {@code PlaceListDbQueryRepository#findPopularRows}).
+     * 0·평점 0·점수 0으로 들어가고, 두 정렬 모두 그 자리에서 장소를 보여준다 — 인기순은 점수 0
+     * 자리에, 최신순은 맨 앞에 (근거는 {@code PlaceListDbQueryRepository#findPopularRows}).
      *
      * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다</b> — 근거와 가드는
      * {@link #rebuildRowsFromSource} javadoc과 같다.
@@ -276,10 +275,9 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      *
      * <p><b>되살리는 쪽도 행은 즉시 만든다 (V34).</b> 최신순의 기준 테이블이 place_stats가 되면서
      * 행이 없는 재활성 장소는 <em>최신순에서도</em> 사라지는데, 그것은 대가가 아니라 버그다 —
-     * {@code AdminPlaceService#activatePlacesByTownIds}가 그 자리에서 미채점 행을 만든다.
-     * 다만 그 행은 미채점이라 <b>인기순</b>에는 다음 점수 배치까지 나오지 않는다(≤24h). 미채점 행을
-     * 인기순에 넣으면 음수 점수 장소보다 위로 올라오기 때문이며, 근거는
-     * {@code PlaceListDbQueryRepository#findPopularRows} javadoc에 있다.
+     * {@code AdminPlaceService#activatePlacesByTownIds}가 그 자리에서 행을 만든다.
+     * 그 행은 아직 채점 전이지만 <b>인기순에도 즉시</b> 나온다 — 점수 0이 곧 그 장소의 자리이고,
+     * 근거는 {@code PlaceListDbQueryRepository#findPopularRows} javadoc에 있다.
      *
      * <p><b>여기서 지운 행을 정기 회차가 되살리지 않는다.</b> {@link #updateCounts}는 이미 있는
      * 행만 갱신하기 때문이다. 되살리는 것은 어드민의 재활성 경로
@@ -313,7 +311,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p><b>INSERT가 아니라 UPDATE인 것이 소유권 계약이다.</b> 행을 만드는 주체는 어드민 쓰기
      * 트랜잭션이고, 이 문장은 그 행의 점수 두 칸만 정한다. INSERT로 바꾸면 {@code town_id}·
      * {@code tag_bitmask}에 값을 지어내야 하고, 그 순간 어드민이 소유한 칸을 배치가 침범한다.
-     * 어드민이 방금 만든 미채점 행은 여기서 0이 아닌 실제 점수를 받아 인기순에 합류한다.
+     * 어드민이 방금 만든 행은 여기서 0이 아닌 실제 점수를 받아 인기순의 제자리로 옮겨간다.
      *
      * <p><b>감쇠가 북마크에만 걸리는 것은 의도적 비대칭이다</b> — 인기(북마크)는 최근 활동이라
      * 감쇠하고, 평판(리뷰)은 시점 무관한 누적 판단이라 1건이 1표씩 들어간다.
