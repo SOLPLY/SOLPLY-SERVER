@@ -16,6 +16,10 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
+decorator:
+  datasource:
+    enabled: false
+
 app:
   env-prefix: test
 

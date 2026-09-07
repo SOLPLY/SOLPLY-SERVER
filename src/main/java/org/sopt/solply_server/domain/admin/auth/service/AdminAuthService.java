@@ -1,0 +1,143 @@
+package org.sopt.solply_server.domain.admin.auth.service;
+
+import java.util.Optional;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.sopt.solply_server.domain.admin.auth.dto.response.AdminAuthTokenResponse;
+import org.sopt.solply_server.domain.admin.auth.dto.response.KakaoAuthUrlResult;
+import org.sopt.solply_server.domain.admin.auth.repository.AdminAuthCodeRepository;
+import org.sopt.solply_server.domain.admin.auth.repository.AdminOAuthStateRepository;
+import org.sopt.solply_server.domain.auth.entity.SocialPlatform;
+import org.sopt.solply_server.domain.auth.repository.RefreshTokenRepository;
+import org.sopt.solply_server.domain.user.entity.User;
+import org.sopt.solply_server.domain.user.entity.UserRole;
+import org.sopt.solply_server.domain.user.repository.SocialUserInfoRepository;
+import org.sopt.solply_server.domain.user.repository.UserRepository;
+import org.sopt.solply_server.global.config.KakaoOAuthProperties;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
+import org.sopt.solply_server.global.feign.oauth.kakao.KakaoAuthClient;
+import org.sopt.solply_server.global.feign.oauth.kakao.KakaoServerClient;
+import org.sopt.solply_server.global.feign.oauth.kakao.dto.KakaoSocialUserProfile;
+import org.sopt.solply_server.global.feign.oauth.kakao.dto.KakaoTokenResponse;
+import org.sopt.solply_server.global.jwt.JwtTokenProvider;
+import org.sopt.solply_server.global.jwt.dto.TokenCollectionDto;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
+
+@Service
+@RequiredArgsConstructor
+public class AdminAuthService {
+
+    private static final String GRANT_TYPE = "authorization_code";
+
+    private final KakaoAuthClient kakaoAuthClient;
+    private final KakaoServerClient kakaoServerClient;
+    private final SocialUserInfoRepository socialUserInfoRepository;
+    private final UserRepository userRepository;
+    private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final AdminAuthCodeRepository adminAuthCodeRepository;
+    private final AdminOAuthStateRepository adminOAuthStateRepository;
+    private final KakaoOAuthProperties kakaoOAuthProperties;
+
+    @Value("${admin.redirect-uri}")
+    private String adminRedirectUri;
+
+    public KakaoAuthUrlResult generateKakaoAuthUrl() {
+        String state = UUID.randomUUID().toString();
+        String nonce = UUID.randomUUID().toString();
+        adminOAuthStateRepository.save(state, nonce);
+
+        String url = UriComponentsBuilder.fromHttpUrl(kakaoOAuthProperties.getAuthorizationUrl())
+                .queryParam("client_id", kakaoOAuthProperties.getClientId())
+                .queryParam("redirect_uri", kakaoOAuthProperties.getRedirectUri())
+                .queryParam("response_type", "code")
+                .queryParam("state", state)
+                .build()
+                .toUriString();
+
+        return new KakaoAuthUrlResult(url, nonce);
+    }
+
+    public String processKakaoCallback(String code, String state, String nonce) {
+        if (!adminOAuthStateRepository.validateAndConsume(state, nonce)) {
+            throw new BusinessException(ErrorCode.INVALID_OAUTH_STATE);
+        }
+        KakaoTokenResponse tokenResponse = kakaoAuthClient.getToken(
+                GRANT_TYPE,
+                kakaoOAuthProperties.getClientId(),
+                kakaoOAuthProperties.getRedirectUri(),
+                code,
+                kakaoOAuthProperties.getClientSecret()
+        );
+
+        KakaoSocialUserProfile profile = kakaoServerClient.getUserInformation(
+                "Bearer " + tokenResponse.accessToken()
+        );
+
+        User user = findAdminUser(profile);
+
+        String authCode = UUID.randomUUID().toString();
+        adminAuthCodeRepository.save(authCode, user.getId(), SocialPlatform.KAKAO);
+
+        return UriComponentsBuilder.fromHttpUrl(adminRedirectUri)
+                .queryParam("authCode", authCode)
+                .build()
+                .toUriString();
+    }
+
+    public AdminAuthTokenResponse exchangeAuthCode(String authCode) {
+        String value = adminAuthCodeRepository.pop(authCode);
+        if (value == null) {
+            throw new BusinessException(ErrorCode.INVALID_ADMIN_AUTH_CODE);
+        }
+
+        String[] parts = value.split(":");
+        if (parts.length != 2) {
+            throw new BusinessException(ErrorCode.INVALID_ADMIN_AUTH_CODE);
+        }
+        Long userId;
+        SocialPlatform platform;
+        try {
+            userId = Long.parseLong(parts[0]);
+            platform = SocialPlatform.valueOf(parts[1]);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_ADMIN_AUTH_CODE);
+        }
+
+        // role 클레임은 발급 시점의 DB 값이다 — authCode에 실어 나르지 않는 것이 안전하다
+        // (권한을 외부에 왕복시키지 않는다). 어드민 로그인은 드물어 이 조회가 비용이 아니다.
+        UserRole role = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER))
+                .getRole();
+
+        TokenCollectionDto tokens = jwtTokenProvider.createTokenCollection(userId, platform, role);
+        refreshTokenRepository.save(userId, tokens.refreshToken());
+
+        return new AdminAuthTokenResponse(tokens.accessToken(), tokens.refreshToken());
+    }
+
+    private String buildSocialCode(SocialPlatform platform, String socialId) {
+        return platform.name() + "_" + socialId;
+    }
+
+    private User findAdminUser(KakaoSocialUserProfile profile) {
+        String socialCode = buildSocialCode(SocialPlatform.KAKAO, String.valueOf(profile.getId()));
+
+        String email = profile.getEmail();
+        User user = socialUserInfoRepository.findAnyUserIdBySocialCode(socialCode)
+                .flatMap(userRepository::findById)
+                .or(() -> email != null && !email.isBlank()
+                        ? userRepository.findAnyByEmail(email)
+                        : Optional.empty())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_USER));
+
+        if (user.getRole() != UserRole.ADMIN) {
+            throw new BusinessException(ErrorCode.NOT_ADMIN_USER);
+        }
+
+        return user;
+    }
+}

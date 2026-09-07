@@ -37,6 +37,9 @@ public enum ErrorCode {
     FORBIDDEN_RESOURCE(HttpStatus.FORBIDDEN, "AUTH-007", "해당 리소스에 대한 권한이 없습니다."),
     FORBIDDEN_ACTION(HttpStatus.FORBIDDEN, "AUTH-008", "해당 작업을 수행할 권한이 없습니다."),
     INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH-009", "유효하지 않은 토큰입니다."),
+    NOT_ADMIN_USER(HttpStatus.FORBIDDEN, "AUTH-010", "어드민 권한이 없는 사용자입니다."),
+    INVALID_ADMIN_AUTH_CODE(HttpStatus.UNAUTHORIZED, "AUTH-011", "유효하지 않거나 만료된 인증 코드입니다."),
+    INVALID_OAUTH_STATE(HttpStatus.UNAUTHORIZED, "AUTH-012", "유효하지 않거나 만료된 OAuth state 값입니다."),
 
     // 소셜 로그인 관련 (SOCIAL-xxx)
     UNSUPPORTED_OAUTH_PROVIDER(HttpStatus.BAD_REQUEST, "SOCIAL-001", "지원하지 않는 OAuth 플랫폼입니다."),
@@ -63,6 +66,15 @@ public enum ErrorCode {
     // 장소 관련 (PLACE-xxx)
     NOT_FOUND_PLACE(HttpStatus.NOT_FOUND, "PlACE-001", "존재하지 않는 장소입니다."),
     PLACE_TAG_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "PLACE-002", "장소에 MAIN 태그가 최소 1개 이상 존재해야 합니다."),
+    INVALID_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-003", "유효하지 않은 커서입니다."),
+    // PLACE-004는 비어 있다. 번호를 재사용하지 않는다 — 이미 나간 클라이언트가 다른 뜻으로
+    // 알고 있을 수 있다.
+    // 거리순은 기준점이 요청에서 오는 유일한 정렬이라, 좌표가 없으면 순서를 정의할 수 없다.
+    // 두 번째 페이지부터는 커서에 박제된 기준 좌표를 쓰므로 이 오류는 첫 페이지에서만 난다.
+    MISSING_PLACE_COORDINATES(HttpStatus.BAD_REQUEST, "PLACE-005", "거리순 정렬에는 현재 위치(latitude, longitude)가 필요합니다."),
+    // 커서가 가리키는 회차가 캐시 보존(최근 3장) 밖으로 밀려난 상태. 토큰 자체는 멀쩡하므로
+    // PLACE-003과 상태 코드는 같고 코드로 구분한다 — 클라이언트는 이것만 처음부터 다시 조회한다.
+    EXPIRED_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-006", "커서가 가리키는 목록 회차가 만료되었습니다. 목록을 처음부터 다시 조회해 주세요."),
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
 
 
@@ -93,6 +105,9 @@ public enum ErrorCode {
     CANNOT_ACTIVATE_TAG_PARENT_INACTIVE(HttpStatus.BAD_REQUEST, "TAG-006", "상위 태그가 비활성화되어 있는 상태입니다"),
     INVALID_TAG_USAGE(HttpStatus.BAD_REQUEST, "TAG-007" , "태그 사용 용도(장소용/코스용)가 잘못 되었습니다." ),
     NOT_ACTIVE_TAG(HttpStatus.BAD_REQUEST, "TAG-008", "비활성화된 태그에 대한 요청입니다" ),
+    // 태그 id가 곧 place_stats.tag_bitmask의 비트 자리다 (TagBitmask 참조). 이 상한을 넘기려면
+    // 마스크 폭을 넓히는 스키마 결정이 먼저라, 요청을 받아 두고 나중에 고치는 형태로 두지 않는다.
+    TAG_ID_BIT_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "TAG-009", "태그를 더 만들 수 없습니다. 태그 id 상한(62)에 도달했습니다."),
 
 
     // 북마크 관련 (BOOKMARK-xxx)
@@ -114,6 +129,17 @@ public enum ErrorCode {
     // 장소 등록 요청 관련 (PLACE_REQUEST-xxx)
     NOT_FOUND_PLACE_REQUEST(HttpStatus.NOT_FOUND, "PLACE_REQUEST-001", "존재하지 않는 장소 등록 요청입니다." ),
     INVALID_REQUEST_STATE(HttpStatus.BAD_REQUEST, "PLACE_REQUEST-002", "승인할 수 없는 장소 등록 요청입니다." ),
+
+   // 장소 리뷰 관련 (PLACE_REVIEW-xxx)
+   PLACE_REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "PLACE-REVIEW-001", "해당 기록을 찾을 수 없습니다."),
+   PLACE_REVIEW_CONTENT_BLANK(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-002", "기록 내용은 공백일 수 없습니다."),
+   INVALID_PLACE_REVIEW_CONTENT_LENGTH(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-003", "기록 내용은 10자 이상 500자 이하여야 합니다."),
+   INVALID_VISIT_DATE(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-004", "방문 날짜는 오늘 또는 이전 날짜만 선택할 수 있습니다."),
+   PLACE_REVIEW_IMAGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-005", "사진은 최대 5장까지 업로드할 수 있습니다."),
+   FORBIDDEN_PLACE_REVIEW_DELETE(HttpStatus.FORBIDDEN, "PLACE-REVIEW-006", "본인이 작성한 리뷰만 삭제할 수 있습니다."),
+   FORBIDDEN_SELF_REVIEW_REPORT(HttpStatus.FORBIDDEN, "PLACE-REVIEW-007", "본인이 작성한 리뷰는 신고할 수 없습니다."),
+   ALREADY_REPORTED_REVIEW(HttpStatus.CONFLICT, "PLACE-REVIEW-008", "이미 신고한 리뷰입니다."),
+   INVALID_PLACE_REVIEW_RATING(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-009", "평점은 1점 이상 5점 이하여야 합니다."),
     ;
 
 

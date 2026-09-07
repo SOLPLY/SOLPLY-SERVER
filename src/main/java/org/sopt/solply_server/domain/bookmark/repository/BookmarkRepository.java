@@ -7,27 +7,49 @@ import java.util.Set;
 import org.sopt.solply_server.domain.bookmark.entity.Bookmark;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
-    void deleteByUserIdAndTargetTypeAndTargetId(Long userId, BookmarkTargetType type, Long targetId);
+    /**
+     * 북마크 1건 삭제. <b>반환값은 실제로 지워진 행 수이고, −1 카운트 이벤트의 발행 여부가 여기
+     * 걸린다.</b>
+     *
+     * <p>파생 쿼리 {@code deleteBy…}(select 후 엔티티별 삭제)가 아니라 벌크 DELETE인 이유가
+     * 그것이다 — 발행 조건을 exists 사전 검사에 걸면 같은 북마크를 동시에 지우는 요청 둘이 검사를
+     * 함께 통과해 −1이 두 번 쌓인다. 행을 실제로 지운 쪽은 하나이므로, 영향 행 수에 걸어야 카운트
+     * 표류가 원천 차단된다 (docs/design/2026-08-17-bookmark-outbox-delta.md 4-1).
+     */
+    @Modifying
+    @Query("delete from Bookmark b where b.user.id = :userId and b.targetType = :type and b.targetId = :targetId")
+    int deleteByUserTarget(@Param("userId") Long userId, @Param("type") BookmarkTargetType type,
+            @Param("targetId") Long targetId);
 
     boolean existsByUserIdAndTargetTypeAndTargetId(Long userId, BookmarkTargetType type, Long targetId);
 
-
-    List<Bookmark> findByUserIdAndTargetTypeAndTargetIdIn(Long userId, BookmarkTargetType type, Set<Long> ids);
+    @Query("""
+        select b.targetId
+        from Bookmark b
+        join Course c on c.id = b.targetId
+        where b.user.id = :userId
+          and b.targetType = 'COURSE'
+          and c.active = true
+    """)
+    Set<Long> findBookmarkedActiveCourseIds(@Param("userId") Long userId);
 
     @Query("""
         select b.targetId
         from Bookmark b
         where b.user.id = :userId
           and b.targetType = :targetType
+          and b.targetId in :targetIds
     """)
-    Set<Long> findBookmarkedTargetIds(
+    Set<Long> findBookmarkedTargetIdsByTargetIds(
             @Param("userId") Long userId,
-            @Param("targetType") BookmarkTargetType targetType);
+            @Param("targetType") BookmarkTargetType targetType,
+            @Param("targetIds") List<Long> targetIds);
 
     @Query("""
         select b.targetId
@@ -37,4 +59,84 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
           and b.createdAt >= :since
     """)
     List<Long> findTargetIdsByUserAndTypeSince(Long userId, BookmarkTargetType type, LocalDateTime since);
+
+    // == DB 직행 조회 쿼리 (캐시 제거 후 단일 경로) == //
+
+    /**
+     * 장소별 북마크 수 집계 (타겟 축 커버링 인덱스). row: [target_id, cnt]. 0건인 장소는 행 없음
+     *
+     * <p>프로덕션 읽기 경로는 place_stats로 전환됐고, 이 쿼리는 기각한 대안(매 요청 실시간 집계)의
+     * 비용 측정용으로 남긴다.
+     */
+    @Query(value = """
+        SELECT b.target_id, COUNT(*) AS cnt
+        FROM bookmarks b
+        WHERE b.target_type = 'PLACE'
+          AND b.target_id IN (:placeIds)
+        GROUP BY b.target_id
+    """, nativeQuery = true)
+    List<Object[]> countByPlaceIds(@Param("placeIds") List<Long> placeIds);
+
+    /** 여러 동네의 북마크 장소 id를 최신순으로 반환 (시 단위 = leaf 합집합 조회용) */
+    @Query(value = """
+        SELECT b.target_id
+        FROM bookmarks b
+        INNER JOIN places p ON p.id = b.target_id
+        WHERE b.user_id = :userId
+          AND b.target_type = 'PLACE'
+          AND p.town_id IN (:townIds)
+          AND p.active = true
+        ORDER BY b.created_at DESC, b.target_id DESC
+    """, nativeQuery = true)
+    List<Long> findBookmarkedPlaceIdsByTownsOrdered(
+            @Param("userId") Long userId, @Param("townIds") List<Long> townIds);
+
+    /** 특정 동네의 북마크 코스 id를 최신순으로 반환 */
+    @Query(value = """
+        SELECT b.target_id
+        FROM bookmarks b
+        INNER JOIN courses c ON c.id = b.target_id
+        WHERE b.user_id = :userId
+          AND b.target_type = 'COURSE'
+          AND c.town_id = :townId
+          AND c.active = true
+        ORDER BY b.created_at DESC, b.target_id DESC
+    """, nativeQuery = true)
+    List<Long> findBookmarkedCourseIdsByTownOrdered(
+            @Param("userId") Long userId, @Param("townId") Long townId);
+
+    /**
+     * 동네별 가장 최근 북마크 장소 1개 (폴더 프리뷰).
+     * row: [town_id (Long), target_id (Long)]
+     */
+    @Query(value = """
+        SELECT t.town_id, t.target_id FROM (
+            SELECT p.town_id AS town_id, b.target_id AS target_id,
+                   ROW_NUMBER() OVER (PARTITION BY p.town_id ORDER BY b.created_at DESC, b.target_id DESC) AS rn
+            FROM bookmarks b
+            INNER JOIN places p ON p.id = b.target_id
+            WHERE b.user_id = :userId
+              AND b.target_type = 'PLACE'
+              AND p.active = true
+        ) t WHERE t.rn = 1
+    """, nativeQuery = true)
+    List<Object[]> findLatestBookmarkedPlaceIdPerTown(@Param("userId") Long userId);
+
+    /**
+     * 동네별 가장 최근 북마크 코스 1개 (폴더 프리뷰).
+     * row: [town_id (Long), target_id (Long)]
+     */
+    @Query(value = """
+        SELECT t.town_id, t.target_id FROM (
+            SELECT c.town_id AS town_id, b.target_id AS target_id,
+                   ROW_NUMBER() OVER (PARTITION BY c.town_id ORDER BY b.created_at DESC, b.target_id DESC) AS rn
+            FROM bookmarks b
+            INNER JOIN courses c ON c.id = b.target_id
+            WHERE b.user_id = :userId
+              AND b.target_type = 'COURSE'
+              AND c.active = true
+        ) t WHERE t.rn = 1
+    """, nativeQuery = true)
+    List<Object[]> findLatestBookmarkedCourseIdPerTown(@Param("userId") Long userId);
+
 }

@@ -1,8 +1,10 @@
 package org.sopt.solply_server.global.config;
 
 import java.util.Arrays;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.global.jwt.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,8 +27,12 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Value("${cors.allowed-origins}")
+    private List<String> allowedOrigins;
+
     private static final String[] AUTH_WHITELIST = {
             "/api/auth/**", // 로그인, 회원가입, 토큰 재발급
+            "/api/admin/auth/**", // 어드민 소셜 로그인
             "/swagger-ui/**",
             "/v3/api-docs/**",
             "/api/test/**", // 테스트용 API
@@ -50,12 +56,12 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain appChain(HttpSecurity http) throws Exception {
         return http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+
                 .authorizeHttpRequests(auth -> auth
                         // 기존 화이트리스트
                         .requestMatchers(AUTH_WHITELIST).permitAll()
@@ -80,6 +86,7 @@ public class SecurityConfig {
                         // ❌ 나머지 전부 로그인 필요
                         .anyRequest().authenticated()
                 )
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
@@ -87,12 +94,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(Arrays.asList(
-                "https://solply.store",
-                "https://www.solply.store",
-                "https://api.solply.store",
-                "https://dev.api.solply.store"
-        ));
+        config.setAllowedOrigins(allowedOrigins); // 개발/운영 환경에 따라 주입된 리스트 사용
 
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("*"));

@@ -55,6 +55,11 @@ public class AdminEntityLoader {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_TAG));
     }
 
+    public Place getPlace(Long placeId) {
+        return adminPlaceRepository.findById(placeId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));
+    }
+
     public Place getPlaceWithTown(Long placeId) {
         return adminPlaceRepository.findByIdWithTown(placeId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.NOT_FOUND_PLACE));

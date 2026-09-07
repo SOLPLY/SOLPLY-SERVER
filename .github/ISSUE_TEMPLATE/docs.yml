@@ -1,0 +1,25 @@
+name: Docs Template
+description: 문서 작업 (README, API 명세, 가이드 등)
+title: "[Docs] Docs Title"
+labels: ["📖 DOCS"]
+
+body:
+  - type: textarea
+    id: docs-contents
+    attributes:
+      label: 💬 이슈 설명
+      description: 작업할 문서에 대해 설명해 주세요.
+      placeholder: "ex. API 명세서에 추천 엔드포인트 항목을 추가한다."
+    validations:
+      required: true
+  - type: textarea
+    id: solve-steps
+    attributes:
+      label: ✅ 작업할 내용
+      description: 작업할 내용을 체크박스 형태로 작성해 주세요.
+      value: |
+        - [ ] 작업
+        - [ ]
+        - [ ]
+    validations:
+      required: true

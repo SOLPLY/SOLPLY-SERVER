@@ -1,6 +1,5 @@
 package org.sopt.solply_server.global.cache;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
@@ -49,17 +48,4 @@ public interface CacheService {
     // == 캐시 워밍업 == //
     <T> void warmUp(String keyPrefix, Map<String, Supplier<T>> dataSuppliers,
             int timeout, TimeUnit timeUnit);
-
-    void sAdd(String key, Long targetId);
-
-    void sRem(String key, Long targetId);
-
-    Set<Long> sMembers(String key);
-
-    Boolean sIsMember(String key, Long targetId);
-
-    void sAddAll(String key, Set<Long> targetIds);
-
-    void expire(String key, long timeout, TimeUnit unit);
-    Boolean hasKey(String key);
 }

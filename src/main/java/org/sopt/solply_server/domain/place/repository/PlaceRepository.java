@@ -49,6 +49,16 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
     @Query("""
         SELECT DISTINCT p
         FROM Place p
+        JOIN FETCH p.town
+        LEFT JOIN FETCH p.placeTags pt
+        LEFT JOIN FETCH pt.tag
+        WHERE p.id IN :placeIds
+    """)
+    List<Place> findAllByIdWithTownAndTags(@Param("placeIds") List<Long> placeIds);
+
+    @Query("""
+        SELECT DISTINCT p
+        FROM Place p
         LEFT JOIN FETCH p.placeTags pt
         LEFT JOIN FETCH pt.tag t
         WHERE p.id IN :placeIds
@@ -65,4 +75,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long>, PlaceReposi
             and p.active = true
     """)
     Optional<Place> findActiveByIdWithTownAndCheckpoints(@Param("placeId") Long placeId);
+
+  @Query("""
+    select p
+    from Place p
+    where p.id = :placeId
+      and p.active = true
+""")
+  Optional<Place> findActiveById(@Param("placeId") Long placeId);
 }
