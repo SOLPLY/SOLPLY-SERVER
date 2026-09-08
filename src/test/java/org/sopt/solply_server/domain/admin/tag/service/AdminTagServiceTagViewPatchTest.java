@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.admin.tag.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.atLeastOnce;
@@ -24,6 +25,8 @@ import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.entity.TagUsage;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
 
 /**
@@ -74,23 +77,28 @@ class AdminTagServiceTagViewPatchTest {
     }
 
     /**
-     * <b>타입이 바뀌면 사진을 다시 찍는다.</b> MAIN↔OPTION이 갈리면 그 태그를 대표로 쓰던 장소의
+     * <b>타입 변경은 거부한다.</b> MAIN↔OPTION이 갈리면 그 태그를 대표로 쓰던 장소의
      * {@code mainTagId}가 낡는데, 그 값은 표시 맵이 아니라 사진과 함께 지어진다 — 맵만 고치면
-     * 다음 전량 재빌드(≤10분)까지 대표 태그가 틀린 채 아무 오류도 나지 않는다.
+     * 다음 전량 재빌드(≤10분)까지 대표 태그가 틀린 채 아무 오류도 나지 않는다. 막아 두면 사진을
+     * 다시 찍을 이유 자체가 없어져, 태그 쓰기에는 전량 재빌드 경로가 남지 않는다.
      */
     @Test
-    void 태그_타입이_바뀌면_전량_재빌드를_건다() {
+    void 태그_타입을_바꾸려_하면_거부하고_사진도_다시_찍지_않는다() {
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag("이름", true));
+        AdminTagUpsertRequest typeChanged = new AdminTagUpsertRequest(
+                TagType.OPTION1, null, "이름", true, null, TagUsage.PLACE);
 
-        adminTagService.updateTag(TAG_ID, new AdminTagUpsertRequest(
-                TagType.OPTION1, null, "이름", true, null, TagUsage.PLACE));
+        assertThatThrownBy(() -> adminTagService.updateTag(TAG_ID, typeChanged))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TAG_TYPE_IMMUTABLE);
 
-        verify(placeListSnapshotRefresher).refreshAfterCommit();
+        verify(placeListSnapshotRefresher, never()).refreshAfterCommit();
     }
 
-    /** 타입이 그대로면 표시값만 바뀐 것이라 전량이 돌면 안 된다 — 분리한 값이 사라진다 */
+    /** 표시값만 바뀐 수정에도 전량이 돌면 안 된다 — 분리한 값이 사라진다 */
     @Test
-    void 타입이_그대로면_전량_재빌드를_걸지_않는다() {
+    void 태그를_수정해도_전량_재빌드를_걸지_않는다() {
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag("옛이름", true));
 
         adminTagService.updateTag(TAG_ID, upsertRequest("새이름", true));

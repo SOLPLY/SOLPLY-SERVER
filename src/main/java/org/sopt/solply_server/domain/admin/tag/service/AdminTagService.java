@@ -17,7 +17,6 @@ import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
 import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
-import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
@@ -30,8 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
  * 여부뿐이고 그 둘은 배열 밖 태그 맵에 있으므로, 여기서는 <em>언제나</em> 맵을 고친다 — 규칙이
  * 하나라 생성도 예외를 두지 않는다.
  *
- * <p><b>예외는 하나, 태그 타입 변경이다.</b> {@link #updateTag}만 사진을 다시 찍는다 — 이유는
- * 그쪽 javadoc.
+ * <p><b>태그 쓰기는 재빌드를 걸지 않는다.</b> 사진에 실리는 태그 값은 대표 태그 id 하나뿐인데
+ * 그것을 흔드는 유일한 수정이 타입 변경이고, 그것은 {@link #updateTag}에서 거부한다 — 대표 태그가
+ * 낡을 경로가 아예 없다.
  *
  * <p>태그를 단 장소를 찾아다니지 않는 것이 이 구조의 요점이다. 대표 태그 이름은 조회 시점에
  * 합쳐지므로, 태그 하나를 고치면 그 태그를 단 장소 전부가 함께 바뀐다.
@@ -115,17 +115,17 @@ public class AdminTagService {
     }
 
     /**
-     * <b>여기 하나가 태그 쓰기 중 유일하게 전량 재빌드를 걸 수 있다.</b> 이 API는 {@code type}도
-     * 바꿀 수 있는데(검증기가 막지 않는다), MAIN↔OPTION이 바뀌면 그 태그를 <em>대표로 쓰던</em>
-     * 장소들의 {@code mainTagId}가 낡는다 — 대표 태그를 뽑는 규칙이 "첫 MAIN 태그"이고 그 값은
-     * 배열 밖 표시 맵이 아니라 <b>사진과 함께 지어지기</b> 때문이다. 그 장소들을 찾아다니는 대신
-     * 사진을 다시 찍는다. 같은 트랜잭션에 전량과 패치가 함께 걸리면 전량만 도는 규칙이 이미 있어
-     * 아래 패치 훅은 그대로 둔다({@code PlaceListSnapshotRefresher}).
+     * <b>타입은 못 바꾼다.</b> MAIN↔OPTION이 갈리면 그 태그를 <em>대표로 쓰던</em> 장소들의
+     * {@code mainTagId}가 낡는다 — 대표 태그를 뽑는 규칙이 "첫 MAIN 태그"이고 그 값은 배열 밖 표시
+     * 맵이 아니라 <b>사진과 함께 지어지기</b> 때문이다. 그 장소들을 찾아다니거나 사진을 다시 찍는
+     * 대신 수정 자체를 막는다. 타입을 실제로 바꿔야 하면 태그를 새로 만들어 옮기는 것이 맞다.
      */
     @Transactional
     public Long updateTag(Long id, AdminTagUpsertRequest req) {
         Tag tag = adminEntityLoader.getTag(id);
-        TagType previousType = tag.getType();
+        if (tag.getType() != req.type()) {
+            throw new BusinessException(ErrorCode.TAG_TYPE_IMMUTABLE);
+        }
 
         Tag parent = null;
         if (req.parentId() != null) {
@@ -151,9 +151,6 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        if (previousType != tag.getType()) {
-            placeListSnapshotRefresher.refreshAfterCommit();
-        }
         placeListSnapshotRefresher.patchTagViewAfterCommit(id);
         return id;
     }
