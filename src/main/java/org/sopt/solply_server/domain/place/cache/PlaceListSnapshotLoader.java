@@ -179,9 +179,9 @@ public class PlaceListSnapshotLoader {
      *
      * <p><b>표시값 홀더를 사진보다 먼저 교체한다.</b> 순서가 반대면 새 사진에만 있는 장소가 옛 맵에
      * 없어 조회 경로가 그 행을 건너뛰는 창이 열린다. 먼저 교체하면 그 창이 없고, 남는 것은
-     * "삭제된 장소를 옛 사진에서 만나 건너뛰는" 계약상 정상 경로뿐이다. 발급이 실패해 여기서
-     * 예외가 나면 홀더만 새 값이고 사진은 직전 회차인 상태로 남는데, 그것이 바로 이 순서가 안전한
-     * 쪽이라고 말한 상태다 — 응답은 정합적이고 다음 회차가 사진을 따라잡는다.
+     * "삭제된 장소를 옛 사진에서 만나 건너뛰는" 계약상 정상 경로뿐이다. 버전 발급은 홀더 교체보다
+     * 앞이다 — 발급이 실패하면 사진도 홀더도 직전 회차 그대로 남아 "실패하면 아무것도 바뀌지
+     * 않는다"가 성립한다.
      *
      * <p><b>아래 로그를 지우지 말 것.</b> 나중에 회차 직후 CPU 스파이크가 문제가 됐을 때
      * "몇 행을 몇 ms에 지었는가"가 남아 있지 않으면 원인을 이 경로로 좁힐 수 없다
@@ -202,10 +202,11 @@ public class PlaceListSnapshotLoader {
         Map<Long, TagView> tagViews = readTagViews();
 
         PlaceListIndex fresh = PlaceListIndex.of(source.entries());
+        // 발급은 자기 트랜잭션에서 돈다 — 이 트랜잭션은 읽기 전용이라 INSERT를 실을 수 없다.
+        // 홀더 교체보다 앞에 두어, 발급이 실패하면 사진도 홀더도 직전 회차 그대로 남는다.
+        PlaceListPhoto photo = new PlaceListPhoto(versionIssuer.issue(), fresh);
         placeViewHolder.replaceAll(source.views());
         tagViewHolder.replaceAll(tagViews);
-        // 발급은 자기 트랜잭션에서 돈다 — 이 트랜잭션은 읽기 전용이라 INSERT를 실을 수 없다
-        PlaceListPhoto photo = new PlaceListPhoto(versionIssuer.issue(), fresh);
         snapshot.adopt(photo);
 
         long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
