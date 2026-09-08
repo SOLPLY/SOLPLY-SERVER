@@ -25,6 +25,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * <p><b>재빌드의 읽기를 래치로 붙잡아</b> 그 창을 실제로 벌린다. 로더는 목이지만 구조는 실제와
  * 같다 — 락을 잡고, 읽고, 맵을 교체한다({@code PlaceListSnapshotLoader#rebuild}). 홀더와 락은
  * 진짜를 쓴다: 이 파일이 보는 것이 바로 그 둘의 상호작용이다.
+ *
+ * <p><b>이 파일은 로더를 검증하지 않는다.</b> 락을 잡는 것이 목의 답변이라, 진짜
+ * {@code rebuild()}에서 {@code writeLock} 호출을 빼도 여기는 그린이다. 실제 로더가 락을 잡는지는
+ * {@code PlaceListVersionIssuerIT}의 유실 방지 테스트가 문다 — 여기는 <b>락·홀더·리프레셔 셋의
+ * 상호작용</b>에 대한 단위 테스트로 남는다.
  */
 @ExtendWith(MockitoExtension.class)
 class PlaceListWriteLockTest {

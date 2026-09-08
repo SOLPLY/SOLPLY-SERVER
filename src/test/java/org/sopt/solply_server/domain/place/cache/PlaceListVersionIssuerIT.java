@@ -2,13 +2,22 @@ package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,18 +29,24 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 회차 버전이 <b>DB 발급 테이블의 번호</b>라는 것을 실제 DB 위에서 못 박는다. 겨누는 것은 넷이다 —
+ * 회차 버전이 <b>DB 발급 테이블의 번호</b>라는 것을 실제 DB 위에서 못 박는다. 겨누는 것은 다섯이다 —
  * 번호가 단조인가, 읽기 전용 재빌드 트랜잭션 안에서도 발급이 되고 곧바로 커밋되는가, 사진에 붙는
- * 번호가 정말 방금 발급된 그 번호인가, 발급이 실패했을 때 직전 사진이 남는가.
+ * 번호가 정말 방금 발급된 그 번호인가, 발급이 실패했을 때 직전 회차가 통째로 남는가, 그리고
+ * <b>실제 로더가 락으로 어드민 수정을 지키는가</b>.
  *
  * <p><b>왜 IT인가.</b> 이 기능의 값이 전부 DB 쪽에 있다. AUTO_INCREMENT가 단조를 만들고,
  * {@code REQUIRES_NEW}가 읽기 전용 트랜잭션 안의 INSERT를 가능하게 하며, 그 트랜잭션이 즉시
  * 커밋되어야 나중에 빌더가 여럿이 됐을 때 둘이 같은 번호를 받지 않는다. 목으로는 셋 중 하나도
  * 확인되지 않는다.
  *
- * <p><b>{@code @SpyBean}인 이유.</b> 앞의 셋은 진짜 발급이 돌아야 하고 마지막 하나는 발급이
- * 실패해야 한다. 스파이는 기본이 진짜 동작이라 한 컨텍스트에서 둘 다 세울 수 있다 — 발급 실패를
- * DB 쪽에서 만들려면 테이블을 지워야 하는데, 컨테이너와 스키마를 다른 IT와 공유하므로 그럴 수 없다.
+ * <p><b>{@code @SpyBean}인 이유.</b> 앞의 셋은 진짜 발급이 돌아야 하고 나머지 둘은 발급을 붙잡아야
+ * 한다. 스파이는 기본이 진짜 동작이라 한 컨텍스트에서 셋 다 세울 수 있다 — 발급 실패를 DB 쪽에서
+ * 만들려면 테이블을 지워야 하는데, 컨테이너와 스키마를 다른 IT와 공유하므로 그럴 수 없다.
+ *
+ * <p><b>유실 방지 테스트가 여기 붙어 있는 이유.</b> 재빌드의 순서가 "락 → 읽기 → <b>발급</b> →
+ * 홀더 교체"라, 발급기를 붙잡는 것이 곧 <em>읽기는 끝났고 교체는 아직인</em> 지점에서 재빌드를
+ * 세우는 일이다 — 유실 창을 벌리는 가장 자연스러운 래치가 이미 이 파일에 있다. 컨텍스트를 하나 더
+ * 띄우지 않으려고 새 IT를 만드는 대신 여기에 붙였다.
  */
 @SpringBootTest
 class PlaceListVersionIssuerIT extends MySqlContainerSupport {
@@ -45,11 +60,36 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
         registry.add("solply.place-stats.score-cron", () -> "-");
     }
 
+    private static final String TOWN_NAME_PREFIX = "발급IT동네";
+    private static final String PLACE_NAME = "발급IT장소";
+    private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
+    private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
+
+    /** 스레드가 서로를 기다리다 영영 멈추지 않게 하는 상한 */
+    private static final long TIMEOUT_SECONDS = 10L;
+
     @SpyBean private PlaceListVersionIssuer issuer;
     @Autowired private PlaceListSnapshotLoader loader;
+    @Autowired private PlaceListSnapshotRefresher refresher;
     @Autowired private PlaceListSnapshot snapshot;
+    @Autowired private PlaceViewHolder placeViewHolder;
+    @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private PlatformTransactionManager transactionManager;
+
+    /** 홀더에 값이 실려야 유실을 볼 수 있으므로, 사진에 들어갈 장소 하나를 심는다 */
+    private long placeId;
+
+    @BeforeEach
+    void setUp() {
+        long townId = createTown();
+        placeId = createPlace(townId);
+
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
+        batchProcessor.recalculateCounts(CALCULATED_AT);
+        batchProcessor.recalculateScores(CALCULATED_AT);
+        loader.rebuild();
+    }
 
     /**
      * <b>연속 발급은 반드시 커진다.</b> 홀더의 단조 가드({@code PlaceListSnapshot#adopt})가 이
@@ -124,6 +164,111 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
         assertThat(snapshot.current()).as("사진이 교체되지 않았다").isSameAs(held);
     }
 
+    /**
+     * <b>실제 로더가 락으로 어드민 수정을 지킨다.</b> {@code PlaceListWriteLockTest}는 목 로더 안에
+     * 락을 손으로 구현해 두므로 <em>진짜</em> {@code rebuild()}에서 락을 빼도 통과한다 — 여기가
+     * 그 구멍을 막는다.
+     *
+     * <p>재빌드를 발급 지점에서 붙잡으면 <b>읽기는 끝났고 홀더 교체는 아직인</b> 상태가 된다.
+     * 락이 없다면 이 사이에 들어온 어드민 패치가 먼저 홀더에 들어가고, 풀려난 재빌드가 <em>읽어 둔
+     * 옛 이름</em>으로 맵을 통째로 갈아 끼워 그 수정을 지운다. 락이 있으면 패치가 교체 뒤로 밀려
+     * 살아남는다.
+     */
+    @Test
+    void 재빌드가_도는_동안_들어온_표시값_패치는_유실되지_않는다() throws Exception {
+        String patched = PLACE_NAME + "_어드민수정";
+        CountDownLatch issuing = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        willAnswer(invocation -> {
+            issuing.countDown();
+            await(resume);
+            return invocation.callRealMethod();
+        }).given(issuer).issue();
+
+        FutureTask<Integer> rebuildTask = new FutureTask<>(loader::rebuild);
+        Thread rebuilding = new Thread(rebuildTask, "발급IT-재빌드");
+        rebuilding.start();
+        assertThat(issuing.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                .as("재빌드가 읽기를 끝내고 발급 앞에 섰다").isTrue();
+
+        // 재빌드가 이미 읽어 둔 뒤에 어드민이 이름을 고치고 커밋한 모양
+        jdbcTemplate.update("UPDATE places SET name = ? WHERE id = ?", patched, placeId);
+        FutureTask<Void> patchTask = new FutureTask<>(() -> {
+            refresher.patchPlaceViewAfterCommit(placeId);
+            return null;
+        });
+        Thread patching = new Thread(patchTask, "발급IT-패치");
+        patching.start();
+        // 패치가 락 앞에 실제로 줄을 섰는지 확인한 뒤에야 재빌드를 풀어 준다 —
+        // 그러지 않으면 순서가 우연히 맞아 락 없이도 통과하는 테스트가 된다
+        awaitBlocked(patching);
+        assertThat(placeViewHolder.get(placeId).name())
+                .as("패치는 아직 락 앞이라 홀더에 닿지 않았다").isNotEqualTo(patched);
+
+        resume.countDown();
+        rebuildTask.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        patchTask.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(placeViewHolder.get(placeId).name())
+                .as("재빌드의 옛 값이 어드민 수정을 덮지 않는다").isEqualTo(patched);
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("래치가 열리지 않았다");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** {@code ReentrantLock}은 park로 기다리므로 상태가 {@code WAITING}이 된다 */
+    private static void awaitBlocked(Thread thread) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        while (System.nanoTime() < deadline) {
+            Thread.State state = thread.getState();
+            if (state == Thread.State.WAITING || state == Thread.State.BLOCKED) {
+                return;
+            }
+            if (state == Thread.State.TERMINATED) {
+                throw new IllegalStateException("패치 스레드가 락을 기다리지 않고 끝났다");
+            }
+            Thread.sleep(5);
+        }
+        throw new IllegalStateException("패치 스레드가 락을 기다리지 않았다");
+    }
+
+    private long createTown() {
+        jdbcTemplate.update("INSERT INTO towns (name, parent_id, active) VALUES (?, NULL, true)",
+                TOWN_NAME_PREFIX + System.nanoTime());
+        return jdbcTemplate.queryForObject("SELECT MAX(id) FROM towns", Long.class);
+    }
+
+    private long createPlace(long townId) {
+        jdbcTemplate.update("""
+                INSERT INTO places (name, introduction, town_id, active, created_at)
+                VALUES (?, '발급IT', ?, true, ?)""", PLACE_NAME, townId, PLACE_CREATED_AT);
+        return jdbcTemplate.queryForObject("SELECT MAX(id) FROM places", Long.class);
+    }
+
+    /** {@code PlaceListSnapshotLoaderIT}과 같은 이유·같은 방식의 뒷정리 */
+    @AfterAll
+    static void cleanUpCommittedFixtures() throws Exception {
+        String myTowns = "SELECT id FROM towns WHERE name LIKE '" + TOWN_NAME_PREFIX + "%'";
+        String myPlaces = "SELECT id FROM places WHERE town_id IN (" + myTowns + ")";
+        try (Connection con = DriverManager.getConnection(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+                Statement st = con.createStatement()) {
+            st.executeUpdate("DELETE FROM place_stats");
+            st.executeUpdate("DELETE FROM place_images WHERE place_id IN (" + myPlaces + ")");
+            st.executeUpdate("DELETE FROM courses WHERE town_id IN (" + myTowns + ")");
+            st.executeUpdate("DELETE FROM places WHERE town_id IN (" + myTowns + ")");
+            st.executeUpdate("DELETE FROM towns WHERE name LIKE '" + TOWN_NAME_PREFIX + "%'");
+        }
+    }
+
     private long lastIssuedVersion() {
         Long max = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(MAX(id), 0) FROM place_list_snapshot_versions", Long.class);
@@ -132,7 +277,7 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
 
     /** 컨테이너에 직접 연 커넥션 — 진행 중인 스프링 트랜잭션과 아무 관계가 없다 */
     private boolean existsOnOwnConnection(long version) {
-        try (Connection connection = java.sql.DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement statement = connection.createStatement();
                 ResultSet rs = statement.executeQuery(
