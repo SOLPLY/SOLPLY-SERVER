@@ -94,8 +94,16 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private long placeOptionTagOnly;
     /** 첫 이미지의 파일 키가 비어 있다 — 썸네일은 null이고 <b>둘째 이미지로 넘어가지 않는다</b> */
     private long placeBlankKey;
+    /**
+     * MAIN 태그가 둘인 비정상 데이터 — 뽑히는 것은 <b>{@code place_tag.id}가 작은 쪽</b>이다.
+     * 먼저 붙인 쪽이 태그 id는 더 크고 활성도 아니라, 규칙이 태그 id 순으로 갈리거나 쿼리에
+     * {@code t.active = 1}이 끼면 여기서 드러난다.
+     */
+    private long placeTwoMainTags;
 
     private String mainTagName;
+    /** {@link #placeTwoMainTags}에 먼저 붙인 태그 = 뽑혀야 하는 쪽 */
+    private long firstLinkedMainTagId;
 
     @BeforeEach
     void setUp() {
@@ -114,7 +122,8 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
         placeInactiveTag = createPlace("엔트리C", true);
         insertImage(placeInactiveTag, "엔트리C_이미지", 1);
-        linkTag(placeInactiveTag, createTag("MAIN", false));
+        long inactiveMainTag = createTag("MAIN", false);
+        linkTag(placeInactiveTag, inactiveMainTag);
 
         placeOptionTagOnly = createPlace("엔트리D", true);
         insertImage(placeOptionTagOnly, "엔트리D_이미지", 1);
@@ -123,6 +132,15 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         placeBlankKey = createPlace("엔트리E", true);
         insertImage(placeBlankKey, "", 1);
         insertImage(placeBlankKey, "엔트리E_2번이미지", 2);
+
+        // 태그 id가 큰 쪽(= 나중에 만든 비활성 MAIN)을 먼저 붙인다. 새 태그를 만들지 않고 이미
+        // 있는 둘을 재활용하는 것은 <b>비트마스크 상한(id 62) 예산</b> 때문이다 — 이 클래스는
+        // 테스트마다 픽스처를 새로 심고 tag id는 MAX(id)+1로 올라가므로, 태그를 늘리면 회차가
+        // 쌓여 상한에 닿는다.
+        placeTwoMainTags = createPlace("엔트리F", true);
+        linkTag(placeTwoMainTags, inactiveMainTag);
+        linkTag(placeTwoMainTags, activeMainTag);
+        firstLinkedMainTagId = inactiveMainTag;
 
         // 행을 짓는 것은 운영에서 어드민 쓰기 트랜잭션의 몫이고 배치는 값 칸만 정한다 —
         // 어드민 경로를 거치지 않는 이 픽스처는 원본 재구축 문장으로 그 자리를 채운다.
@@ -138,6 +156,9 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
      */
     @Test
     void 홀더의_표시값은_엔티티_경로가_만드는_값과_같다() {
+        // placeTwoMainTags는 빠진다 — 엔티티 경로의 bag 순서는 fetch join에 ORDER BY가 없어
+        // DB가 고른 인덱스 순(= tag id 순)이고, 캐시는 place_tag.id 순이다. MAIN이 둘인 비정상
+        // 데이터에서만 갈리는 차이라 여기서는 겨누지 않는다(캐시 두 경로의 일치는 아래에서 문다).
         for (long placeId :
                 List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey)) {
             assertThat(displayOf(placeId))
@@ -165,6 +186,28 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         // MAIN이 아닌 태그만 가진 장소가 사진에서 사라지면 안 된다
         // (태그 조건을 파생 테이블이 아니라 바깥 WHERE로 올리면 여기가 깨진다)
         assertThat(entryOf(placeOptionTagOnly)).isNotNull();
+    }
+
+    /**
+     * <b>MAIN 태그가 둘이면 {@code place_tag.id}가 작은 쪽이 뽑힌다.</b> 먼저 붙인 쪽은 태그 id가
+     * 더 크고 활성도 아니므로, 정렬을 태그 id 순으로 바꾸거나 활성 조건을 끼워 넣으면 여기서
+     * 드러난다.
+     *
+     * <p><b>겨누는 것은 캐시 두 경로(전량·{@code readView})의 일치</b>다. 엔티티 경로는 정본이
+     * 아니다 — fetch join에 ORDER BY가 없어 bag 순서가 DB가 고른 인덱스 순이고, 지금 스키마에서는
+     * 그것이 태그 id 순이라 여기와 갈린다. MAIN이 둘인 것 자체가 비정상 데이터라 어느 쪽이 옳다고
+     * 정할 자리가 아니고, 대신 <b>캐시 안에서는 두 경로가 반드시 같은 답</b>을 내야 한다.
+     *
+     * <p>장소 하나가 행 둘을 내는 자리이기도 하다 — 로더가 직전 id 비교로 접지 않으면 같은 장소가
+     * 정렬 배열에 두 번 선다.
+     */
+    @Test
+    void MAIN_태그가_둘이면_place_tag_id가_작은_쪽이_대표다() {
+        assertThat(viewOf(placeTwoMainTags).mainTagId()).isEqualTo(firstLinkedMainTagId);
+        assertThat(loader.readView(placeTwoMainTags))
+                .as("패치 경로도 같은 쪽을 뽑는다")
+                .contains(viewOf(placeTwoMainTags));
+        assertThat(entryCountOf(placeTwoMainTags)).as("행이 둘이어도 엔트리는 하나다").isEqualTo(1);
     }
 
     /** 썸네일은 {@code display_order}가 가장 앞선 이미지다 — 삽입 순서가 아니다 */
@@ -195,7 +238,8 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     @Test
     void readView는_전량_재빌드와_같은_표시값을_낸다() {
         for (long placeId :
-                List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey)) {
+                List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey,
+                        placeTwoMainTags)) {
             assertThat(loader.readView(placeId))
                     .as("placeId=%d", placeId)
                     .contains(viewOf(placeId));
@@ -273,6 +317,16 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
                 .stream()
                 .filter(entry -> entry.placeId() == placeId)
                 .findFirst().orElse(null);
+    }
+
+    /** 같은 장소의 엔트리가 몇 개인지 — MAIN 태그가 둘인 장소가 두 번 서면 안 된다 */
+    private long entryCountOf(long placeId) {
+        return snapshot.current().index()
+                .page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
+                        null, Integer.MAX_VALUE - 1)
+                .stream()
+                .filter(entry -> entry.placeId() == placeId)
+                .count();
     }
 
     /** 표시값은 사진이 아니라 홀더에 있다 — 조회 경로가 조립하는 자리와 같은 곳에서 읽는다 */

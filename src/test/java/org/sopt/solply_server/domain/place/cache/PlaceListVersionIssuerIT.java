@@ -61,6 +61,7 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     }
 
     private static final String TOWN_NAME_PREFIX = "발급IT동네";
+    private static final String TAG_NAME_PREFIX = "발급IT태그";
     private static final String PLACE_NAME = "발급IT장소";
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
@@ -73,17 +74,21 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     @Autowired private PlaceListSnapshotRefresher refresher;
     @Autowired private PlaceListSnapshot snapshot;
     @Autowired private PlaceViewHolder placeViewHolder;
+    @Autowired private TagViewHolder tagViewHolder;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private PlatformTransactionManager transactionManager;
 
     /** 홀더에 값이 실려야 유실을 볼 수 있으므로, 사진에 들어갈 장소 하나를 심는다 */
     private long placeId;
+    /** 태그 홀더 쪽도 같은 이유로 하나 심는다 */
+    private long tagId;
 
     @BeforeEach
     void setUp() {
         long townId = createTown();
         placeId = createPlace(townId);
+        tagId = createTag();
 
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
@@ -149,19 +154,34 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>발급이 실패하면 사진은 직전 회차 그대로다.</b> 재빌드 실패의 기존 정책이 그대로 적용되는
-     * 자리다 — 여기서 밀리초 시각 같은 폴백을 두면 번호 공간이 둘로 섞여, 한 번의 폴백이 그 뒤
-     * 실제 발급 번호를 전부 "낡은 버전"으로 만든다.
+     * <b>발급이 실패하면 회차가 통째로 직전 그대로다 — 사진도, 홀더 둘도.</b> 재빌드 실패의 기존
+     * 정책이 그대로 적용되는 자리다 — 여기서 밀리초 시각 같은 폴백을 두면 번호 공간이 둘로 섞여,
+     * 한 번의 폴백이 그 뒤 실제 발급 번호를 전부 "낡은 버전"으로 만든다.
+     *
+     * <p>사진만 보면 절반짜리 단언이다. 홀더 교체가 발급보다 <em>앞</em>으로 밀리면 사진은 그대로인데
+     * 이름·썸네일만 새 회차의 것이 되고, 그 어긋남은 아무 오류도 내지 않는다. 그래서 발급이 성공했다면
+     * 홀더가 갈렸을 변경을 미리 커밋해 두고, 그 값이 <b>들어오지 않았음</b>을 확인한다.
      */
     @Test
-    void 발급이_실패하면_직전_사진이_남는다() {
+    void 발급이_실패하면_직전_회차가_사진과_홀더까지_남는다() {
         loader.rebuild();
-        PlaceListPhoto held = snapshot.current();
+        PlaceListPhoto heldPhoto = snapshot.current();
+        PlaceView heldPlaceView = placeViewHolder.get(placeId);
+        TagView heldTagView = tagViewHolder.get(tagId);
+
+        jdbcTemplate.update(
+                "UPDATE places SET name = ? WHERE id = ?", PLACE_NAME + "_갈릴이름", placeId);
+        jdbcTemplate.update(
+                "UPDATE tags SET name = ? WHERE id = ?", TAG_NAME_PREFIX + "_갈릴이름", tagId);
         willThrow(new IllegalStateException("발급 실패")).given(issuer).issue();
 
         assertThatThrownBy(loader::rebuild).isInstanceOf(IllegalStateException.class);
 
-        assertThat(snapshot.current()).as("사진이 교체되지 않았다").isSameAs(held);
+        assertThat(snapshot.current()).as("사진이 교체되지 않았다").isSameAs(heldPhoto);
+        assertThat(placeViewHolder.get(placeId))
+                .as("장소 표시값도 직전 값 그대로다").isEqualTo(heldPlaceView);
+        assertThat(tagViewHolder.get(tagId))
+                .as("태그 표시값도 직전 값 그대로다").isEqualTo(heldTagView);
     }
 
     /**
@@ -253,6 +273,17 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
         return jdbcTemplate.queryForObject("SELECT MAX(id) FROM places", Long.class);
     }
 
+    /** 태그 id가 곧 비트마스크의 자리라 auto-increment에 맡기지 않는다 (V34) */
+    private long createTag() {
+        Long newId = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM tags", Long.class);
+        jdbcTemplate.update("""
+                INSERT INTO tags (id, name, type, parent_id, active, tag_usage)
+                VALUES (?, ?, 'MAIN', NULL, true, 'PLACE')""",
+                newId, TAG_NAME_PREFIX + newId);
+        return newId;
+    }
+
     /** {@code PlaceListSnapshotLoaderIT}과 같은 이유·같은 방식의 뒷정리 */
     @AfterAll
     static void cleanUpCommittedFixtures() throws Exception {
@@ -265,6 +296,7 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
             st.executeUpdate("DELETE FROM place_images WHERE place_id IN (" + myPlaces + ")");
             st.executeUpdate("DELETE FROM courses WHERE town_id IN (" + myTowns + ")");
             st.executeUpdate("DELETE FROM places WHERE town_id IN (" + myTowns + ")");
+            st.executeUpdate("DELETE FROM tags WHERE name LIKE '" + TAG_NAME_PREFIX + "%'");
             st.executeUpdate("DELETE FROM towns WHERE name LIKE '" + TOWN_NAME_PREFIX + "%'");
         }
     }
