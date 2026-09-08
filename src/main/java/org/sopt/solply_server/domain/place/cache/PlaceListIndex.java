@@ -13,7 +13,9 @@ import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.TagMasks;
 
 /**
- * 목록 <b>한 회차의 사진</b> — 장소별 목록 값 전부와, (정적 정렬 다섯 × 동네)별 <b>사전 정렬 배열</b>.
+ * 목록 <b>한 회차의 사진</b> — 장소별 <b>순서·정렬 값·좌표·태그 비트마스크</b>와, (정적 정렬 다섯 ×
+ * 동네)별 <b>사전 정렬 배열</b>. 이름·썸네일·대표 태그 같은 표시값은 여기 없다. 사진 밖 홀더
+ * ({@link PlaceViewHolder}·{@link TagViewHolder})에 한 벌로 살면서 어드민 수정 때 그 항목만 갈린다.
  * 만들어진 뒤에는 아무것도 바뀌지 않으며, 갱신은 {@link PlaceListSnapshot}의 참조 교체 한 번이다.
  *
  * <p><b>이 클래스의 계약은 하나다 — 순서가 DB와 같아야 한다.</b> 아래 {@link Axis}의 비교자는
