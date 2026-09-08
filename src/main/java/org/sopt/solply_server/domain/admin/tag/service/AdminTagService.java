@@ -25,9 +25,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * <b>태그 쓰기는 거의 목록 사진에 닿지 않는다.</b> 목록이 태그에서 읽는 것은 이름과 활성
- * 여부뿐이고 그 둘은 배열 밖 태그 맵에 있으므로, 여기서는 <em>언제나</em> 맵을 고친다 — 규칙이
- * 하나라 생성도 예외를 두지 않는다.
+ * <b>태그 쓰기는 커밋 후 태그 맵을 통째로 다시 읽는다(수십 행).</b> 목록이 태그에서 읽는 것은
+ * 이름과 활성 여부뿐이고 그 둘은 배열 밖 태그 맵에 있다. <b>어느 태그가 바뀌었는지 모으지
+ * 않는다</b> — 쓰기 경로마다 훅 한 번이면 되고, 비활성 캐스케이드처럼 한 요청이 여러 태그를
+ * 건드려도 셀 것이 없다.
  *
  * <p><b>태그 쓰기는 재빌드를 걸지 않는다.</b> 사진에 실리는 태그 값은 대표 태그 id 하나뿐인데
  * 그것을 흔드는 유일한 수정이 타입 변경이고, 그것은 {@link #updateTag}에서 거부한다 — 대표 태그가
@@ -46,7 +47,7 @@ public class AdminTagService {
     private final AdminEntityLoader adminEntityLoader;
     private final AdminTagValidator adminTagValidator;
     private final EntityManager entityManager;
-    /** 태그 표시값을 <b>커밋 뒤에</b> 맵에 넣는다 — 시점의 근거는 리프레셔 javadoc */
+    /** 태그 맵을 <b>커밋 뒤에</b> 다시 읽게 한다 — 시점의 근거는 리프레셔 javadoc */
     private final PlaceListSnapshotRefresher placeListSnapshotRefresher;
 
     /**
@@ -93,7 +94,7 @@ public class AdminTagService {
             throw new BusinessException(ErrorCode.TAG_ID_BIT_LIMIT_EXCEEDED);
         }
 
-        placeListSnapshotRefresher.patchTagViewAfterCommit(tagId);
+        placeListSnapshotRefresher.refreshTagViewsAfterCommit();
         return tagId;
     }
 
@@ -151,7 +152,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        placeListSnapshotRefresher.patchTagViewAfterCommit(id);
+        placeListSnapshotRefresher.refreshTagViewsAfterCommit();
         return id;
     }
 
@@ -170,7 +171,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        placeListSnapshotRefresher.patchTagViewAfterCommit(id);
+        placeListSnapshotRefresher.refreshTagViewsAfterCommit();
         return AdminTagActivationResponse.of(id, req.active());
     }
 
@@ -189,18 +190,16 @@ public class AdminTagService {
     }
 
     /**
-     * <b>내려간 자식도 하나하나 맵에 넣는다.</b> 목록이 대표 태그 이름을 비우는 판정은 맵의
-     * {@code active}로 이뤄지므로, 부모만 넣고 자식을 빠뜨리면 그 자식이 대표인 장소는 다음 전량
-     * 재빌드(≤10분)까지 <b>내려간 태그의 이름을 계속 달고</b> 나가면서 아무 오류도 내지 않는다.
-     *
-     * <p>훅을 여러 번 부르는 값은 없다 — 리프레셔가 트랜잭션당 모아 커밋 뒤 한 번에 넣는다.
+     * <b>여기서는 훅을 부르지 않는다.</b> 함께 내려간 자식도 맵에 반영돼야 하지만 — 목록이 대표
+     * 태그 이름을 비우는 판정이 맵의 {@code active}로 이뤄지므로 빠뜨리면 그 자식이 대표인 장소는
+     * 다음 타이머 회차(≤10분)까지 내려간 태그의 이름을 계속 달고 나간다 — 진입 메서드의 훅 하나가
+     * 맵을 통째로 다시 읽으므로 자식을 따로 셀 것이 없다.
      */
     private void deactivateCascade(Long parentId) {
         List<Tag> children = adminTagRepository.findChildren(parentId);
         for (Tag child : children) {
             if (child.isActive()) {
                 child.setActive(false);
-                placeListSnapshotRefresher.patchTagViewAfterCommit(child.getId());
                 deactivateCascade(child.getId());
             }
         }

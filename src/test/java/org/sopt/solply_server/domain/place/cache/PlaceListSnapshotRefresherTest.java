@@ -2,13 +2,13 @@ package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +22,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * 어드민 커밋 훅의 계약 — <b>언제 짓는가 · 무엇을 짓는가 · 몇 번 짓는가 · 실패하면 어떻게
- * 되는가</b>. 갱신이 둘(전량 재생성 · 표시값 패치)로 갈렸으므로 "무엇을"이 함께 걸린다.
+ * 되는가</b>. 갱신이 셋(전량 재생성 · 장소 표시값 패치 · 태그 맵 다시 읽기)으로 갈렸으므로
+ * "무엇을"이 함께 걸린다.
  *
  * <p>로더를 목으로 두는 것이 요점이다. 이 파일이 보는 것은 재생성의 <em>내용</em>이 아니라 그것을
  * 거는 <em>타이밍</em>이고, 실제 사진이 맞는지는 {@code PlaceListSnapshotLoaderIT}가 따로 문다.
@@ -121,17 +122,18 @@ class PlaceListSnapshotRefresherTest {
     }
 
     /**
-     * <b>표시값 패치는 전량 재생성을 부르지 않는다.</b> 그것이 이 훅을 따로 둔 이유 전부다 —
+     * <b>표시값 갱신은 전량 재생성을 부르지 않는다.</b> 그것이 이 훅들을 따로 둔 이유 전부다 —
      * 이름 하나 고치는 데 전량 스캔이 돌면 분리한 값이 사라진다.
      */
     @Test
-    void 표시값_패치는_그_항목만_갈고_전량_재생성을_부르지_않는다() {
+    void 표시값_갱신은_사진을_다시_찍지_않는다() {
         given(loader.readView(7L)).willReturn(Optional.of(new PlaceView(7L, "새 이름", null, 3L)));
-        given(loader.readTagView(3L)).willReturn(Optional.of(new TagView(3L, "새 태그 이름", true)));
+        given(loader.readTagViews())
+                .willReturn(Map.of(3L, new TagView(3L, "새 태그 이름", true)));
         TransactionSynchronizationManager.initSynchronization();
 
         refresher.patchPlaceViewAfterCommit(7L);
-        refresher.patchTagViewAfterCommit(3L);
+        refresher.refreshTagViewsAfterCommit();
         fireAfterCommit();
 
         assertThat(placeViewHolder.get(7L).name()).isEqualTo("새 이름");
@@ -140,26 +142,26 @@ class PlaceListSnapshotRefresherTest {
     }
 
     /**
-     * <b>전량과 패치가 한 트랜잭션에 걸리면 전량 하나만 돈다.</b> 전량 재생성이 표시값 맵도 다시
-     * 지으므로 패치는 같은 일을 한 번 더 하는 것이고, 그 사이 원본이 또 바뀌면 <em>더 낡은</em>
-     * 값을 덮어쓸 수도 있다.
+     * <b>훅은 서로 병합하지 않는다.</b> 한 트랜잭션에 여럿이 걸리면 각자 돈다. 접는 것은 전량
+     * 재생성 하나뿐이고, 그 이유는 어드민 요청 하나가 쓰기 경로를 여러 번 지나가는 경로가 실제로
+     * 있어서다 — 나머지는 두 번 불려도 같은 값을 두 번 넣을 뿐이라 셀 값어치가 없다.
      */
     @Test
-    void 전량과_패치가_함께_걸리면_전량만_돈다() {
+    void 한_트랜잭션에_여러_훅이_걸리면_각자_돈다() {
+        given(loader.readView(7L)).willReturn(Optional.of(new PlaceView(7L, "새 이름", null, 3L)));
+        given(loader.readTagViews())
+                .willReturn(Map.of(3L, new TagView(3L, "새 태그 이름", true)));
         TransactionSynchronizationManager.initSynchronization();
 
         refresher.patchPlaceViewAfterCommit(7L);
         refresher.refreshAfterCommit();
-        refresher.patchTagViewAfterCommit(3L);
-
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
-
+        refresher.refreshTagViewsAfterCommit();
+        refresher.refreshAfterCommit();
         fireAfterCommit();
 
         verify(loader, times(1)).rebuild();
-        verify(loader, never()).readView(anyLong());
-        verify(loader, never()).readTagView(anyLong());
-        assertThat(tagViewHolder.get(3L)).isNull();
+        verify(loader).readView(7L);
+        verify(loader).readTagViews();
     }
 
     /**
@@ -176,26 +178,31 @@ class PlaceListSnapshotRefresherTest {
     }
 
     /**
-     * <b>태그 패치도 값이 아니라 id를 들고 다닌다.</b> 값을 실어 나르면 A가 커밋한 뒤 put 하기 전에
-     * B가 커밋·put 한 경우 A의 옛 값이 최신을 덮는다 — 락 안에서 다시 읽는 것이 그 창을 없앤다.
+     * <b>태그 훅은 어느 태그가 바뀌었는지 받지 않는다.</b> 락 안에서 맵을 통째로 다시 읽어 교체하므로
+     * 값을 실어 나를 일이 없고 — 그러면 A가 커밋한 뒤 put 하기 전에 B가 커밋·put 한 경우 A의 옛
+     * 값이 최신을 덮는다 — 여러 태그가 함께 바뀌어도 셀 것이 없다.
      */
     @Test
-    void 태그_패치는_락_안에서_DB를_다시_읽은_값을_넣는다() {
-        given(loader.readTagView(3L)).willReturn(Optional.of(new TagView(3L, "DB의 최신 이름", false)));
+    void 태그_훅은_맵을_통째로_다시_읽은_것으로_교체한다() {
+        given(loader.readTagViews()).willReturn(Map.of(
+                3L, new TagView(3L, "DB의 최신 이름", false),
+                4L, new TagView(4L, "함께 내려간 자식", false)));
 
-        refresher.patchTagViewAfterCommit(3L);
+        refresher.refreshTagViewsAfterCommit();
 
         assertThat(tagViewHolder.get(3L)).isEqualTo(new TagView(3L, "DB의 최신 이름", false));
+        assertThat(tagViewHolder.get(4L)).isEqualTo(new TagView(4L, "함께 내려간 자식", false));
     }
 
-    /** 태그 행이 사라졌으면 장소 쪽과 같은 이유로 아무것도 하지 않는다 */
+    /** 통째로 교체하므로 사라진 태그는 맵에서도 사라진다 — 단건 put에는 없던 성질이다 */
     @Test
-    void 태그가_사라졌으면_태그_맵을_건드리지_않는다() {
-        given(loader.readTagView(3L)).willReturn(Optional.empty());
+    void 태그가_사라졌으면_맵에서도_빠진다() {
+        given(loader.readTagViews()).willReturn(Map.of(3L, new TagView(3L, "남은 태그", true)));
+        tagViewHolder.replaceAll(Map.of(9L, new TagView(9L, "삭제될 태그", true)));
 
-        refresher.patchTagViewAfterCommit(3L);
+        refresher.refreshTagViewsAfterCommit();
 
-        assertThat(tagViewHolder.get(3L)).isNull();
+        assertThat(tagViewHolder.get(9L)).isNull();
     }
 
     /** 패치 실패도 전량과 같은 격리를 받는다 — 어드민 요청이 캐시 때문에 500이 되면 안 된다 */

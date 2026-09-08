@@ -24,8 +24,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 목록 캐시 세 벌 — 회차 사진({@link PlaceListSnapshot}) · 장소 표시값({@link PlaceViewHolder}) ·
  * 태그 표시값({@link TagViewHolder}) — 을 짓는 <b>유일한</b> 곳. 전량 진입점은 {@link #rebuild()}
  * 하나이고, 그것을 부르는 것은 {@link PlaceListSnapshotScheduler}(기동 한 번 · 10분 주기)와
- * {@link PlaceListSnapshotRefresher}(어드민 커밋 뒤) 둘이다. 표시값 한 건만 다시 읽는
- * {@link #readView(long)}·{@link #readTagView(long)}은 어드민 패치 훅이 쓴다.
+ * {@link PlaceListSnapshotRefresher}(어드민 커밋 뒤) 둘이다. 어드민 훅은 그 밖에
+ * {@link #readView(long)}(장소 한 건)과 {@link #readTagViews()}(태그 전량)도 쓴다.
  *
  * <p><b>쿼리가 세 문장인 것이 이 클래스의 전부다.</b>
  * <ul>
@@ -175,13 +175,6 @@ public class PlaceListSnapshotLoader {
             FROM tags t
             """;
 
-    /** 태그 하나 — 전량({@link #TAG_SOURCE_SQL})과 같은 SELECT 목록에 조건만 붙인 것이다 */
-    private static final String SINGLE_TAG_VIEW_SQL = """
-            SELECT t.id, t.name, t.active
-            FROM tags t
-            WHERE t.id = :tagId
-            """;
-
     /**
      * 장소 하나의 표시값 — 전량 재빌드와 <b>같은 규칙</b>을 상관 서브쿼리 둘로 옮긴 것이다
      * (첫 MAIN 태그는 {@code place_tag.id} 오름차순, 썸네일은 {@code display_order} 오름차순 +
@@ -305,23 +298,6 @@ public class PlaceListSnapshotLoader {
                 toNullableLong(row[1])));
     }
 
-    /**
-     * 태그 하나의 표시값을 다시 읽는다. 장소 쪽 {@link #readView(long)}과 <b>같은 이유로</b>
-     * 있는 메서드다 — 어드민이 만든 값을 그대로 실어 나르면 커밋과 홀더 {@code put} 사이가 벌어진
-     * 사이에 남이 커밋한 최신 이름을 옛 이름이 덮는다. 락 안에서 DB를 다시 읽으면 그 창이 없다.
-     *
-     * @return 태그 행이 없으면 {@code empty} — 호출자는 맵을 건드리지 않는다
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public Optional<TagView> readTagView(long tagId) {
-        List<Object[]> rows = readSingleTagViewRow(tagId);
-        if (rows.isEmpty()) {
-            return Optional.empty();
-        }
-        Object[] row = rows.get(0);
-        return Optional.of(new TagView(tagId, (String) row[1], toBoolean(row[2])));
-    }
-
     /** 문장 ①이 한 번에 낳는 두 벌 — 순서 값과 표시값이다 */
     private record Source(List<PlaceListEntry> entries, Map<Long, PlaceView> views) {}
 
@@ -376,7 +352,17 @@ public class PlaceListSnapshotLoader {
         return urlByPlaceId;
     }
 
-    private Map<Long, TagView> readTagViews() {
+    /**
+     * 태그 표시값 전량. 재빌드가 쓰는 것과 <b>같은 메서드</b>를 어드민 태그 훅도 쓴다
+     * ({@link PlaceListSnapshotRefresher#refreshTagViewsAfterCommit}) — 태그는 수십 행이라 어느
+     * 것이 바뀌었는지 모아 단건으로 읽을 값어치가 없고, 규칙이 하나면 두 경로가 갈릴 자리도 없다.
+     *
+     * <p>{@code @Transactional}은 훅에서 들어오는 <b>바깥 호출</b>을 위한 것이다.
+     * {@link #rebuildInLock()}은 자기 호출이라 어노테이션이 무시되고 이미 열린 읽기 트랜잭션
+     * 안에서 도는데, 그것이 의도한 모양이다 — 세 문장이 한 트랜잭션을 함께 쓴다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public Map<Long, TagView> readTagViews() {
         List<Object[]> rows = readTagSource();
         Map<Long, TagView> views = new HashMap<>(rows.size() * 2);
         for (Object[] row : rows) {
@@ -405,13 +391,6 @@ public class PlaceListSnapshotLoader {
     private List<Object[]> readSingleViewRow(long placeId) {
         return em.createNativeQuery(SINGLE_VIEW_SQL)
                 .setParameter("placeId", placeId)
-                .getResultList();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Object[]> readSingleTagViewRow(long tagId) {
-        return em.createNativeQuery(SINGLE_TAG_VIEW_SQL)
-                .setParameter("tagId", tagId)
                 .getResultList();
     }
 

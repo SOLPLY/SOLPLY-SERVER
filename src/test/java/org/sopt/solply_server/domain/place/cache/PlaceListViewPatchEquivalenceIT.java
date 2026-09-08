@@ -36,8 +36,9 @@ import org.springframework.test.context.DynamicPropertySource;
  * 해도 그린이므로, 패치가 실제로 값을 옮겼다는 것은 값으로도 못 박는다.
  *
  * <p><b>겨누는 갈림길 넷.</b> 장소 이름 · 썸네일(더 앞선 {@code display_order}로 갈아 끼운다) ·
- * 태그 이름 · 태그 활성. 앞의 둘은 {@code PlaceViewHolder}가, 뒤의 둘은 {@code TagViewHolder}가
- * 받는다 — 태그 쪽은 <b>장소를 하나도 건드리지 않고</b> 목록에 닿는 경로라 따로 겨눈다.
+ * 태그 이름 · 태그 활성. 앞의 둘은 {@code PlaceViewHolder}가 장소 단위로 받고, 뒤의 둘은
+ * {@code TagViewHolder}를 통째로 다시 읽어 받는다 — 태그 쪽은 <b>장소를 하나도 건드리지 않고</b>
+ * 목록에 닿는 경로라 따로 겨눈다.
  */
 @SpringBootTest
 class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
@@ -184,12 +185,11 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         insertImage(placeRenamed, "패치A_새이미지", 1);
         refresher.patchPlaceViewAfterCommit(placeRenamed);
 
+        // 태그 둘을 고치고 훅은 한 번 — 맵을 통째로 다시 읽으므로 어느 태그가 바뀌었는지 넘기지 않는다
         String renamed = TAG_NAME_PREFIX + "수정";
         jdbcTemplate.update("UPDATE tags SET name = ? WHERE id = ?", renamed, renamedTagId);
-        refresher.patchTagViewAfterCommit(renamedTagId);
-
         jdbcTemplate.update("UPDATE tags SET active = false WHERE id = ?", disabledTagId);
-        refresher.patchTagViewAfterCommit(disabledTagId);
+        refresher.refreshTagViewsAfterCommit();
     }
 
     /**
