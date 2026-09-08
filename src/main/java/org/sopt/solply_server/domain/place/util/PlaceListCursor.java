@@ -37,8 +37,9 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  * 스크롤 세션이 그 교체를 넘으면 다음 페이지가 다른 회차에서 재개돼 항목이 흘리거나 겹친다.
  * 그래서 커서가 <b>자기가 시작한 회차의 버전</b>을 싣고 다니고, 서버는 그 버전의 사진으로만 이어
  * 서빙한다. 보존은 캐시가 들고 있는 최근 3장뿐이며({@code PlaceListSnapshot}) 그 밖의 버전은
- * {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다. DB에는 아무것도 남지 않는다 — 버전은 사진을 찍은
- * 인스턴스의 메모리에만 있다.
+ * {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다. 번호 자체는 DB 발급 테이블에서 나오지만
+ * ({@code PlaceListVersionIssuer}) 그 번호가 가리키는 <b>사진</b>은 그것을 찍은 인스턴스의
+ * 메모리에만 있다.
  *
  * <p><b>v3의 세대와 혼동하지 말 것.</b> 세대는 인기 점수 <b>배치</b>가 좌표계를 통째로 바꾸는 문제의
  * 장치였고, 배치를 새벽 01:00 1회로 내려 그 창이 트래픽 최저 시각의 수 초로 줄면서 걷어냈다(v4).

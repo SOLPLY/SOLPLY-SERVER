@@ -15,7 +15,7 @@ class PlaceListCursorTest {
     /** 필터 지문이 검증 대상이 아닌 테스트가 쓰는 값. 네 축이 전부 채워진 형태다. */
     private static final String FILTER_PRINT = "10|20|1,2|3";
 
-    /** 회차 버전이 검증 대상이 아닌 테스트가 쓰는 값. 교체 시각(ms)이라 큰 수다 */
+    /** 회차 버전이 검증 대상이 아닌 테스트가 쓰는 값. 발급 번호라 자릿수에 의미는 없다 */
     private static final long VERSION = 1_767_225_600_000L;
 
     private static PlaceListCursor cursor(double sortKey, long placeId) {

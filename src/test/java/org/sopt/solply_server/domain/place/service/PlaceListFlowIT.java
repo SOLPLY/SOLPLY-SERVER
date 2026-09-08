@@ -1019,18 +1019,12 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 회차 하나 — 지금 DB의 상태로 사진을 다시 찍는다. 운영에서 이 자리를 채우는 것은 10분 주기
      * 타이머이고, 여기서 이 호출을 생략한 조회는 <b>이전 회차의 사진</b>을 본다.
      *
-     * <p><b>1ms를 재우는 이유.</b> 회차 버전이 빌드가 끝난 시각(ms)이라 같은 밀리초에 두 번 찍으면
-     * 두 회차가 같은 버전을 갖고, 그러면 나중 사진이 멱등 처리로 버려져 보존 밖 판정이 흔들린다.
-     * 운영은 전량 재생성 자체가 수십~수백 ms라 일어날 수 없는 상태이므로
-     * ({@code PlaceListSnapshot#adopt}) 테스트만 그 전제를 맞춘다.
+     * <p>회차 버전이 DB 발급 테이블의 AUTO_INCREMENT 번호라({@code PlaceListVersionIssuer})
+     * 연달아 두 번 찍어도 두 회차가 같은 번호를 갖지 않는다. 그래서 여기서 회차 사이를 시간으로
+     * 벌릴 필요가 없다 — 보존 밖 판정을 세우는 테스트가 그 전제 위에 서 있다.
      */
     private void takeSnapshot() {
         snapshotLoader.rebuild();
-        try {
-            Thread.sleep(1);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 
     /** place_stats에 이 장소의 행이 있는가 — 인기순 노출 여부의 물리적 근거다 */
