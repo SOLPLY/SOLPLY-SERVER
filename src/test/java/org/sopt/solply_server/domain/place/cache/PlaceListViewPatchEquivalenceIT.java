@@ -74,6 +74,8 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     private long placeTagRenamed;
     /** 태그가 비활성으로 내려가는 장소 — 대표 태그 이름이 사라져야 한다 */
     private long placeTagDisabled;
+    /** {@code display_order}가 같은 이미지 둘 — 두 경로가 같은 값을 골라야 한다 */
+    private long placeTiedOrder;
 
     private long renamedTagId;
     private long disabledTagId;
@@ -93,6 +95,12 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         disabledTagId = createTag("MAIN", true);
         placeTagDisabled = createPlace("패치C");
         linkTag(placeTagDisabled, disabledTagId);
+
+        // display_order 동률 — 삽입 순서는 값의 역순으로 두어, 타이브레이커가 없으면 전량과 단건이
+        // 서로 다른 이미지를 고를 여지를 만든다
+        placeTiedOrder = createPlace("패치D");
+        insertImage(placeTiedOrder, "패치D_이미지B", 1);
+        insertImage(placeTiedOrder, "패치D_이미지A", 1);
 
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
@@ -134,6 +142,24 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
                 .isEqualTo(TAG_NAME_PREFIX + "수정");
         assertThat(previewOf(previews, placeTagDisabled).primaryTag())
                 .as("비활성 태그는 이름을 싣지 않는다").isNull();
+    }
+
+    /**
+     * <b>{@code display_order}가 같으면 값이 작은 키를 고른다 — 전량도 단건도.</b>
+     * {@code display_order}는 중복도 NULL도 허용하고 MySQL의 filesort는 안정 정렬이 아니라,
+     * 타이브레이커가 없으면 두 경로가 다른 이미지를 골라 "패치된 뒤"와 "다음 회차 뒤"의 썸네일이
+     * 갈린다. {@code place_images}에는 대리키가 없어 타이브레이커가 값 자신이다.
+     */
+    @Test
+    void display_order가_동률이면_전량과_패치가_같은_이미지를_고른다() {
+        String expected = imageUrlProvider.getImageUrl("패치D_이미지A");
+
+        assertThat(previewOf(previews(), placeTiedOrder).thumbnailImageUrl()).isEqualTo(expected);
+
+        refresher.patchPlaceViewAfterCommit(placeTiedOrder);
+
+        assertThat(previewOf(previews(), placeTiedOrder).thumbnailImageUrl())
+                .as("패치 경로도 같은 값을 고른다").isEqualTo(expected);
     }
 
     /**

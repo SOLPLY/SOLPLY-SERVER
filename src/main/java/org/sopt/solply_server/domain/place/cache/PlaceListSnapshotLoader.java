@@ -150,13 +150,23 @@ public class PlaceListSnapshotLoader {
      * 썸네일 후보. 장소별 첫 행만 쓰므로 정렬이 곧 선택 규칙이다
      * ({@code idx_place_images_place_id_order}가 이 순서를 그대로 만든다).
      *
+     * <p><b>{@code image_file_key}가 동률의 타이브레이커다.</b> {@code display_order}는 중복도 NULL도
+     * 허용해서 그것만으로는 첫 행이 정해지지 않는데, MySQL의 filesort는 안정 정렬이 아니라 같은
+     * 키의 행 순서가 실행 계획을 따라 바뀔 수 있다. 그러면 전량과 단건({@link #SINGLE_VIEW_SQL})이
+     * 다른 이미지를 골라 "패치된 뒤"와 "다음 회차 뒤"의 썸네일이 갈린다.
+     *
+     * <p><b>행이 아니라 값을 타이브레이커로 쓴 것은 이 테이블에 대리키가 없기 때문이다.</b>
+     * {@code place_images}는 {@code @ElementCollection} 테이블이라 PK도 id 컬럼도 없다
+     * ({@code V1}). 값으로 갈라도 목적은 달성된다 — 어느 행이 뽑히든 <b>고르는 값</b>이 하나로
+     * 정해지면 두 경로가 갈리지 않는다.
+     *
      * <p>목록에 없는 장소의 이미지까지 읽는다 — places와 조인해 거르는 값이 전량 스캔보다 크지 않고,
      * 조립 단계에서 문장 ①이 준 장소 id만 꺼내 쓰므로 결과에 섞이지 않는다.
      */
     private static final String THUMBNAIL_SQL = """
             SELECT pi.place_id, pi.image_file_key
             FROM place_images pi
-            ORDER BY pi.place_id, pi.display_order
+            ORDER BY pi.place_id, pi.display_order, pi.image_file_key
             """;
 
     /** 태그 전량 — 수십 행이라 조건을 걸지 않는다. 비활성도 담는 이유는 {@link TagView} */
@@ -174,7 +184,8 @@ public class PlaceListSnapshotLoader {
 
     /**
      * 장소 하나의 표시값 — 전량 재빌드와 <b>같은 규칙</b>을 상관 서브쿼리 둘로 옮긴 것이다
-     * (첫 MAIN 태그는 {@code place_tag.id} 오름차순, 썸네일은 {@code display_order} 오름차순).
+     * (첫 MAIN 태그는 {@code place_tag.id} 오름차순, 썸네일은 {@code display_order} 오름차순 +
+     * {@code image_file_key} 타이브레이커 — 근거는 {@link #THUMBNAIL_SQL}).
      *
      * <p>{@code p.active}를 묻지 않는다. 비활성 장소의 뷰가 맵에 남아도 정렬 배열에 그 장소가
      * 없으면 화면에 닿지 않으므로 무해하고, 반대로 여기서 걸러 {@code null}을 내면 "장소가 없다"와
@@ -191,7 +202,7 @@ public class PlaceListSnapshotLoader {
                    (SELECT pi.image_file_key
                       FROM place_images pi
                      WHERE pi.place_id = p.id
-                     ORDER BY pi.display_order
+                     ORDER BY pi.display_order, pi.image_file_key
                      LIMIT 1)
             FROM places p
             WHERE p.id = :placeId
