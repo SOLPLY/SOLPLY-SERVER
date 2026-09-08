@@ -14,6 +14,8 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsRespo
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
+import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.TagView;
 import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -23,6 +25,14 @@ import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * <b>태그 쓰기는 목록 사진에 닿지 않는다.</b> 목록이 태그에서 읽는 것은 이름과 활성 여부뿐이고
+ * 그 둘은 배열 밖 태그 맵에 있으므로, 여기서는 <em>언제나</em> 맵을 고치고 <em>한 번도</em>
+ * 재빌드하지 않는다 — 규칙이 하나라 생성도 예외를 두지 않는다.
+ *
+ * <p>태그를 단 장소를 찾아다니지 않는 것이 이 구조의 요점이다. 대표 태그 이름은 조회 시점에
+ * 합쳐지므로, 태그 하나를 고치면 그 태그를 단 장소 전부가 함께 바뀐다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -33,6 +43,8 @@ public class AdminTagService {
     private final AdminEntityLoader adminEntityLoader;
     private final AdminTagValidator adminTagValidator;
     private final EntityManager entityManager;
+    /** 태그 표시값을 <b>커밋 뒤에</b> 맵에 넣는다 — 시점의 근거는 리프레셔 javadoc */
+    private final PlaceListSnapshotRefresher placeListSnapshotRefresher;
 
     /**
      * <b>태그 id는 {@code place_stats.tag_bitmask}의 비트 자리다</b> — 62를 넘는 id가 생기면 목록
@@ -77,6 +89,9 @@ public class AdminTagService {
         if (tagId > TagBitmask.MAX_TAG_ID) {
             throw new BusinessException(ErrorCode.TAG_ID_BIT_LIMIT_EXCEEDED);
         }
+
+        placeListSnapshotRefresher.patchTagViewAfterCommit(
+                new TagView(tagId, tag.getName(), tag.isActive()));
         return tagId;
     }
 
@@ -125,6 +140,8 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
+        placeListSnapshotRefresher.patchTagViewAfterCommit(
+                new TagView(id, tag.getName(), tag.isActive()));
         return id;
     }
 
@@ -143,6 +160,8 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
+        placeListSnapshotRefresher.patchTagViewAfterCommit(
+                new TagView(id, tag.getName(), tag.isActive()));
         return AdminTagActivationResponse.of(id, req.active());
     }
 
