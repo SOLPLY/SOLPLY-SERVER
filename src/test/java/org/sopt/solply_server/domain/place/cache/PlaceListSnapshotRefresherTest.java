@@ -2,23 +2,27 @@ package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * 어드민 커밋 훅의 계약 넷 — <b>언제 짓는가 · 몇 번 짓는가 · 실패하면 어떻게 되는가</b>.
+ * 어드민 커밋 훅의 계약 — <b>언제 짓는가 · 무엇을 짓는가 · 몇 번 짓는가 · 실패하면 어떻게
+ * 되는가</b>. 갱신이 둘(전량 재생성 · 표시값 패치)로 갈렸으므로 "무엇을"이 함께 걸린다.
  *
  * <p>로더를 목으로 두는 것이 요점이다. 이 파일이 보는 것은 재생성의 <em>내용</em>이 아니라 그것을
  * 거는 <em>타이밍</em>이고, 실제 사진이 맞는지는 {@code PlaceListSnapshotLoaderIT}가 따로 문다.
@@ -31,6 +35,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 class PlaceListSnapshotRefresherTest {
 
     @Mock private PlaceListSnapshotLoader loader;
+    /** 홀더와 락은 진짜를 쓴다 — 패치가 <b>어디에 닿았는지</b>가 이 파일의 단언이라 값이 필요하다 */
+    @Spy private PlaceViewHolder placeViewHolder = new PlaceViewHolder();
+    @Spy private TagViewHolder tagViewHolder = new TagViewHolder();
+    @Spy private PlaceListWriteLock writeLock = new PlaceListWriteLock();
 
     @InjectMocks private PlaceListSnapshotRefresher refresher;
 
@@ -110,6 +118,67 @@ class PlaceListSnapshotRefresherTest {
         given(loader.rebuild()).willThrow(new IllegalStateException("빌드 실패"));
 
         assertThatCode(() -> refresher.refreshAfterCommit()).doesNotThrowAnyException();
+    }
+
+    /**
+     * <b>표시값 패치는 전량 재생성을 부르지 않는다.</b> 그것이 이 훅을 따로 둔 이유 전부다 —
+     * 이름 하나 고치는 데 전량 스캔이 돌면 분리한 값이 사라진다.
+     */
+    @Test
+    void 표시값_패치는_그_항목만_갈고_전량_재생성을_부르지_않는다() {
+        given(loader.readView(7L)).willReturn(Optional.of(new PlaceView(7L, "새 이름", null, 3L)));
+        TransactionSynchronizationManager.initSynchronization();
+
+        refresher.patchPlaceViewAfterCommit(7L);
+        refresher.patchTagViewAfterCommit(new TagView(3L, "새 태그 이름", true));
+        fireAfterCommit();
+
+        assertThat(placeViewHolder.get(7L).name()).isEqualTo("새 이름");
+        assertThat(tagViewHolder.get(3L).name()).isEqualTo("새 태그 이름");
+        verify(loader, never()).rebuild();
+    }
+
+    /**
+     * <b>전량과 패치가 한 트랜잭션에 걸리면 전량 하나만 돈다.</b> 전량 재생성이 표시값 맵도 다시
+     * 지으므로 패치는 같은 일을 한 번 더 하는 것이고, 그 사이 원본이 또 바뀌면 <em>더 낡은</em>
+     * 값을 덮어쓸 수도 있다.
+     */
+    @Test
+    void 전량과_패치가_함께_걸리면_전량만_돈다() {
+        TransactionSynchronizationManager.initSynchronization();
+
+        refresher.patchPlaceViewAfterCommit(7L);
+        refresher.refreshAfterCommit();
+        refresher.patchTagViewAfterCommit(new TagView(3L, "새 태그 이름", true));
+
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+        fireAfterCommit();
+
+        verify(loader, times(1)).rebuild();
+        verify(loader, never()).readView(anyLong());
+        assertThat(tagViewHolder.get(3L)).isNull();
+    }
+
+    /**
+     * <b>장소 행이 사라졌으면 아무것도 하지 않는다.</b> 맵에 옛 값이 남아도 정렬 배열에서 빠지면
+     * 화면에 닿지 않으므로, 없는 값을 지우겠다고 나설 자리가 아니다.
+     */
+    @Test
+    void 장소가_사라졌으면_표시값_맵을_건드리지_않는다() {
+        given(loader.readView(7L)).willReturn(Optional.empty());
+
+        refresher.patchPlaceViewAfterCommit(7L);
+
+        assertThat(placeViewHolder.get(7L)).isNull();
+    }
+
+    /** 패치 실패도 전량과 같은 격리를 받는다 — 어드민 요청이 캐시 때문에 500이 되면 안 된다 */
+    @Test
+    void 패치가_실패해도_예외를_흘리지_않는다() {
+        given(loader.readView(7L)).willThrow(new IllegalStateException("읽기 실패"));
+
+        assertThatCode(() -> refresher.patchPlaceViewAfterCommit(7L)).doesNotThrowAnyException();
     }
 
     /** 트랜잭션 매니저가 커밋 뒤에 하는 일을 손으로 대신한다 */
