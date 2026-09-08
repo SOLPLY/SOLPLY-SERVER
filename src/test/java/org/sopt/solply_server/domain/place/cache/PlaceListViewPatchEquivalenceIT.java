@@ -160,11 +160,10 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
 
         String renamed = TAG_NAME_PREFIX + "수정";
         jdbcTemplate.update("UPDATE tags SET name = ? WHERE id = ?", renamed, renamedTagId);
-        refresher.patchTagViewAfterCommit(new TagView(renamedTagId, renamed, true));
+        refresher.patchTagViewAfterCommit(renamedTagId);
 
-        String disabledName = tagName(disabledTagId);
         jdbcTemplate.update("UPDATE tags SET active = false WHERE id = ?", disabledTagId);
-        refresher.patchTagViewAfterCommit(new TagView(disabledTagId, disabledName, false));
+        refresher.patchTagViewAfterCommit(disabledTagId);
     }
 
     /**
@@ -218,11 +217,6 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
                 INSERT INTO tags (id, name, type, parent_id, active, tag_usage)
                 VALUES (?, ?, ?, NULL, ?, 'PLACE')""", tagId, name, type, active);
         return tagId;
-    }
-
-    private String tagName(long tagId) {
-        return jdbcTemplate.queryForObject(
-                "SELECT name FROM tags WHERE id = ?", String.class, tagId);
     }
 
     private void linkTag(long placeId, long tagId) {

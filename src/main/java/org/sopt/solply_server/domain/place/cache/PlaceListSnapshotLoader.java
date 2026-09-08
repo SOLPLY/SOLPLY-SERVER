@@ -25,7 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 태그 표시값({@link TagViewHolder}) — 을 짓는 <b>유일한</b> 곳. 전량 진입점은 {@link #rebuild()}
  * 하나이고, 그것을 부르는 것은 {@link PlaceListSnapshotScheduler}(기동 한 번 · 10분 주기)와
  * {@link PlaceListSnapshotRefresher}(어드민 커밋 뒤) 둘이다. 표시값 한 건만 다시 읽는
- * {@link #readView(long)}은 어드민 패치 훅이 쓴다.
+ * {@link #readView(long)}·{@link #readTagView(long)}은 어드민 패치 훅이 쓴다.
  *
  * <p><b>쿼리가 세 문장인 것이 이 클래스의 전부다.</b>
  * <ul>
@@ -165,6 +165,13 @@ public class PlaceListSnapshotLoader {
             FROM tags t
             """;
 
+    /** 태그 하나 — 전량({@link #TAG_SOURCE_SQL})과 같은 SELECT 목록에 조건만 붙인 것이다 */
+    private static final String SINGLE_TAG_VIEW_SQL = """
+            SELECT t.id, t.name, t.active
+            FROM tags t
+            WHERE t.id = :tagId
+            """;
+
     /**
      * 장소 하나의 표시값 — 전량 재빌드와 <b>같은 규칙</b>을 상관 서브쿼리 둘로 옮긴 것이다
      * (첫 MAIN 태그는 {@code place_tag.id} 오름차순, 썸네일은 {@code display_order} 오름차순).
@@ -287,6 +294,23 @@ public class PlaceListSnapshotLoader {
                 toNullableLong(row[1])));
     }
 
+    /**
+     * 태그 하나의 표시값을 다시 읽는다. 장소 쪽 {@link #readView(long)}과 <b>같은 이유로</b>
+     * 있는 메서드다 — 어드민이 만든 값을 그대로 실어 나르면 커밋과 홀더 {@code put} 사이가 벌어진
+     * 사이에 남이 커밋한 최신 이름을 옛 이름이 덮는다. 락 안에서 DB를 다시 읽으면 그 창이 없다.
+     *
+     * @return 태그 행이 없으면 {@code empty} — 호출자는 맵을 건드리지 않는다
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public Optional<TagView> readTagView(long tagId) {
+        List<Object[]> rows = readSingleTagViewRow(tagId);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        Object[] row = rows.get(0);
+        return Optional.of(new TagView(tagId, (String) row[1], toBoolean(row[2])));
+    }
+
     /** 문장 ①이 한 번에 낳는 두 벌 — 순서 값과 표시값이다 */
     private record Source(List<PlaceListEntry> entries, Map<Long, PlaceView> views) {}
 
@@ -370,6 +394,13 @@ public class PlaceListSnapshotLoader {
     private List<Object[]> readSingleViewRow(long placeId) {
         return em.createNativeQuery(SINGLE_VIEW_SQL)
                 .setParameter("placeId", placeId)
+                .getResultList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object[]> readSingleTagViewRow(long tagId) {
+        return em.createNativeQuery(SINGLE_TAG_VIEW_SQL)
+                .setParameter("tagId", tagId)
                 .getResultList();
     }
 

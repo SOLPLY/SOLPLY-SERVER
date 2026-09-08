@@ -127,10 +127,11 @@ class PlaceListSnapshotRefresherTest {
     @Test
     void 표시값_패치는_그_항목만_갈고_전량_재생성을_부르지_않는다() {
         given(loader.readView(7L)).willReturn(Optional.of(new PlaceView(7L, "새 이름", null, 3L)));
+        given(loader.readTagView(3L)).willReturn(Optional.of(new TagView(3L, "새 태그 이름", true)));
         TransactionSynchronizationManager.initSynchronization();
 
         refresher.patchPlaceViewAfterCommit(7L);
-        refresher.patchTagViewAfterCommit(new TagView(3L, "새 태그 이름", true));
+        refresher.patchTagViewAfterCommit(3L);
         fireAfterCommit();
 
         assertThat(placeViewHolder.get(7L).name()).isEqualTo("새 이름");
@@ -149,7 +150,7 @@ class PlaceListSnapshotRefresherTest {
 
         refresher.patchPlaceViewAfterCommit(7L);
         refresher.refreshAfterCommit();
-        refresher.patchTagViewAfterCommit(new TagView(3L, "새 태그 이름", true));
+        refresher.patchTagViewAfterCommit(3L);
 
         assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
 
@@ -157,6 +158,7 @@ class PlaceListSnapshotRefresherTest {
 
         verify(loader, times(1)).rebuild();
         verify(loader, never()).readView(anyLong());
+        verify(loader, never()).readTagView(anyLong());
         assertThat(tagViewHolder.get(3L)).isNull();
     }
 
@@ -171,6 +173,29 @@ class PlaceListSnapshotRefresherTest {
         refresher.patchPlaceViewAfterCommit(7L);
 
         assertThat(placeViewHolder.get(7L)).isNull();
+    }
+
+    /**
+     * <b>태그 패치도 값이 아니라 id를 들고 다닌다.</b> 값을 실어 나르면 A가 커밋한 뒤 put 하기 전에
+     * B가 커밋·put 한 경우 A의 옛 값이 최신을 덮는다 — 락 안에서 다시 읽는 것이 그 창을 없앤다.
+     */
+    @Test
+    void 태그_패치는_락_안에서_DB를_다시_읽은_값을_넣는다() {
+        given(loader.readTagView(3L)).willReturn(Optional.of(new TagView(3L, "DB의 최신 이름", false)));
+
+        refresher.patchTagViewAfterCommit(3L);
+
+        assertThat(tagViewHolder.get(3L)).isEqualTo(new TagView(3L, "DB의 최신 이름", false));
+    }
+
+    /** 태그 행이 사라졌으면 장소 쪽과 같은 이유로 아무것도 하지 않는다 */
+    @Test
+    void 태그가_사라졌으면_태그_맵을_건드리지_않는다() {
+        given(loader.readTagView(3L)).willReturn(Optional.empty());
+
+        refresher.patchTagViewAfterCommit(3L);
+
+        assertThat(tagViewHolder.get(3L)).isNull();
     }
 
     /** 패치 실패도 전량과 같은 격리를 받는다 — 어드민 요청이 캐시 때문에 500이 되면 안 된다 */

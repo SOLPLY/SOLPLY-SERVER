@@ -15,7 +15,6 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
-import org.sopt.solply_server.domain.place.cache.TagView;
 import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -90,8 +89,7 @@ public class AdminTagService {
             throw new BusinessException(ErrorCode.TAG_ID_BIT_LIMIT_EXCEEDED);
         }
 
-        placeListSnapshotRefresher.patchTagViewAfterCommit(
-                new TagView(tagId, tag.getName(), tag.isActive()));
+        placeListSnapshotRefresher.patchTagViewAfterCommit(tagId);
         return tagId;
     }
 
@@ -140,8 +138,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        placeListSnapshotRefresher.patchTagViewAfterCommit(
-                new TagView(id, tag.getName(), tag.isActive()));
+        placeListSnapshotRefresher.patchTagViewAfterCommit(id);
         return id;
     }
 
@@ -160,8 +157,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        placeListSnapshotRefresher.patchTagViewAfterCommit(
-                new TagView(id, tag.getName(), tag.isActive()));
+        placeListSnapshotRefresher.patchTagViewAfterCommit(id);
         return AdminTagActivationResponse.of(id, req.active());
     }
 
@@ -191,8 +187,7 @@ public class AdminTagService {
         for (Tag child : children) {
             if (child.isActive()) {
                 child.setActive(false);
-                placeListSnapshotRefresher.patchTagViewAfterCommit(
-                        new TagView(child.getId(), child.getName(), false));
+                placeListSnapshotRefresher.patchTagViewAfterCommit(child.getId());
                 deactivateCascade(child.getId());
             }
         }

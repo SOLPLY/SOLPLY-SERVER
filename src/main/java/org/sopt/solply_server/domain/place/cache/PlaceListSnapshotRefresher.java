@@ -1,10 +1,6 @@
 package org.sopt.solply_server.domain.place.cache;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +18,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *       장소의 생성·삭제·동네 이동·태그 부착처럼 <em>어느 배열에 서는가</em>가 달라지면 사진을
  *       통째로 다시 찍어야 한다.</li>
  *   <li><b>표시값 패치</b>({@link #patchPlaceViewAfterCommit(long)} ·
- *       {@link #patchTagViewAfterCommit(TagView)}) — 이름·썸네일·태그 이름·태그 활성처럼 순서에
+ *       {@link #patchTagViewAfterCommit(long)}) — 이름·썸네일·태그 이름·태그 활성처럼 순서에
  *       닿지 않는 수정이다. 그 항목 하나만 홀더에서 갈아 끼우므로 전량 스캔이 돌지 않는다.</li>
  * </ul>
  * <b>한 트랜잭션에 전량과 패치가 함께 걸리면 전량 하나만 돈다</b> — 전량 재빌드가 표시값 맵도
@@ -77,7 +73,7 @@ public class PlaceListSnapshotRefresher {
      */
     public void patchPlaceViewAfterCommit(long placeId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            applyQuietly(false, Set.of(placeId), List.of());
+            applyQuietly(false, Set.of(placeId), Set.of());
             return;
         }
         pending().markPlaceView(placeId);
@@ -86,13 +82,18 @@ public class PlaceListSnapshotRefresher {
     /**
      * 태그 이름·활성 수정 — 커밋 뒤에 그 태그만 갈아 끼운다. 그 태그를 단 장소들을 찾아다니지
      * 않는 것이 이 구조의 요점이다(대표 태그 이름은 조회 시점에 합쳐진다).
+     *
+     * <p><b>값이 아니라 id를 받는다.</b> 커밋 시점에 만든 값을 그대로 실어 나르면 이런 순서가
+     * 가능하다 — A가 {@code 이름A}로 커밋하고 put 직전에 멈춘다 → B가 {@code 이름B}로 커밋하고
+     * put 한다 → A가 재개해 {@code 이름A}로 최신을 덮는다. id만 받아 락 안에서 DB를 다시 읽으면
+     * 무엇이 최신인지 판정하는 곳이 DB 하나라 그 역전이 없다.
      */
-    public void patchTagViewAfterCommit(TagView view) {
+    public void patchTagViewAfterCommit(long tagId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            applyQuietly(false, Set.of(), List.of(view));
+            applyQuietly(false, Set.of(), Set.of(tagId));
             return;
         }
-        pending().markTagView(view);
+        pending().markTagView(tagId);
     }
 
     /** 이 트랜잭션이 이미 등록해 둔 동기화, 없으면 새로 하나 건다 */
@@ -109,15 +110,14 @@ public class PlaceListSnapshotRefresher {
     }
 
     private void rebuildQuietly() {
-        applyQuietly(true, Set.of(), List.of());
+        applyQuietly(true, Set.of(), Set.of());
     }
 
     /**
      * 실제 갱신. 실패는 로그만 남긴다 — 커밋 뒤 경로에서 예외가 새면 트랜잭션은 이미 커밋된 뒤라
      * 롤백도 되지 않는 채 오류만 나간다.
      */
-    private void applyQuietly(boolean fullRebuild, Set<Long> placeIds,
-            Iterable<TagView> tagViews) {
+    private void applyQuietly(boolean fullRebuild, Set<Long> placeIds, Set<Long> tagIds) {
         try {
             if (fullRebuild) {
                 loader.rebuild();
@@ -127,8 +127,8 @@ public class PlaceListSnapshotRefresher {
                 // 읽기도 락 안이다 — 재빌드가 교체를 끝낸 뒤에 읽어야 그 뒤에 덮이지 않는다
                 writeLock.run(() -> loader.readView(placeId).ifPresent(placeViewHolder::put));
             }
-            for (TagView view : tagViews) {
-                writeLock.run(() -> tagViewHolder.put(view));
+            for (Long tagId : tagIds) {
+                writeLock.run(() -> loader.readTagView(tagId).ifPresent(tagViewHolder::put));
             }
         } catch (Exception e) {
             log.error("장소 목록 캐시 갱신 실패 - 직전 값을 유지한다"
@@ -144,8 +144,8 @@ public class PlaceListSnapshotRefresher {
 
         private boolean fullRebuild;
         private final Set<Long> placeIds = new LinkedHashSet<>();
-        /** 같은 태그를 두 번 고치면 나중 값만 남는다 */
-        private final Map<Long, TagView> tagViews = new LinkedHashMap<>();
+        /** 같은 태그를 두 번 고쳐도 다시 읽는 것은 한 번이다 */
+        private final Set<Long> tagIds = new LinkedHashSet<>();
 
         private void markFullRebuild() {
             fullRebuild = true;
@@ -155,14 +155,14 @@ public class PlaceListSnapshotRefresher {
             placeIds.add(placeId);
         }
 
-        private void markTagView(TagView view) {
-            tagViews.put(view.tagId(), view);
+        private void markTagView(long tagId) {
+            tagIds.add(tagId);
         }
 
         @Override
         public void afterCommit() {
             // 전량이 걸려 있으면 패치는 볼 것도 없다 — 재빌드가 표시값 맵을 통째로 다시 짓는다
-            applyQuietly(fullRebuild, placeIds, new ArrayList<>(tagViews.values()));
+            applyQuietly(fullRebuild, placeIds, tagIds);
         }
     }
 }

@@ -20,7 +20,6 @@ import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
-import org.sopt.solply_server.domain.place.cache.TagView;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.entity.TagUsage;
@@ -33,8 +32,10 @@ import org.sopt.solply_server.global.util.AdminEntityLoader;
  * 한 번 허용하면, 빠뜨린 경로의 태그는 다음 전량 재빌드(≤10분)까지 <b>옛 이름·옛 활성</b>으로
  * 나가고 그 사이 아무 오류도 나지 않는다.
  *
- * <p>맵에 실리는 값이 <b>저장된 값과 같은지</b>까지 본다. 훅을 부르기만 하고 엉뚱한 값을 넘기면
- * 화면은 조용히 갈린다.
+ * <p><b>값이 아니라 id가 넘어가는지를 본다.</b> 값을 실어 나르면 커밋과 홀더 {@code put} 사이에
+ * 남이 커밋한 최신 이름을 옛 이름이 덮을 수 있어, 훅이 받는 것은 id뿐이고 실제 값은 리프레셔가
+ * 락 안에서 DB를 다시 읽어 정한다({@code PlaceListSnapshotRefresher#patchTagViewAfterCommit}).
+ * 그래서 이 파일이 지키는 것은 <b>어느 태그가 넘어가는가</b> 하나다.
  */
 @ExtendWith(MockitoExtension.class)
 class AdminTagServiceTagViewPatchTest {
@@ -47,7 +48,7 @@ class AdminTagServiceTagViewPatchTest {
 
     @InjectMocks private AdminTagService adminTagService;
 
-    @Captor private ArgumentCaptor<TagView> tagViewCaptor;
+    @Captor private ArgumentCaptor<Long> tagIdCaptor;
 
     private static final long TAG_ID = 7L;
 
@@ -58,17 +59,17 @@ class AdminTagServiceTagViewPatchTest {
 
         adminTagService.createTag(req);
 
-        assertThat(patchedView()).isEqualTo(new TagView(TAG_ID, "새태그", true));
+        assertThat(patchedTagId()).isEqualTo(TAG_ID);
     }
 
     @Test
-    void 태그를_수정하면_바뀐_이름과_활성이_맵으로_간다() {
+    void 태그를_수정하면_그_태그가_맵_갱신_대상이_된다() {
         Tag tag = tag("옛이름", true);
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag);
 
         adminTagService.updateTag(TAG_ID, upsertRequest("새이름", true));
 
-        assertThat(patchedView()).isEqualTo(new TagView(TAG_ID, "새이름", true));
+        assertThat(patchedTagId()).isEqualTo(TAG_ID);
     }
 
     /**
@@ -76,14 +77,14 @@ class AdminTagServiceTagViewPatchTest {
      * 그 판정이 맵의 {@code active}로 이뤄진다.
      */
     @Test
-    void 태그를_내리면_이름은_그대로_활성만_내려간_값이_맵으로_간다() {
+    void 태그를_내려도_같은_훅이_그_태그를_들고_간다() {
         Tag tag = tag("그대로인이름", true);
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag);
         given(adminTagRepository.findChildren(TAG_ID)).willReturn(List.of());
 
         adminTagService.toggleActive(TAG_ID, new AdminTagActivationRequest(false));
 
-        assertThat(patchedView()).isEqualTo(new TagView(TAG_ID, "그대로인이름", false));
+        assertThat(patchedTagId()).isEqualTo(TAG_ID);
     }
 
     /**
@@ -102,23 +103,21 @@ class AdminTagServiceTagViewPatchTest {
 
         adminTagService.toggleActive(TAG_ID, new AdminTagActivationRequest(false));
 
-        assertThat(patchedViews()).containsExactlyInAnyOrder(
-                new TagView(TAG_ID, "부모", false),
-                new TagView(TAG_ID + 1, "자식", false),
-                new TagView(TAG_ID + 2, "손자", false));
+        assertThat(patchedTagIds())
+                .containsExactlyInAnyOrder(TAG_ID, TAG_ID + 1, TAG_ID + 2);
     }
 
     // === helpers ===
 
-    private TagView patchedView() {
-        verify(placeListSnapshotRefresher).patchTagViewAfterCommit(tagViewCaptor.capture());
-        return tagViewCaptor.getValue();
+    private long patchedTagId() {
+        verify(placeListSnapshotRefresher).patchTagViewAfterCommit(tagIdCaptor.capture());
+        return tagIdCaptor.getValue();
     }
 
-    private List<TagView> patchedViews() {
+    private List<Long> patchedTagIds() {
         verify(placeListSnapshotRefresher, atLeastOnce())
-                .patchTagViewAfterCommit(tagViewCaptor.capture());
-        return tagViewCaptor.getAllValues();
+                .patchTagViewAfterCommit(tagIdCaptor.capture());
+        return tagIdCaptor.getAllValues();
     }
 
     private static AdminTagUpsertRequest upsertRequest(String name, boolean active) {
