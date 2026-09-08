@@ -11,12 +11,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 목록 캐시 세 벌 — 회차 사진({@link PlaceListSnapshot}) · 장소 표시값({@link PlaceViewHolder}) ·
@@ -43,15 +45,24 @@ import org.springframework.transaction.annotation.Transactional;
  * 배치에서 그대로 다시 치른다 — 조회 경로에서 덜어낸 CPU가 배치로 옮겨갈 뿐이다. {@code Object[]}만
  * 받아 자바에서 record로 접는다.
  *
- * <p><b>{@code @Transactional(readOnly = true)}인 이유는 문장들이 같은 스냅샷을 보게 하기
- * 위해서다.</b> 트랜잭션이 없으면 문장마다 커넥션이 갈려, 그 사이에 커밋된 이미지 변경이 장소 목록과
- * 어긋난 조합으로 실릴 수 있다.
+ * <p><b>읽기를 트랜잭션 하나로 묶는 이유는 세 문장이 같은 일관 읽기를 보게 하기 위해서다.</b>
+ * 트랜잭션이 없으면 문장마다 커넥션이 갈려, 그 사이에 커밋된 이미지 변경이 장소 목록과 어긋난
+ * 조합으로 실릴 수 있다. <b>세 문장이 같은 Read View를 보는 근거는 격리 수준이 REPEATABLE READ인
+ * 것이지 {@code readOnly}가 아니다</b> — {@code readOnly}는 쓰기를 막는 힌트일 뿐 스냅샷을 고정하지
+ * 않는다. 격리 수준을 코드에서 고정하지 않으므로 이 성질은 <b>운영 DB의 기본값</b>(MySQL InnoDB
+ * 기본 REPEATABLE READ)에 기대고 있다. 기본값을 READ COMMITTED로 내리는 날 이 문단부터 짚을 것.
  *
  * <p><b>{@code REQUIRES_NEW}인 이유는 어드민 훅 때문이다.</b> 어드민 쓰기의 재생성은 커밋
  * <em>뒤에</em> 도는데({@code TransactionSynchronization#afterCommit}), 그 시점에는 이미 끝난
  * 트랜잭션의 자원이 아직 스레드에 묶여 있다. 전파를 기본값으로 두면 이 문장들이 <b>이미 커밋된
  * 트랜잭션에 참여</b>하는 모양이 되므로, 새 트랜잭션을 명시적으로 연다. 트랜잭션이 없는 다른
  * 호출자(스케줄러)에게는 그냥 새 트랜잭션 하나를 여는 것과 같아 달라지는 것이 없다.
+ *
+ * <p><b>전량 읽기는 어노테이션이 아니라 {@link TransactionTemplate}으로 연다.</b>
+ * {@link #rebuild()}는 락을 트랜잭션보다 <em>먼저</em> 잡아야 하는데(근거는
+ * {@link PlaceListWriteLock}), 메서드에 {@code @Transactional}을 달면 프록시가 그 반대 순서를
+ * 강제한다. 락 안에서 프록시를 다시 타려 해도 자기 호출이라 어노테이션이 조용히 무시되므로,
+ * 템플릿을 직접 들고 여는 것이 유일하게 정확한 방법이다.
  *
  * <p><b>동치 계약 — 응답이 바뀌면 안 된다.</b> 표시값은 엔티티 경로와 같은 값을 내야 한다.
  * <ul>
@@ -65,7 +76,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class PlaceListSnapshotLoader {
 
     private final EntityManager em;
@@ -75,6 +85,30 @@ public class PlaceListSnapshotLoader {
     private final TagViewHolder tagViewHolder;
     private final PlaceListWriteLock writeLock;
     private final PlaceListVersionIssuer versionIssuer;
+    /** 전량 읽기 세 문장을 담는 트랜잭션 — 어노테이션을 쓰지 않는 이유는 클래스 javadoc */
+    private final TransactionTemplate readTransaction;
+
+    public PlaceListSnapshotLoader(
+            EntityManager em,
+            ImageUrlProvider imageUrlProvider,
+            PlaceListSnapshot snapshot,
+            PlaceViewHolder placeViewHolder,
+            TagViewHolder tagViewHolder,
+            PlaceListWriteLock writeLock,
+            PlaceListVersionIssuer versionIssuer,
+            PlatformTransactionManager transactionManager) {
+        this.em = em;
+        this.imageUrlProvider = imageUrlProvider;
+        this.snapshot = snapshot;
+        this.placeViewHolder = placeViewHolder;
+        this.tagViewHolder = tagViewHolder;
+        this.writeLock = writeLock;
+        this.versionIssuer = versionIssuer;
+        this.readTransaction = new TransactionTemplate(transactionManager);
+        this.readTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.readTransaction.setReadOnly(true);
+    }
 
     /**
      * 장소당 한 행 — 정렬 축 다섯 + 좌표 + 이름 + 메인 태그 id. <b>SELECT 목록이 곧
@@ -159,9 +193,14 @@ public class PlaceListSnapshotLoader {
     /**
      * 사진과 표시값 두 벌을 통째로 다시 짓고 교체한다.
      *
-     * <p><b>락을 메서드 첫 줄에서 잡는다.</b> 재빌드와 표시값 패치가 한 줄로 서야 어드민 수정이
-     * 유실되지 않는다 — 근거와, 트랜잭션이 락보다 먼저 열려도 안전한 이유는
-     * {@link PlaceListWriteLock} javadoc.
+     * <p><b>락이 트랜잭션보다 먼저다.</b> 재빌드와 표시값 패치가 한 줄로 서야 어드민 수정이
+     * 유실되지 않고(근거는 {@link PlaceListWriteLock}), <b>락을 기다리는 동안 커넥션을 쥐고 있으면
+     * 안 된다</b> — 어드민 둘이 동시에 커밋하면 기다리는 쪽이 커넥션을 잡은 채 잠들고, 락을 쥔 쪽은
+     * 발급용 커넥션을 하나 더 요구해 풀이 얕을 때 서로를 굶긴다. 그래서 락을 먼저 잡고, 읽기
+     * 트랜잭션은 락 안에서 열고 닫는다.
+     *
+     * <p><b>발급은 읽기 트랜잭션이 닫힌 뒤다.</b> 읽는 동안 발급하면 읽기 커넥션과 발급 커넥션을
+     * 동시에 쥐지만, 순서를 이렇게 두면 락 안에서 쥐는 커넥션이 언제나 하나다.
      *
      * <p><b>버전은 여기서, 사진을 완성한 순간에, 한 번만 발급한다.</b> 이것이 "버전↔내용 1:1"
      * 불변식의 근거다 — 남의 버전에 내 내용을 붙이는 경로가 존재하지 않으므로 "버전은 같은데 목록이
@@ -190,7 +229,6 @@ public class PlaceListSnapshotLoader {
      *
      * @return 스냅샷에 담긴 장소 수
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public int rebuild() {
         return writeLock.call(this::rebuildInLock);
     }
@@ -198,12 +236,14 @@ public class PlaceListSnapshotLoader {
     private int rebuildInLock() {
         long startNanos = System.nanoTime();
 
-        Source source = readSource();
-        Map<Long, TagView> tagViews = readTagViews();
+        Loaded loaded = readTransaction.execute(status -> new Loaded(readSource(), readTagViews()));
+        Source source = loaded.source();
+        Map<Long, TagView> tagViews = loaded.tagViews();
 
         PlaceListIndex fresh = PlaceListIndex.of(source.entries());
-        // 발급은 자기 트랜잭션에서 돈다 — 이 트랜잭션은 읽기 전용이라 INSERT를 실을 수 없다.
-        // 홀더 교체보다 앞에 두어, 발급이 실패하면 사진도 홀더도 직전 회차 그대로 남는다.
+        // 발급은 자기 트랜잭션에서 돈다 — 읽기 트랜잭션은 이미 닫혔고 그것이 읽기 전용이라
+        // INSERT를 실을 수 없었기 때문이기도 하다. 홀더 교체보다 앞에 두어, 발급이 실패하면
+        // 사진도 홀더도 직전 회차 그대로 남는다.
         PlaceListPhoto photo = new PlaceListPhoto(versionIssuer.issue(), fresh);
         placeViewHolder.replaceAll(source.views());
         tagViewHolder.replaceAll(tagViews);
@@ -217,12 +257,19 @@ public class PlaceListSnapshotLoader {
         return fresh.placeCount();
     }
 
+    /** 읽기 트랜잭션 하나가 낳는 것 전부 — 이 record가 트랜잭션의 경계를 눈에 보이게 한다 */
+    private record Loaded(Source source, Map<Long, TagView> tagViews) {}
+
     /**
      * 장소 하나의 표시값을 다시 읽는다. 어드민이 이름·이미지·메인 태그를 고친 뒤 그 항목만 갈아
      * 끼우는 경로가 이것이다 ({@link PlaceListSnapshotRefresher#patchPlaceViewAfterCommit}).
      *
      * <p><b>규칙은 전량 재빌드와 같아야 한다.</b> 갈리면 같은 장소가 "패치된 뒤"와 "다음 회차 뒤"에
      * 다르게 보인다 — 재빌드 결과와 패치 결과의 동치는 IT가 지킨다.
+     *
+     * <p>여기는 {@code @Transactional}을 그대로 둔다 — 호출자({@link PlaceListSnapshotRefresher})가
+     * <b>락 안에서</b> 부르므로 순서가 이미 "락 → 트랜잭션"이고, 트랜잭션이 한 겹뿐이라 락을 기다리며
+     * 커넥션을 쥐는 창도 없다.
      *
      * @return 장소 행이 없으면 {@code empty} — 호출자는 맵을 건드리지 않는다
      */
