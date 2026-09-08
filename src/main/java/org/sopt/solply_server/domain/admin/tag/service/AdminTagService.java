@@ -179,11 +179,20 @@ public class AdminTagService {
         return ids;
     }
 
+    /**
+     * <b>내려간 자식도 하나하나 맵에 넣는다.</b> 목록이 대표 태그 이름을 비우는 판정은 맵의
+     * {@code active}로 이뤄지므로, 부모만 넣고 자식을 빠뜨리면 그 자식이 대표인 장소는 다음 전량
+     * 재빌드(≤10분)까지 <b>내려간 태그의 이름을 계속 달고</b> 나가면서 아무 오류도 내지 않는다.
+     *
+     * <p>훅을 여러 번 부르는 값은 없다 — 리프레셔가 트랜잭션당 모아 커밋 뒤 한 번에 넣는다.
+     */
     private void deactivateCascade(Long parentId) {
         List<Tag> children = adminTagRepository.findChildren(parentId);
         for (Tag child : children) {
             if (child.isActive()) {
                 child.setActive(false);
+                placeListSnapshotRefresher.patchTagViewAfterCommit(
+                        new TagView(child.getId(), child.getName(), false));
                 deactivateCascade(child.getId());
             }
         }

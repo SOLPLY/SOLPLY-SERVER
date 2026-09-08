@@ -3,6 +3,7 @@ package org.sopt.solply_server.domain.admin.tag.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 
 import jakarta.persistence.EntityManager;
@@ -85,6 +86,28 @@ class AdminTagServiceTagViewPatchTest {
         assertThat(patchedView()).isEqualTo(new TagView(TAG_ID, "그대로인이름", false));
     }
 
+    /**
+     * 캐스케이드로 <b>함께 내려간 자식</b>도 맵에 들어가야 한다. 부모만 넣으면 그 자식이 대표
+     * 태그인 장소는 다음 전량 재빌드까지 내려간 태그의 이름을 계속 달고 나간다 — 조용히 틀린다.
+     */
+    @Test
+    void 부모를_내리면_함께_내려간_자식도_맵으로_간다() {
+        Tag parent = tag(TAG_ID, "부모", true);
+        Tag child = tag(TAG_ID + 1, "자식", true);
+        Tag grandChild = tag(TAG_ID + 2, "손자", true);
+        given(adminEntityLoader.getTag(TAG_ID)).willReturn(parent);
+        given(adminTagRepository.findChildren(TAG_ID)).willReturn(List.of(child));
+        given(adminTagRepository.findChildren(TAG_ID + 1)).willReturn(List.of(grandChild));
+        given(adminTagRepository.findChildren(TAG_ID + 2)).willReturn(List.of());
+
+        adminTagService.toggleActive(TAG_ID, new AdminTagActivationRequest(false));
+
+        assertThat(patchedViews()).containsExactlyInAnyOrder(
+                new TagView(TAG_ID, "부모", false),
+                new TagView(TAG_ID + 1, "자식", false),
+                new TagView(TAG_ID + 2, "손자", false));
+    }
+
     // === helpers ===
 
     private TagView patchedView() {
@@ -92,14 +115,24 @@ class AdminTagServiceTagViewPatchTest {
         return tagViewCaptor.getValue();
     }
 
+    private List<TagView> patchedViews() {
+        verify(placeListSnapshotRefresher, atLeastOnce())
+                .patchTagViewAfterCommit(tagViewCaptor.capture());
+        return tagViewCaptor.getAllValues();
+    }
+
     private static AdminTagUpsertRequest upsertRequest(String name, boolean active) {
         return new AdminTagUpsertRequest(TagType.MAIN, null, name, active, null, TagUsage.PLACE);
     }
 
-    /** id는 DB가 정하므로 심을 자리가 빌더뿐이다 */
     private static Tag tag(String name, boolean active) {
+        return tag(TAG_ID, name, active);
+    }
+
+    /** id는 DB가 정하므로 심을 자리가 빌더뿐이다 */
+    private static Tag tag(long id, String name, boolean active) {
         return Tag.builder()
-                .id(TAG_ID)
+                .id(id)
                 .name(name)
                 .type(TagType.MAIN)
                 .active(active)
