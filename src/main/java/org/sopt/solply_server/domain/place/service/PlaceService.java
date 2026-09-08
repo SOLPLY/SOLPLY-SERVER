@@ -12,6 +12,10 @@ import org.sopt.solply_server.domain.place.cache.PlaceListEntry;
 import org.sopt.solply_server.domain.place.cache.PlaceListIndex;
 import org.sopt.solply_server.domain.place.cache.PlaceListPhoto;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
+import org.sopt.solply_server.domain.place.cache.PlaceView;
+import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
+import org.sopt.solply_server.domain.place.cache.TagView;
+import org.sopt.solply_server.domain.place.cache.TagViewHolder;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceLatestReviewDto;
@@ -66,8 +70,12 @@ public class PlaceService {
   private final EntityLoader entityLoader;
   private final PlaceReviewRepository placeReviewRepository;
   private final PlaceStatsRepository placeStatsRepository;
-  /** 목록 조회가 읽는 <b>유일한</b> 출처 — 정렬·필터·페이징·표시값이 전부 여기서 나온다 */
+  /** 목록의 <b>순서</b>가 나오는 곳 — 정렬·필터·페이징이 전부 여기서 결정된다 */
   private final PlaceListSnapshot placeListSnapshot;
+  /** 목록의 <b>표시값</b>이 나오는 곳. 사진 밖이라 회차와 무관하게 최신일 수 있다 */
+  private final PlaceViewHolder placeViewHolder;
+  /** 대표 태그의 이름·활성 판정 — {@code TagViewUtils.getActiveNameOrNull}과 같은 규칙이다 */
+  private final TagViewHolder tagViewHolder;
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -235,9 +243,22 @@ public class PlaceService {
   private record ListRow(PlaceListEntry entry, List<Double> sortKeys) {}
 
   /**
-   * 장소 목록의 <b>유일한</b> 경로 — 읽는 곳은 통합 스냅샷 하나뿐이고, 쿼리는 북마크 여부 조회만
+   * 응답에 실릴 것이 확정된 항목 — 회차 사진의 엔트리와, 홀더에서 방금 꺼낸 표시값이 합류한 자리.
+   *
+   * <p>둘이 <b>다른 회차</b>일 수 있다는 것이 계약이다. 커서가 보장하는 것은 순서의 일관성이고,
+   * 표시값과 소속(생성·삭제)은 최신일 수 있다 ({@code PlaceViewHolder}).
+   */
+  private record DisplayedRow(PlaceListEntry entry, PlaceView view) {}
+
+  /**
+   * 장소 목록의 <b>유일한</b> 경로 — 읽는 곳은 인메모리 캐시뿐이고, 쿼리는 북마크 여부 조회만
    * 나간다. 정적 정렬 다섯은 스냅샷의 사전 정렬 배열을 seek해서, 거리순은 후보를 훑어
    * {@code DistanceSort}로 정렬해서 만든다.
+   *
+   * <p><b>순서와 표시값의 출처가 갈려 있다.</b> 회차 사진은 순서·정렬 값만 박제하고, 이름·썸네일·
+   * 대표 태그는 사진 밖 홀더({@code PlaceViewHolder}·{@code TagViewHolder})에서 조립 시점에
+   * 꺼낸다. 그래서 커서의 계약은 <b>"정렬 순서의 일관성"까지</b>이고 표시값과 소속(생성·삭제)은
+   * 최신일 수 있다 — 옛 사진에만 있고 지금은 삭제된 장소는 표시값이 없어 그 행을 건너뛴다.
    *
    * <p><b>사진은 진입부에서 한 번만 잡는다.</b> {@code photo}를 지역 변수로 고정한 뒤 페이지 선택·
    * 거리순 후보·응답 조립이 전부 그 하나만 본다. 스냅샷 참조는 회차마다 교체되므로 단계마다 다시
@@ -313,7 +334,17 @@ public class PlaceService {
       rows = rows.subList(0, pageSize);
     }
 
-    List<Long> pageIds = rows.stream().map(row -> row.entry().placeId()).toList();
+    // 표시값은 사진 밖 홀더에서 지금 값을 꺼내 붙인다. 없는 행 = 그 사이 삭제된 장소이므로
+    // 건너뛴다 — 아래 커서는 그래도 "소비한 마지막 엔트리" 기준이라 그 행을 다시 보지 않는다.
+    List<DisplayedRow> displayed = new ArrayList<>(rows.size());
+    for (ListRow row : rows) {
+      PlaceView view = placeViewHolder.get(row.entry().placeId());
+      if (view != null) {
+        displayed.add(new DisplayedRow(row.entry(), view));
+      }
+    }
+
+    List<Long> pageIds = displayed.stream().map(row -> row.entry().placeId()).toList();
 
     // 응답에서 유일하게 사용자별인 값이라 스냅샷에 담을 수 없다 — 그래서 요청 시점에 조회한다.
     Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
@@ -324,14 +355,15 @@ public class PlaceService {
     // 이벤트 증분(PlaceStatsIncrementListener)이 그 구간을 수십 ms로 줄이면서 걷어냈다
     // (2026-07-31). 카운트를 고치는 주체가 증분과 배치 둘로 확정돼, 조회 경로는 읽어서 싣기만 한다.
     // 되살리지 말 것 — PlaceServiceStatsWiringTest가 그 회귀를 감시한다.
-    List<PlacePreviewDto> previews = rows.stream()
+    List<PlacePreviewDto> previews = displayed.stream()
         .map(row -> {
           PlaceListEntry entry = row.entry();
+          PlaceView view = row.view();
           return PlacePreviewDto.of(
               entry.placeId(),
-              entry.name(),
-              entry.imageUrl(),
-              entry.mainTagName(),
+              view.name(),
+              view.imageUrl(),
+              mainTagNameOf(view),
               bookmarkStatus.getOrDefault(entry.placeId(), false),
               entry.townId(),
               entry.bookmarkCount(),
@@ -353,6 +385,20 @@ public class PlaceService {
             photo.version()).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
+  }
+
+  /**
+   * 대표 태그 이름 — {@code TagViewUtils.getActiveNameOrNull}의 홀더 판이다.
+   *
+   * <p>null이 되는 이유가 셋인데 전부 같은 답을 낸다: MAIN 태그가 없거나, 그 태그가 삭제돼 맵에
+   * 없거나, 비활성이다. <b>비활성 태그도 맵에는 있어야</b> 이 판정이 성립한다({@code TagView}).
+   */
+  private String mainTagNameOf(PlaceView view) {
+    if (view.mainTagId() == null) {
+      return null;
+    }
+    TagView tag = tagViewHolder.get(view.mainTagId());
+    return tag != null && tag.active() ? tag.name() : null;
   }
 
   /**
@@ -425,7 +471,7 @@ public class PlaceService {
    * 새로 잡으면 같은 장소가 두 번 나오거나 통째로 사라지므로, 파라미터는 <b>무시</b>한다.
    * 그래서 좌표가 필수인 것은 커서가 없는 첫 페이지뿐이다.
    *
-   * <p>표시값은 후보 엔트리가 이미 실어 온 place_stats 값이다 — 정렬 뒤에 다시 조회하지 않는다.
+   * <p>카운트·평점은 후보 엔트리가 이미 실어 온 place_stats 값이다 — 정렬 뒤에 다시 조회하지 않는다.
    */
   private static List<ListRow> distanceRows(
       PlaceListIndex photo, List<Long> leafTownIds, PlaceFilterGetRequest request,

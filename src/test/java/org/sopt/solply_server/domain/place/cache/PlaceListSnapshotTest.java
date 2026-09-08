@@ -34,8 +34,7 @@ class PlaceListSnapshotTest {
                     i, 1L, 0L,
                     1.0, 1_767_225_600L,
                     0L, 0L, BigDecimal.ZERO, 0.0,
-                    null, null,
-                    "장소" + i, null, null));
+                    null, null));
         }
         return PlaceListIndex.of(entries);
     }

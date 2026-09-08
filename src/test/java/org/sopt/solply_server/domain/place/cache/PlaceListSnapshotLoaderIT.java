@@ -30,7 +30,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 스냅샷 엔트리가 담는 <b>표시값</b>이 엔티티 경로가 만드는 값과 같은지를 실제 DB 위에서 문다.
+ * 표시값 홀더({@link PlaceViewHolder}·{@link TagViewHolder})가 담는 값이 엔티티 경로가 만드는
+ * 값과 같은지를 실제 DB 위에서 문다.
  *
  * <p>이 캐시의 계약은 하나뿐이다 — <b>응답이 바뀌면 안 된다</b>. 순서·필터의 등가는
  * {@code PlaceListSnapshotEquivalenceIT}가 DB 정렬 경로와 나란히 돌려 지키고, 여기가 지키는 것은
@@ -71,6 +72,8 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
     @Autowired private PlaceListSnapshotLoader loader;
     @Autowired private PlaceListSnapshot snapshot;
+    @Autowired private PlaceViewHolder placeViewHolder;
+    @Autowired private TagViewHolder tagViewHolder;
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private PlaceRepository placeRepository;
@@ -130,11 +133,11 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>엔트리의 표시값 = 엔티티 경로.</b> 네 필드 전부를 실제 엔티티 경로와 비교한다.
+     * <b>홀더의 표시값 = 엔티티 경로.</b> 네 필드 전부를 실제 엔티티 경로와 비교한다.
      * 기대값을 코드가 아니라 <em>같은 DB의 다른 경로</em>에서 얻는 것이 이 단언의 값어치다.
      */
     @Test
-    void 엔트리의_표시값은_엔티티_경로가_만드는_값과_같다() {
+    void 홀더의_표시값은_엔티티_경로가_만드는_값과_같다() {
         for (long placeId :
                 List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey)) {
             assertThat(displayOf(placeId))
@@ -150,10 +153,15 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
      */
     @Test
     void 대표_태그는_활성_MAIN_태그일_때만_이름을_싣는다() {
-        assertThat(entryOf(placeFull).mainTagName()).isEqualTo(mainTagName);
-        assertThat(entryOf(placeBare).mainTagName()).isNull();
-        assertThat(entryOf(placeInactiveTag).mainTagName()).isNull();
-        assertThat(entryOf(placeOptionTagOnly).mainTagName()).isNull();
+        assertThat(mainTagNameOf(placeFull)).isEqualTo(mainTagName);
+        assertThat(mainTagNameOf(placeBare)).isNull();
+        assertThat(mainTagNameOf(placeInactiveTag)).isNull();
+        assertThat(mainTagNameOf(placeOptionTagOnly)).isNull();
+
+        // 비활성이어도 <b>id는 담긴다</b> — 여기서 걸러내면 다음 MAIN 태그가 뽑혀 엔티티 경로와
+        // 갈린다. 이름을 비우는 판정은 조회 시점 태그 맵의 active가 한다.
+        assertThat(viewOf(placeInactiveTag).mainTagId()).isNotNull();
+        assertThat(tagViewHolder.get(viewOf(placeInactiveTag).mainTagId()).active()).isFalse();
         // MAIN이 아닌 태그만 가진 장소가 사진에서 사라지면 안 된다
         // (태그 조건을 파생 테이블이 아니라 바깥 WHERE로 올리면 여기가 깨진다)
         assertThat(entryOf(placeOptionTagOnly)).isNotNull();
@@ -162,9 +170,9 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     /** 썸네일은 {@code display_order}가 가장 앞선 이미지다 — 삽입 순서가 아니다 */
     @Test
     void 썸네일은_display_order가_가장_앞선_이미지의_URL이다() {
-        assertThat(entryOf(placeFull).imageUrl())
+        assertThat(viewOf(placeFull).imageUrl())
                 .isEqualTo(imageUrlProvider.getImageUrl("엔트리A_1번이미지"));
-        assertThat(entryOf(placeBare).imageUrl()).isNull();
+        assertThat(viewOf(placeBare).imageUrl()).isNull();
     }
 
     /**
@@ -174,9 +182,32 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
      */
     @Test
     void 첫_이미지의_키가_비어_있으면_썸네일은_null이고_다음_이미지로_넘어가지_않는다() {
-        assertThat(entryOf(placeBlankKey).imageUrl()).isNull();
-        assertThat(entryOf(placeBlankKey).imageUrl())
+        assertThat(viewOf(placeBlankKey).imageUrl()).isNull();
+        assertThat(viewOf(placeBlankKey).imageUrl())
                 .isNotEqualTo(imageUrlProvider.getImageUrl("엔트리E_2번이미지"));
+    }
+
+    /**
+     * <b>{@code readView} 한 건이 전량 재빌드와 같은 규칙을 낸다.</b> 어드민 패치가 쓰는 경로라
+     * 규칙이 갈리면 같은 장소가 "패치된 뒤"와 "다음 회차 뒤"에 다르게 보인다 — 함정을 심어 둔
+     * 픽스처 전부(비활성 MAIN · MAIN 없음 · display_order 역순 · 빈 파일 키)로 확인한다.
+     */
+    @Test
+    void readView는_전량_재빌드와_같은_표시값을_낸다() {
+        for (long placeId :
+                List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey)) {
+            assertThat(loader.readView(placeId))
+                    .as("placeId=%d", placeId)
+                    .contains(viewOf(placeId));
+        }
+    }
+
+    /** 없는 장소는 빈 값이다 — 호출자가 맵을 건드리지 않는 근거다 */
+    @Test
+    void readView는_없는_장소에_빈_값을_낸다() {
+        long missing = jdbcTemplate.queryForObject("SELECT MAX(id) + 1 FROM places", Long.class);
+
+        assertThat(loader.readView(missing)).isEmpty();
     }
 
     /**
@@ -244,9 +275,25 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
                 .findFirst().orElse(null);
     }
 
+    /** 표시값은 사진이 아니라 홀더에 있다 — 조회 경로가 조립하는 자리와 같은 곳에서 읽는다 */
+    private PlaceView viewOf(long placeId) {
+        return placeViewHolder.get(placeId);
+    }
+
+    /** {@code PlaceService}가 응답을 조립할 때 하는 판정과 같아야 한다 */
+    private String mainTagNameOf(long placeId) {
+        PlaceView view = viewOf(placeId);
+        if (view == null || view.mainTagId() == null) {
+            return null;
+        }
+        TagView tag = tagViewHolder.get(view.mainTagId());
+        return tag != null && tag.active() ? tag.name() : null;
+    }
+
     private Display displayOf(long placeId) {
-        PlaceListEntry entry = entryOf(placeId);
-        return new Display(entry.name(), entry.imageUrl(), entry.mainTagName(), entry.townId());
+        PlaceView view = viewOf(placeId);
+        return new Display(view.name(), view.imageUrl(), mainTagNameOf(placeId),
+                entryOf(placeId).townId());
     }
 
     /**

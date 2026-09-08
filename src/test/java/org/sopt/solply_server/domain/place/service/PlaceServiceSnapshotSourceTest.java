@@ -23,6 +23,10 @@ import org.sopt.solply_server.domain.place.cache.PlaceListEntry;
 import org.sopt.solply_server.domain.place.cache.PlaceListIndex;
 import org.sopt.solply_server.domain.place.cache.PlaceListPhoto;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
+import org.sopt.solply_server.domain.place.cache.PlaceView;
+import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
+import org.sopt.solply_server.domain.place.cache.TagView;
+import org.sopt.solply_server.domain.place.cache.TagViewHolder;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -50,8 +54,9 @@ import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
  *
  * <p>이 파일이 지키는 것은 넷이다.
  * <ul>
- *   <li>표시값 넷(이름·썸네일·대표 태그·동네)이 <b>엔트리에서</b> 온다. 엔티티 조회도, URL 결합도
- *       하지 않는다 — 이 작업이 줄이려던 비용 그 자체다</li>
+ *   <li>표시값(이름·썸네일·대표 태그)이 <b>홀더에서</b> 오고 동네는 엔트리에서 온다. 엔티티
+ *       조회도, URL 결합도 하지 않는다 — 이 작업이 줄이려던 비용 그 자체다</li>
+ *   <li>홀더에 표시값이 없는 행은 <b>건너뛰되 커서는 그 행 뒤에서</b> 발급된다</li>
  *   <li>커서가 없으면 <b>최신 회차</b>({@code current})를, 있으면 <b>커서가 박제한 회차</b>
  *       ({@code byVersion})를 잡는다</li>
  *   <li>발급하는 커서에 <b>서빙한 회차</b>를 그대로 실어 다음 페이지가 같은 사진에서 이어진다</li>
@@ -81,6 +86,8 @@ class PlaceServiceSnapshotSourceTest {
     @Mock private TownHierarchyResolver townHierarchyResolver;
     @Mock private PlaceStatsRepository placeStatsRepository;
     @Mock private PlaceListSnapshot placeListSnapshot;
+    @Mock private PlaceViewHolder placeViewHolder;
+    @Mock private TagViewHolder tagViewHolder;
 
     @InjectMocks private PlaceService placeService;
 
@@ -93,13 +100,21 @@ class PlaceServiceSnapshotSourceTest {
      * 최신순으로 {@code placeId} 내림차순이 되도록 생성일을 id에 맞춰 준다 — 페이지 순서를
      * 예상할 수 있어야 커서가 어디서 발급됐는지 값으로 말할 수 있다.
      */
-    private static PlaceListEntry entry(long placeId, String name) {
+    private static PlaceListEntry entry(long placeId) {
         return new PlaceListEntry(
                 placeId, TOWN_ID, 0L,
                 placeId, 1_767_225_600L + placeId,
                 3L, 2L, new BigDecimal("4.50"), 4.5,
-                37.5, 127.0,
-                name, "https://cdn/" + name, name + "대표태그");
+                37.5, 127.0);
+    }
+
+    /**
+     * 그 장소의 표시값을 홀더에 세운다. 사진과 <b>따로</b> 세우는 것이 지금의 구조 그대로다 —
+     * 응답의 이름·썸네일이 사진이 아니라 이 홀더에서 온다는 것을 픽스처가 먼저 말한다.
+     */
+    private void givenView(long placeId, String name) {
+        given(placeViewHolder.get(placeId))
+                .willReturn(new PlaceView(placeId, name, "https://cdn/" + name, null));
     }
 
     private static PlaceListPhoto photo(long version, PlaceListEntry... entries) {
@@ -112,17 +127,20 @@ class PlaceServiceSnapshotSourceTest {
     }
 
     /**
-     * <b>표시값은 엔트리에서 오고, 엔티티는 읽지 않는다.</b> 값만 확인하면 "엔티티도 읽고 엔트리
+     * <b>표시값은 홀더에서 오고, 엔티티는 읽지 않는다.</b> 값만 확인하면 "엔티티도 읽고 홀더
      * 값을 쓰는" 변이가 통과한다 — 그 변이는 응답이 옳으면서 절감은 0이라 가장 위험하다.
      *
-     * <p>{@code imageUrlProvider}까지 호출되지 않는지 보는 이유: 엔트리의 {@code imageUrl}은
+     * <p>{@code imageUrlProvider}까지 호출되지 않는지 보는 이유: {@code PlaceView.imageUrl}은
      * <b>빌드 시점에 완성된 URL</b>이라는 것이 계약이고, 조회 경로에서 문자열 결합조차 하지 않는
      * 것이 그 필드를 그렇게 정의한 목적이다.
      */
     @Test
-    @DisplayName("목록 표시값은 스냅샷 엔트리에서 오고 엔티티 조회가 나가지 않는다")
+    @DisplayName("목록 표시값은 홀더에서 오고 엔티티 조회가 나가지 않는다")
     void servesFromSnapshotWithoutEntityQuery() {
-        given(placeListSnapshot.current()).willReturn(photo(CURRENT_VERSION, entry(1L, "장소A")));
+        given(placeListSnapshot.current()).willReturn(photo(CURRENT_VERSION, entry(1L)));
+        given(placeViewHolder.get(1L))
+                .willReturn(new PlaceView(1L, "장소A", "https://cdn/장소A", 55L));
+        given(tagViewHolder.get(55L)).willReturn(new TagView(55L, "장소A대표태그", true));
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());
 
@@ -139,13 +157,58 @@ class PlaceServiceSnapshotSourceTest {
     }
 
     /**
+     * <b>대표 태그가 비활성이면 이름을 싣지 않는다.</b> 태그를 내리는 어드민 조작이 장소를 하나도
+     * 건드리지 않고 목록에 닿는 경로가 이것이라, 판정이 조회 시점에 있어야 성립한다.
+     * ({@code TagViewUtils.getActiveNameOrNull}과 같은 규칙)
+     */
+    @Test
+    @DisplayName("대표 태그가 비활성이면 대표 태그 이름은 null이다")
+    void hidesInactiveMainTagName() {
+        given(placeListSnapshot.current()).willReturn(photo(CURRENT_VERSION, entry(1L)));
+        given(placeViewHolder.get(1L))
+                .willReturn(new PlaceView(1L, "장소A", "https://cdn/장소A", 55L));
+        given(tagViewHolder.get(55L)).willReturn(new TagView(55L, "내려간태그", false));
+        given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
+                .willReturn(Map.of());
+
+        assertThat(get(null, null).places().get(0).primaryTag()).isNull();
+    }
+
+    /**
+     * <b>표시값이 없는 행은 건너뛰고, 커서는 그래도 그 행 뒤에서 발급된다.</b>
+     *
+     * <p>옛 회차의 사진을 보는 스크롤이 그 사이 삭제된 장소를 만나는 경우다. 사진은 순서만 박제하고
+     * 표시값은 최신이므로 그릴 것이 없는 행이 생기는데, 그 행을 <b>소비하지 않은 것으로 치면</b>
+     * 다음 페이지가 같은 자리에서 다시 시작해 영원히 같은 행을 만난다. 그래서 응답에서는 빼고
+     * 커서는 소비한 마지막 엔트리(= 그 행) 기준으로 만든다.
+     */
+    @Test
+    @DisplayName("표시값이 사라진 행은 건너뛰고 커서는 소비한 마지막 엔트리에서 발급된다")
+    void skipsRowsWithoutViewButAdvancesCursor() {
+        given(placeListSnapshot.current())
+                .willReturn(photo(CURRENT_VERSION, entry(1L), entry(2L)));
+        // 최신순이라 2번이 앞이다 — 그 2번이 삭제돼 표시값이 없다
+        given(placeViewHolder.get(2L)).willReturn(null);
+        given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of()))
+                .willReturn(Map.of());
+
+        PlaceFilterGetResponse page1 = get(null, 1);
+
+        assertThat(page1.places()).isEmpty();
+        assertThat(page1.nextCursor()).isNotNull();
+        assertThat(PlaceListCursor.decode(page1.nextCursor()).placeId())
+                .as("건너뛴 행도 소비한 것으로 친다").isEqualTo(2L);
+    }
+
+    /**
      * 커서가 없는 요청은 <b>최신 회차</b>를 잡는다. {@code byVersion}을 부르지 않는 것까지 보는
      * 이유는, 커서 없는 요청이 옛 회차로 들어갈 경로가 아예 없어야 하기 때문이다.
      */
     @Test
     @DisplayName("커서 없는 요청은 최신 회차의 사진을 잡는다")
     void picksCurrentPhotoWithoutCursor() {
-        given(placeListSnapshot.current()).willReturn(photo(CURRENT_VERSION, entry(1L, "장소A")));
+        given(placeListSnapshot.current()).willReturn(photo(CURRENT_VERSION, entry(1L)));
+        givenView(1L, "장소A");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());
 
@@ -162,7 +225,8 @@ class PlaceServiceSnapshotSourceTest {
     @DisplayName("발급 커서는 서빙한 회차의 버전을 싣는다")
     void issuedCursorCarriesServedVersion() {
         given(placeListSnapshot.current())
-                .willReturn(photo(CURRENT_VERSION, entry(1L, "장소A"), entry(2L, "장소B")));
+                .willReturn(photo(CURRENT_VERSION, entry(1L), entry(2L)));
+        givenView(2L, "장소B");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(2L)))
                 .willReturn(Map.of());
 
@@ -182,7 +246,8 @@ class PlaceServiceSnapshotSourceTest {
     @DisplayName("커서가 있으면 그 회차의 사진에서 이어 서빙한다")
     void continuesFromCursorPhoto() {
         given(placeListSnapshot.byVersion(OLD_VERSION))
-                .willReturn(photo(OLD_VERSION, entry(1L, "옛회차A"), entry(2L, "옛회차B")));
+                .willReturn(photo(OLD_VERSION, entry(1L), entry(2L)));
+        givenView(1L, "옛회차A");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());
 
@@ -202,7 +267,8 @@ class PlaceServiceSnapshotSourceTest {
     @DisplayName("이어진 페이지의 커서도 같은 회차를 싣는다")
     void continuedCursorKeepsSameVersion() {
         given(placeListSnapshot.byVersion(OLD_VERSION)).willReturn(
-                photo(OLD_VERSION, entry(1L, "옛회차A"), entry(2L, "옛회차B"), entry(3L, "옛회차C")));
+                photo(OLD_VERSION, entry(1L), entry(2L), entry(3L)));
+        givenView(2L, "옛회차B");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(2L)))
                 .willReturn(Map.of());
 

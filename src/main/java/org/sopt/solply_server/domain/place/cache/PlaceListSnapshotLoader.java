@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -18,42 +19,48 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@link PlaceListSnapshot}을 짓는 <b>유일한</b> 곳. 진입점은 {@link #rebuild()} 하나이고,
- * 그것을 부르는 것은 {@link PlaceListSnapshotScheduler}(기동 한 번 · 10분 주기)와
- * {@link PlaceListSnapshotRefresher}(어드민 커밋 뒤) 둘이다.
+ * 목록 캐시 세 벌 — 회차 사진({@link PlaceListSnapshot}) · 장소 표시값({@link PlaceViewHolder}) ·
+ * 태그 표시값({@link TagViewHolder}) — 을 짓는 <b>유일한</b> 곳. 전량 진입점은 {@link #rebuild()}
+ * 하나이고, 그것을 부르는 것은 {@link PlaceListSnapshotScheduler}(기동 한 번 · 10분 주기)와
+ * {@link PlaceListSnapshotRefresher}(어드민 커밋 뒤) 둘이다. 표시값 한 건만 다시 읽는
+ * {@link #readView(long)}은 어드민 패치 훅이 쓴다.
  *
- * <p><b>쿼리가 두 문장인 것이 이 클래스의 전부다.</b>
+ * <p><b>쿼리가 세 문장인 것이 이 클래스의 전부다.</b>
  * <ul>
  *   <li>문장 ①은 <b>장소당 한 행</b>이다. 기준 테이블은 {@code place_stats}이고 — 목록에 나와도 되는
  *       장소 = place_stats에 행이 있는 장소라는 불변식이다 — 여기에 {@code places}(좌표·이름)와
  *       MAIN 태그 파생 테이블이 붙는다. FK {@code fk_place_stats_place}가 짝을 보장하므로 INNER
- *       JOIN이 행을 잃지 않는다.</li>
+ *       JOIN이 행을 잃지 않는다. 한 행이 엔트리 하나와 {@link PlaceView} 하나로 갈라진다.</li>
  *   <li>문장 ②는 썸네일이다. 한 문장에 합치면 (태그 수 × 이미지 수)의 곱집합이 되고, 그것을
  *       자바에서 다시 접는 비용이 쿼리 하나 아끼는 값보다 크다. 두 문장 모두 place_id 순으로 읽어
  *       오므로 조립은 각 결과를 한 번씩 훑는 선형 작업이다.</li>
+ *   <li>문장 ③은 태그 전량이다. 수십 행이라 조건을 걸 값어치가 없고, <b>비활성 태그도 담아야</b>
+ *       한다 — 대표 태그 이름을 비우는 판정이 조회 시점에 {@code active}로 이뤄지기 때문이다
+ *       ({@link TagView}).</li>
  * </ul>
  *
  * <p><b>JPA를 쓰지 않는 것이 핵심 결정이다.</b> 엔티티로 전량을 읽으면 없애려는 하이드레이션 비용을
  * 배치에서 그대로 다시 치른다 — 조회 경로에서 덜어낸 CPU가 배치로 옮겨갈 뿐이다. {@code Object[]}만
  * 받아 자바에서 record로 접는다.
  *
- * <p><b>{@code @Transactional(readOnly = true)}인 이유는 두 문장이 같은 스냅샷을 보게 하기
+ * <p><b>{@code @Transactional(readOnly = true)}인 이유는 문장들이 같은 스냅샷을 보게 하기
  * 위해서다.</b> 트랜잭션이 없으면 문장마다 커넥션이 갈려, 그 사이에 커밋된 이미지 변경이 장소 목록과
  * 어긋난 조합으로 실릴 수 있다.
  *
  * <p><b>{@code REQUIRES_NEW}인 이유는 어드민 훅 때문이다.</b> 어드민 쓰기의 재생성은 커밋
  * <em>뒤에</em> 도는데({@code TransactionSynchronization#afterCommit}), 그 시점에는 이미 끝난
- * 트랜잭션의 자원이 아직 스레드에 묶여 있다. 전파를 기본값으로 두면 이 두 문장이 <b>이미 커밋된
+ * 트랜잭션의 자원이 아직 스레드에 묶여 있다. 전파를 기본값으로 두면 이 문장들이 <b>이미 커밋된
  * 트랜잭션에 참여</b>하는 모양이 되므로, 새 트랜잭션을 명시적으로 연다. 트랜잭션이 없는 다른
  * 호출자(스케줄러)에게는 그냥 새 트랜잭션 하나를 여는 것과 같아 달라지는 것이 없다.
  *
- * <p><b>동치 계약 — 응답이 바뀌면 안 된다.</b> 표시 필드 둘은 엔티티 경로와 같은 값을 내야 한다.
+ * <p><b>동치 계약 — 응답이 바뀌면 안 된다.</b> 표시값은 엔티티 경로와 같은 값을 내야 한다.
  * <ul>
  *   <li>썸네일: {@code Place.getThumbnailFileKey()}가 {@code @OrderBy("displayOrder ASC")} +
  *       {@code findFirst()}이므로, 여기서도 {@code display_order ASC}의 첫 행을 쓴다
  *       (MySQL·하이버네이트 모두 ASC에서 NULL이 앞이라 정렬 결과가 같다).</li>
- *   <li>메인 태그: 첫 MAIN 태그를 고른 <b>뒤</b> 비활성이면 null로 바꾼다. 쿼리에서
- *       {@code t.active = 1}을 걸면 안 된다 — {@link PlaceListEntry} javadoc 참조.</li>
+ *   <li>메인 태그: 첫 MAIN 태그의 <b>id</b>를 활성 여부와 무관하게 담는다. 쿼리에서
+ *       {@code t.active = 1}을 걸면 안 된다 — 걸면 비활성 MAIN이 붙은 장소에서 <em>다음</em>
+ *       MAIN 태그가 뽑혀 엔티티 경로와 갈린다({@link PlaceView}).</li>
  * </ul>
  */
 @Slf4j
@@ -64,10 +71,14 @@ public class PlaceListSnapshotLoader {
     private final EntityManager em;
     private final ImageUrlProvider imageUrlProvider;
     private final PlaceListSnapshot snapshot;
+    private final PlaceViewHolder placeViewHolder;
+    private final TagViewHolder tagViewHolder;
+    private final PlaceListWriteLock writeLock;
 
     /**
-     * 장소당 한 행 — 정렬 축 다섯 + 좌표 + 이름 + 메인 태그. <b>SELECT 목록이 곧
-     * {@link PlaceListEntry}의 필드 목록</b>이라, 축이나 표시 필드를 늘릴 때 두 곳이 함께 움직인다.
+     * 장소당 한 행 — 정렬 축 다섯 + 좌표 + 이름 + 메인 태그 id. <b>SELECT 목록이 곧
+     * {@link PlaceListEntry}와 {@link PlaceView}의 필드 목록</b>이라, 축이나 표시 필드를 늘릴 때
+     * 두 곳이 함께 움직인다.
      *
      * <p>여기에는 {@code p.active} 조건이 없다 — 있으면 안 된다. 행의 존재를 정하는 주체는
      * {@code place_stats} 하나이고, 그것이 DB 경로와 같은 행 집합을 보장하는 근거다
@@ -86,14 +97,13 @@ public class PlaceListSnapshotLoader {
                    ps.bookmark_count, ps.review_count, ps.avg_rating,
                    p.latitude, p.longitude,
                    p.name,
-                   m.tag_name, m.tag_active
+                   m.tag_id
             FROM place_stats ps
             JOIN places p ON p.id = ps.place_id
             LEFT JOIN (
                 SELECT pt.place_id   AS place_id,
                        pt.id         AS pt_id,
-                       t.name        AS tag_name,
-                       t.active      AS tag_active
+                       pt.tag_id     AS tag_id
                 FROM place_tag pt
                 JOIN tags t ON t.id = pt.tag_id
                 WHERE t.type = 'MAIN'
@@ -114,8 +124,43 @@ public class PlaceListSnapshotLoader {
             ORDER BY pi.place_id, pi.display_order
             """;
 
+    /** 태그 전량 — 수십 행이라 조건을 걸지 않는다. 비활성도 담는 이유는 {@link TagView} */
+    private static final String TAG_SOURCE_SQL = """
+            SELECT t.id, t.name, t.active
+            FROM tags t
+            """;
+
     /**
-     * 스냅샷을 통째로 다시 짓고 교체한다.
+     * 장소 하나의 표시값 — 전량 재빌드와 <b>같은 규칙</b>을 상관 서브쿼리 둘로 옮긴 것이다
+     * (첫 MAIN 태그는 {@code place_tag.id} 오름차순, 썸네일은 {@code display_order} 오름차순).
+     *
+     * <p>{@code p.active}를 묻지 않는다. 비활성 장소의 뷰가 맵에 남아도 정렬 배열에 그 장소가
+     * 없으면 화면에 닿지 않으므로 무해하고, 반대로 여기서 걸러 {@code null}을 내면 "장소가 없다"와
+     * "비활성이다"가 같은 값이 되어 패치가 조용히 아무 일도 하지 않는다.
+     */
+    private static final String SINGLE_VIEW_SQL = """
+            SELECT p.name,
+                   (SELECT pt.tag_id
+                      FROM place_tag pt
+                      JOIN tags t ON t.id = pt.tag_id
+                     WHERE pt.place_id = p.id AND t.type = 'MAIN'
+                     ORDER BY pt.id
+                     LIMIT 1),
+                   (SELECT pi.image_file_key
+                      FROM place_images pi
+                     WHERE pi.place_id = p.id
+                     ORDER BY pi.display_order
+                     LIMIT 1)
+            FROM places p
+            WHERE p.id = :placeId
+            """;
+
+    /**
+     * 사진과 표시값 두 벌을 통째로 다시 짓고 교체한다.
+     *
+     * <p><b>락을 메서드 첫 줄에서 잡는다.</b> 재빌드와 표시값 패치가 한 줄로 서야 어드민 수정이
+     * 유실되지 않는다 — 근거와, 트랜잭션이 락보다 먼저 열려도 안전한 이유는
+     * {@link PlaceListWriteLock} javadoc.
      *
      * <p><b>버전은 여기서, 사진을 완성한 순간에, 한 번만 발급한다.</b> 이것이 "버전↔내용 1:1"
      * 불변식의 근거다 — 남의 버전에 내 내용을 붙이는 경로가 존재하지 않으므로 "버전은 같은데 목록이
@@ -123,10 +168,14 @@ public class PlaceListSnapshotLoader {
      * 하고 버전을 찍지 않는다.
      *
      * <p><b>계약 — 사진 완성과 {@code adopt} 사이가 확장 설계의 삽입 지점이다.</b> 다중 인스턴스판의
-     * 아카이브 적재(Redis {@code SET})와 발행({@code PUBLISH NEW_VERSION})은 정확히 이 두 줄
+     * 아카이브 적재(Redis {@code SET})와 발행({@code PUBLISH NEW_VERSION})은 정확히 그 두 줄
      * 사이에 들어간다({@code docs/design/2026-09-01-multi-instance-snapshot-pipeline.md} §3-1·3-2).
-     * 그 자리를 비워 두려고 버전 발급을 홀더에서 이리로 옮겼으니, 이 두 줄 사이에 다른 관심사를
+     * 그 자리를 비워 두려고 버전 발급을 홀더에서 이리로 옮겼으니, 그 사이에 다른 관심사를
      * 끼워 넣지 말 것.
+     *
+     * <p><b>표시값 홀더를 사진보다 먼저 교체한다.</b> 순서가 반대면 새 사진에만 있는 장소가 옛 맵에
+     * 없어 조회 경로가 그 행을 건너뛰는 창이 열린다. 먼저 교체하면 그 창이 없고, 남는 것은
+     * "삭제된 장소를 옛 사진에서 만나 건너뛰는" 계약상 정상 경로뿐이다.
      *
      * <p><b>아래 로그를 지우지 말 것.</b> 나중에 회차 직후 CPU 스파이크가 문제가 됐을 때
      * "몇 행을 몇 ms에 지었는가"가 남아 있지 않으면 원인을 이 경로로 좁힐 수 없다
@@ -137,31 +186,69 @@ public class PlaceListSnapshotLoader {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public int rebuild() {
+        return writeLock.call(this::rebuildInLock);
+    }
+
+    private int rebuildInLock() {
         long startNanos = System.nanoTime();
 
-        PlaceListIndex fresh = PlaceListIndex.of(readEntries());
+        Source source = readSource();
+        Map<Long, TagView> tagViews = readTagViews();
+
+        PlaceListIndex fresh = PlaceListIndex.of(source.entries());
         PlaceListPhoto photo = new PlaceListPhoto(System.currentTimeMillis(), fresh);
+        placeViewHolder.replaceAll(source.views());
+        tagViewHolder.replaceAll(tagViews);
         snapshot.adopt(photo);
 
         long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
-        log.info("장소 목록 스냅샷 교체 완료 - version={}, places={}, towns={}, arrays={}, elapsed={}ms",
-                photo.version(), fresh.placeCount(), fresh.townCount(), fresh.arrayCount(), elapsedMs);
+        log.info("장소 목록 스냅샷 교체 완료 - version={}, places={}, towns={}, arrays={}, tags={},"
+                        + " elapsed={}ms",
+                photo.version(), fresh.placeCount(), fresh.townCount(), fresh.arrayCount(),
+                tagViews.size(), elapsedMs);
         return fresh.placeCount();
     }
 
     /**
-     * 두 결과를 접어 엔트리 목록을 만든다. 부분 결과가 스냅샷으로 새지 않는다 — 교체는
-     * {@link #rebuild()}가 이 메서드를 끝까지 받은 뒤 한 번뿐이다.
+     * 장소 하나의 표시값을 다시 읽는다. 어드민이 이름·이미지·메인 태그를 고친 뒤 그 항목만 갈아
+     * 끼우는 경로가 이것이다 ({@link PlaceListSnapshotRefresher#patchPlaceViewAfterCommit}).
+     *
+     * <p><b>규칙은 전량 재빌드와 같아야 한다.</b> 갈리면 같은 장소가 "패치된 뒤"와 "다음 회차 뒤"에
+     * 다르게 보인다 — 재빌드 결과와 패치 결과의 동치는 IT가 지킨다.
+     *
+     * @return 장소 행이 없으면 {@code empty} — 호출자는 맵을 건드리지 않는다
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public Optional<PlaceView> readView(long placeId) {
+        List<Object[]> rows = readSingleViewRow(placeId);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        Object[] row = rows.get(0);
+        return Optional.of(new PlaceView(
+                placeId,
+                (String) row[0],
+                imageUrlProvider.getImageUrl((String) row[2]),
+                toNullableLong(row[1])));
+    }
+
+    /** 문장 ①이 한 번에 낳는 두 벌 — 순서 값과 표시값이다 */
+    private record Source(List<PlaceListEntry> entries, Map<Long, PlaceView> views) {}
+
+    /**
+     * 두 결과를 접어 엔트리 목록과 표시값 맵을 만든다. 부분 결과가 캐시로 새지 않는다 — 교체는
+     * {@link #rebuildInLock()}이 이 메서드를 끝까지 받은 뒤 한 번뿐이다.
      *
      * <p>중복 스킵을 <b>직전 id 비교</b>로 하는 것은 {@link #LIST_SOURCE_SQL}의
      * {@code ORDER BY ps.place_id}에 기대는 것이다 — 같은 장소의 행이 반드시 붙어 나온다.
      * 그 ORDER BY를 지우면 이 스킵이 조용히 무력해진다.
      */
-    private List<PlaceListEntry> readEntries() {
+    private Source readSource() {
         Map<Long, String> thumbnailUrlByPlaceId = readThumbnailUrls();
 
         List<Object[]> rows = readListSource();
         List<PlaceListEntry> entries = new ArrayList<>(rows.size());
+        Map<Long, PlaceView> views = new HashMap<>(rows.size() * 2);
         long previousPlaceId = -1L;
         for (Object[] row : rows) {
             long placeId = ((Number) row[0]).longValue();
@@ -169,9 +256,14 @@ public class PlaceListSnapshotLoader {
                 continue;   // MAIN 태그가 둘 이상인 비정상 데이터 — 첫 행을 유지한다
             }
             previousPlaceId = placeId;
-            entries.add(toEntry(row, thumbnailUrlByPlaceId.get(placeId)));
+            entries.add(toEntry(row));
+            views.put(placeId, new PlaceView(
+                    placeId,
+                    (String) row[10],
+                    thumbnailUrlByPlaceId.get(placeId),
+                    toNullableLong(row[11])));
         }
-        return entries;
+        return new Source(entries, views);
     }
 
     /**
@@ -194,6 +286,16 @@ public class PlaceListSnapshotLoader {
         return urlByPlaceId;
     }
 
+    private Map<Long, TagView> readTagViews() {
+        List<Object[]> rows = readTagSource();
+        Map<Long, TagView> views = new HashMap<>(rows.size() * 2);
+        for (Object[] row : rows) {
+            long tagId = ((Number) row[0]).longValue();
+            views.put(tagId, new TagView(tagId, (String) row[1], toBoolean(row[2])));
+        }
+        return views;
+    }
+
     @SuppressWarnings("unchecked")
     private List<Object[]> readListSource() {
         return em.createNativeQuery(LIST_SOURCE_SQL).getResultList();
@@ -204,13 +306,24 @@ public class PlaceListSnapshotLoader {
         return em.createNativeQuery(THUMBNAIL_SQL).getResultList();
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Object[]> readTagSource() {
+        return em.createNativeQuery(TAG_SOURCE_SQL).getResultList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object[]> readSingleViewRow(long placeId) {
+        return em.createNativeQuery(SINGLE_VIEW_SQL)
+                .setParameter("placeId", placeId)
+                .getResultList();
+    }
+
     /**
      * <b>값의 좁힘이 여기서 한 번만 일어난다.</b> 생성일은 커서와 같은 식으로 epoch 초가 되고
      * (근거는 {@code PlaceListDbQueryRepository#findLatestRows}의 왕복 계약), 평점은 표시용
-     * BigDecimal과 비교용 double 두 벌로 갈리며, 이미지는 완성된 URL로 들어온다
-     * ({@link PlaceListEntry} javadoc).
+     * BigDecimal과 비교용 double 두 벌로 갈린다 ({@link PlaceListEntry} javadoc).
      */
-    private static PlaceListEntry toEntry(Object[] row, String imageUrl) {
+    private static PlaceListEntry toEntry(Object[] row) {
         BigDecimal avgRating = (BigDecimal) row[7];
         return new PlaceListEntry(
                 ((Number) row[0]).longValue(),
@@ -223,10 +336,7 @@ public class PlaceListSnapshotLoader {
                 avgRating,
                 avgRating.doubleValue(),
                 toNullableDouble(row[8]),
-                toNullableDouble(row[9]),
-                (String) row[10],
-                imageUrl,
-                activeTagNameOrNull(row[11], row[12]));
+                toNullableDouble(row[9]));
     }
 
     /**
@@ -244,15 +354,16 @@ public class PlaceListSnapshotLoader {
         return value == null ? null : ((Number) value).doubleValue();
     }
 
-    /**
-     * {@code TagViewUtils.getActiveNameOrNull}의 SQL 판 — 이름이 없거나(메인 태그 없음)
-     * 비활성이면 null. 두 규칙이 갈리면 목록의 대표 태그가 캐시 on/off에서 달라진다.
-     */
-    private static String activeTagNameOrNull(Object tagName, Object tagActive) {
-        if (tagName == null || tagActive == null) {
-            return null;
+    /** MAIN 태그가 없는 장소는 NULL이다 — 0으로 채우면 존재하지 않는 태그를 가리킨다 */
+    private static Long toNullableLong(Object value) {
+        return value == null ? null : ((Number) value).longValue();
+    }
+
+    /** BOOLEAN 컬럼도 드라이버에 따라 {@code Boolean}과 {@code TINYINT}로 갈린다 */
+    private static boolean toBoolean(Object value) {
+        if (value == null) {
+            return false;
         }
-        boolean active = tagActive instanceof Boolean b ? b : ((Number) tagActive).intValue() != 0;
-        return active ? (String) tagName : null;
+        return value instanceof Boolean b ? b : ((Number) value).intValue() != 0;
     }
 }

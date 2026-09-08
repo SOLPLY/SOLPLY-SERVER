@@ -27,6 +27,9 @@ import org.sopt.solply_server.domain.place.cache.PlaceListEntry;
 import org.sopt.solply_server.domain.place.cache.PlaceListIndex;
 import org.sopt.solply_server.domain.place.cache.PlaceListPhoto;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
+import org.sopt.solply_server.domain.place.cache.PlaceView;
+import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
+import org.sopt.solply_server.domain.place.cache.TagViewHolder;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -89,8 +92,11 @@ class PlaceServiceStatsWiringTest {
   @Mock private PlaceReviewRepository placeReviewRepository;
   @Mock private TownHierarchyResolver townHierarchyResolver;
   @Mock private PlaceStatsRepository placeStatsRepository;
-  /** 목록 경로의 유일한 출처. 카운트가 어디서 오는지가 이 파일의 주제라 실제로 값을 세운다 */
+  /** 목록 경로의 카운트 출처. 카운트가 어디서 오는지가 이 파일의 주제라 실제로 값을 세운다 */
   @Mock private PlaceListSnapshot placeListSnapshot;
+  /** 카운트는 여기서 오지 않는다 — 응답 조립이 성립하도록 이름·썸네일만 세운다 */
+  @Mock private PlaceViewHolder placeViewHolder;
+  @Mock private TagViewHolder tagViewHolder;
 
   /** 표시용 평점·리뷰 수. 카운트와 구분되는 값이라야 실어 나르는 자리가 뒤바뀐 변이를 잡는다 */
   private static final long REVIEW_COUNT = 12L;
@@ -114,10 +120,11 @@ class PlaceServiceStatsWiringTest {
         PLACE_ID, TOWN_ID, 0L,
         9.0, 1_767_225_600L,
         bookmarkCount, reviewCount, avgRating, avgRating.doubleValue(),
-        37.5, 127.0,
-        "장소1", "https://img/1", null);
+        37.5, 127.0);
     given(placeListSnapshot.current())
         .willReturn(new PlaceListPhoto(VERSION, PlaceListIndex.of(List.of(entry))));
+    given(placeViewHolder.get(PLACE_ID))
+        .willReturn(new PlaceView(PLACE_ID, "장소1", "https://img/1", null));
   }
 
   /**

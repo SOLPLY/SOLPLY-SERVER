@@ -49,8 +49,7 @@ class PlaceListIndexTest {
                 placeId, townId, 0L,
                 popularScore, 1_767_225_600L + placeId,
                 bookmarkCount, reviewCount, BigDecimal.ZERO, reviewCount == 0 ? 0.0 : 4.0,
-                latitude, latitude == null ? null : 127.0,
-                "장소" + placeId, null, null);
+                latitude, latitude == null ? null : 127.0);
     }
 
     /** 정렬 하나가 그 동네에서 내놓는 전량 — 커서 없이 끝까지 훑는다 */
