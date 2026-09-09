@@ -10,6 +10,8 @@ import java.util.PriorityQueue;
  *
  * <p><b>정렬이 DB가 아니라 여기 있는 이유.</b> 기준점이 요청마다 다르므로 인덱스가 미리 만들어 둘
  * 수 있는 순서가 없다. 그래서 필터를 통과한 후보를 전량 받아(시 단위 ~1,800건) 앱에서 정렬한다.
+ * 후보는 좌표 열 한 벌과 그 위의 자리 목록으로 온다({@link Candidates}) — 후보마다 객체를 만들지
+ * 않고, 순위에는 자리 번호를 실어 보내 호출자가 나머지 열을 그 번호로 읽는다.
  *
  * <p><b>전순서는 (거리 ASC, placeId ASC)다.</b> 같은 건물의 여러 가게처럼 좌표가 완전히 같은 장소가
  * 흔하고, 거리만으로 정렬하면 그들 사이 순서가 정해지지 않아 페이지 경계가 흔들린다 — placeId
@@ -28,12 +30,22 @@ public final class DistanceSort {
     private DistanceSort() {
     }
 
-    public record Candidate(long placeId, double latitude, double longitude) {}
+    /**
+     * 거리순 후보 — 열 배열 한 벌과 그 위의 자리 목록이다. {@code slots[i]}가 후보 i의 행 번호이고,
+     * 좌표·id는 그 행 번호로 열에서 읽는다. 배열은 복사하지 않고 그대로 참조한다 — 호출자가 만든 뒤
+     * 바꾸지 않는 것이 계약이다.
+     */
+    public record Candidates(int[] slots, long[] placeId, double[] latitude, double[] longitude) {
+        public int size() {
+            return slots.length;
+        }
+    }
 
-    public record Ranked(long placeId, double distanceMeters) {}
+    /** 순위가 매겨진 후보 하나 — 자리 번호로 호출자가 나머지 열을 읽는다 */
+    public record Ranked(int slot, long placeId, double distanceMeters) {}
 
     /** 정렬: distance ASC, tie는 placeId ASC. cursor가 null이 아니면 (cursorDistance, cursorPlaceId) 뒤의 항목만. limit개 반환(호출자가 hasNext용으로 limit+1을 넘긴다). */
-    public static List<Ranked> topK(Iterable<Candidate> candidates,
+    public static List<Ranked> topK(Candidates candidates,
             double refLat, double refLng,
             Double cursorDistance, Long cursorPlaceId, int limit) {
 
@@ -51,25 +63,26 @@ public final class DistanceSort {
         // 크기 limit의 max-heap(머리 = 가장 먼 항목)으로 O(n log limit). 전량 정렬 O(n log n)이 아니라
         // 이 방식인 것이 설계 결정이다 — 요청마다 도는 경로라 페이지 크기만큼만 유지 비용을 낸다.
         PriorityQueue<Ranked> heap = new PriorityQueue<>(NEAREST_FIRST.reversed());
-        for (Candidate candidate : candidates) {
+        for (int i = 0; i < candidates.size(); i++) {
+            int slot = candidates.slots()[i];
+            long placeId = candidates.placeId()[slot];
             double distance = haversineMeters(
-                    refLat, refLng, candidate.latitude(), candidate.longitude());
+                    refLat, refLng, candidates.latitude()[slot], candidates.longitude()[slot]);
             if (cursorDistance != null
-                    && !isAfterCursor(distance, candidate.placeId(),
-                    cursorDistance, cursorPlaceId)) {
+                    && !isAfterCursor(distance, placeId, cursorDistance, cursorPlaceId)) {
                 continue;
             }
             if (heap.size() < limit) {
-                heap.offer(new Ranked(candidate.placeId(), distance));
+                heap.offer(new Ranked(slot, placeId, distance));
                 continue;
             }
             // 탈락 판정은 할당 전에 primitive로 한다 — 힙이 찬 뒤의 후보 대부분이 여기서 걸러지고,
             // 걸러진 후보는 Ranked를 만들지 않는다. 이 비교는 NEAREST_FIRST와 같은 전순서여야 한다.
             Ranked worst = heap.peek();
             int byDistance = Double.compare(distance, worst.distanceMeters());
-            if (byDistance < 0 || (byDistance == 0 && candidate.placeId() < worst.placeId())) {
+            if (byDistance < 0 || (byDistance == 0 && placeId < worst.placeId())) {
                 heap.poll();
-                heap.offer(new Ranked(candidate.placeId(), distance));
+                heap.offer(new Ranked(slot, placeId, distance));
             }
         }
 

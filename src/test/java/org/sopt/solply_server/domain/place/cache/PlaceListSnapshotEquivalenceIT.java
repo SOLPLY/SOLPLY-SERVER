@@ -424,11 +424,22 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
         double refLat = cursor == null ? REF_LAT : cursor.key(0);
         double refLng = cursor == null ? REF_LNG : cursor.key(1);
 
+        // 자리 번호는 후보 목록의 첨자다 — 대조군은 id만 읽으므로 열은 행 순서 그대로 세운다
+        int n = candidates.size();
+        int[] slots = new int[n];
+        long[] placeIds = new long[n];
+        double[] latitudes = new double[n];
+        double[] longitudes = new double[n];
+        for (int i = 0; i < n; i++) {
+            DistanceCandidateRow row = candidates.get(i);
+            slots[i] = i;
+            placeIds[i] = row.placeId();
+            latitudes[i] = row.latitude();
+            longitudes[i] = row.longitude();
+        }
+
         return DistanceSort.topK(
-                        candidates.stream()
-                                .map(c -> new DistanceSort.Candidate(
-                                        c.placeId(), c.latitude(), c.longitude()))
-                                .toList(),
+                        new DistanceSort.Candidates(slots, placeIds, latitudes, longitudes),
                         refLat, refLng,
                         cursor == null ? null : cursor.key(2),
                         cursor == null ? null : cursor.placeId(),

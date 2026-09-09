@@ -506,22 +506,33 @@ public class PlaceService {
     if (candidates.isEmpty()) {
       return List.of();
     }
-    Map<Long, PlaceListEntry> byId = candidates.stream()
-        .collect(Collectors.toMap(PlaceListEntry::placeId, Function.identity()));
+    // 열을 여기서 만드는 것은 사진이 아직 엔트리 배열이기 때문이다 — 사진이 열을 들면 그 열을
+    // 그대로 넘긴다. 자리 번호는 후보 목록의 첨자이므로 순위를 받아 같은 첨자로 엔트리를 되찾는다.
+    // 좌표 언박싱이 안전한 것은 distanceCandidates가 좌표 없는 엔트리를 이미 뺀 뒤이기 때문이다.
+    int n = candidates.size();
+    int[] slots = new int[n];
+    long[] placeIds = new long[n];
+    double[] latitudes = new double[n];
+    double[] longitudes = new double[n];
+    for (int i = 0; i < n; i++) {
+      PlaceListEntry c = candidates.get(i);
+      slots[i] = i;
+      placeIds[i] = c.placeId();
+      latitudes[i] = c.latitude();
+      longitudes[i] = c.longitude();
+    }
 
     // 페이징이 없는 요청의 fetchSize는 Integer.MAX_VALUE − 1이다. 그 수를 그대로 넘기면 정렬
     // 컴포넌트가 그 크기로 버퍼를 잡을 수 있어 후보 수로 눌러 준다 — 어차피 그보다 많이 나올 수 없다.
     List<DistanceSort.Ranked> ranked = DistanceSort.topK(
-        candidates.stream()
-            .map(c -> new DistanceSort.Candidate(c.placeId(), c.latitude(), c.longitude()))
-            .toList(),
-        refLat, refLng, cursorDistance, cursorPlaceId, Math.min(fetchSize, candidates.size()));
+        new DistanceSort.Candidates(slots, placeIds, latitudes, longitudes),
+        refLat, refLng, cursorDistance, cursorPlaceId, Math.min(fetchSize, n));
 
     double baseLat = refLat;
     double baseLng = refLng;
     return ranked.stream()
         // 기준 좌표를 함께 실어야 다음 페이지가 같은 좌표계에서 이어진다
-        .map(r -> new ListRow(byId.get(r.placeId()),
+        .map(r -> new ListRow(candidates.get(r.slot()),
             List.of(baseLat, baseLng, r.distanceMeters())))
         .toList();
   }
