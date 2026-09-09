@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.util.List;
@@ -53,8 +53,9 @@ import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
  *
  * <p>이 파일이 지키는 것은 넷이다.
  * <ul>
- *   <li>표시값(이름·썸네일·대표 태그)이 <b>홀더에서</b> 오고 동네는 엔트리에서 온다. 엔티티
- *       조회도, URL 결합도 하지 않는다 — 이 작업이 줄이려던 비용 그 자체다</li>
+ *   <li>표시값(이름·썸네일·대표 태그)이 <b>홀더에서</b> 오고 동네는 엔트리에서 온다. 엔티티 조회는
+ *       나가지 않고, 썸네일 URL 결합은 <b>응답에 실리는 행에만</b> 일어난다 — 이 작업이 줄이려던
+ *       비용 그 자체다</li>
  *   <li>홀더에 표시값이 없는 행은 <b>건너뛰되 커서는 그 행 뒤에서</b> 발급된다</li>
  *   <li>커서가 없으면 <b>최신 회차</b>({@code current})를, 있으면 <b>커서가 박제한 회차</b>
  *       ({@code byVersion})를 잡는다</li>
@@ -113,7 +114,7 @@ class PlaceServiceSnapshotSourceTest {
      */
     private void givenView(long placeId, String name) {
         given(placeViewHolder.get(placeId))
-                .willReturn(new PlaceView(placeId, name, "https://cdn/" + name, null));
+                .willReturn(new PlaceView(placeId, name, name + "_이미지키", null));
     }
 
     private static Snapshot snapshot(long version, PlaceEntry... entries) {
@@ -129,16 +130,18 @@ class PlaceServiceSnapshotSourceTest {
      * <b>표시값은 홀더에서 오고, 엔티티는 읽지 않는다.</b> 값만 확인하면 "엔티티도 읽고 홀더
      * 값을 쓰는" 변이가 통과한다 — 그 변이는 응답이 옳으면서 절감은 0이라 가장 위험하다.
      *
-     * <p>{@code imageUrlProvider}까지 호출되지 않는지 보는 이유: {@code PlaceView.imageUrl}은
-     * <b>빌드 시점에 완성된 URL</b>이라는 것이 계약이고, 조회 경로에서 문자열 결합조차 하지 않는
-     * 것이 그 필드를 그렇게 정의한 목적이다.
+     * <p>{@code imageUrlProvider} 호출 <b>횟수</b>를 함께 보는 이유: 뷰가 드는 것은 파일 키뿐이라
+     * URL 결합이 조회 경로로 넘어왔고({@code PlaceView}), 그 결합은 <b>응답에 실리는 행에만</b>
+     * 일어나야 값이 있다. 재빌드가 전 장소분을 미리 만들던 것을 여기로 옮긴 것이 이 작업이므로,
+     * "표시된 행마다 정확히 한 번"이 그 계약이다.
      */
     @Test
     @DisplayName("목록 표시값은 홀더에서 오고 엔티티 조회가 나가지 않는다")
     void servesFromSnapshotWithoutEntityQuery() {
         given(snapshotBox.current()).willReturn(snapshot(CURRENT_VERSION, entry(1L)));
         given(placeViewHolder.get(1L))
-                .willReturn(new PlaceView(1L, "장소A", "https://cdn/장소A", 55L));
+                .willReturn(new PlaceView(1L, "장소A", "장소A_이미지키", 55L));
+        given(imageUrlProvider.getImageUrl("장소A_이미지키")).willReturn("https://cdn/장소A");
         given(tagViewHolder.get(55L)).willReturn(new TagView(55L, "장소A대표태그", true));
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());
@@ -152,7 +155,7 @@ class PlaceServiceSnapshotSourceTest {
         assertThat(preview.townId()).isEqualTo(TOWN_ID);
 
         verify(placeRepository, never()).findPlacesWithTagsByIds(anyList());
-        verify(imageUrlProvider, never()).getImageUrl(anyString());
+        verify(imageUrlProvider, times(1)).getImageUrl("장소A_이미지키");
     }
 
     /**
@@ -165,7 +168,7 @@ class PlaceServiceSnapshotSourceTest {
     void hidesInactiveMainTagName() {
         given(snapshotBox.current()).willReturn(snapshot(CURRENT_VERSION, entry(1L)));
         given(placeViewHolder.get(1L))
-                .willReturn(new PlaceView(1L, "장소A", "https://cdn/장소A", 55L));
+                .willReturn(new PlaceView(1L, "장소A", "장소A_이미지키", 55L));
         given(tagViewHolder.get(55L)).willReturn(new TagView(55L, "내려간태그", false));
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());

@@ -11,8 +11,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import lombok.extern.slf4j.Slf4j;
-import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -68,7 +69,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <ul>
  *   <li>썸네일: {@code Place.getThumbnailFileKey()}가 {@code @OrderBy("displayOrder ASC")} +
  *       {@code findFirst()}이므로, 여기서도 {@code display_order ASC}의 첫 행을 쓴다
- *       (MySQL·하이버네이트 모두 ASC에서 NULL이 앞이라 정렬 결과가 같다).</li>
+ *       (MySQL·하이버네이트 모두 ASC에서 NULL이 앞이라 정렬 결과가 같다). 담는 것은 그 행의
+ *       <b>파일 키 원값</b>이고 URL 결합은 조회 경로의 몫이다({@link PlaceView}).</li>
  *   <li>메인 태그: 첫 MAIN 태그의 <b>id</b>를 활성 여부와 무관하게 담는다. 쿼리에서
  *       {@code t.active = 1}을 걸면 안 된다 — 걸면 비활성 MAIN이 붙은 장소에서 <em>다음</em>
  *       MAIN 태그가 뽑혀 엔티티 경로와 갈린다({@link PlaceView}).</li>
@@ -79,7 +81,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class SnapshotLoader {
 
     private final EntityManager em;
-    private final ImageUrlProvider imageUrlProvider;
     private final SnapshotBox snapshotBox;
     private final PlaceViewHolder placeViewHolder;
     private final TagViewHolder tagViewHolder;
@@ -90,7 +91,6 @@ public class SnapshotLoader {
 
     public SnapshotLoader(
             EntityManager em,
-            ImageUrlProvider imageUrlProvider,
             SnapshotBox snapshotBox,
             PlaceViewHolder placeViewHolder,
             TagViewHolder tagViewHolder,
@@ -98,7 +98,6 @@ public class SnapshotLoader {
             SnapshotVersionIssuer versionIssuer,
             PlatformTransactionManager transactionManager) {
         this.em = em;
-        this.imageUrlProvider = imageUrlProvider;
         this.snapshotBox = snapshotBox;
         this.placeViewHolder = placeViewHolder;
         this.tagViewHolder = tagViewHolder;
@@ -294,12 +293,17 @@ public class SnapshotLoader {
         return Optional.of(new PlaceView(
                 placeId,
                 (String) row[0],
-                imageUrlProvider.getImageUrl((String) row[2]),
+                (String) row[2],
                 toNullableLong(row[1])));
     }
 
-    /** 문장 ①이 한 번에 낳는 두 벌 — 순서 값과 표시값이다 */
-    private record Source(List<PlaceEntry> entries, Map<Long, PlaceView> views) {}
+    /**
+     * 문장 ①이 한 번에 낳는 두 벌 — 순서 값과 표시값이다.
+     *
+     * <p>표시값 맵이 {@link ConcurrentMap}인 것은 이것이 그대로 {@link PlaceViewHolder}의 맵이 되기
+     * 때문이다 — 홀더는 복사하지 않고 참조만 받고, 그 뒤로 어드민 패치가 항목을 고친다.
+     */
+    private record Source(List<PlaceEntry> entries, ConcurrentMap<Long, PlaceView> views) {}
 
     /**
      * 두 결과를 접어 엔트리 목록과 표시값 맵을 만든다. 부분 결과가 캐시로 새지 않는다 — 교체는
@@ -310,11 +314,12 @@ public class SnapshotLoader {
      * 그 ORDER BY를 지우면 이 스킵이 조용히 무력해진다.
      */
     private Source readSource() {
-        Map<Long, String> thumbnailUrlByPlaceId = readThumbnailUrls();
+        Map<Long, String> thumbnailKeyByPlaceId = readThumbnailKeys();
 
         List<Object[]> rows = readListSource();
         List<PlaceEntry> entries = new ArrayList<>(rows.size());
-        Map<Long, PlaceView> views = new HashMap<>(rows.size() * 2);
+        // 홀더가 그대로 받아 쓰는 맵이라 여기서 처음부터 동시 수정 가능한 것으로 만든다
+        ConcurrentMap<Long, PlaceView> views = new ConcurrentHashMap<>(rows.size() * 2);
         long previousPlaceId = -1L;
         for (Object[] row : rows) {
             long placeId = ((Number) row[0]).longValue();
@@ -326,30 +331,32 @@ public class SnapshotLoader {
             views.put(placeId, new PlaceView(
                     placeId,
                     (String) row[10],
-                    thumbnailUrlByPlaceId.get(placeId),
+                    thumbnailKeyByPlaceId.get(placeId),
                     toNullableLong(row[11])));
         }
         return new Source(entries, views);
     }
 
     /**
-     * 장소 → 썸네일 URL. 값이 {@code null}인 항목도 <b>키는 남는다</b>.
+     * 장소 → 썸네일 파일 키({@code image_file_key} 원값). 값이 {@code null}인 항목도
+     * <b>키는 남는다</b>.
      *
-     * <p>{@code containsKey}로 거르는 것이 계약이다: {@code getImageUrl}은 blank 키에 null을 내는데
-     * {@code putIfAbsent}·{@code computeIfAbsent}는 null을 "없음"으로 취급해 다음 이미지를 대신
-     * 집어 든다. 엔티티 경로는 그 경우 null 그대로이므로 여기서도 null을 값으로 남겨야 한다.
+     * <p>{@code containsKey}로 거르는 것이 계약이다: {@code putIfAbsent}·{@code computeIfAbsent}는
+     * null을 "없음"으로 취급해 <em>다음</em> 이미지를 대신 집어 든다. 엔티티 경로는 첫 이미지의 키가
+     * 비어 있으면 그대로 썸네일 없음이므로, 여기서도 첫 행의 값을 그대로 남겨야 두 경로가 갈리지
+     * 않는다.
      */
-    private Map<Long, String> readThumbnailUrls() {
+    private Map<Long, String> readThumbnailKeys() {
         List<Object[]> rows = readThumbnails();
-        Map<Long, String> urlByPlaceId = new HashMap<>(rows.size() * 2);
+        Map<Long, String> keyByPlaceId = new HashMap<>(rows.size() * 2);
         for (Object[] row : rows) {
             long placeId = ((Number) row[0]).longValue();
             // 첫 행이 display_order가 가장 앞선 이미지다
-            if (!urlByPlaceId.containsKey(placeId)) {
-                urlByPlaceId.put(placeId, imageUrlProvider.getImageUrl((String) row[1]));
+            if (!keyByPlaceId.containsKey(placeId)) {
+                keyByPlaceId.put(placeId, (String) row[1]);
             }
         }
-        return urlByPlaceId;
+        return keyByPlaceId;
     }
 
     /**

@@ -1,7 +1,7 @@
 package org.sopt.solply_server.domain.place.cache;
 
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 public class PlaceViewHolder {
 
     /** 재빌드는 이 참조를 통째로 갈고, 패치는 가리키는 맵의 한 항목만 고친다 */
-    private volatile Map<Long, PlaceView> views = new ConcurrentHashMap<>();
+    private volatile ConcurrentMap<Long, PlaceView> views = new ConcurrentHashMap<>();
 
     /** 없으면 {@code null} — 호출자가 "그 사이 사라진 장소"로 번역한다 */
     public PlaceView get(long placeId) {
@@ -39,9 +39,17 @@ public class PlaceViewHolder {
      * 앞 3건은 옛 이름, 뒤 7건은 새 이름. <b>그것이 계약이다</b>: 커서가 보장하는 것은 정렬 순서의
      * 일관성까지이고 표시값은 최신일 수 있다. 요청 하나가 한 회차로 고정되는 것은 스냅샷
      * ({@code SnapshotBox} 계약 2)이지 이 맵이 아니다.
+     *
+     * <p><b>받은 맵을 복사하지 않는다 — 소유권이 넘어온다.</b> 넘긴 쪽은 그 뒤로 이 맵을 건드리지
+     * 않아야 한다. 복사본을 하나 더 뜨면 전 장소의 표시값을 재빌드마다 두 번 담게 되는데, 그것을
+     * 아끼려고 만드는 쪽이 처음부터 홀더가 쓸 맵을 만들어 준다({@code SnapshotLoader#readSource}).
+     *
+     * <p>파라미터가 {@link ConcurrentMap}인 것도 그래서다. 패치({@link #put})가 이 맵의 항목을
+     * 직접 고치므로 일반 {@code HashMap}이 들어오면 조회와 수정이 겹치는 순간 깨진다 — 타입으로
+     * 막아 둔다.
      */
-    void replaceAll(Map<Long, PlaceView> fresh) {
-        this.views = new ConcurrentHashMap<>(fresh);
+    void replaceAll(ConcurrentMap<Long, PlaceView> fresh) {
+        this.views = fresh;
     }
 
     /** 어드민 수정 한 건 — 그 장소만 갈아 끼운다 */

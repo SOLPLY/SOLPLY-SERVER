@@ -126,7 +126,7 @@ class PlaceServiceStatsWiringTest {
     given(snapshotBox.current())
         .willReturn(new Snapshot(VERSION, SortedPlaces.of(List.of(entry))));
     given(placeViewHolder.get(PLACE_ID))
-        .willReturn(new PlaceView(PLACE_ID, "장소1", "https://img/1", null));
+        .willReturn(new PlaceView(PLACE_ID, "장소1", "key1", null));
   }
 
   /**

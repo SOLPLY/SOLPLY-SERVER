@@ -365,7 +365,9 @@ public class PlaceService {
           return PlacePreviewDto.of(
               entry.placeId(),
               view.name(),
-              view.imageUrl(),
+              // 썸네일 URL은 여기서 만든다 — 재빌드가 전 장소분을 미리 만들어 두면 그중 응답에
+              // 실리는 것은 이 페이지의 열 몇 건뿐이라 나머지는 버려진다 (PlaceView 참조)
+              imageUrlProvider.getImageUrl(view.thumbnailFileKey()),
               mainTagNameOf(view),
               bookmarkStatus.getOrDefault(entry.placeId(), false),
               entry.townId(),

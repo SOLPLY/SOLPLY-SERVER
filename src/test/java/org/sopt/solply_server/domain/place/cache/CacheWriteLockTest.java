@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.willAnswer;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -57,8 +58,9 @@ class CacheWriteLockTest {
         willAnswer(invocation -> writeLock.call(() -> {
             reading.countDown();
             await(resume);
-            placeViewHolder.replaceAll(
-                    Map.of(PLACE_ID, new PlaceView(PLACE_ID, STALE_NAME, null, null)));
+            // 홀더는 넘어온 맵을 복사하지 않고 그대로 쓴다 — 실제 로더처럼 동시 수정이 되는 맵을 준다
+            placeViewHolder.replaceAll(new ConcurrentHashMap<>(
+                    Map.of(PLACE_ID, new PlaceView(PLACE_ID, STALE_NAME, null, null))));
             return 1;
         })).given(loader).rebuild();
         given(loader.readView(PLACE_ID)).willReturn(
