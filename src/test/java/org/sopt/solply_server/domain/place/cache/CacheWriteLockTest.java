@@ -23,7 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 수정이 조용히 사라지고 다음 회차까지 돌아오지 않는다.
  *
  * <p><b>재빌드의 읽기를 래치로 붙잡아</b> 그 창을 실제로 벌린다. 로더는 목이지만 구조는 실제와
- * 같다 — 락을 잡고, 읽고, 맵을 교체한다({@code PlaceListSnapshotLoader#rebuild}). 홀더와 락은
+ * 같다 — 락을 잡고, 읽고, 맵을 교체한다({@code SnapshotLoader#rebuild}). 홀더와 락은
  * 진짜를 쓴다: 이 파일이 보는 것이 바로 그 둘의 상호작용이다.
  *
  * <p><b>이 파일은 로더를 검증하지 않는다.</b> 락을 잡는 것이 목의 답변이라, 진짜
@@ -32,7 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 상호작용</b>에 대한 단위 테스트로 남는다.
  */
 @ExtendWith(MockitoExtension.class)
-class PlaceListWriteLockTest {
+class CacheWriteLockTest {
 
     private static final long PLACE_ID = 1L;
     private static final String STALE_NAME = "재빌드가 읽어 둔 옛 이름";
@@ -41,12 +41,12 @@ class PlaceListWriteLockTest {
     /** 스레드가 서로를 기다리다 영영 멈추지 않게 하는 상한 */
     private static final long TIMEOUT_SECONDS = 5L;
 
-    @Mock private PlaceListSnapshotLoader loader;
+    @Mock private SnapshotLoader loader;
     @Spy private PlaceViewHolder placeViewHolder = new PlaceViewHolder();
     @Spy private TagViewHolder tagViewHolder = new TagViewHolder();
-    @Spy private PlaceListWriteLock writeLock = new PlaceListWriteLock();
+    @Spy private CacheWriteLock writeLock = new CacheWriteLock();
 
-    @InjectMocks private PlaceListSnapshotRefresher refresher;
+    @InjectMocks private SnapshotRefresher refresher;
 
     @Test
     void 재빌드가_읽는_동안_들어온_패치는_유실되지_않는다() throws Exception {

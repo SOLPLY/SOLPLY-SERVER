@@ -1,7 +1,7 @@
 package org.sopt.solply_server;
 
 import org.junit.jupiter.api.Test;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotLoader;
+import org.sopt.solply_server.domain.place.cache.SnapshotLoader;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -41,16 +41,16 @@ class SolplyServerApplicationTests {
 	PlaceStatsBatchProcessor placeStatsBatchProcessor;
 
 	/**
-	 * 같은 이유로 목록 스냅샷 로더도 목으로 세운다. {@code PlaceListSnapshotScheduler}의 기동
+	 * 같은 이유로 목록 스냅샷 로더도 목으로 세운다. {@code SnapshotScheduler}의 기동
 	 * 빌드는 {@code @PostConstruct}라 <b>싱글턴 초기화 중에 동기로</b> 돌고 예외를 잡지 않으므로,
 	 * 테이블 없는 H2에서는 컨텍스트 기동 자체가 실패한다.
 	 *
 	 * <p>그 fail-fast는 운영에서 의도한 계약이다 — 스냅샷 없는 인스턴스가 트래픽을 받으면 목록이
-	 * 통째로 비는 오답이 나간다({@code PlaceListSnapshotScheduler} javadoc). 그래서 프로퍼티로
+	 * 통째로 비는 오답이 나간다({@code SnapshotScheduler} javadoc). 그래서 프로퍼티로
 	 * 끄는 대신 <b>여기서만</b> 의존을 끊는다: 스케줄러는 여전히 로더를 부르고 예외도 그대로 흘린다.
 	 */
 	@MockBean
-	PlaceListSnapshotLoader placeListSnapshotLoader;
+	SnapshotLoader snapshotLoader;
 
 	@Test
 	void contextLoads() {

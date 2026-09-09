@@ -9,10 +9,10 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.cache.PlaceListEntry;
-import org.sopt.solply_server.domain.place.cache.PlaceListIndex;
-import org.sopt.solply_server.domain.place.cache.PlaceListPhoto;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
+import org.sopt.solply_server.domain.place.cache.PlaceEntry;
+import org.sopt.solply_server.domain.place.cache.SortedPlaces;
+import org.sopt.solply_server.domain.place.cache.Snapshot;
+import org.sopt.solply_server.domain.place.cache.SnapshotBox;
 import org.sopt.solply_server.domain.place.cache.PlaceView;
 import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
 import org.sopt.solply_server.domain.place.cache.TagView;
@@ -72,8 +72,8 @@ public class PlaceService {
   private final PlaceReviewRepository placeReviewRepository;
   private final PlaceStatsRepository placeStatsRepository;
   /** 목록의 <b>순서</b>가 나오는 곳 — 정렬·필터·페이징이 전부 여기서 결정된다 */
-  private final PlaceListSnapshot placeListSnapshot;
-  /** 목록의 <b>표시값</b>이 나오는 곳. 사진 밖이라 회차와 무관하게 최신일 수 있다 */
+  private final SnapshotBox snapshotBox;
+  /** 목록의 <b>표시값</b>이 나오는 곳. 스냅샷 밖이라 회차와 무관하게 최신일 수 있다 */
   private final PlaceViewHolder placeViewHolder;
   /** 대표 태그의 이름·활성 판정 — {@code TagViewUtils.getActiveNameOrNull}과 같은 규칙이다 */
   private final TagViewHolder tagViewHolder;
@@ -241,46 +241,46 @@ public class PlaceService {
    *
    * @param sortKeys 커서에 그대로 실리는 정렬 키 튜플. 길이는 {@code PlaceSortType#keyArity()}와 같다
    */
-  private record ListRow(PlaceListEntry entry, List<Double> sortKeys) {}
+  private record ListRow(PlaceEntry entry, List<Double> sortKeys) {}
 
   /**
-   * 응답에 실릴 것이 확정된 항목 — 회차 사진의 엔트리와, 홀더에서 방금 꺼낸 표시값이 합류한 자리.
+   * 응답에 실릴 것이 확정된 항목 — 회차 스냅샷의 엔트리와, 홀더에서 방금 꺼낸 표시값이 합류한 자리.
    *
    * <p>둘이 <b>다른 회차</b>일 수 있다는 것이 계약이다. 커서가 보장하는 것은 순서의 일관성이고,
    * 표시값과 소속(생성·삭제)은 최신일 수 있다 ({@code PlaceViewHolder}).
    */
-  private record DisplayedRow(PlaceListEntry entry, PlaceView view) {}
+  private record DisplayedRow(PlaceEntry entry, PlaceView view) {}
 
   /**
    * 장소 목록의 <b>유일한</b> 경로 — 읽는 곳은 인메모리 캐시뿐이고, 쿼리는 북마크 여부 조회만
    * 나간다. 정적 정렬 다섯은 스냅샷의 사전 정렬 배열을 seek해서, 거리순은 후보를 훑어
    * {@code DistanceSort}로 정렬해서 만든다.
    *
-   * <p><b>순서와 표시값의 출처가 갈려 있다.</b> 회차 사진은 순서·정렬 값만 박제하고, 이름·썸네일·
-   * 대표 태그는 사진 밖 홀더({@code PlaceViewHolder}·{@code TagViewHolder})에서 조립 시점에
+   * <p><b>순서와 표시값의 출처가 갈려 있다.</b> 회차 스냅샷은 순서·정렬 값만 박제하고, 이름·썸네일·
+   * 대표 태그는 스냅샷 밖 홀더({@code PlaceViewHolder}·{@code TagViewHolder})에서 조립 시점에
    * 꺼낸다. 그래서 커서의 계약은 <b>"정렬 순서의 일관성"까지</b>이고 표시값과 소속(생성·삭제)은
-   * 최신일 수 있다 — 옛 사진에만 있고 지금은 삭제된 장소는 표시값이 없어 그 행을 건너뛴다.
+   * 최신일 수 있다 — 옛 스냅샷에만 있고 지금은 삭제된 장소는 표시값이 없어 그 행을 건너뛴다.
    *
-   * <p><b>사진은 진입부에서 한 번만 잡는다.</b> {@code photo}를 지역 변수로 고정한 뒤 페이지 선택·
+   * <p><b>스냅샷은 진입부에서 한 번만 잡는다.</b> {@code snapshot}을 지역 변수로 고정한 뒤 페이지 선택·
    * 거리순 후보·응답 조립이 전부 그 하나만 본다. 스냅샷 참조는 회차마다 교체되므로 단계마다 다시
-   * 읽으면 한 응답 안에서 두 회차가 섞일 수 있다 — 요청 하나는 어느 한 회차의 <b>완결된</b> 사진만
-   * 본다는 것이 이 경로의 계약이다 ({@code PlaceListSnapshot} 계약 2).
+   * 읽으면 한 응답 안에서 두 회차가 섞일 수 있다 — 요청 하나는 어느 한 회차의 <b>완결된</b> 스냅샷만
+   * 본다는 것이 이 경로의 계약이다 ({@code SnapshotBox} 계약 2).
    *
-   * <p><b>스크롤 세션은 시작한 회차에 고정된다.</b> 잡을 사진을 커서가 정한다 — 커서가 없으면 최신
+   * <p><b>스크롤 세션은 시작한 회차에 고정된다.</b> 잡을 스냅샷을 커서가 정한다 — 커서가 없으면 최신
    * 회차, 있으면 그 커서의 버전이 가리키는 회차이고, 발급하는 다음 커서에도 <b>같은 버전</b>을
    * 실어 다음 페이지까지 이어진다. 보존(최근 3장) 밖으로 밀려난 버전은 조용히 최신 회차로 갈아타
-   * 항목을 흘리는 대신 {@code EXPIRED_PLACE_CURSOR}로 끊는다 ({@link #photoFor}).
+   * 항목을 흘리는 대신 {@code EXPIRED_PLACE_CURSOR}로 끊는다 ({@link #snapshotFor}).
    *
-   * <p>옛 회차를 서빙하는 동안 요청 시점 값인 것은 둘이다 — {@code isBookmarked}(사용자별이라 사진에
-   * 담기지 않는다)와 <b>표시값</b>(이름·썸네일·대표 태그. 홀더가 사진 밖에 한 벌이다). 카운트·평점·
+   * <p>옛 회차를 서빙하는 동안 요청 시점 값인 것은 둘이다 — {@code isBookmarked}(사용자별이라 스냅샷에
+   * 담기지 않는다)와 <b>표시값</b>(이름·썸네일·대표 태그. 홀더가 스냅샷 밖에 한 벌이다). 카운트·평점·
    * 순서는 고정된 회차의 값이라, 화면이 한 회차로 일관된 것은 <b>순서와 수치까지</b>다.
    *
-   * <p><b>사진이 없는 경우는 다루지 않는다.</b> 기동 시 동기 빌드가 포트를 열기 전에 끝나고 실패하면
+   * <p><b>스냅샷이 없는 경우는 다루지 않는다.</b> 기동 시 동기 빌드가 포트를 열기 전에 끝나고 실패하면
    * 컨텍스트가 뜨지 않으므로, 요청이 {@code null}을 보는 창이 구조적으로 없다
-   * ({@code PlaceListSnapshot} 계약 3). 장소가 실제로 0개면 비어 있는 인덱스가 온다.
+   * ({@code SnapshotBox} 계약 3). 장소가 실제로 0개면 비어 있는 정렬 배열이 온다.
    *
-   * <p><b>표시 카운트·골격은 엔트리가 실어 온 값 그대로다.</b> 스냅샷은 회차 단위의 사진이라
-   * 낡음의 상한이 회차 간격이고, 그 창은 {@code PlaceListSnapshotScheduler}가 SLA로 명시한다.
+   * <p><b>표시 카운트·골격은 엔트리가 실어 온 값 그대로다.</b> 스냅샷은 회차 단위라
+   * 낡음의 상한이 회차 간격이고, 그 창은 {@code SnapshotScheduler}가 SLA로 명시한다.
    * 요청 시점에 값을 덧대 신선하게 만들려는 시도는 회차의 정합성을 깨므로 하지 않는다.
    *
    * <p><b>쿼리가 나가는 것은 사용자별 값 하나뿐이다</b> — {@code isBookmarked}. 장소 단위 캐시에
@@ -324,20 +324,20 @@ public class PlaceService {
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
 
-    // ⚠️ 이 회차의 사진을 여기서 한 번만 잡는다. 아래 어느 단계도 스냅샷을 다시 읽지 않는다 —
+    // ⚠️ 이 회차의 스냅샷을 여기서 한 번만 잡는다. 아래 어느 단계도 스냅샷을 다시 읽지 않는다 —
     // 다시 읽으면 한 응답이 두 회차를 섞어 볼 수 있다 (메서드 javadoc의 계약).
-    PlaceListPhoto photo = photoFor(cursor);
+    Snapshot snapshot = snapshotFor(cursor);
 
     List<ListRow> rows = sort == PlaceSortType.DISTANCE
-        ? distanceRows(photo.index(), leafTownIds, request, cursor, fetchSize)
-        : staticRows(photo.index(), leafTownIds, request, sort, cursor, fetchSize);
+        ? distanceRows(snapshot.sortedPlaces(), leafTownIds, request, cursor, fetchSize)
+        : staticRows(snapshot.sortedPlaces(), leafTownIds, request, sort, cursor, fetchSize);
 
     boolean hasNext = paging && rows.size() > pageSize;
     if (hasNext) {
       rows = rows.subList(0, pageSize);
     }
 
-    // 표시값은 사진 밖 홀더에서 지금 값을 꺼내 붙인다. 없는 행 = 그 사이 삭제된 장소이므로
+    // 표시값은 스냅샷 밖 홀더에서 지금 값을 꺼내 붙인다. 없는 행 = 그 사이 삭제된 장소이므로
     // 건너뛴다 — 아래 커서는 그래도 "소비한 마지막 엔트리" 기준이라 그 행을 다시 보지 않는다.
     List<DisplayedRow> displayed = new ArrayList<>(rows.size());
     for (ListRow row : rows) {
@@ -360,7 +360,7 @@ public class PlaceService {
     // 되살리지 말 것 — PlaceServiceStatsWiringTest가 그 회귀를 감시한다.
     List<PlacePreviewDto> previews = displayed.stream()
         .map(row -> {
-          PlaceListEntry entry = row.entry();
+          PlaceEntry entry = row.entry();
           PlaceView view = row.view();
           return PlacePreviewDto.of(
               entry.placeId(),
@@ -385,8 +385,8 @@ public class PlaceService {
             rows.get(rows.size() - 1).sortKeys(),
             rows.get(rows.size() - 1).entry().placeId(),
             filterPrint,
-            // 서빙한 회차를 그대로 실어 다음 페이지도 같은 사진에서 이어지게 한다
-            photo.version()).encode()
+            // 서빙한 회차를 그대로 실어 다음 페이지도 같은 스냅샷에서 이어지게 한다
+            snapshot.version()).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
@@ -406,39 +406,39 @@ public class PlaceService {
   }
 
   /**
-   * 이 요청이 볼 회차의 사진 — 커서가 없으면 최신, 있으면 커서가 박제한 버전이다.
+   * 이 요청이 볼 회차의 스냅샷 — 커서가 없으면 최신, 있으면 커서가 박제한 버전이다.
    *
    * <p><b>보존 밖은 명시 만료다.</b> 버전을 찾지 못했다는 것은 그 회차가 캐시 보존(최근 3장)에서
    * 밀려났다는 뜻이고, 그때 최신 회차로 조용히 갈아타면 커서 좌표가 다른 좌표계에서 해석돼 항목이
    * 흘리거나 겹친다. 오류로 끊어야 클라이언트가 처음부터 다시 조회한다.
    *
-   * <p>커서가 인스턴스 로컬 버전을 든다는 한계는 {@code PlaceListSnapshot} 참조 — 다중 인스턴스에서는
+   * <p>커서가 인스턴스 로컬 버전을 든다는 한계는 {@code SnapshotBox} 참조 — 다중 인스턴스에서는
    * sticky session 없이 성립하지 않는다.
    */
-  private PlaceListPhoto photoFor(PlaceListCursor cursor) {
+  private Snapshot snapshotFor(PlaceListCursor cursor) {
     if (cursor == null) {
-      return placeListSnapshot.current();
+      return snapshotBox.current();
     }
-    PlaceListPhoto photo = placeListSnapshot.byVersion(cursor.version());
-    if (photo == null) {
+    Snapshot snapshot = snapshotBox.byVersion(cursor.version());
+    if (snapshot == null) {
       throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
     }
-    return photo;
+    return snapshot;
   }
 
   /**
-   * 정적 정렬 다섯의 한 페이지 — 쿼리를 하나도 내지 않고 사진의 사전 정렬 배열에서 만든다.
+   * 정적 정렬 다섯의 한 페이지 — 쿼리를 하나도 내지 않고 스냅샷의 사전 정렬 배열에서 만든다.
    *
-   * <p>순서·타이브레이크·술어는 전부 {@code PlaceListIndex}의 축이 정하고, 여기서 하는 일은
+   * <p>순서·타이브레이크·술어는 전부 {@code SortedPlaces}의 축이 정하고, 여기서 하는 일은
    * <b>엔트리에 커서 좌표를 붙이는 것</b>뿐이다.
    */
   private static List<ListRow> staticRows(
-      PlaceListIndex photo, List<Long> leafTownIds, PlaceFilterGetRequest request,
+      SortedPlaces sortedPlaces, List<Long> leafTownIds, PlaceFilterGetRequest request,
       PlaceSortType sort, PlaceListCursor cursor, int fetchSize) {
 
     TagMasks masks = TagMasks.of(
         request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
-    return photo.page(sort, leafTownIds, masks, cursor, fetchSize).stream()
+    return sortedPlaces.page(sort, leafTownIds, masks, cursor, fetchSize).stream()
         .map(entry -> new ListRow(entry, sortKeys(sort, entry)))
         .toList();
   }
@@ -446,14 +446,14 @@ public class PlaceService {
   /**
    * 엔트리가 이 정렬에서 갖는 커서 키 튜플.
    *
-   * <p><b>{@code PlaceListIndex}의 축이 커서를 읽는 순서와 한 쌍이다</b> — 여기서 싣는 자리와
+   * <p><b>{@code SortedPlaces}의 축이 커서를 읽는 순서와 한 쌍이다</b> — 여기서 싣는 자리와
    * 거기서 {@code cursor.key(i)}로 꺼내는 자리가 어긋나면 다음 페이지가 조용히 다른 곳에서
    * 재개된다. 평점순만 키가 둘인 것은 동점 구간을 리뷰 수로 한 번 더 가르기 때문이다.
    *
    * <p>정수 축(epoch 초·카운트)을 double로 싣는 것은 안전하다 — 커서가 double 튜플이고
    * 2^53까지는 왕복이 값을 잃지 않는다(epoch 초 기준 약 2.8억 년).
    */
-  private static List<Double> sortKeys(PlaceSortType sort, PlaceListEntry entry) {
+  private static List<Double> sortKeys(PlaceSortType sort, PlaceEntry entry) {
     return switch (sort) {
       case POPULAR -> List.of(entry.popularScore());
       case LATEST -> List.of((double) entry.createdAtEpochSecond());
@@ -469,7 +469,7 @@ public class PlaceService {
 
   /**
    * 거리순 — <b>사전 정렬이 불가능한 유일한 축이다.</b> 기준점이 요청마다 달라 미리 세워 둘 수 있는
-   * 순서가 없으므로, 사진에서 후보만 긁어 오고({@code PlaceListIndex#distanceCandidates})
+   * 순서가 없으므로, 스냅샷에서 후보만 긁어 오고({@code SortedPlaces#distanceCandidates})
    * 정렬·커서 절단은 {@code DistanceSort}가 맡는다.
    *
    * <p><b>기준 좌표는 커서에 박제된 것이 항상 이긴다.</b> 두 번째 페이지의 좌표 파라미터가 첫
@@ -480,7 +480,7 @@ public class PlaceService {
    * <p>카운트·평점은 후보 엔트리가 이미 실어 온 place_stats 값이다 — 정렬 뒤에 다시 조회하지 않는다.
    */
   private static List<ListRow> distanceRows(
-      PlaceListIndex photo, List<Long> leafTownIds, PlaceFilterGetRequest request,
+      SortedPlaces sortedPlaces, List<Long> leafTownIds, PlaceFilterGetRequest request,
       PlaceListCursor cursor, int fetchSize) {
 
     double refLat;
@@ -502,12 +502,12 @@ public class PlaceService {
 
     TagMasks masks = TagMasks.of(
         request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
-    List<PlaceListEntry> candidates = photo.distanceCandidates(leafTownIds, masks);
+    List<PlaceEntry> candidates = sortedPlaces.distanceCandidates(leafTownIds, masks);
     if (candidates.isEmpty()) {
       return List.of();
     }
-    Map<Long, PlaceListEntry> byId = candidates.stream()
-        .collect(Collectors.toMap(PlaceListEntry::placeId, Function.identity()));
+    Map<Long, PlaceEntry> byId = candidates.stream()
+        .collect(Collectors.toMap(PlaceEntry::placeId, Function.identity()));
 
     // 페이징이 없는 요청의 fetchSize는 Integer.MAX_VALUE − 1이다. 그 수를 그대로 넘기면 정렬
     // 컴포넌트가 그 크기로 버퍼를 잡을 수 있어 후보 수로 눌러 준다 — 어차피 그보다 많이 나올 수 없다.

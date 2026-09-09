@@ -8,13 +8,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link PlaceListSnapshotLoader#rebuild()}를 부르는 트리거 셋 중 <b>둘</b> — 기동 한 번과 10분
- * 주기다. 나머지 하나는 어드민 커밋 훅({@link PlaceListSnapshotRefresher})이다.
+ * {@link SnapshotLoader#rebuild()}를 부르는 트리거 셋 중 <b>둘</b> — 기동 한 번과 10분
+ * 주기다. 나머지 하나는 어드민 커밋 훅({@link SnapshotRefresher})이다.
  *
  * <p><b>이 타이머가 맡은 것은 통계의 신선도다.</b> 카운트·점수는 배치가 RDB에 채우고 그 값이
  * 화면에 닿는 것은 다음 회차이므로, <b>카운트·점수의 반영 상한이 곧 이 주기(10분)</b>다. 반면
  * 어드민이 바꾼 콘텐츠(장소의 생성·수정·삭제·재활성)는 이 타이머를 기다리지 않는다 — 그 쓰기
- * 트랜잭션이 커밋 직후 사진을 다시 찍거나 표시값을 그 자리에서 갈아 끼운다(수백 ms). 그래서 SLA가 둘로 갈린다:
+ * 트랜잭션이 커밋 직후 스냅샷을 다시 짓거나 표시값을 그 자리에서 갈아 끼운다(수백 ms). 그래서 SLA가 둘로 갈린다:
  * <b>어드민 변경은 커밋 직후, 카운트·점수는 최대 10분.</b> 비활성화한 장소가 목록에 남는 창은
  * 정상 경로에는 없고 <b>어드민 훅의 재생성이 실패했을 때만</b> 다음 주기 발화까지 열린다.
  *
@@ -25,11 +25,11 @@ import org.springframework.stereotype.Component;
  * 흘려 컨텍스트 기동을 실패시킨다 — 뜨지 않는 인스턴스는 로드밸런서가 알아서 뺀다.
  *
  * <p><b>주기 발화는 반대로 예외를 삼킨다.</b> 이미 서빙 중인 인스턴스가 한 회차 실패로 죽으면
- * 안 되고, 실패해도 <b>직전 회차의 사진이 그대로 남아</b> 응답은 여전히 정합적이다. 낡음의 상한이
+ * 안 되고, 실패해도 <b>직전 회차의 스냅샷이 그대로 남아</b> 응답은 여전히 정합적이다. 낡음의 상한이
  * 10분에서 "다음 성공까지"로 늘어날 뿐이며, 그 사실은 아래 {@code log.error}가 남긴다.
  *
  * <p><b>ShedLock을 걸지 않는다.</b> 이 회차가 고치는 것은 공유 DB가 아니라 <b>인스턴스 자신의 힙</b>
- * 이라, 인스턴스마다 각자 돌아야 한다. 리더 하나만 돌면 나머지는 영원히 기동 시점의 사진을 서빙한다.
+ * 이라, 인스턴스마다 각자 돌아야 한다. 리더 하나만 돌면 나머지는 영원히 기동 시점의 스냅샷을 서빙한다.
  *
  * <p>{@code @Scheduled} 기본 실행기는 단일 스레드다. 이 회차는 10분에 한 번 수백 ms를 쓰므로
  * 다른 배치를 눈에 띄게 밀지 않지만, <b>주기를 크게 당길 때는 그 경합부터 확인할 것</b>
@@ -38,11 +38,11 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class PlaceListSnapshotScheduler {
+public class SnapshotScheduler {
 
     private static final long INTERVAL_MINUTES = 10L;
 
-    private final PlaceListSnapshotLoader loader;
+    private final SnapshotLoader loader;
 
     /**
      * 기동 빌드. <b>예외를 잡지 않는다</b> — 실패는 곧 컨텍스트 기동 실패다(클래스 javadoc 참조).
@@ -54,7 +54,7 @@ public class PlaceListSnapshotScheduler {
 
     /**
      * 주기 빌드. 첫 발화가 기동 10분 뒤인 것은 {@link #buildOnStartup()}이
-     * 방금 찍은 사진을 곧바로 다시 찍지 않기 위해서다.
+     * 방금 지은 스냅샷을 곧바로 다시 짓지 않기 위해서다.
      *
      * <p>{@code fixedDelay}라 <b>직전 회차가 끝난 시점부터</b> 간격을 센다. 회차가 길어져도 다음
      * 회차가 겹쳐 들어오지 않는다.

@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 /**
  * 태그 id → {@link TagView}. {@link PlaceViewHolder}와 같은 계약·같은 동기화 규칙을 따르되,
  * <b>항목 단위로 고치는 문이 없다</b> — 태그는 수십 행이라 재빌드도 어드민 훅도 전량을 한 문장으로
- * 읽어 통째로 교체한다({@link PlaceListSnapshotRefresher#refreshTagViewsAfterCommit}). 그래서 삭제된
+ * 읽어 통째로 교체한다({@link SnapshotRefresher#refreshTagViewsAfterCommit}). 그래서 삭제된
  * 태그가 맵에 남는 경로도 없다.
  *
  * <p>대표 태그 이름은 여기서 완성된다: {@link PlaceView#mainTagId()}가 가리키는 항목이 없거나

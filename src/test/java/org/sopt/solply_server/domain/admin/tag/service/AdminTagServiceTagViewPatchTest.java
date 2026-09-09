@@ -18,7 +18,7 @@ import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagActivationReq
 import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest;
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.entity.TagUsage;
@@ -34,7 +34,7 @@ import org.sopt.solply_server.global.util.AdminEntityLoader;
  * 나가고 그 사이 아무 오류도 나지 않는다.
  *
  * <p><b>어느 태그가 바뀌었는지는 넘기지 않는다.</b> 태그는 수십 행이라 훅이 맵을 통째로 다시
- * 읽으므로({@code PlaceListSnapshotRefresher#refreshTagViewsAfterCommit}), 이 파일이 지키는 것은
+ * 읽으므로({@code SnapshotRefresher#refreshTagViewsAfterCommit}), 이 파일이 지키는 것은
  * <b>훅이 걸렸는가</b> 하나다 — 캐스케이드로 여러 태그가 함께 내려가도 마찬가지다.
  */
 @ExtendWith(MockitoExtension.class)
@@ -44,7 +44,7 @@ class AdminTagServiceTagViewPatchTest {
     @Mock private AdminEntityLoader adminEntityLoader;
     @Mock private AdminTagValidator adminTagValidator;
     @Mock private EntityManager entityManager;
-    @Mock private PlaceListSnapshotRefresher placeListSnapshotRefresher;
+    @Mock private SnapshotRefresher snapshotRefresher;
 
     @InjectMocks private AdminTagService adminTagService;
 
@@ -57,7 +57,7 @@ class AdminTagServiceTagViewPatchTest {
 
         adminTagService.createTag(req);
 
-        verify(placeListSnapshotRefresher).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher).refreshTagViewsAfterCommit();
     }
 
     @Test
@@ -66,7 +66,7 @@ class AdminTagServiceTagViewPatchTest {
 
         adminTagService.updateTag(TAG_ID, upsertRequest("새이름", true));
 
-        verify(placeListSnapshotRefresher).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher).refreshTagViewsAfterCommit();
     }
 
     /**
@@ -86,7 +86,7 @@ class AdminTagServiceTagViewPatchTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.TAG_TYPE_IMMUTABLE);
 
-        verify(placeListSnapshotRefresher, never()).refreshAfterCommit();
+        verify(snapshotRefresher, never()).refreshAfterCommit();
     }
 
     /** 표시값만 바뀐 수정에 전량이 돌면 안 된다 — 분리한 값이 사라진다 */
@@ -96,7 +96,7 @@ class AdminTagServiceTagViewPatchTest {
 
         adminTagService.updateTag(TAG_ID, upsertRequest("새이름", true));
 
-        verify(placeListSnapshotRefresher, never()).refreshAfterCommit();
+        verify(snapshotRefresher, never()).refreshAfterCommit();
     }
 
     /**
@@ -110,7 +110,7 @@ class AdminTagServiceTagViewPatchTest {
 
         adminTagService.toggleActive(TAG_ID, new AdminTagActivationRequest(false));
 
-        verify(placeListSnapshotRefresher).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher).refreshTagViewsAfterCommit();
     }
 
     /**
@@ -129,7 +129,7 @@ class AdminTagServiceTagViewPatchTest {
 
         adminTagService.toggleActive(TAG_ID, new AdminTagActivationRequest(false));
 
-        verify(placeListSnapshotRefresher, times(1)).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher, times(1)).refreshTagViewsAfterCommit();
     }
 
     // === helpers ===

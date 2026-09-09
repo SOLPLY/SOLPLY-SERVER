@@ -48,7 +48,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 장소가 통째로 사라진다), display_order 역순 삽입(정렬을 빼면 삽입 순서가 그대로 나온다),
  * 빈 파일 키(값이 null인 항목을 "없음"으로 취급하면 다음 이미지가 대신 뽑힌다).
  *
- * <p><b>비활성 장소가 사진에 남는 것은 의도다 (통합 스냅샷 전환).</b> 옛 골격 스냅샷은 활성만
+ * <p><b>비활성 장소가 스냅샷에 남는 것은 의도다 (통합 스냅샷 전환).</b> 옛 골격 스냅샷은 활성만
  * 담았고 그 구멍을 요청 시점 미스 경로가 메웠는데, 지금은 행의 존재를 정하는 주체가
  * {@code place_stats} 하나뿐이라 미스라는 상태 자체가 없다 — 아래가 그 전환을 값으로 남긴다.
  */
@@ -70,8 +70,8 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
 
-    @Autowired private PlaceListSnapshotLoader loader;
-    @Autowired private PlaceListSnapshot snapshot;
+    @Autowired private SnapshotLoader loader;
+    @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceViewHolder placeViewHolder;
     @Autowired private TagViewHolder tagViewHolder;
     @Autowired private PlaceService placeService;
@@ -90,7 +90,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private long placeBare;
     /** MAIN 태그가 비활성 — 이름이 있는데도 null이어야 한다 */
     private long placeInactiveTag;
-    /** OPTION1 태그만 있다 — MAIN이 없으므로 null이되, 장소 자체는 사진에 있어야 한다 */
+    /** OPTION1 태그만 있다 — MAIN이 없으므로 null이되, 장소 자체는 스냅샷에 있어야 한다 */
     private long placeOptionTagOnly;
     /** 첫 이미지의 파일 키가 비어 있다 — 썸네일은 null이고 <b>둘째 이미지로 넘어가지 않는다</b> */
     private long placeBlankKey;
@@ -183,7 +183,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         // 갈린다. 이름을 비우는 판정은 조회 시점 태그 맵의 active가 한다.
         assertThat(viewOf(placeInactiveTag).mainTagId()).isNotNull();
         assertThat(tagViewHolder.get(viewOf(placeInactiveTag).mainTagId()).active()).isFalse();
-        // MAIN이 아닌 태그만 가진 장소가 사진에서 사라지면 안 된다
+        // MAIN이 아닌 태그만 가진 장소가 스냅샷에서 사라지면 안 된다
         // (태그 조건을 파생 테이블이 아니라 바깥 WHERE로 올리면 여기가 깨진다)
         assertThat(entryOf(placeOptionTagOnly)).isNotNull();
     }
@@ -255,15 +255,15 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>비활성 장소도 행이 있는 한 사진에 남고, 표시값도 온전하다.</b>
+     * <b>비활성 장소도 행이 있는 한 스냅샷에 남고, 표시값도 온전하다.</b>
      *
      * <p>옛 골격 스냅샷은 활성만 담아 이 자리에 "미스 경로가 메운다"는 절반이 필요했다. 지금은
      * 행의 존재를 정하는 주체가 {@code place_stats} 하나뿐이고 배치는 행을 지우지 않으므로,
-     * 내려간 장소가 목록에 남아 있는 창에서도 사진이 그 값을 그대로 들고 있다 — 요청 시점에
+     * 내려간 장소가 목록에 남아 있는 창에서도 스냅샷이 그 값을 그대로 들고 있다 — 요청 시점에
      * 메울 것이 없다는 뜻이다. 로더 쿼리에 {@code p.active} 조건이 붙으면 여기가 빨개진다.
      */
     @Test
-    void 비활성_장소도_행이_있으면_사진에_남고_목록_표시값이_온전하다() {
+    void 비활성_장소도_행이_있으면_스냅샷에_남고_목록_표시값이_온전하다() {
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeFull);
         loader.rebuild();
 
@@ -281,20 +281,20 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>사진은 한 회차의 것이고, 다시 짓기 전에는 새 장소를 보지 않는다.</b> 그 지연이 버그가
+     * <b>스냅샷은 한 회차의 것이고, 다시 짓기 전에는 새 장소를 보지 않는다.</b> 그 지연이 버그가
      * 아니라 이 캐시의 정의라는 것을 값으로 남긴다.
      *
      * <p>여기서 지연이 보이는 것은 이 픽스처가 <b>어드민 경로를 지나치기</b> 때문이다 — 어드민
-     * 쓰기는 커밋 뒤 스스로 사진을 다시 찍으므로({@code PlaceListSnapshotRefresher}) 그 경로의
+     * 쓰기는 커밋 뒤 스스로 스냅샷을 다시 지으므로({@code SnapshotRefresher}) 그 경로의
      * 변경은 이 창을 만들지 않고, 배치가 채우는 카운트·점수만 다음 타이머 회차를 기다린다
-     * ({@code PlaceListSnapshotScheduler}).
+     * ({@code SnapshotScheduler}).
      */
     @Test
-    void 다시_짓기_전에는_새_장소가_사진에_없다() {
+    void 다시_짓기_전에는_새_장소가_스냅샷에_없다() {
         long added = createPlace("엔트리신규", true);
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
-        assertThat(entryOf(added)).as("아직 이 회차의 사진에는 없다").isNull();
+        assertThat(entryOf(added)).as("아직 이 회차의 스냅샷에는 없다").isNull();
 
         loader.rebuild();
 
@@ -307,11 +307,11 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private record Display(String name, String imageUrl, String mainTagName, long townId) {}
 
     /**
-     * 최신 회차의 사진에서 이 장소의 엔트리를 찾는다. 인덱스에 id 조회구가 없는 것은 의도이므로
+     * 최신 회차의 스냅샷에서 이 장소의 엔트리를 찾는다. 정렬 배열에 id 조회구가 없는 것은 의도이므로
      * (조회 경로가 쓰지 않는다) 정렬 없는 축으로 전량을 훑어 고른다.
      */
-    private PlaceListEntry entryOf(long placeId) {
-        return snapshot.current().index()
+    private PlaceEntry entryOf(long placeId) {
+        return snapshotBox.current().sortedPlaces()
                 .page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
                         null, Integer.MAX_VALUE - 1)
                 .stream()
@@ -321,7 +321,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
     /** 같은 장소의 엔트리가 몇 개인지 — MAIN 태그가 둘인 장소가 두 번 서면 안 된다 */
     private long entryCountOf(long placeId) {
-        return snapshot.current().index()
+        return snapshotBox.current().sortedPlaces()
                 .page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
                         null, Integer.MAX_VALUE - 1)
                 .stream()
@@ -329,7 +329,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
                 .count();
     }
 
-    /** 표시값은 사진이 아니라 홀더에 있다 — 조회 경로가 조립하는 자리와 같은 곳에서 읽는다 */
+    /** 표시값은 스냅샷이 아니라 홀더에 있다 — 조회 경로가 조립하는 자리와 같은 곳에서 읽는다 */
     private PlaceView viewOf(long placeId) {
         return placeViewHolder.get(placeId);
     }

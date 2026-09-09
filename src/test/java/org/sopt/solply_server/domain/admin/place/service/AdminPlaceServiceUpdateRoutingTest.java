@@ -17,7 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertRequest;
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
@@ -47,7 +47,7 @@ class AdminPlaceServiceUpdateRoutingTest {
 
     @Mock private AdminPlaceRepository adminPlaceRepository;
     @Mock private PlaceStatsRepository placeStatsRepository;
-    @Mock private PlaceListSnapshotRefresher placeListSnapshotRefresher;
+    @Mock private SnapshotRefresher snapshotRefresher;
     @Mock private EntityManager entityManager;
     @Mock private ImageFileKeyValidator imageFileKeyValidator;
     @Mock private ApplicationEventPublisher applicationEventPublisher;
@@ -159,15 +159,15 @@ class AdminPlaceServiceUpdateRoutingTest {
     }
 
     private void assertDisplayPatchOnly() {
-        verify(placeListSnapshotRefresher).patchPlaceViewAfterCommit(PLACE_ID);
-        verify(placeListSnapshotRefresher, never()).refreshAfterCommit();
+        verify(snapshotRefresher).patchPlaceViewAfterCommit(PLACE_ID);
+        verify(snapshotRefresher, never()).refreshAfterCommit();
         verify(placeStatsRepository, never()).upsertRowsForActivePlaces(anyList());
     }
 
     private void assertFullRebuild() {
         verify(placeStatsRepository).upsertRowsForActivePlaces(List.of(PLACE_ID));
-        verify(placeListSnapshotRefresher).refreshAfterCommit();
-        verify(placeListSnapshotRefresher, never()).patchPlaceViewAfterCommit(anyLong());
+        verify(snapshotRefresher).refreshAfterCommit();
+        verify(snapshotRefresher, never()).patchPlaceViewAfterCommit(anyLong());
     }
 
     private static AdminPlaceUpsertRequest withName(AdminPlaceUpsertRequest req, String name) {

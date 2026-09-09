@@ -74,7 +74,7 @@
 `SET snapshot:s{스키마버전}:{버전}` (TTL 60분). 값은 Entry 목록의 직렬화 바이트 전체다.
 
 - **직렬화 대상은 Entry 목록까지다.** 정렬 배열은 참조 구조라 직렬화가 무의미하고, 수신 측이
-  `PlaceListIndex.of(entries)`로 재조립한다. 포맷 = "Entry 목록의 스키마"이며 그 이상이 아니다.
+  `SortedPlaces.of(entries)`로 재조립한다. 포맷 = "Entry 목록의 스키마"이며 그 이상이 아니다.
 - **포맷은 스키마 있는 바이너리(Protobuf/MessagePack 계열) 또는 커스텀 Jackson.** 타입과
   null 유무를 스키마 수준에서 못 박기 위해서다. BigDecimal은 원생 타입이 없으므로 **스케일을
   보존하는 표현(문자열 또는 unscaled+scale 쌍)을 스키마에 명시**한다 — 흐려지면 4.50이

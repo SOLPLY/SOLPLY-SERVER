@@ -5,18 +5,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 
 /**
- * 장소 → {@link PlaceView}. 회차 사진 <b>바깥</b>에 사는 표시값 저장소다.
+ * 장소 → {@link PlaceView}. 회차 스냅샷 <b>바깥</b>에 사는 표시값 저장소다.
  *
- * <p><b>계약 — 커서가 보장하는 것은 순서뿐이고 표시값은 최신일 수 있다.</b> 사진은 회차마다
- * 통째로 바뀌지만 이 맵은 어드민 수정 한 건마다 그 항목만 갈린다. 그래서 옛 회차의 사진을 보는
+ * <p><b>계약 — 커서가 보장하는 것은 순서뿐이고 표시값은 최신일 수 있다.</b> 스냅샷은 회차마다
+ * 통째로 바뀌지만 이 맵은 어드민 수정 한 건마다 그 항목만 갈린다. 그래서 옛 회차의 스냅샷을 보는
  * 스크롤도 이름·썸네일·대표 태그는 지금 값을 본다 — 이름 하나 고치자고 전량을 다시 짓지 않기
  * 위해 받아들인 계약이다.
  *
  * <p><b>조회는 락을 잡지 않는다.</b> {@link #get}은 {@code volatile} 참조 한 번과
  * {@code ConcurrentHashMap} 읽기 한 번이 전부다. 반대로 쓰기({@link #replaceAll}·{@link #put})는
- * {@link PlaceListWriteLock} 안에서만 불러야 한다 — 그 이유는 그쪽 javadoc.
+ * {@link CacheWriteLock} 안에서만 불러야 한다 — 그 이유는 그쪽 javadoc.
  *
- * <p><b>{@code get}이 {@code null}일 수 있다.</b> 옛 사진에만 남아 있고 그 사이 삭제된 장소가
+ * <p><b>{@code get}이 {@code null}일 수 있다.</b> 옛 스냅샷에만 남아 있고 그 사이 삭제된 장소가
  * 그렇다. 조회 경로는 그 행을 건너뛴다({@code PlaceService#listPlaces}).
  */
 @Component
@@ -37,8 +37,8 @@ public class PlaceViewHolder {
      * <p><b>다만 요청 하나가 한 맵만 보는 것은 아니다.</b> 조회 경로는 응답에 실을 행마다
      * {@link #get}을 부르므로, 한 요청 안에서도 교체 앞뒤의 값이 섞일 수 있다 — 10건짜리 페이지의
      * 앞 3건은 옛 이름, 뒤 7건은 새 이름. <b>그것이 계약이다</b>: 커서가 보장하는 것은 정렬 순서의
-     * 일관성까지이고 표시값은 최신일 수 있다. 요청 하나가 한 회차로 고정되는 것은 사진
-     * ({@code PlaceListSnapshot} 계약 2)이지 이 맵이 아니다.
+     * 일관성까지이고 표시값은 최신일 수 있다. 요청 하나가 한 회차로 고정되는 것은 스냅샷
+     * ({@code SnapshotBox} 계약 2)이지 이 맵이 아니다.
      */
     void replaceAll(Map<Long, PlaceView> fresh) {
         this.views = new ConcurrentHashMap<>(fresh);

@@ -27,7 +27,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * 표시값 <b>패치와 전량 재빌드의 등가 게이트</b> — 같은 DB 상태라면 "고치고 패치한 결과"와
  * "고치고 통째로 다시 지은 결과"의 응답이 같아야 한다.
  *
- * <p>이 게이트가 없으면 패치는 조용히 갈린다. 패치 경로({@code PlaceListSnapshotLoader#readView})는
+ * <p>이 게이트가 없으면 패치는 조용히 갈린다. 패치 경로({@code SnapshotLoader#readView})는
  * 전량 재빌드의 규칙 — 첫 MAIN 태그는 {@code place_tag.id} 순, 썸네일은 {@code display_order} 순,
  * 빈 파일 키는 null 그대로 — 을 상관 서브쿼리로 옮긴 것이라 <b>둘이 어긋나도 각자는 그럴듯한
  * 답</b>을 낸다. 그러면 같은 장소가 "패치된 뒤"와 "다음 타이머 회차 뒤"에 다르게 보인다.
@@ -58,9 +58,9 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
 
-    @Autowired private PlaceListSnapshotLoader loader;
-    @Autowired private PlaceListSnapshotRefresher refresher;
-    @Autowired private PlaceListSnapshot snapshot;
+    @Autowired private SnapshotLoader loader;
+    @Autowired private SnapshotRefresher refresher;
+    @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private ImageUrlProvider imageUrlProvider;
@@ -164,7 +164,7 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>패치는 회차를 쓰지 않는다.</b> 표시값 하나 고치자고 사진을 다시 찍으면 보존 창(최근 3장)이
+     * <b>패치는 회차를 쓰지 않는다.</b> 표시값 하나 고치자고 스냅샷을 다시 지으면 보존 창(최근 3장)이
      * 그만큼 빨리 밀려 정상 스크롤이 만료된다 — 이 분리의 값어치가 곧 이 단언이다.
      */
     @Test
@@ -209,7 +209,7 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     }
 
     private long currentVersion() {
-        return snapshot.current().version();
+        return snapshotBox.current().version();
     }
 
     private static int tagSeq = 0;

@@ -21,10 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 목록 캐시 세 벌 — 회차 사진({@link PlaceListSnapshot}) · 장소 표시값({@link PlaceViewHolder}) ·
+ * 목록 캐시 세 벌 — 회차 스냅샷({@link SnapshotBox}) · 장소 표시값({@link PlaceViewHolder}) ·
  * 태그 표시값({@link TagViewHolder}) — 을 짓는 <b>유일한</b> 곳. 전량 진입점은 {@link #rebuild()}
- * 하나이고, 그것을 부르는 것은 {@link PlaceListSnapshotScheduler}(기동 한 번 · 10분 주기)와
- * {@link PlaceListSnapshotRefresher}(어드민 커밋 뒤) 둘이다. 어드민 훅은 그 밖에
+ * 하나이고, 그것을 부르는 것은 {@link SnapshotScheduler}(기동 한 번 · 10분 주기)와
+ * {@link SnapshotRefresher}(어드민 커밋 뒤) 둘이다. 어드민 훅은 그 밖에
  * {@link #readView(long)}(장소 한 건)과 {@link #readTagViews()}(태그 전량)도 쓴다.
  *
  * <p><b>쿼리가 세 문장인 것이 이 클래스의 전부다.</b>
@@ -60,7 +60,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><b>전량 읽기는 어노테이션이 아니라 {@link TransactionTemplate}으로 연다.</b>
  * {@link #rebuild()}는 락을 트랜잭션보다 <em>먼저</em> 잡아야 하는데(근거는
- * {@link PlaceListWriteLock}), 메서드에 {@code @Transactional}을 달면 프록시가 그 반대 순서를
+ * {@link CacheWriteLock}), 메서드에 {@code @Transactional}을 달면 프록시가 그 반대 순서를
  * 강제한다. 락 안에서 프록시를 다시 타려 해도 자기 호출이라 어노테이션이 조용히 무시되므로,
  * 템플릿을 직접 들고 여는 것이 유일하게 정확한 방법이다.
  *
@@ -76,30 +76,30 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Slf4j
 @Component
-public class PlaceListSnapshotLoader {
+public class SnapshotLoader {
 
     private final EntityManager em;
     private final ImageUrlProvider imageUrlProvider;
-    private final PlaceListSnapshot snapshot;
+    private final SnapshotBox snapshotBox;
     private final PlaceViewHolder placeViewHolder;
     private final TagViewHolder tagViewHolder;
-    private final PlaceListWriteLock writeLock;
-    private final PlaceListVersionIssuer versionIssuer;
+    private final CacheWriteLock writeLock;
+    private final SnapshotVersionIssuer versionIssuer;
     /** 전량 읽기 세 문장을 담는 트랜잭션 — 어노테이션을 쓰지 않는 이유는 클래스 javadoc */
     private final TransactionTemplate readTransaction;
 
-    public PlaceListSnapshotLoader(
+    public SnapshotLoader(
             EntityManager em,
             ImageUrlProvider imageUrlProvider,
-            PlaceListSnapshot snapshot,
+            SnapshotBox snapshotBox,
             PlaceViewHolder placeViewHolder,
             TagViewHolder tagViewHolder,
-            PlaceListWriteLock writeLock,
-            PlaceListVersionIssuer versionIssuer,
+            CacheWriteLock writeLock,
+            SnapshotVersionIssuer versionIssuer,
             PlatformTransactionManager transactionManager) {
         this.em = em;
         this.imageUrlProvider = imageUrlProvider;
-        this.snapshot = snapshot;
+        this.snapshotBox = snapshotBox;
         this.placeViewHolder = placeViewHolder;
         this.tagViewHolder = tagViewHolder;
         this.writeLock = writeLock;
@@ -112,7 +112,7 @@ public class PlaceListSnapshotLoader {
 
     /**
      * 장소당 한 행 — 정렬 축 다섯 + 좌표 + 이름 + 메인 태그 id. <b>SELECT 목록이 곧
-     * {@link PlaceListEntry}와 {@link PlaceView}의 필드 목록</b>이라, 축이나 표시 필드를 늘릴 때
+     * {@link PlaceEntry}와 {@link PlaceView}의 필드 목록</b>이라, 축이나 표시 필드를 늘릴 때
      * 두 곳이 함께 움직인다.
      *
      * <p>여기에는 {@code p.active} 조건이 없다 — 있으면 안 된다. 행의 존재를 정하는 주체는
@@ -202,10 +202,10 @@ public class PlaceListSnapshotLoader {
             """;
 
     /**
-     * 사진과 표시값 두 벌을 통째로 다시 짓고 교체한다.
+     * 스냅샷과 표시값 두 벌을 통째로 다시 짓고 교체한다.
      *
      * <p><b>락이 트랜잭션보다 먼저다.</b> 재빌드와 표시값 패치가 한 줄로 서야 어드민 수정이
-     * 유실되지 않고(근거는 {@link PlaceListWriteLock}), <b>락을 기다리는 동안 커넥션을 쥐고 있으면
+     * 유실되지 않고(근거는 {@link CacheWriteLock}), <b>락을 기다리는 동안 커넥션을 쥐고 있으면
      * 안 된다</b> — 어드민 둘이 동시에 커밋하면 기다리는 쪽이 커넥션을 잡은 채 잠들고, 락을 쥔 쪽은
      * 발급용 커넥션을 하나 더 요구해 풀이 얕을 때 서로를 굶긴다. 그래서 락을 먼저 잡고, 읽기
      * 트랜잭션은 락 안에서 열고 닫는다.
@@ -213,24 +213,24 @@ public class PlaceListSnapshotLoader {
      * <p><b>발급은 읽기 트랜잭션이 닫힌 뒤다.</b> 읽는 동안 발급하면 읽기 커넥션과 발급 커넥션을
      * 동시에 쥐지만, 순서를 이렇게 두면 락 안에서 쥐는 커넥션이 언제나 하나다.
      *
-     * <p><b>버전은 여기서, 사진을 완성한 순간에, 한 번만 발급한다.</b> 이것이 "버전↔내용 1:1"
+     * <p><b>버전은 여기서, 스냅샷을 완성한 순간에, 한 번만 발급한다.</b> 이것이 "버전↔내용 1:1"
      * 불변식의 근거다 — 남의 버전에 내 내용을 붙이는 경로가 존재하지 않으므로 "버전은 같은데 목록이
-     * 다른" 사고가 구조로 봉쇄된다. 홀더({@link PlaceListSnapshot#adopt})는 완성된 사진을 받기만
+     * 다른" 사고가 구조로 봉쇄된다. 홀더({@link SnapshotBox#adopt})는 완성된 스냅샷을 받기만
      * 하고 버전을 찍지 않는다. 번호의 출처는 DB 발급 테이블이다
-     * ({@link PlaceListVersionIssuer}) — 이 인스턴스 안의 단조는 락이 발급을 줄 세워 지켜지고,
+     * ({@link SnapshotVersionIssuer}) — 이 인스턴스 안의 단조는 락이 발급을 줄 세워 지켜지고,
      * 빌더가 둘 이상이 될 때의 단조는 발급소가 하나인 것이 지켜 준다.
      *
-     * <p><b>계약 — 사진 완성과 {@code adopt} 사이가 확장 설계의 삽입 지점이다.</b> 지금 그
+     * <p><b>계약 — 스냅샷 완성과 {@code adopt} 사이가 확장 설계의 삽입 지점이다.</b> 지금 그
      * 사이에 있는 것은 버전 발급 하나이고, 다중 인스턴스판의 아카이브 적재(Redis {@code SET})와
      * 발행({@code PUBLISH NEW_VERSION})이 발급 바로 뒤에 들어간다
      * ({@code docs/design/2026-09-01-multi-instance-snapshot-pipeline.md} §3-1·3-2).
      * 그 자리를 비워 두려고 버전 발급을 홀더에서 이리로 옮겼으니, 그 사이에 다른 관심사를
      * 끼워 넣지 말 것.
      *
-     * <p><b>표시값 홀더를 사진보다 먼저 교체한다.</b> 순서가 반대면 새 사진에만 있는 장소가 옛 맵에
+     * <p><b>표시값 홀더를 스냅샷보다 먼저 교체한다.</b> 순서가 반대면 새 스냅샷에만 있는 장소가 옛 맵에
      * 없어 조회 경로가 그 행을 건너뛰는 창이 열린다. 먼저 교체하면 그 창이 없고, 남는 것은
-     * "삭제된 장소를 옛 사진에서 만나 건너뛰는" 계약상 정상 경로뿐이다. 버전 발급은 홀더 교체보다
-     * 앞이다 — 발급이 실패하면 사진도 홀더도 직전 회차 그대로 남아 "실패하면 아무것도 바뀌지
+     * "삭제된 장소를 옛 스냅샷에서 만나 건너뛰는" 계약상 정상 경로뿐이다. 버전 발급은 홀더 교체보다
+     * 앞이다 — 발급이 실패하면 스냅샷도 홀더도 직전 회차 그대로 남아 "실패하면 아무것도 바뀌지
      * 않는다"가 성립한다.
      *
      * <p><b>아래 로그를 지우지 말 것.</b> 나중에 회차 직후 CPU 스파이크가 문제가 됐을 때
@@ -251,19 +251,19 @@ public class PlaceListSnapshotLoader {
         Source source = loaded.source();
         Map<Long, TagView> tagViews = loaded.tagViews();
 
-        PlaceListIndex fresh = PlaceListIndex.of(source.entries());
+        SortedPlaces fresh = SortedPlaces.of(source.entries());
         // 발급은 자기 트랜잭션에서 돈다 — 읽기 트랜잭션은 이미 닫혔고 그것이 읽기 전용이라
         // INSERT를 실을 수 없었기 때문이기도 하다. 홀더 교체보다 앞에 두어, 발급이 실패하면
-        // 사진도 홀더도 직전 회차 그대로 남는다.
-        PlaceListPhoto photo = new PlaceListPhoto(versionIssuer.issue(), fresh);
+        // 스냅샷도 홀더도 직전 회차 그대로 남는다.
+        Snapshot snapshot = new Snapshot(versionIssuer.issue(), fresh);
         placeViewHolder.replaceAll(source.views());
         tagViewHolder.replaceAll(tagViews);
-        snapshot.adopt(photo);
+        snapshotBox.adopt(snapshot);
 
         long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
         log.info("장소 목록 스냅샷 교체 완료 - version={}, places={}, towns={}, arrays={}, tags={},"
                         + " elapsed={}ms",
-                photo.version(), fresh.placeCount(), fresh.townCount(), fresh.arrayCount(),
+                snapshot.version(), fresh.placeCount(), fresh.townCount(), fresh.arrayCount(),
                 tagViews.size(), elapsedMs);
         return fresh.placeCount();
     }
@@ -273,12 +273,12 @@ public class PlaceListSnapshotLoader {
 
     /**
      * 장소 하나의 표시값을 다시 읽는다. 어드민이 이름·이미지·메인 태그를 고친 뒤 그 항목만 갈아
-     * 끼우는 경로가 이것이다 ({@link PlaceListSnapshotRefresher#patchPlaceViewAfterCommit}).
+     * 끼우는 경로가 이것이다 ({@link SnapshotRefresher#patchPlaceViewAfterCommit}).
      *
      * <p><b>규칙은 전량 재빌드와 같아야 한다.</b> 갈리면 같은 장소가 "패치된 뒤"와 "다음 회차 뒤"에
      * 다르게 보인다 — 재빌드 결과와 패치 결과의 동치는 IT가 지킨다.
      *
-     * <p>여기는 {@code @Transactional}을 그대로 둔다 — 호출자({@link PlaceListSnapshotRefresher})가
+     * <p>여기는 {@code @Transactional}을 그대로 둔다 — 호출자({@link SnapshotRefresher})가
      * <b>락 안에서</b> 부르므로 순서가 이미 "락 → 트랜잭션"이고, 트랜잭션이 한 겹뿐이라 락을 기다리며
      * 커넥션을 쥐는 창도 없다.
      *
@@ -299,7 +299,7 @@ public class PlaceListSnapshotLoader {
     }
 
     /** 문장 ①이 한 번에 낳는 두 벌 — 순서 값과 표시값이다 */
-    private record Source(List<PlaceListEntry> entries, Map<Long, PlaceView> views) {}
+    private record Source(List<PlaceEntry> entries, Map<Long, PlaceView> views) {}
 
     /**
      * 두 결과를 접어 엔트리 목록과 표시값 맵을 만든다. 부분 결과가 캐시로 새지 않는다 — 교체는
@@ -313,7 +313,7 @@ public class PlaceListSnapshotLoader {
         Map<Long, String> thumbnailUrlByPlaceId = readThumbnailUrls();
 
         List<Object[]> rows = readListSource();
-        List<PlaceListEntry> entries = new ArrayList<>(rows.size());
+        List<PlaceEntry> entries = new ArrayList<>(rows.size());
         Map<Long, PlaceView> views = new HashMap<>(rows.size() * 2);
         long previousPlaceId = -1L;
         for (Object[] row : rows) {
@@ -354,7 +354,7 @@ public class PlaceListSnapshotLoader {
 
     /**
      * 태그 표시값 전량. 재빌드가 쓰는 것과 <b>같은 메서드</b>를 어드민 태그 훅도 쓴다
-     * ({@link PlaceListSnapshotRefresher#refreshTagViewsAfterCommit}) — 태그는 수십 행이라 어느
+     * ({@link SnapshotRefresher#refreshTagViewsAfterCommit}) — 태그는 수십 행이라 어느
      * 것이 바뀌었는지 모아 단건으로 읽을 값어치가 없고, 규칙이 하나면 두 경로가 갈릴 자리도 없다.
      *
      * <p>{@code @Transactional}은 훅에서 들어오는 <b>바깥 호출</b>을 위한 것이다.
@@ -397,15 +397,15 @@ public class PlaceListSnapshotLoader {
     /**
      * <b>값의 좁힘이 여기서 한 번만 일어난다.</b> 생성일은 커서와 같은 식으로 epoch 초가 되고
      * (근거는 {@code PlaceListDbQueryRepository#findLatestRows}의 왕복 계약), 평점은 DECIMAL(3,2)의
-     * 무척도 정수만 {@code ratingToInt}으로 든다 ({@link PlaceListEntry} javadoc).
+     * 무척도 정수만 {@code ratingToInt}으로 든다 ({@link PlaceEntry} javadoc).
      *
      * <p>{@code intValueExact}는 의도다 — 컬럼 스케일이 2를 <b>넘는</b> 날 여기서 터진다(정보가 상하는
      * 쪽만 막는다). 그 자리 수가 상수라는 것이 {@code ratingToInt}의 전제이므로, 전제가 깨지면 조용히
      * 값을 버리는 대신 멈춰야 한다.
      */
-    private static PlaceListEntry toEntry(Object[] row) {
+    private static PlaceEntry toEntry(Object[] row) {
         int ratingToInt = ((BigDecimal) row[7]).movePointRight(2).intValueExact();
-        return new PlaceListEntry(
+        return new PlaceEntry(
                 ((Number) row[0]).longValue(),
                 ((Number) row[1]).longValue(),
                 ((Number) row[2]).longValue(),

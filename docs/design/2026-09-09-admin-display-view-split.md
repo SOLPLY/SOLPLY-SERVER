@@ -81,12 +81,12 @@
 ### 4-2. 구조
 
 ```
-사진(PlaceListPhoto, 버전 있음, 최근 3장 보존)
-  └ 동네 × 정렬 5종 → PlaceListEntry[]  (불변. 정렬 키·좌표·태그비트만.
-                                        장소 객체는 하나, 배열 다섯이 참조를 공유)
+스냅샷(Snapshot, 버전 있음, 최근 3장 보존)
+  └ 동네 × 정렬 5종 → PlaceEntry[]  (불변. 정렬 키·좌표·태그비트만.
+                                     장소 객체는 하나, 배열 다섯이 참조를 공유)
      ← 열별 원시 배열로 바꿨다가 되돌린 기록은 §11
 
-사진 밖 (버전 없음, 한 벌)
+스냅샷 밖 (버전 없음, 한 벌)
   PlaceViewHolder  placeId → (이름, 썸네일 URL, 메인 태그 id)
   TagViewHolder    tagId   → (이름, 활성)
 
@@ -260,7 +260,7 @@ DB 커넥션을 쥐고 있어서 어드민 둘이 겹치면 발급 커넥션이 
 ### 11-1. 모양 — 정렬마다 순서 배열 하나, 값은 장소 표 한 벌
 
 ```
-PlaceListIndex
+SortedPlaces
   장소 표 (전체 장소, 열별 원시 배열, 행 번호 = slot)
     long[]   placeId, townId, tagMask, createdAtEpochSecond
     int[]    reviewCount, bookmarkCount, ratingToInt
@@ -306,9 +306,9 @@ double을 싣되 안에서 `Math.round(v × 100)`으로 정수로 바꿔 비교�
 - **로더**: 세 문장 결과를 장소 표 열에 채우고, 동네·정렬마다 `int[] order`를 정렬한다. 자바 표준에
   "인덱스 배열을 비교자로 정렬"이 없어 박싱(`Integer[]`)하거나 정렬을 직접 짠다. 재빌드 비용은
   §9 측정에 그대로 잡힌다.
-- **PlaceListIndex**: seek·scan·병합 Leg·거리순 후보가 `order`와 열을 읽는다. 커서 비교는 축별로
+- **SortedPlaces**: seek·scan·병합 Leg·거리순 후보가 `order`와 열을 읽는다. 커서 비교는 축별로
   열 타입이 다르다(인기순 double, 최신순 long, 평점 int, 카운트 int).
-- **PlaceService**: `PlaceListEntry` 대신 slot으로 열을 읽어 응답·커서를 만든다. `PlaceListEntry`
+- **PlaceService**: `PlaceEntry` 대신 slot으로 열을 읽어 응답·커서를 만든다. `PlaceEntry`
   record는 사라지거나 로더 내부 조립용으로만 남는다.
 - **`DistanceSort.topK`**: 후보를 Entry 리스트가 아니라 slot 배열(또는 lat/lng 열 + slot)로 받는다.
 - **지켜야 할 게이트**: `PlaceListSnapshotEquivalenceIT`(메모리 경로 = DB 경로 응답 바이트 동일),
@@ -343,7 +343,7 @@ Old GC 표시 대상이 사라지고, 재빌드 때 장소 수만큼의 객체 �
 객체 하나와 `double` 중복을 없애고 가독성 손실이 없다. 커서 복원은 반드시 `Math.round(v × 100)`
 이어야 한다 — 0.00~9.99 중 69개 값(4.35 등)이 double에서 정수 바로 아래에 떨어져 버림이면 1
 작다. 테스트가 4.35 커서로 그 경계를 고정한다. 두 경로의 경계 판정이 같은 근거(k → k/100.0의
-순서 보존)는 `PlaceListIndex`의 커서 복원 헬퍼 javadoc에 있다.
+순서 보존)는 `SortedPlaces`의 커서 복원 헬퍼 javadoc에 있다.
 
 **다시 검토할 신호.** 재빌드 할당량이 커짐, Old GC 표시 시간·빈도 증가, 힙 때문에 컨테이너
 메모리가 부담, scan CPU에서 cache miss가 의미 있게 관측. 이 중 하나가 JFR·프로파일러에 보이면

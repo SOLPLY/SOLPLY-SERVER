@@ -41,7 +41,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <b>서비스가 낸 페이지</b>와 <b>{@code PlaceListDbQueryRepository}에 같은 입력을 넣어 얻은
  * 페이지</b>를 나란히 놓는다. 그 리포지토리는 이 단계에서 조회 경로 밖으로 나갔으나
  * <b>순서의 정본</b>으로 남아 있다 — 인덱스 정렬·seek 술어를 자바로 옮긴 것이
- * {@code PlaceListIndex}이므로, 옮기다 어긋난 자리는 여기서만 드러난다.
+ * {@code SortedPlaces}이므로, 옮기다 어긋난 자리는 여기서만 드러난다.
  *
  * <p><b>기대값을 손으로 적지 않는다.</b> 두 경로를 실제로 돌려 서로 비교하는 것이 이 파일의
  * 방식이고, 그래서 순서를 손으로 적어 두 경로가 함께 틀리는 그린이 생기지 않는다. 순서 자체의
@@ -99,7 +99,7 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
     private static final long SEED_OPTION1_B = 8L;
 
     @Autowired private PlaceService placeService;
-    @Autowired private PlaceListSnapshotLoader loader;
+    @Autowired private SnapshotLoader loader;
     @Autowired private PlaceListDbQueryRepository dbQueryRepository;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private TownHierarchyResolver townHierarchyResolver;
@@ -179,7 +179,7 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
         unscored = createPlace(townA, "등가G", CALCULATED_AT.plusMinutes(5), 37.5300, 127.0300);
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
-        // 픽스처를 다 심은 뒤에 사진을 찍는다 — 조회 경로가 보는 것은 이 회차뿐이다
+        // 픽스처를 다 심은 뒤에 스냅샷을 짓는다 — 조회 경로가 보는 것은 이 회차뿐이다
         loader.rebuild();
     }
 

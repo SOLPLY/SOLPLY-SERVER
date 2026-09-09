@@ -26,22 +26,22 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * "무엇을"이 함께 걸린다.
  *
  * <p>로더를 목으로 두는 것이 요점이다. 이 파일이 보는 것은 재생성의 <em>내용</em>이 아니라 그것을
- * 거는 <em>타이밍</em>이고, 실제 사진이 맞는지는 {@code PlaceListSnapshotLoaderIT}가 따로 문다.
+ * 거는 <em>타이밍</em>이고, 실제 스냅샷이 맞는지는 {@code PlaceListSnapshotLoaderIT}가 따로 문다.
  *
  * <p>동기화를 손으로 열고({@code initSynchronization}) 손으로 {@code afterCommit}을 부르는 것은
  * 트랜잭션 매니저 없이 <b>커밋 전/후</b>를 가르기 위해서다 — 사슬 수준의 확인은
  * {@code PlaceListFlowIT}의 어드민 시나리오가 실제 커밋으로 한다.
  */
 @ExtendWith(MockitoExtension.class)
-class PlaceListSnapshotRefresherTest {
+class SnapshotRefresherTest {
 
-    @Mock private PlaceListSnapshotLoader loader;
+    @Mock private SnapshotLoader loader;
     /** 홀더와 락은 진짜를 쓴다 — 패치가 <b>어디에 닿았는지</b>가 이 파일의 단언이라 값이 필요하다 */
     @Spy private PlaceViewHolder placeViewHolder = new PlaceViewHolder();
     @Spy private TagViewHolder tagViewHolder = new TagViewHolder();
-    @Spy private PlaceListWriteLock writeLock = new PlaceListWriteLock();
+    @Spy private CacheWriteLock writeLock = new CacheWriteLock();
 
-    @InjectMocks private PlaceListSnapshotRefresher refresher;
+    @InjectMocks private SnapshotRefresher refresher;
 
     /** 열어 둔 동기화가 다음 테스트로 새면 "트랜잭션 밖" 분기가 통째로 검증되지 않는다 */
     @AfterEach

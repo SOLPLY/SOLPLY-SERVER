@@ -12,7 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceImageInfo;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
@@ -30,7 +30,7 @@ class PlaceImageFieldUpdaterTest {
     private static final long PLACE_ID = 42L;
 
     @Mock private PlaceRepository placeRepository;
-    @Mock private PlaceListSnapshotRefresher placeListSnapshotRefresher;
+    @Mock private SnapshotRefresher snapshotRefresher;
     @Mock private Place place;
 
     @InjectMocks private PlaceImageFieldUpdater updater;
@@ -44,6 +44,6 @@ class PlaceImageFieldUpdaterTest {
         updater.replaceImages(PLACE_ID, List.of("place/42/최종키"));
 
         assertThat(images).hasSize(1);
-        verify(placeListSnapshotRefresher).patchPlaceViewAfterCommit(PLACE_ID);
+        verify(snapshotRefresher).patchPlaceViewAfterCommit(PLACE_ID);
     }
 }

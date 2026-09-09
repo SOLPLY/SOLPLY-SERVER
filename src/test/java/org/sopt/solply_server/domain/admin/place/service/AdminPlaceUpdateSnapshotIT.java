@@ -12,8 +12,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertRequest;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotLoader;
+import org.sopt.solply_server.domain.place.cache.SnapshotBox;
+import org.sopt.solply_server.domain.place.cache.SnapshotLoader;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -56,8 +56,8 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
     private static final double LONGITUDE = 127.0;
 
     @Autowired private AdminPlaceService adminPlaceService;
-    @Autowired private PlaceListSnapshotLoader loader;
-    @Autowired private PlaceListSnapshot snapshot;
+    @Autowired private SnapshotLoader loader;
+    @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -91,22 +91,22 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
 
     @Test
     void 이름만_고친_수정은_회차를_쓰지_않고_새_이름을_목록에_올린다() {
-        long versionBefore = snapshot.current().version();
+        long versionBefore = snapshotBox.current().version();
 
         adminPlaceService.updatePlace(placeId, request("수정후이름", townId, LATITUDE));
 
-        assertThat(snapshot.current().version())
+        assertThat(snapshotBox.current().version())
                 .as("표시값만 바뀌었으므로 사진은 그대로다").isEqualTo(versionBefore);
         assertThat(previewOf(previews(townId), placeId).placeName()).isEqualTo("수정후이름");
     }
 
     @Test
     void 동네를_옮긴_수정은_회차를_새로_찍고_장소를_새_동네_목록으로_옮긴다() {
-        long versionBefore = snapshot.current().version();
+        long versionBefore = snapshotBox.current().version();
 
         adminPlaceService.updatePlace(placeId, request("수정전이름", otherTownId, LATITUDE));
 
-        assertThat(snapshot.current().version()).isGreaterThan(versionBefore);
+        assertThat(snapshotBox.current().version()).isGreaterThan(versionBefore);
         assertThat(previews(townId)).isEmpty();
         assertThat(previewOf(previews(otherTownId), placeId).placeName()).isEqualTo("수정전이름");
     }

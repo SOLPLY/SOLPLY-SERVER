@@ -3,7 +3,7 @@ package org.sopt.solply_server.domain.admin.place.service;
 import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.place.entity.PlaceImageInfo;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.global.listener.ImageFieldUpdater;
@@ -18,7 +18,7 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
 
     private final PlaceRepository placeRepository;
     /** 이미지 키가 바뀌면 썸네일 URL이 바뀐다 — 이유는 {@link #replaceImages} */
-    private final PlaceListSnapshotRefresher placeListSnapshotRefresher;
+    private final SnapshotRefresher snapshotRefresher;
 
     @Override
     public TargetDir supportedDir() {
@@ -47,6 +47,6 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
             place.getPlaceImageInfos().add(new PlaceImageInfo(key, order++));
         }
 
-        placeListSnapshotRefresher.patchPlaceViewAfterCommit(placeId);
+        snapshotRefresher.patchPlaceViewAfterCommit(placeId);
     }
 }

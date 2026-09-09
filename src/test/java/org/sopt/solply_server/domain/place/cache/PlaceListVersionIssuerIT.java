@@ -30,7 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 회차 버전이 <b>DB 발급 테이블의 번호</b>라는 것을 실제 DB 위에서 못 박는다. 겨누는 것은 다섯이다 —
- * 번호가 단조인가, 읽기 전용 재빌드 트랜잭션 안에서도 발급이 되고 곧바로 커밋되는가, 사진에 붙는
+ * 번호가 단조인가, 읽기 전용 재빌드 트랜잭션 안에서도 발급이 되고 곧바로 커밋되는가, 스냅샷에 붙는
  * 번호가 정말 방금 발급된 그 번호인가, 발급이 실패했을 때 직전 회차가 통째로 남는가, 그리고
  * <b>실제 로더가 락으로 어드민 수정을 지키는가</b>.
  *
@@ -69,17 +69,17 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     /** 스레드가 서로를 기다리다 영영 멈추지 않게 하는 상한 */
     private static final long TIMEOUT_SECONDS = 10L;
 
-    @SpyBean private PlaceListVersionIssuer issuer;
-    @Autowired private PlaceListSnapshotLoader loader;
-    @Autowired private PlaceListSnapshotRefresher refresher;
-    @Autowired private PlaceListSnapshot snapshot;
+    @SpyBean private SnapshotVersionIssuer issuer;
+    @Autowired private SnapshotLoader loader;
+    @Autowired private SnapshotRefresher refresher;
+    @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceViewHolder placeViewHolder;
     @Autowired private TagViewHolder tagViewHolder;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private PlatformTransactionManager transactionManager;
 
-    /** 홀더에 값이 실려야 유실을 볼 수 있으므로, 사진에 들어갈 장소 하나를 심는다 */
+    /** 홀더에 값이 실려야 유실을 볼 수 있으므로, 스냅샷에 들어갈 장소 하나를 심는다 */
     private long placeId;
     /** 태그 홀더 쪽도 같은 이유로 하나 심는다 */
     private long tagId;
@@ -97,8 +97,8 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>연속 발급은 반드시 커진다.</b> 홀더의 단조 가드({@code PlaceListSnapshot#adopt})가 이
-     * 성질 위에 서 있어서, 여기가 무너지면 새로 지은 사진이 "낡은 버전"으로 조용히 거절된다.
+     * <b>연속 발급은 반드시 커진다.</b> 홀더의 단조 가드({@code SnapshotBox#adopt})가 이
+     * 성질 위에 서 있어서, 여기가 무너지면 새로 지은 스냅샷이 "낡은 버전"으로 조용히 거절된다.
      */
     @Test
     void 연속_발급은_증가한다() {
@@ -135,18 +135,18 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>사진에 붙는 번호가 곧 방금 발급된 번호다.</b> 재빌드가 번호를 받아 놓고 다른 값을 사진에
+     * <b>스냅샷에 붙는 번호가 곧 방금 발급된 번호다.</b> 재빌드가 번호를 받아 놓고 다른 값을 스냅샷에
      * 붙이면 커서가 가리키는 회차와 실제 회차가 갈린다 — 발급 테이블의 최댓값과 대조해 못 박는다.
      */
     @Test
-    void 재빌드는_방금_발급받은_번호를_사진_버전으로_쓴다() {
+    void 재빌드는_방금_발급받은_번호를_스냅샷_버전으로_쓴다() {
         long before = lastIssuedVersion();
 
         loader.rebuild();
-        long first = snapshot.current().version();
+        long first = snapshotBox.current().version();
 
         loader.rebuild();
-        long second = snapshot.current().version();
+        long second = snapshotBox.current().version();
 
         assertThat(first).as("직전 발급보다 크다").isGreaterThan(before);
         assertThat(first).as("첫 회차의 번호가 그때 발급된 것이다").isLessThan(second);
@@ -154,18 +154,18 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>발급이 실패하면 회차가 통째로 직전 그대로다 — 사진도, 홀더 둘도.</b> 재빌드 실패의 기존
+     * <b>발급이 실패하면 회차가 통째로 직전 그대로다 — 스냅샷도, 홀더 둘도.</b> 재빌드 실패의 기존
      * 정책이 그대로 적용되는 자리다 — 여기서 밀리초 시각 같은 폴백을 두면 번호 공간이 둘로 섞여,
      * 한 번의 폴백이 그 뒤 실제 발급 번호를 전부 "낡은 버전"으로 만든다.
      *
-     * <p>사진만 보면 절반짜리 단언이다. 홀더 교체가 발급보다 <em>앞</em>으로 밀리면 사진은 그대로인데
+     * <p>스냅샷만 보면 절반짜리 단언이다. 홀더 교체가 발급보다 <em>앞</em>으로 밀리면 스냅샷은 그대로인데
      * 이름·썸네일만 새 회차의 것이 되고, 그 어긋남은 아무 오류도 내지 않는다. 그래서 발급이 성공했다면
      * 홀더가 갈렸을 변경을 미리 커밋해 두고, 그 값이 <b>들어오지 않았음</b>을 확인한다.
      */
     @Test
-    void 발급이_실패하면_직전_회차가_사진과_홀더까지_남는다() {
+    void 발급이_실패하면_직전_회차가_스냅샷과_홀더까지_남는다() {
         loader.rebuild();
-        PlaceListPhoto heldPhoto = snapshot.current();
+        Snapshot heldSnapshot = snapshotBox.current();
         PlaceView heldPlaceView = placeViewHolder.get(placeId);
         TagView heldTagView = tagViewHolder.get(tagId);
 
@@ -177,7 +177,7 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
 
         assertThatThrownBy(loader::rebuild).isInstanceOf(IllegalStateException.class);
 
-        assertThat(snapshot.current()).as("사진이 교체되지 않았다").isSameAs(heldPhoto);
+        assertThat(snapshotBox.current()).as("스냅샷이 교체되지 않았다").isSameAs(heldSnapshot);
         assertThat(placeViewHolder.get(placeId))
                 .as("장소 표시값도 직전 값 그대로다").isEqualTo(heldPlaceView);
         assertThat(tagViewHolder.get(tagId))
@@ -185,7 +185,7 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>실제 로더가 락으로 어드민 수정을 지킨다.</b> {@code PlaceListWriteLockTest}는 목 로더 안에
+     * <b>실제 로더가 락으로 어드민 수정을 지킨다.</b> {@code CacheWriteLockTest}는 목 로더 안에
      * 락을 손으로 구현해 두므로 <em>진짜</em> {@code rebuild()}에서 락을 빼도 통과한다 — 여기가
      * 그 구멍을 막는다.
      *

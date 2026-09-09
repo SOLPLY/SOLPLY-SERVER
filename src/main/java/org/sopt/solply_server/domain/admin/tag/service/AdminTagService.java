@@ -14,7 +14,7 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsRespo
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -48,7 +48,7 @@ public class AdminTagService {
     private final AdminTagValidator adminTagValidator;
     private final EntityManager entityManager;
     /** 태그 맵을 <b>커밋 뒤에</b> 다시 읽게 한다 — 시점의 근거는 리프레셔 javadoc */
-    private final PlaceListSnapshotRefresher placeListSnapshotRefresher;
+    private final SnapshotRefresher snapshotRefresher;
 
     /**
      * <b>태그 id는 {@code place_stats.tag_bitmask}의 비트 자리다</b> — 62를 넘는 id가 생기면 목록
@@ -94,7 +94,7 @@ public class AdminTagService {
             throw new BusinessException(ErrorCode.TAG_ID_BIT_LIMIT_EXCEEDED);
         }
 
-        placeListSnapshotRefresher.refreshTagViewsAfterCommit();
+        snapshotRefresher.refreshTagViewsAfterCommit();
         return tagId;
     }
 
@@ -152,7 +152,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        placeListSnapshotRefresher.refreshTagViewsAfterCommit();
+        snapshotRefresher.refreshTagViewsAfterCommit();
         return id;
     }
 
@@ -171,7 +171,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        placeListSnapshotRefresher.refreshTagViewsAfterCommit();
+        snapshotRefresher.refreshTagViewsAfterCommit();
         return AdminTagActivationResponse.of(id, req.active());
     }
 

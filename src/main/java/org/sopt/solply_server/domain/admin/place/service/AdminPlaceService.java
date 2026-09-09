@@ -18,7 +18,7 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -45,7 +45,7 @@ public class AdminPlaceService {
     private final AdminPlaceRepository adminPlaceRepository;
     private final PlaceStatsRepository placeStatsRepository;
     /** 목록 사진을 <b>커밋 뒤에</b> 다시 찍게 한다 — 시점의 근거는 리프레셔 javadoc */
-    private final PlaceListSnapshotRefresher placeListSnapshotRefresher;
+    private final SnapshotRefresher snapshotRefresher;
     private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -164,7 +164,7 @@ public class AdminPlaceService {
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
 
         if (PlaceListMembershipKey.from(place).equals(membershipBefore)) {
-            placeListSnapshotRefresher.patchPlaceViewAfterCommit(place.getId());
+            snapshotRefresher.patchPlaceViewAfterCommit(place.getId());
         } else {
             syncPlaceStats(place.getId());
         }
@@ -289,7 +289,7 @@ public class AdminPlaceService {
 
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
-        placeListSnapshotRefresher.refreshAfterCommit();
+        snapshotRefresher.refreshAfterCommit();
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
@@ -327,7 +327,7 @@ public class AdminPlaceService {
      * 원천이 {@code place_stats ⋈ places}이므로, 이 문장이 도는 곳은 곧 사진이 낡는 곳이다.
      * 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다. 실제 재빌드는 커밋 뒤로
      * 미뤄진다 — 커밋 전에 지으면 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어 낡은 사진으로 덮는다
-     * ({@code PlaceListSnapshotRefresher} javadoc).
+     * ({@code SnapshotRefresher} javadoc).
      *
      * <p><b>어드민 쓰기가 전부 여기로 오지는 않는다.</b> 사진을 통째로 다시 찍는 경로는 생성 ·
      * 재활성 · {@link #deletePlace} · 그리고 목록 배열에 닿는 수정
@@ -340,7 +340,7 @@ public class AdminPlaceService {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        placeListSnapshotRefresher.refreshAfterCommit();
+        snapshotRefresher.refreshAfterCommit();
     }
 
 

@@ -4,7 +4,7 @@ package org.sopt.solply_server.domain.place.cache;
  * 목록 한 항목의 <b>정렬·필터·거리 값</b>. 출처는 {@code place_stats} 한 행 + {@code places}의
  * 좌표다. 화면에 그리는 값(이름·썸네일·대표 태그)은 여기 없고 {@link PlaceView}에 있다.
  *
- * <p><b>그 분리가 이 타입의 계약이다.</b> 회차 사진이 박제하는 것은 <b>순서</b>뿐이며, 표시값은
+ * <p><b>그 분리가 이 타입의 계약이다.</b> 회차 스냅샷이 박제하는 것은 <b>순서</b>뿐이며, 표시값은
  * 스냅샷 밖 홀더({@link PlaceViewHolder}·{@link TagViewHolder})에 살면서 어드민 수정마다 그
  * 항목만 갈린다. 그래서 한 응답이 "옛 회차의 순서 + 지금의 표시값"으로 조립되는 것이 정상이다 —
  * 이름 하나 고치자고 전량을 다시 짓지 않기 위해 받아들인 계약이다.
@@ -36,7 +36,7 @@ package org.sopt.solply_server.domain.place.cache;
  *   <li><b>{@code isBookmarked}는 담지 않는다.</b> 사용자별 값이라 장소 단위 캐시에 들어갈 수 없다.</li>
  * </ul>
  */
-public record PlaceListEntry(
+public record PlaceEntry(
         long placeId,
         long townId,
         long tagBitmask,

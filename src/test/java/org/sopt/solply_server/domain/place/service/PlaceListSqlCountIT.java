@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotLoader;
+import org.sopt.solply_server.domain.place.cache.SnapshotLoader;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -64,7 +64,7 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
 
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
-    @Autowired private PlaceListSnapshotLoader snapshotLoader;
+    @Autowired private SnapshotLoader snapshotLoader;
     @Autowired private JdbcTemplate jdbcTemplate;
 
     private long townId;
@@ -85,7 +85,7 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
         // 검증하려던 "점수 경계"를 실제로는 밟지 않게 된다.
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        // 조회가 읽는 것은 사진뿐이라, 픽스처를 다 심은 뒤 한 회차를 찍어야 목록이 이 행들을 본다
+        // 조회가 읽는 것은 스냅샷뿐이라, 픽스처를 다 심은 뒤 한 회차를 찍어야 목록이 이 행들을 본다
         snapshotLoader.rebuild();
     }
 
@@ -111,7 +111,7 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>목록 요청은 place_stats를 한 문장도 읽지 않는다.</b> 순서도 표시값도 이미 사진 안에 있다 —
+     * <b>목록 요청은 place_stats를 한 문장도 읽지 않는다.</b> 순서도 표시값도 이미 스냅샷 안에 있다 —
      * 여기서 문장이 하나라도 나가면 회차 배치로 옮긴 일을 요청마다 다시 하는 셈이다.
      *
      * <p><b>마지막 단언이 이 0을 뜻 있게 만든다.</b> 프로브가 죽어 있어도 위 두 단언은 그대로

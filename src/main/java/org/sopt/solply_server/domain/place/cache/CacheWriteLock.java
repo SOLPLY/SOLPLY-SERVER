@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 목록 캐시의 <b>쓰기를 한 줄로 세우는</b> 락. 여기 들어오는 것은 둘이다 — 전량 재빌드
- * ({@link PlaceListSnapshotLoader#rebuild()})와 표시값 패치
- * ({@link PlaceListSnapshotRefresher}의 홀더 {@code put}).
+ * ({@link SnapshotLoader#rebuild()})와 표시값 패치
+ * ({@link SnapshotRefresher}의 홀더 {@code put}).
  *
  * <p><b>막는 것은 어드민 수정의 유실이다.</b> 재빌드는 DB를 읽고 그 결과로 홀더의 맵을 통째로
  * 간다. 락이 없으면 이런 순서가 가능하다 — 타이머 재빌드가 원본을 다 읽는다 → 어드민이 이름을
@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>락이 트랜잭션보다 먼저다 — 커넥션을 쥔 채 기다리지 않기 위해서다.</b> 순서를 뒤집으면
  * 재빌드는 커넥션을 먼저 받고 그것을 쥔 채 락 앞에 눕는다. 그런데 락을 쥔 쪽은 버전 발급
- * ({@link PlaceListVersionIssuer})으로 커넥션을 하나 더 요구하므로, 어드민 둘이 동시에 커밋하면
+ * ({@link SnapshotVersionIssuer})으로 커넥션을 하나 더 요구하므로, 어드민 둘이 동시에 커밋하면
  * 각자의 원본 트랜잭션 커넥션(커밋 뒤에도 {@code afterCommit} 동안은 아직 반납 전이다) 둘 +
  * 기다리는 재빌드의 읽기 커넥션 하나로 넷이 묶이고, 발급이 다섯 번째를 기다리다 타임아웃한다.
  * 락을 먼저 잡으면 기다리는 동안 쥐는 커넥션이 없다.
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
  * <p><b>커넥션 점유 — 락 대기 중 0개, 락 안에서 최대 1개다</b>(어드민 경로는 아직 반납되지 않은
  * 원본 트랜잭션 커넥션이 하나 더 있어 +1). 락 안의 1개는 읽기 트랜잭션과 발급 트랜잭션이
  * <b>겹치지 않고</b> 차례로 쓰기 때문이다 — 읽기를 닫은 뒤에 발급한다
- * ({@code PlaceListSnapshotLoader#rebuild}).
+ * ({@code SnapshotLoader#rebuild}).
  *
  * <p>재빌드가 락 안에서 커밋된 수정을 못 보는 일도 없다. 읽기 트랜잭션 자체를 락 안에서 열고
  * 닫으므로 일관 읽기 스냅샷이 잡히는 시점이 언제나 락을 잡은 뒤다.
@@ -34,7 +34,7 @@ import org.springframework.stereotype.Component;
  * 여기와 무관하고, 그래서 재빌드가 도는 동안에도 목록 응답은 멈추지 않는다.
  */
 @Component
-public class PlaceListWriteLock {
+public class CacheWriteLock {
 
     private final ReentrantLock lock = new ReentrantLock();
 

@@ -13,8 +13,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * <p><b>갱신은 세 가지다.</b>
  * <ul>
  *   <li><b>전량 재빌드</b>({@link #refreshAfterCommit()}) — 소속·정렬·필터가 바뀌는 수정이다.
- *       장소의 생성·삭제·동네 이동·태그 부착처럼 <em>어느 배열에 서는가</em>가 달라지면 사진을
- *       통째로 다시 찍어야 한다.</li>
+ *       장소의 생성·삭제·동네 이동·태그 부착처럼 <em>어느 배열에 서는가</em>가 달라지면 스냅샷을
+ *       통째로 다시 지어야 한다.</li>
  *   <li><b>장소 표시값 패치</b>({@link #patchPlaceViewAfterCommit(long)}) — 이름·썸네일처럼 순서에
  *       닿지 않는 수정이다. 그 장소 하나만 홀더에서 갈아 끼우므로 전량 스캔이 돌지 않는다.</li>
  *   <li><b>태그 맵 다시 읽기</b>({@link #refreshTagViewsAfterCommit()}) — 태그 이름·활성 수정이다.
@@ -28,7 +28,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 지금은 없다. 걸리더라도 둘 다 도는 것이 계약이다(패치 하나가 헛도는 정도).
  *
  * <p><b>이 훅이 존재하는 이유는 즉시성이다.</b> 캐시를 고치는 트리거는 셋인데 각자 맡은
- * 것이 다르다: 기동 빌드는 첫 사진을 세우고, 10분 타이머는 <b>배치가 채우는 통계</b>(카운트·점수)를
+ * 것이 다르다: 기동 빌드는 첫 스냅샷을 세우고, 10분 타이머는 <b>배치가 채우는 통계</b>(카운트·점수)를
  * 화면으로 옮기며, 이 훅은 <b>어드민이 바꾼 콘텐츠</b>를 그 자리에서 반영한다. 통계가 10분 늦는
  * 것은 수용한 창이지만 방금 등록한 장소가 10분간 안 보이는 것은 아니라는 제품 결정이 이
  * 클래스다. 그래서 SLA가 둘로 갈린다 — <b>어드민 변경은 커밋 직후(수백 ms),
@@ -39,28 +39,28 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 그것이 커밋된 새 상태를 덮은 채 다음 트리거까지 남는다 — 방금 만든 장소가 목록에서
  * 사라지고 방금 옮긴 동네가 되돌아간 것처럼 보인다.
  *
- * <p><b>쓰기는 전부 {@link PlaceListWriteLock} 안에서 한다.</b> 재빌드와 패치가 겹치면 재빌드가
+ * <p><b>쓰기는 전부 {@link CacheWriteLock} 안에서 한다.</b> 재빌드와 패치가 겹치면 재빌드가
  * 읽어 둔 옛 값이 방금 패치한 값을 덮을 수 있다 — 근거는 그쪽 javadoc.
  *
  * <p><b>실패해도 호출자를 죽이지 않는다.</b> 갱신이 실패하면 직전 값이 그대로 남고, 그
  * 사이 바뀐 장소는 <b>낡은 모습</b>으로 보인다 — 그 창의 상한은 다음 트리거(타이머)까지다. 어드민
  * 요청이 캐시 때문에 500이 되는 것보다 낫다. 격리는 훅마다 따로 걸린다.
  *
- * <p><b>한계 — 갱신되는 것은 요청을 받은 JVM 하나뿐이다.</b> 사진도 표시값도 인스턴스의 힙에
- * 있으므로, 다른 인스턴스는 자기 타이머가 돌 때까지 옛 값을 서빙한다. {@link PlaceListSnapshot}의
+ * <p><b>한계 — 갱신되는 것은 요청을 받은 JVM 하나뿐이다.</b> 스냅샷도 표시값도 인스턴스의 힙에
+ * 있으므로, 다른 인스턴스는 자기 타이머가 돌 때까지 옛 값을 서빙한다. {@link SnapshotBox}의
  * "버전은 인스턴스 로컬"과 같은 전제 위에 서 있으니 <b>스케일아웃할 때 둘을 함께 되짚을 것.</b>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class PlaceListSnapshotRefresher {
+public class SnapshotRefresher {
 
-    private final PlaceListSnapshotLoader loader;
+    private final SnapshotLoader loader;
     private final PlaceViewHolder placeViewHolder;
     private final TagViewHolder tagViewHolder;
-    private final PlaceListWriteLock writeLock;
+    private final CacheWriteLock writeLock;
 
-    /** 순서가 바뀌는 수정 — 커밋 뒤에 사진과 표시값을 통째로 다시 짓는다 */
+    /** 순서가 바뀌는 수정 — 커밋 뒤에 스냅샷과 표시값을 통째로 다시 짓는다 */
     public void refreshAfterCommit() {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             rebuildQuietly();
