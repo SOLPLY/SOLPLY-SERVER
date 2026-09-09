@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.place.entity.PlaceImageInfo;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.global.listener.ImageFieldUpdater;
 import org.sopt.solply_server.global.util.s3.TargetDir;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 class PlaceImageFieldUpdater implements ImageFieldUpdater {
 
     private final PlaceRepository placeRepository;
+    /** 썸네일 키가 {@code place_stats}의 칸이라 이 경로도 그 칸을 다시 짓는다 (V40) */
+    private final PlaceStatsRepository placeStatsRepository;
     /** 이미지 키가 바뀌면 썸네일 URL이 바뀐다 — 이유는 {@link #replaceImages} */
     private final SnapshotRefresher snapshotRefresher;
 
@@ -33,6 +36,11 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
      * <p><b>여기서 표시값 패치를 걸지 않으면 목록이 죽은 URL을 낸다.</b> 어드민 쓰기가 건 재빌드는
      * 이 트랜잭션보다 <em>먼저</em> 끝나므로 스테이징 키를 찍고, 이동(MOVE)은 원본을 지운다. 그
      * 상태가 다음 전량 재빌드(≤10분)까지 남으면서 아무 오류도 나지 않는다.
+     *
+     * <p><b>upsert가 패치보다 앞이다.</b> 썸네일 키가 {@code place_stats}의 칸이라(V40) 패치가 읽는
+     * 원천이 그 칸이다 — 순서가 뒤집히면 패치는 방금 갈아 끼운 키가 아니라 스테이징 키를 다시
+     * 싣는다. 엔티티 변경이 그 문장보다 먼저 flush되는 것은
+     * {@code upsertRowsForActivePlaces}의 {@code flushAutomatically}가 보장한다.
      */
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -47,6 +55,7 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
             place.getPlaceImageInfos().add(new PlaceImageInfo(key, order++));
         }
 
+        placeStatsRepository.upsertRowsForActivePlaces(List.of(placeId));
         snapshotRefresher.patchPlaceViewAfterCommit(placeId);
     }
 }

@@ -31,41 +31,39 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@link SnapshotRefresher}(어드민 커밋 뒤) 둘이다. 어드민 훅은 그 밖에
  * {@link #readView(long)}(장소 한 건)과 {@link #readTagViews()}(태그 전량)도 쓴다.
  *
- * <p><b>쿼리가 세 문장인 것이 이 클래스의 전부다.</b>
+ * <p><b>쿼리가 두 문장인 것이 이 클래스의 전부다.</b>
  * <ul>
  *   <li>문장 ①은 <b>장소당 한 행</b>이고 원천은 {@code place_stats} 하나다 — 목록에 나와도 되는
  *       장소 = place_stats에 행이 있는 장소라는 불변식이다. 순서 축뿐 아니라 표시값(이름·좌표·
- *       메인 태그 id)까지 같은 테이블의 칸이라 조인이 없다 (V40). 한 행이 엔트리 하나와
- *       {@link PlaceView} 하나로 갈라진다.</li>
- *   <li>문장 ②는 썸네일이다. 장소당 여러 행이라 문장 ①에 접히지 않는다. 먼저 장소 → 파일 키 맵으로
- *       접어 두고 문장 ①이 행마다 그 맵을 한 번씩 찾으므로, 조립은 각 결과를 한 번씩 훑는 선형
- *       작업이다.</li>
+ *       메인 태그 id·썸네일 파일 키)까지 같은 테이블의 칸이라 조인도 곁문장도 없다 (V40).
+ *       한 행이 엔트리 하나와 {@link PlaceView} 하나로 갈라진다.</li>
  *   <li>문장 ③은 태그 전량이다. 수십 행이라 조건을 걸 값어치가 없고, <b>비활성 태그도 담아야</b>
  *       한다 — 대표 태그 이름을 비우는 판정이 조회 시점에 {@code active}로 이뤄지기 때문이다
- *       ({@link TagView}).</li>
+ *       ({@link TagView}). 번호가 ③인 것은 옛 문장 ②(썸네일 전량)가 V40으로 사라졌기 때문이고,
+ *       다른 문서·주석이 그 번호로 이 문장을 가리킨다.</li>
  * </ul>
  *
  * <p><b>JPA를 쓰지 않는 것이 핵심 결정이다.</b> 엔티티로 전량을 읽으면 없애려는 하이드레이션 비용을
  * 배치에서 그대로 다시 치른다 — 조회 경로에서 덜어낸 CPU가 배치로 옮겨갈 뿐이다. {@code Object[]}만
  * 받아 자바에서 record로 접는다.
  *
- * <p><b>대량 문장 둘은 결과를 통째로 받지 않는다.</b> {@code getResultList()}는 드라이버가 결과
+ * <p><b>대량 문장인 문장 ①은 결과를 통째로 받지 않는다.</b> {@code getResultList()}는 드라이버가 결과
  * 전체를 버퍼링한 뒤 하이버네이트가 {@code List<Object[]>}를 완성해야 끝나서, 어느 순간 드라이버
- * 버퍼와 중간 리스트를 함께 든다. 그래서 문장 ①·②는
+ * 버퍼와 중간 리스트를 함께 든다. 그래서 문장 ①은
  * {@code setFetchSize(Integer.MIN_VALUE)} + {@code stream()}으로 열어 행을 받는 즉시 접는다 —
  * {@code Integer.MIN_VALUE}는 행 수가 아니라 Connector/J에게 <b>한 행씩 넘기라</b>는 신호이고
  * (forward-only · read-only와 함께 세 조건이 맞아야 켜진다), 하이버네이트의 {@code stream()}은
  * {@code scroll(FORWARD_ONLY)} 위에 얹혀 그 값을 {@code PreparedStatement}까지 그대로 넘긴다.
  * <b>함정은 다음 문장을 열기 전에 스트림을 반드시 닫아야 한다는 것</b>이다 — streaming 결과가 열려
- * 있는 동안 Connector/J는 같은 커넥션의 다른 문장을 거부하고, 세 문장이 한 읽기 트랜잭션(= 한
+ * 있는 동안 Connector/J는 같은 커넥션의 다른 문장을 거부하고, 두 문장이 한 읽기 트랜잭션(= 한
  * 커넥션)을 쓰므로 이것은 성능이 아니라 <b>정확성</b> 조건이다. 벤치·운영이 쓰는 서버 prepared
  * statement 구성({@code useServerPrepStmts=true})에서는 이것을 어겨도 깔끔한 예외로 끝나지 않는다 —
  * 거부된 뒤 남은 행을 드레인하다 소켓 읽기에서 멈추는 것을 실측했다. 문장 ③(수십 행)과 단건
  * {@link #SINGLE_VIEW_SQL}은 얻을 것이 없어 {@code getResultList()} 그대로 둔다.
  *
- * <p><b>읽기를 트랜잭션 하나로 묶는 이유는 세 문장이 같은 일관 읽기를 보게 하기 위해서다.</b>
- * 트랜잭션이 없으면 문장마다 커넥션이 갈려, 그 사이에 커밋된 이미지 변경이 장소 목록과 어긋난
- * 조합으로 실릴 수 있다. <b>세 문장이 같은 Read View를 보는 근거는 격리 수준이 REPEATABLE READ인
+ * <p><b>읽기를 트랜잭션 하나로 묶는 이유는 두 문장이 같은 일관 읽기를 보게 하기 위해서다.</b>
+ * 트랜잭션이 없으면 문장마다 커넥션이 갈려, 그 사이에 커밋된 태그 변경이 장소 목록과 어긋난
+ * 조합으로 실릴 수 있다. <b>두 문장이 같은 Read View를 보는 근거는 격리 수준이 REPEATABLE READ인
  * 것이지 {@code readOnly}가 아니다</b> — {@code readOnly}는 쓰기를 막는 힌트일 뿐 스냅샷을 고정하지
  * 않는다. 격리 수준을 코드에서 고정하지 않으므로 이 성질은 <b>운영 DB의 기본값</b>(MySQL InnoDB
  * 기본 REPEATABLE READ)에 기대고 있다. 기본값을 READ COMMITTED로 내리는 날 이 문단부터 짚을 것.
@@ -85,9 +83,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>동치 계약 — 응답이 바뀌면 안 된다.</b> 표시값은 엔티티 경로와 같은 값을 내야 한다.
  * <ul>
  *   <li>썸네일: {@code Place.getThumbnailFileKey()}가 {@code @OrderBy("displayOrder ASC")} +
- *       {@code findFirst()}이므로, 여기서도 {@code display_order ASC}의 첫 행을 쓴다
- *       (MySQL·하이버네이트 모두 ASC에서 NULL이 앞이라 정렬 결과가 같다). 담는 것은 그 행의
- *       <b>파일 키 원값</b>이고 URL 결합은 조회 경로의 몫이다({@link PlaceView}).</li>
+ *       {@code findFirst()}이므로, 규칙도 {@code display_order ASC}의 첫 행이다
+ *       (MySQL·하이버네이트 모두 ASC에서 NULL이 앞이라 정렬 결과가 같다). 그 규칙은 쓰기 문장
+ *       ({@code PlaceStatsRepository})이 {@code place_stats.thumbnail_file_key}에 고정해 두고
+ *       로더는 읽기만 한다. 담는 것은 그 행의 <b>파일 키 원값</b>이고 URL 결합은 조회 경로의
+ *       몫이다({@link PlaceView}).</li>
  *   <li>메인 태그: 첫 MAIN 태그의 <b>id</b>를 활성 여부와 무관하게 담는다. 그 규칙은 쓰기 문장
  *       ({@code PlaceStatsRepository})이 {@code place_stats.main_tag_id}에 고정해 두고 로더는
  *       읽기만 한다 — 활성으로 거르면 비활성 MAIN이 붙은 장소에서 <em>다음</em> MAIN 태그가 뽑혀
@@ -104,7 +104,7 @@ public class SnapshotLoader {
     private final TagViewHolder tagViewHolder;
     private final CacheWriteLock writeLock;
     private final SnapshotVersionIssuer versionIssuer;
-    /** 전량 읽기 세 문장을 담는 트랜잭션 — 어노테이션을 쓰지 않는 이유는 클래스 javadoc */
+    /** 전량 읽기 두 문장을 담는 트랜잭션 — 어노테이션을 쓰지 않는 이유는 클래스 javadoc */
     private final TransactionTemplate readTransaction;
 
     public SnapshotLoader(
@@ -128,7 +128,7 @@ public class SnapshotLoader {
     }
 
     /**
-     * 장소당 한 행 — 정렬 축 다섯 + 좌표 + 이름 + 메인 태그 id. <b>SELECT 목록이 곧
+     * 장소당 한 행 — 정렬 축 다섯 + 좌표 + 이름 + 메인 태그 id + 썸네일 파일 키. <b>SELECT 목록이 곧
      * {@link PlaceEntry}와 {@link PlaceView}의 필드 목록</b>이라, 축이나 표시 필드를 늘릴 때
      * 두 곳이 함께 움직인다.
      *
@@ -136,10 +136,10 @@ public class SnapshotLoader {
      * 그것이 DB 경로와 같은 행 집합을 보장하는 근거다
      * ({@code PlaceListDbQueryRepository} javadoc의 불변식).
      *
-     * <p><b>조인도 ORDER BY도 없다.</b> 표시값 셋(이름·좌표·메인 태그 id)이 {@code place_stats}의
-     * 칸이 된 뒤로 붙일 테이블이 없고(V40), 장소당 한 행은 PK가 보장하므로 행을 접기 위해 정렬에
-     * 기댈 이유도 없다. 메인 태그를 고르는 규칙은 이 문장이 아니라 그 칸을 채우는 쓰기 문장
-     * ({@code PlaceStatsRepository})에 있다.
+     * <p><b>조인도 ORDER BY도 없다.</b> 표시값 넷(이름·좌표·메인 태그 id·썸네일 파일 키)이
+     * {@code place_stats}의 칸이 된 뒤로 붙일 테이블이 없고(V40), 장소당 한 행은 PK가 보장하므로
+     * 행을 접기 위해 정렬에 기댈 이유도 없다. 메인 태그와 썸네일을 고르는 규칙은 이 문장이 아니라
+     * 그 칸을 채우는 쓰기 문장({@code PlaceStatsRepository})에 있다.
      */
     private static final String LIST_SOURCE_SQL = """
             SELECT ps.place_id, ps.town_id, ps.tag_bitmask,
@@ -147,31 +147,9 @@ public class SnapshotLoader {
                    ps.bookmark_count, ps.review_count, ps.avg_rating,
                    ps.latitude, ps.longitude,
                    ps.name,
-                   ps.main_tag_id
+                   ps.main_tag_id,
+                   ps.thumbnail_file_key
             FROM place_stats ps
-            """;
-
-    /**
-     * 썸네일 후보. 장소별 첫 행만 쓰므로 정렬이 곧 선택 규칙이다
-     * ({@code idx_place_images_place_id_order}가 이 순서를 그대로 만든다).
-     *
-     * <p><b>{@code image_file_key}가 동률의 타이브레이커다.</b> {@code display_order}는 중복도 NULL도
-     * 허용해서 그것만으로는 첫 행이 정해지지 않는데, MySQL의 filesort는 안정 정렬이 아니라 같은
-     * 키의 행 순서가 실행 계획을 따라 바뀔 수 있다. 그러면 전량과 단건({@link #SINGLE_VIEW_SQL})이
-     * 다른 이미지를 골라 "패치된 뒤"와 "다음 회차 뒤"의 썸네일이 갈린다.
-     *
-     * <p><b>행이 아니라 값을 타이브레이커로 쓴 것은 이 테이블에 대리키가 없기 때문이다.</b>
-     * {@code place_images}는 {@code @ElementCollection} 테이블이라 PK도 id 컬럼도 없다
-     * ({@code V1}). 값으로 갈라도 목적은 달성된다 — 어느 행이 뽑히든 <b>고르는 값</b>이 하나로
-     * 정해지면 두 경로가 갈리지 않는다.
-     *
-     * <p>목록에 없는 장소의 이미지까지 읽는다 — places와 조인해 거르는 값이 전량 스캔보다 크지 않고,
-     * 조립 단계에서 문장 ①이 준 장소 id만 꺼내 쓰므로 결과에 섞이지 않는다.
-     */
-    private static final String THUMBNAIL_SQL = """
-            SELECT pi.place_id, pi.image_file_key
-            FROM place_images pi
-            ORDER BY pi.place_id, pi.display_order, pi.image_file_key
             """;
 
     /** 태그 전량 — 수십 행이라 조건을 걸지 않는다. 비활성도 담는 이유는 {@link TagView} */
@@ -181,10 +159,9 @@ public class SnapshotLoader {
             """;
 
     /**
-     * 장소 하나의 표시값. <b>전량과 같은 원천을 읽어야 두 경로가 갈리지 않는다</b> — 이름과 메인
-     * 태그 id는 {@link #LIST_SOURCE_SQL}과 똑같이 {@code place_stats}의 칸이고, 썸네일만 전량 문장
-     * ({@link #THUMBNAIL_SQL})의 규칙을 상관 서브쿼리로 옮겼다({@code display_order} 오름차순 +
-     * {@code image_file_key} 타이브레이커).
+     * 장소 하나의 표시값. <b>전량과 같은 원천을 읽어야 두 경로가 갈리지 않는다</b> — 표시값 셋 모두
+     * {@link #LIST_SOURCE_SQL}과 똑같이 {@code place_stats}의 칸이라, 이 문장과 전량 문장 사이에
+     * 규칙이 갈릴 자리 자체가 없다 (V40).
      *
      * <p>기준 테이블이 {@code place_stats}라 <b>비활성 장소는 행이 없어 패치가 no-op이 된다</b>.
      * 그래도 되는 이유는 비활성 장소가 정렬 배열에 없어 화면에 닿지 않고, 되살리는 경로
@@ -194,11 +171,7 @@ public class SnapshotLoader {
     private static final String SINGLE_VIEW_SQL = """
             SELECT ps.name,
                    ps.main_tag_id,
-                   (SELECT pi.image_file_key
-                      FROM place_images pi
-                     WHERE pi.place_id = ps.place_id
-                     ORDER BY pi.display_order, pi.image_file_key
-                     LIMIT 1)
+                   ps.thumbnail_file_key
             FROM place_stats ps
             WHERE ps.place_id = :placeId
             """;
@@ -309,16 +282,14 @@ public class SnapshotLoader {
     private record Source(List<PlaceEntry> entries, ConcurrentMap<Long, PlaceView> views) {}
 
     /**
-     * 두 문장을 차례로 흘려 엔트리 목록과 표시값 맵을 만든다. 행을 받는 즉시 접으므로 중간
+     * 문장 ①을 흘려 엔트리 목록과 표시값 맵을 만든다. 행을 받는 즉시 접으므로 중간
      * {@code List<Object[]>}가 없다. 부분 결과가 캐시로 새지 않는다 — 교체는
      * {@link #rebuildInLock()}이 이 메서드를 끝까지 받은 뒤 한 번뿐이다.
      *
-     * <p><b>썸네일 문장을 끝까지 닫은 뒤에 장소 문장을 연다.</b> 두 스트림을 겹쳐 열면 뒤엣것이
-     * 드라이버에 거부된다(근거는 클래스 javadoc).
+     * <p><b>이 스트림을 닫기 전에는 같은 트랜잭션의 다른 문장을 열 수 없다</b>(근거는 클래스
+     * javadoc). 태그 문장이 {@link #rebuildInLock()}에서 이 메서드 <em>뒤에</em> 도는 이유다.
      */
     private Source readSource() {
-        Map<Long, String> thumbnailKeyByPlaceId = readThumbnailKeys();
-
         // 용량 힌트를 두지 않는다 — streaming이라 행 수를 미리 모르고, 재할당은 그때뿐인 배열
         // 복사라 이 이슈가 겨누는 "동시에 살아 있는 양"을 늘리지 않는다
         List<PlaceEntry> entries = new ArrayList<>();
@@ -332,36 +303,11 @@ public class SnapshotLoader {
                 views.put(placeId, new PlaceView(
                         placeId,
                         (String) row[10],
-                        thumbnailKeyByPlaceId.get(placeId),
+                        (String) row[12],
                         toNullableLong(row[11])));
             }
         }
         return new Source(entries, views);
-    }
-
-    /**
-     * 장소 → 썸네일 파일 키({@code image_file_key} 원값). 값이 {@code null}인 항목도
-     * <b>키는 남는다</b>.
-     *
-     * <p>{@code containsKey}로 거르는 것이 계약이다: {@code putIfAbsent}·{@code computeIfAbsent}는
-     * null을 "없음"으로 취급해 <em>다음</em> 이미지를 대신 집어 든다. 엔티티 경로는 첫 이미지의 키가
-     * 비어 있으면 그대로 썸네일 없음이므로, 여기서도 첫 행의 값을 그대로 남겨야 두 경로가 갈리지
-     * 않는다.
-     */
-    private Map<Long, String> readThumbnailKeys() {
-        // 용량 힌트를 두지 않는 이유는 readSource와 같다
-        Map<Long, String> keyByPlaceId = new HashMap<>();
-        try (Stream<Object[]> rows = streamThumbnails()) {
-            for (Iterator<Object[]> it = rows.iterator(); it.hasNext(); ) {
-                Object[] row = it.next();
-                long placeId = ((Number) row[0]).longValue();
-                // 첫 행이 display_order가 가장 앞선 이미지다
-                if (!keyByPlaceId.containsKey(placeId)) {
-                    keyByPlaceId.put(placeId, (String) row[1]);
-                }
-            }
-        }
-        return keyByPlaceId;
     }
 
     /**
@@ -371,7 +317,7 @@ public class SnapshotLoader {
      *
      * <p>{@code @Transactional}은 훅에서 들어오는 <b>바깥 호출</b>을 위한 것이다.
      * {@link #rebuildInLock()}은 자기 호출이라 어노테이션이 무시되고 이미 열린 읽기 트랜잭션
-     * 안에서 도는데, 그것이 의도한 모양이다 — 세 문장이 한 트랜잭션을 함께 쓴다.
+     * 안에서 도는데, 그것이 의도한 모양이다 — 두 문장이 한 트랜잭션을 함께 쓴다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public Map<Long, TagView> readTagViews() {
@@ -393,10 +339,6 @@ public class SnapshotLoader {
      */
     Stream<Object[]> streamListSource() {
         return streamRows(LIST_SOURCE_SQL);
-    }
-
-    private Stream<Object[]> streamThumbnails() {
-        return streamRows(THUMBNAIL_SQL);
     }
 
     /** fetch size {@code Integer.MIN_VALUE}가 드라이버의 행 단위 streaming 스위치다 — 지우지 말 것 */

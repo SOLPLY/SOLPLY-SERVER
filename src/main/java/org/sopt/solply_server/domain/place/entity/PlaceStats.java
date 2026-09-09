@@ -15,7 +15,8 @@ import lombok.NoArgsConstructor;
  * 장소 목록 조회 <b>두 정렬 모두</b>의 읽기 모델. <b>장소당 행 하나</b>다 (V32·V34).
  *
  * <p>담는 것이 세 가지다 — 정렬 축({@code popular_score}, {@code created_at}), 필터 축
- * ({@code town_id}, {@code tag_bitmask}), 표시값(카운트 셋 + {@code name}·좌표·{@code main_tag_id}).
+ * ({@code town_id}, {@code tag_bitmask}), 표시값(카운트 셋 + {@code name}·좌표·{@code main_tag_id}·
+ * {@code thumbnail_file_key}).
  * 목록 조회가 이 테이블 하나로 끝나는 것, 즉 <b>조인이 없다</b>는 것이 V34의 요점이고,
  * 스냅샷 재빌드의 전량 문장까지 그 하나로 좁힌 것이 V40이다.
  *
@@ -25,8 +26,9 @@ import lombok.NoArgsConstructor;
  *   <tr><th>주체</th><th>주기</th><th>소유 컬럼</th></tr>
  *   <tr><td>어드민 쓰기 트랜잭션</td><td>즉시(같은 트랜잭션)</td>
  *       <td><b>행의 존재 자체</b>, {@code town_id}, {@code created_at}, {@code tag_bitmask},
- *           {@code name}, {@code latitude}, {@code longitude}, {@code main_tag_id}
- *           ({@code AdminPlaceService})</td></tr>
+ *           {@code name}, {@code latitude}, {@code longitude}, {@code main_tag_id},
+ *           {@code thumbnail_file_key}
+ *           ({@code AdminPlaceService} · 이미지 이동 후처리 {@code PlaceImageFieldUpdater})</td></tr>
  *   <tr><td>카운트 배치 — 리뷰 축 전량 재계산</td><td>매시 30분</td>
  *       <td>{@code review_count}, {@code avg_rating}</td></tr>
  *   <tr><td>카운트 배치 — 북마크 아웃박스 델타 소비</td><td>매시 30분</td>
@@ -154,6 +156,22 @@ public class PlaceStats {
      */
     @Column(name = "main_tag_id")
     private Long mainTagId;
+
+    /**
+     * 썸네일 파일 키 (V40). 규칙은 그 장소의 {@code place_images}를 <b>{@code display_order},
+     * {@code image_file_key} 순으로 정렬한 첫 행의 {@code image_file_key} 원값</b>이다.
+     * 값이 아니라 키를 담는다 — URL 결합은 응답 조립의 몫이다 ({@code PlaceView}).
+     *
+     * <p><b>이미지가 없으면 NULL, 첫 이미지의 키가 비어 있으면 빈 키 그대로다.</b> 빈 키를 "없음"으로
+     * 접어 다음 이미지로 넘어가면 엔티티 경로({@code Place#getThumbnailFileKey})와 값이 갈린다 —
+     * 빈 키에 null URL을 내는 판정은 {@code ImageUrlProvider}가 한다.
+     *
+     * <p>{@code image_file_key}가 타이브레이커인 것은 {@code place_images}에 대리키가 없고
+     * {@code display_order}가 중복도 NULL도 허용하기 때문이다. 값으로 갈라야 전량 재빌드와 단건
+     * 패치가 같은 이미지를 고른다.
+     */
+    @Column(name = "thumbnail_file_key", columnDefinition = "TEXT")
+    private String thumbnailFileKey;
 
     /**
      * 인기점수 배치가 이 행의 {@code popularScore}를 마지막으로 정한 시각.

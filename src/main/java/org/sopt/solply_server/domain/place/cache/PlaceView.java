@@ -7,6 +7,8 @@ package org.sopt.solply_server.domain.place.cache;
  *
  * <ul>
  *   <li><b>{@code thumbnailFileKey}는 완성된 URL이 아니라 {@code image_file_key} 원값이다.</b>
+ *       담기는 값의 출처는 {@code place_stats.thumbnail_file_key}이고, 어느 이미지를 고르는지는
+ *       그 칸을 채우는 쓰기 문장이 정한다 (V40 — {@code PlaceStatsRepository}).
  *       URL 결합({@code ImageUrlProvider.getImageUrl})은 조회 경로로 미룬다 — 재빌드는 전 장소의
  *       URL 문자열을 만들어야 하지만 그중 실제로 쓰이는 것은 응답 페이지에 실리는 열 몇 건뿐이라,
  *       나머지는 만들자마자 버려지는 문자열이다. 썸네일이 없는 장소는 {@code null}이고, 빈 키는

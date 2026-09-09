@@ -30,7 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * ({@code NativeProtocol#checkForOutstandingStreamingData}). 그래서 <b>거부되는 것 자체가
  * fetch size {@code Integer.MIN_VALUE}가 드라이버까지 닿았다는 증거</b>다.
  *
- * <p>그리고 그 성질이 곧 로더의 정확성 조건이다. 재빌드는 세 문장을 한 읽기 트랜잭션(= 한 커넥션)
+ * <p>그리고 그 성질이 곧 로더의 정확성 조건이다. 재빌드는 두 문장을 한 읽기 트랜잭션(= 한 커넥션)
  * 에서 도므로, <b>다음 문장을 열기 전에 스트림을 닫지 않으면 재빌드가 통째로 터진다</b>. 이 클래스가
  * 그 양면을 함께 못 박는다.
  *
@@ -87,7 +87,7 @@ class SnapshotLoaderStreamingIT extends MySqlContainerSupport {
      * <b>스트림이 열려 있는 동안에는 같은 커넥션의 다음 문장이 거부되고, 닫으면 다시 받는다.</b>
      *
      * <p>앞 절반이 "정말 streaming인가"의 증거이고, 뒤 절반이 로더가 지켜야 하는 순서
-     * (썸네일 → 장소 → 태그, 각 문장을 닫고 다음을 연다)가 성립한다는 확인이다.
+     * (장소 → 태그, 장소 문장을 닫고 다음을 연다)가 성립한다는 확인이다.
      */
     @Test
     void 장소_문장은_스트림이_열려_있는_동안_같은_커넥션의_다음_문장을_거부하고_닫으면_다시_받는다() {

@@ -150,8 +150,8 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * 어드민 쓰기 경로가 표시값 네 칸까지 원본에서 짓는다는 것 (V40). 이 칸들이 비면 스냅샷의
-     * 이름·좌표·대표 태그가 통째로 빈다 — 재빌드가 {@code place_stats} 하나만 읽기 때문이다.
+     * 어드민 쓰기 경로가 표시값 다섯 칸까지 원본에서 짓는다는 것 (V40). 이 칸들이 비면 스냅샷의
+     * 이름·좌표·대표 태그·썸네일이 통째로 빈다 — 재빌드가 {@code place_stats} 하나만 읽기 때문이다.
      */
     @Test
     void upsert는_이름과_좌표와_대표_태그를_원본에서_채운다() {
@@ -214,7 +214,66 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>대입 목록이 겹치지 않는다는 계약이 표시 컬럼이 넷 늘어난 뒤에도 그대로인지 본다.</b>
+     * <b>썸네일은 {@code display_order}가 가장 앞선 이미지의 파일 키 원값이다.</b> 정렬이 곧 선택
+     * 규칙이라, 문장에서 {@code ORDER BY}가 빠지면 삽입 순서(여기서는 2번 이미지)가 뽑힌다 —
+     * 그래서 일부러 역순으로 넣는다.
+     */
+    @Test
+    void upsert는_display_order가_가장_앞선_이미지의_키를_썸네일로_채운다() {
+        long placeId = createPlace("썸네일IT장소", 37.5, 127.0);
+        insertImage(placeId, "썸네일IT_2번이미지", 2);
+        insertImage(placeId, "썸네일IT_1번이미지", 1);
+
+        placeStatsRepository.upsertRowsForActivePlaces(List.of(placeId));
+        em.clear();
+
+        assertThat(placeStatsRepository.findById(placeId).orElseThrow().getThumbnailFileKey())
+                .isEqualTo("썸네일IT_1번이미지");
+    }
+
+    /**
+     * <b>{@code display_order}가 같으면 {@code image_file_key} 값이 작은 쪽이다.</b>
+     * {@code place_images}에는 대리키가 없고 {@code display_order}는 중복도 NULL도 허용하는데,
+     * MySQL의 filesort는 안정 정렬이 아니라 같은 키의 행 순서가 실행 계획을 따라 바뀔 수 있다.
+     * 타이브레이커가 빠지면 재빌드와 어드민 쓰기가 서로 다른 이미지를 고를 여지가 생긴다.
+     */
+    @Test
+    void display_order가_동률이면_파일_키가_작은_쪽이_썸네일이다() {
+        long placeId = createPlace("동률썸네일IT장소", 37.5, 127.0);
+        insertImage(placeId, "동률IT_이미지B", 1);
+        insertImage(placeId, "동률IT_이미지A", 1);
+
+        placeStatsRepository.upsertRowsForActivePlaces(List.of(placeId));
+        em.clear();
+
+        assertThat(placeStatsRepository.findById(placeId).orElseThrow().getThumbnailFileKey())
+                .isEqualTo("동률IT_이미지A");
+    }
+
+    /**
+     * <b>"이미지 없음"(NULL)과 "첫 이미지의 키가 빔"(빈 문자열)은 다른 상태다.</b> 빈 키를 "없음"으로
+     * 접어 다음 이미지로 넘어가면 엔티티 경로({@code Place#getThumbnailFileKey})와 값이 갈린다 —
+     * 그 경우 응답의 URL을 null로 만드는 것은 {@code ImageUrlProvider}의 몫이다.
+     */
+    @Test
+    void 이미지가_없으면_썸네일은_NULL이고_빈_키는_빈_키_그대로다() {
+        long placeWithoutImage = createPlace("이미지없음IT장소", 37.5, 127.0);
+        long placeWithBlankKey = createPlace("빈키IT장소", 37.6, 127.1);
+        insertImage(placeWithBlankKey, "", 1);
+        insertImage(placeWithBlankKey, "빈키IT_2번이미지", 2);
+
+        placeStatsRepository.upsertRowsForActivePlaces(
+                List.of(placeWithoutImage, placeWithBlankKey));
+        em.clear();
+
+        assertThat(placeStatsRepository.findById(placeWithoutImage).orElseThrow()
+                .getThumbnailFileKey()).isNull();
+        assertThat(placeStatsRepository.findById(placeWithBlankKey).orElseThrow()
+                .getThumbnailFileKey()).isEmpty();
+    }
+
+    /**
+     * <b>대입 목록이 겹치지 않는다는 계약이 표시 컬럼이 다섯 늘어난 뒤에도 그대로인지 본다.</b>
      * 어드민 소유 칸은 갱신되고, 카운트 배치·점수 배치 소유의 칸은 이 문장이 건드리지 않는다 —
      * 이름을 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
      */
@@ -223,6 +282,7 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         long tagId = createTag("MAIN", true);
         long placeId = createPlace("새이름IT장소", 37.5, 127.0);
         linkTag(placeId, tagId);
+        insertImage(placeId, "새이름IT_이미지", 1);
         insertStaleStats(placeId);
 
         placeStatsRepository.upsertRowsForActivePlaces(List.of(placeId));
@@ -233,6 +293,7 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         assertThat(stats.getLatitude()).isEqualTo(37.5);
         assertThat(stats.getLongitude()).isEqualTo(127.0);
         assertThat(stats.getMainTagId()).isEqualTo(tagId);
+        assertThat(stats.getThumbnailFileKey()).isEqualTo("새이름IT_이미지");
         assertThat(stats.getBookmarkCount()).isEqualTo(7);
         assertThat(stats.getReviewCount()).isEqualTo(2);
         assertThat(stats.getAvgRating()).isEqualByComparingTo(new BigDecimal("4.50"));
@@ -240,18 +301,31 @@ class PlaceStatsRepositoryIT extends MySqlContainerSupport {
         assertThat(stats.getScoreCalculatedAt()).isEqualTo(SCORE_CALCULATED_AT);
     }
 
-    /** 표시 네 칸이 낡은 행. upsert가 그 넷만 갱신하고 나머지를 남기는지 보는 출발점이다. */
+    /** 표시 다섯 칸이 낡은 행. upsert가 그 다섯만 갱신하고 나머지를 남기는지 보는 출발점이다. */
     private void insertStaleStats(long placeId) {
         em.createNativeQuery("""
                 INSERT INTO place_stats
                     (place_id, town_id, created_at, name, latitude, longitude, main_tag_id,
-                     popular_score, bookmark_count, review_count, avg_rating, score_calculated_at)
+                     thumbnail_file_key, popular_score, bookmark_count, review_count, avg_rating,
+                     score_calculated_at)
                 SELECT p.id, p.town_id, p.created_at, '옛이름', NULL, NULL, NULL,
-                       12.5, 7, 2, 4.50, :scoreAt
+                       '옛이미지', 12.5, 7, 2, 4.50, :scoreAt
                 FROM places p WHERE p.id = :placeId
                 """)
                 .setParameter("scoreAt", SCORE_CALCULATED_AT)
                 .setParameter("placeId", placeId)
+                .executeUpdate();
+    }
+
+    /** 이 클래스는 롤백하므로 뒷정리가 필요 없다 */
+    private void insertImage(long placeId, String fileKey, int displayOrder) {
+        em.createNativeQuery("""
+                INSERT INTO place_images (place_id, image_file_key, display_order)
+                VALUES (:placeId, :fileKey, :displayOrder)
+                """)
+                .setParameter("placeId", placeId)
+                .setParameter("fileKey", fileKey)
+                .setParameter("displayOrder", displayOrder)
                 .executeUpdate();
     }
 

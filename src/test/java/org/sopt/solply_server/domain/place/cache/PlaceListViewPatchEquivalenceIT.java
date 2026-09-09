@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.service.PlaceService;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
@@ -22,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 표시값 <b>패치와 전량 재빌드의 등가 게이트</b> — 같은 DB 상태라면 "고치고 패치한 결과"와
@@ -65,6 +67,9 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private ImageUrlProvider imageUrlProvider;
     @Autowired private JdbcTemplate jdbcTemplate;
+    /** DB 직행으로 places·place_images를 고친 픽스처가 어드민 쓰기의 나머지 한 걸음을 대신할 때 쓴다 */
+    @Autowired private PlaceStatsRepository placeStatsRepository;
+    @Autowired private TransactionTemplate transactionTemplate;
 
     private long townId;
     private long me;
@@ -181,16 +186,15 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     /**
      * 어드민이 낼 법한 표시값 수정 넷 — 커밋된 DB를 고치고 그 자리에서 패치 훅을 부른다.
      *
-     * <p>이름은 두 테이블을 함께 고친다. {@code place_stats}의 칸이 된 뒤로(V40) 어드민 경로가
-     * 늘 upsert로 그 칸까지 채우고, 패치도 재빌드도 읽는 것은 그 칸이다 — 한쪽만 고치면 픽스처가
-     * 어드민 쓰기를 흉내내지 못한다.
+     * <p>이름도 썸네일도 {@code place_stats}의 칸이라(V40) 원본만 고쳐서는 픽스처가 어드민 쓰기를
+     * 흉내내지 못한다 — 패치도 재빌드도 읽는 것이 그 칸이다. 그래서 원본을 고친 뒤
+     * {@link #resyncStats}로 <b>운영과 같은 문장</b>을 태운다.
      */
     private void applyDisplayEdits() {
         jdbcTemplate.update("UPDATE places SET name = ? WHERE id = ?", "패치A수정", placeRenamed);
-        jdbcTemplate.update(
-                "UPDATE place_stats SET name = ? WHERE place_id = ?", "패치A수정", placeRenamed);
         // display_order가 더 앞선 이미지를 끼워 넣는다 — 썸네일 선택 규칙이 갈리면 여기서 드러난다
         insertImage(placeRenamed, "패치A_새이미지", 1);
+        resyncStats(placeRenamed);
         refresher.patchPlaceViewAfterCommit(placeRenamed);
 
         // 태그 둘을 고치고 훅은 한 번 — 맵을 통째로 다시 읽으므로 어느 태그가 바뀌었는지 넘기지 않는다
@@ -198,6 +202,17 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         jdbcTemplate.update("UPDATE tags SET name = ? WHERE id = ?", renamed, renamedTagId);
         jdbcTemplate.update("UPDATE tags SET active = false WHERE id = ?", disabledTagId);
         refresher.refreshTagViewsAfterCommit();
+    }
+
+    /**
+     * 어드민 쓰기가 하는 일 중 DB 직행 픽스처가 건너뛴 걸음 — place_stats의 어드민 소유 칸을
+     * 원본에서 다시 짓는다. 규칙(첫 MAIN 태그 · 썸네일 선택)을 여기에 SQL로 복사하지 않고 운영
+     * 문장을 그대로 태우는 것이 요점이다 ({@code PlaceListFlowIT}과 같은 수법).
+     */
+    private void resyncStats(long placeId) {
+        // 쓰기 문장이라 트랜잭션이 있어야 한다 — 이 클래스에는 테스트 트랜잭션이 없다
+        transactionTemplate.executeWithoutResult(
+                status -> placeStatsRepository.upsertRowsForActivePlaces(List.of(placeId)));
     }
 
     /**
