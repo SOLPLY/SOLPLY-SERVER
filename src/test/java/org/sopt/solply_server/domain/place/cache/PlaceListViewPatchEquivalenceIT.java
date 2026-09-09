@@ -178,9 +178,17 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
 
     // === helpers ===
 
-    /** 어드민이 낼 법한 표시값 수정 넷 — 커밋된 DB를 고치고 그 자리에서 패치 훅을 부른다 */
+    /**
+     * 어드민이 낼 법한 표시값 수정 넷 — 커밋된 DB를 고치고 그 자리에서 패치 훅을 부른다.
+     *
+     * <p>이름은 두 테이블을 함께 고친다. {@code place_stats}의 칸이 된 뒤로(V40) 어드민 경로가
+     * 늘 upsert로 그 칸까지 채우고, 패치도 재빌드도 읽는 것은 그 칸이다 — 한쪽만 고치면 픽스처가
+     * 어드민 쓰기를 흉내내지 못한다.
+     */
     private void applyDisplayEdits() {
         jdbcTemplate.update("UPDATE places SET name = ? WHERE id = ?", "패치A수정", placeRenamed);
+        jdbcTemplate.update(
+                "UPDATE place_stats SET name = ? WHERE place_id = ?", "패치A수정", placeRenamed);
         // display_order가 더 앞선 이미지를 끼워 넣는다 — 썸네일 선택 규칙이 갈리면 여기서 드러난다
         insertImage(placeRenamed, "패치A_새이미지", 1);
         refresher.patchPlaceViewAfterCommit(placeRenamed);

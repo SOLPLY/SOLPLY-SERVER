@@ -100,6 +100,20 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
         assertThat(previewOf(previews(townId), placeId).placeName()).isEqualTo("수정후이름");
     }
 
+    /**
+     * <b>이름은 place_stats의 칸이고, 표시값 패치가 읽는 원천이 그 칸이다 (V40).</b> 수정이 upsert를
+     * 건너뛰면 행에 옛 이름이 남고 — 패치도 재빌드도 그것을 읽으므로 — 화면이 조용히 낡는다.
+     * 위 테스트가 화면 값만 보므로, 그 값이 어디서 왔는지를 여기서 못 박는다.
+     */
+    @Test
+    void 이름만_고친_수정도_place_stats의_이름을_다시_짓는다() {
+        adminPlaceService.updatePlace(placeId, request("수정후이름", townId, LATITUDE));
+
+        assertThat(statsNameOf(placeId)).isEqualTo("수정후이름");
+        assertThat(previewOf(previews(townId), placeId).placeName())
+                .as("패치가 그 칸을 읽어 화면으로 옮긴다").isEqualTo("수정후이름");
+    }
+
     @Test
     void 동네를_옮긴_수정은_회차를_새로_찍고_장소를_새_동네_목록으로_옮긴다() {
         long versionBefore = snapshotBox.current().version();
@@ -125,6 +139,11 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
         return placeService.getPlaces(me, new PlaceFilterGetRequest(
                 town, false, null, null, null, PlaceSortType.LATEST, null, null, null, null))
                 .places();
+    }
+
+    private String statsNameOf(long placeId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT name FROM place_stats WHERE place_id = ?", String.class, placeId);
     }
 
     private static PlacePreviewDto previewOf(List<PlacePreviewDto> previews, long placeId) {

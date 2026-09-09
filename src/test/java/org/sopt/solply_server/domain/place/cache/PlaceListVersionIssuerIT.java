@@ -211,8 +211,11 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
         assertThat(issuing.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
                 .as("재빌드가 읽기를 끝내고 발급 앞에 섰다").isTrue();
 
-        // 재빌드가 이미 읽어 둔 뒤에 어드민이 이름을 고치고 커밋한 모양
+        // 재빌드가 이미 읽어 둔 뒤에 어드민이 이름을 고치고 커밋한 모양. 두 테이블을 함께 고치는
+        // 것이 그 모양이다 — 이름은 place_stats의 칸이고(V40) 패치가 읽는 원천도 그쪽이다.
         jdbcTemplate.update("UPDATE places SET name = ? WHERE id = ?", patched, placeId);
+        jdbcTemplate.update(
+                "UPDATE place_stats SET name = ? WHERE place_id = ?", patched, placeId);
         FutureTask<Void> patchTask = new FutureTask<>(() -> {
             refresher.patchPlaceViewAfterCommit(placeId);
             return null;

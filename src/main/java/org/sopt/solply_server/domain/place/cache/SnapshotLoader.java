@@ -33,13 +33,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><b>쿼리가 세 문장인 것이 이 클래스의 전부다.</b>
  * <ul>
- *   <li>문장 ①은 <b>장소당 한 행</b>이다. 기준 테이블은 {@code place_stats}이고 — 목록에 나와도 되는
- *       장소 = place_stats에 행이 있는 장소라는 불변식이다 — 여기에 {@code places}(좌표·이름)와
- *       MAIN 태그 파생 테이블이 붙는다. FK {@code fk_place_stats_place}가 짝을 보장하므로 INNER
- *       JOIN이 행을 잃지 않는다. 한 행이 엔트리 하나와 {@link PlaceView} 하나로 갈라진다.</li>
- *   <li>문장 ②는 썸네일이다. 한 문장에 합치면 (태그 수 × 이미지 수)의 곱집합이 되고, 그것을
- *       자바에서 다시 접는 비용이 쿼리 하나 아끼는 값보다 크다. 두 문장 모두 place_id 순으로 읽어
- *       오므로 조립은 각 결과를 한 번씩 훑는 선형 작업이다.</li>
+ *   <li>문장 ①은 <b>장소당 한 행</b>이고 원천은 {@code place_stats} 하나다 — 목록에 나와도 되는
+ *       장소 = place_stats에 행이 있는 장소라는 불변식이다. 순서 축뿐 아니라 표시값(이름·좌표·
+ *       메인 태그 id)까지 같은 테이블의 칸이라 조인이 없다 (V40). 한 행이 엔트리 하나와
+ *       {@link PlaceView} 하나로 갈라진다.</li>
+ *   <li>문장 ②는 썸네일이다. 장소당 여러 행이라 문장 ①에 접히지 않는다. 먼저 장소 → 파일 키 맵으로
+ *       접어 두고 문장 ①이 행마다 그 맵을 한 번씩 찾으므로, 조립은 각 결과를 한 번씩 훑는 선형
+ *       작업이다.</li>
  *   <li>문장 ③은 태그 전량이다. 수십 행이라 조건을 걸 값어치가 없고, <b>비활성 태그도 담아야</b>
  *       한다 — 대표 태그 이름을 비우는 판정이 조회 시점에 {@code active}로 이뤄지기 때문이다
  *       ({@link TagView}).</li>
@@ -88,9 +88,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       {@code findFirst()}이므로, 여기서도 {@code display_order ASC}의 첫 행을 쓴다
  *       (MySQL·하이버네이트 모두 ASC에서 NULL이 앞이라 정렬 결과가 같다). 담는 것은 그 행의
  *       <b>파일 키 원값</b>이고 URL 결합은 조회 경로의 몫이다({@link PlaceView}).</li>
- *   <li>메인 태그: 첫 MAIN 태그의 <b>id</b>를 활성 여부와 무관하게 담는다. 쿼리에서
- *       {@code t.active = 1}을 걸면 안 된다 — 걸면 비활성 MAIN이 붙은 장소에서 <em>다음</em>
- *       MAIN 태그가 뽑혀 엔티티 경로와 갈린다({@link PlaceView}).</li>
+ *   <li>메인 태그: 첫 MAIN 태그의 <b>id</b>를 활성 여부와 무관하게 담는다. 그 규칙은 쓰기 문장
+ *       ({@code PlaceStatsRepository})이 {@code place_stats.main_tag_id}에 고정해 두고 로더는
+ *       읽기만 한다 — 활성으로 거르면 비활성 MAIN이 붙은 장소에서 <em>다음</em> MAIN 태그가 뽑혀
+ *       엔티티 경로와 갈린다({@link PlaceView}).</li>
  * </ul>
  */
 @Slf4j
@@ -131,35 +132,23 @@ public class SnapshotLoader {
      * {@link PlaceEntry}와 {@link PlaceView}의 필드 목록</b>이라, 축이나 표시 필드를 늘릴 때
      * 두 곳이 함께 움직인다.
      *
-     * <p>여기에는 {@code p.active} 조건이 없다 — 있으면 안 된다. 행의 존재를 정하는 주체는
-     * {@code place_stats} 하나이고, 그것이 DB 경로와 같은 행 집합을 보장하는 근거다
+     * <p>활성 조건이 없다 — 있으면 안 된다. 행의 존재를 정하는 주체는 {@code place_stats} 하나이고,
+     * 그것이 DB 경로와 같은 행 집합을 보장하는 근거다
      * ({@code PlaceListDbQueryRepository} javadoc의 불변식).
      *
-     * <p>{@code place_tag}·{@code tags}를 파생 테이블로 미리 MAIN만 걸러 두고 LEFT JOIN하므로,
-     * 태그가 없거나 MAIN이 아닌 태그만 가진 장소도 행이 하나 남는다. (조건을 바깥 WHERE로 올리면
-     * MAIN이 없는 장소가 통째로 사라진다.)
-     *
-     * <p>{@code m.pt_id} 오름차순은 엔티티의 {@code placeTags} bag 순서(= place_tag PK 순)와
-     * 맞추기 위한 것이다. MAIN 태그가 둘 이상인 비정상 데이터에서만 의미가 있다.
+     * <p><b>조인도 ORDER BY도 없다.</b> 표시값 셋(이름·좌표·메인 태그 id)이 {@code place_stats}의
+     * 칸이 된 뒤로 붙일 테이블이 없고(V40), 장소당 한 행은 PK가 보장하므로 행을 접기 위해 정렬에
+     * 기댈 이유도 없다. 메인 태그를 고르는 규칙은 이 문장이 아니라 그 칸을 채우는 쓰기 문장
+     * ({@code PlaceStatsRepository})에 있다.
      */
     private static final String LIST_SOURCE_SQL = """
             SELECT ps.place_id, ps.town_id, ps.tag_bitmask,
                    ps.popular_score, ps.created_at,
                    ps.bookmark_count, ps.review_count, ps.avg_rating,
-                   p.latitude, p.longitude,
-                   p.name,
-                   m.tag_id
+                   ps.latitude, ps.longitude,
+                   ps.name,
+                   ps.main_tag_id
             FROM place_stats ps
-            JOIN places p ON p.id = ps.place_id
-            LEFT JOIN (
-                SELECT pt.place_id   AS place_id,
-                       pt.id         AS pt_id,
-                       pt.tag_id     AS tag_id
-                FROM place_tag pt
-                JOIN tags t ON t.id = pt.tag_id
-                WHERE t.type = 'MAIN'
-            ) m ON m.place_id = ps.place_id
-            ORDER BY ps.place_id, m.pt_id
             """;
 
     /**
@@ -192,29 +181,26 @@ public class SnapshotLoader {
             """;
 
     /**
-     * 장소 하나의 표시값 — 전량 재빌드와 <b>같은 규칙</b>을 상관 서브쿼리 둘로 옮긴 것이다
-     * (첫 MAIN 태그는 {@code place_tag.id} 오름차순, 썸네일은 {@code display_order} 오름차순 +
-     * {@code image_file_key} 타이브레이커 — 근거는 {@link #THUMBNAIL_SQL}).
+     * 장소 하나의 표시값. <b>전량과 같은 원천을 읽어야 두 경로가 갈리지 않는다</b> — 이름과 메인
+     * 태그 id는 {@link #LIST_SOURCE_SQL}과 똑같이 {@code place_stats}의 칸이고, 썸네일만 전량 문장
+     * ({@link #THUMBNAIL_SQL})의 규칙을 상관 서브쿼리로 옮겼다({@code display_order} 오름차순 +
+     * {@code image_file_key} 타이브레이커).
      *
-     * <p>{@code p.active}를 묻지 않는다. 비활성 장소의 뷰가 맵에 남아도 정렬 배열에 그 장소가
-     * 없으면 화면에 닿지 않으므로 무해하고, 반대로 여기서 걸러 {@code null}을 내면 "장소가 없다"와
-     * "비활성이다"가 같은 값이 되어 패치가 조용히 아무 일도 하지 않는다.
+     * <p>기준 테이블이 {@code place_stats}라 <b>비활성 장소는 행이 없어 패치가 no-op이 된다</b>.
+     * 그래도 되는 이유는 비활성 장소가 정렬 배열에 없어 화면에 닿지 않고, 되살리는 경로
+     * ({@code AdminPlaceService#activatePlacesByTownIds})는 행을 다시 짓고 전량 재빌드를 부르기
+     * 때문이다.
      */
     private static final String SINGLE_VIEW_SQL = """
-            SELECT p.name,
-                   (SELECT pt.tag_id
-                      FROM place_tag pt
-                      JOIN tags t ON t.id = pt.tag_id
-                     WHERE pt.place_id = p.id AND t.type = 'MAIN'
-                     ORDER BY pt.id
-                     LIMIT 1),
+            SELECT ps.name,
+                   ps.main_tag_id,
                    (SELECT pi.image_file_key
                       FROM place_images pi
-                     WHERE pi.place_id = p.id
+                     WHERE pi.place_id = ps.place_id
                      ORDER BY pi.display_order, pi.image_file_key
                      LIMIT 1)
-            FROM places p
-            WHERE p.id = :placeId
+            FROM place_stats ps
+            WHERE ps.place_id = :placeId
             """;
 
     /**
@@ -329,10 +315,6 @@ public class SnapshotLoader {
      *
      * <p><b>썸네일 문장을 끝까지 닫은 뒤에 장소 문장을 연다.</b> 두 스트림을 겹쳐 열면 뒤엣것이
      * 드라이버에 거부된다(근거는 클래스 javadoc).
-     *
-     * <p>중복 스킵을 <b>직전 id 비교</b>로 하는 것은 {@link #LIST_SOURCE_SQL}의
-     * {@code ORDER BY ps.place_id}에 기대는 것이다 — 같은 장소의 행이 반드시 붙어 나온다.
-     * 그 ORDER BY를 지우면 이 스킵이 조용히 무력해진다.
      */
     private Source readSource() {
         Map<Long, String> thumbnailKeyByPlaceId = readThumbnailKeys();
@@ -342,15 +324,10 @@ public class SnapshotLoader {
         List<PlaceEntry> entries = new ArrayList<>();
         // 홀더가 그대로 받아 쓰는 맵이라 여기서 처음부터 동시 수정 가능한 것으로 만든다
         ConcurrentMap<Long, PlaceView> views = new ConcurrentHashMap<>();
-        long previousPlaceId = -1L;
         try (Stream<Object[]> rows = streamListSource()) {
             for (Iterator<Object[]> it = rows.iterator(); it.hasNext(); ) {
                 Object[] row = it.next();
                 long placeId = ((Number) row[0]).longValue();
-                if (placeId == previousPlaceId) {
-                    continue;   // MAIN 태그가 둘 이상인 비정상 데이터 — 첫 행을 유지한다
-                }
-                previousPlaceId = placeId;
                 entries.add(toEntry(row));
                 views.put(placeId, new PlaceView(
                         placeId,
