@@ -116,10 +116,11 @@ class PlaceServiceStatsWiringTest {
   }
 
   private void givenListRow(long bookmarkCount, long reviewCount, BigDecimal avgRating) {
+    // 엔트리는 DECIMAL(3,2)의 정수부만 든다 — 응답에서 스케일 2로 복원되는 것이 여기 계약이다
     PlaceListEntry entry = new PlaceListEntry(
         PLACE_ID, TOWN_ID, 0L,
         9.0, 1_767_225_600L,
-        bookmarkCount, reviewCount, avgRating, avgRating.doubleValue(),
+        bookmarkCount, reviewCount, avgRating.movePointRight(2).intValueExact(),
         37.5, 127.0);
     given(placeListSnapshot.current())
         .willReturn(new PlaceListPhoto(VERSION, PlaceListIndex.of(List.of(entry))));

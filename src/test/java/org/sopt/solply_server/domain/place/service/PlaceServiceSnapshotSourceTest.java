@@ -9,7 +9,6 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -104,7 +103,7 @@ class PlaceServiceSnapshotSourceTest {
         return new PlaceListEntry(
                 placeId, TOWN_ID, 0L,
                 placeId, 1_767_225_600L + placeId,
-                3L, 2L, new BigDecimal("4.50"), 4.5,
+                3L, 2L, 450,
                 37.5, 127.0);
     }
 

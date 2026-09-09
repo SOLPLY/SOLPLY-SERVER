@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -370,7 +371,8 @@ public class PlaceService {
               entry.townId(),
               entry.bookmarkCount(),
               entry.reviewCount(),
-              entry.avgRating());
+              // 엔트리는 정수부만 든다 — 스케일 2를 여기서 되씌워 컬럼 값과 같은 BigDecimal을 낸다
+              BigDecimal.valueOf(entry.ratingX100(), 2));
         })
         .toList();
 
@@ -455,7 +457,9 @@ public class PlaceService {
     return switch (sort) {
       case POPULAR -> List.of(entry.popularScore());
       case LATEST -> List.of((double) entry.createdAtEpochSecond());
-      case RATING -> List.of(entry.avgRatingValue(), (double) entry.reviewCount());
+      // ratingX100 / 100.0은 정수/100이라는 정확한 값에 가장 가까운 double이다 — DB 경로가
+      // DECIMAL을 double로 올린 값과 같으므로 커서에 실리는 비트가 두 경로에서 같다.
+      case RATING -> List.of(entry.ratingX100() / 100.0, (double) entry.reviewCount());
       case REVIEW_COUNT -> List.of((double) entry.reviewCount());
       case BOOKMARK_COUNT -> List.of((double) entry.bookmarkCount());
       // 거리 키는 엔트리에 없다 — 기준 좌표가 요청마다 달라 그 자리에서 계산된다

@@ -2,13 +2,13 @@ package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
+import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.TagMasks;
 
 /**
@@ -48,8 +48,17 @@ class PlaceListIndexTest {
         return new PlaceListEntry(
                 placeId, townId, 0L,
                 popularScore, 1_767_225_600L + placeId,
-                bookmarkCount, reviewCount, BigDecimal.ZERO, reviewCount == 0 ? 0.0 : 4.0,
+                bookmarkCount, reviewCount, reviewCount == 0 ? 0 : 400,
                 latitude, latitude == null ? null : 127.0);
+    }
+
+    /** 평점 축만 갈라 두는 픽스처 — 나머지 축은 고정해 순서에 끼어들지 않게 한다 */
+    private static PlaceListEntry ratingEntry(long placeId, int ratingX100, long reviewCount) {
+        return new PlaceListEntry(
+                placeId, TOWN_A, 0L,
+                0.0, 1_767_225_600L,
+                0L, reviewCount, ratingX100,
+                null, null);
     }
 
     /** 정렬 하나가 그 동네에서 내놓는 전량 — 커서 없이 끝까지 훑는다 */
@@ -100,5 +109,34 @@ class PlaceListIndexTest {
                 index.distanceCandidates(List.of(TOWN_A, TOWN_B), NO_FILTER);
 
         assertThat(placeIds(candidates)).containsExactlyInAnyOrder(2L, 4L, 5L);
+    }
+
+    /**
+     * <b>커서는 double을 싣고 엔트리는 정수를 든다.</b> 커서가 실어 온 평점을 ×100 해서 정수로
+     * 되돌릴 때, <b>버림이 아니라 반올림</b>이어야 한다는 것이 이 테스트가 잡는 것이다.
+     *
+     * <p>{@code 4.35}를 고른 것이 픽스처의 전부다 — {@code 4.35 * 100}은 double에서 435가 아니라
+     * {@code 434.99999999999994}, 즉 435 <b>아래</b>다. 그래서 {@code (int)} 캐스트는 434를 내고,
+     * 커서가 평점 동률 구간의 한가운데를 가리키게 된다: 그러면 리뷰 수 9와 12가 비교돼 리뷰가 더
+     * 많은 {@code 434/12} 항목이 "커서 앞"으로 판정돼 조용히 흘린다. {@code Math.round}는 435를
+     * 되찾아 그 항목을 지킨다.
+     *
+     * <p>동률 둘의 순서(리뷰 수 내림차순, 그다음 id 오름차순)까지 함께 묻는 것은, 경계를 맞게
+     * 찾았더라도 그 뒤 순서가 어긋나면 다음 페이지가 다른 곳에서 재개되기 때문이다.
+     */
+    @Test
+    void 평점순_커서는_double로_실려도_정수_경계를_찾는다() {
+        PlaceListIndex index = PlaceListIndex.of(List.of(
+                ratingEntry(11L, 435, 9L),
+                ratingEntry(12L, 434, 12L),
+                ratingEntry(13L, 434, 3L)));
+        PlaceListCursor cursor = new PlaceListCursor(
+                PlaceSortType.RATING, List.of(4.35, 9.0), 11L, "1|||", 1L);
+
+        List<PlaceListEntry> page =
+                index.page(PlaceSortType.RATING, List.of(TOWN_A), NO_FILTER, cursor, 10);
+
+        assertThat(page.stream().map(PlaceListEntry::placeId).toList())
+                .containsExactly(12L, 13L);
     }
 }

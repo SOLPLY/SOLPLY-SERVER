@@ -2,7 +2,6 @@ package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -33,7 +32,7 @@ class PlaceListSnapshotTest {
             entries.add(new PlaceListEntry(
                     i, 1L, 0L,
                     1.0, 1_767_225_600L,
-                    0L, 0L, BigDecimal.ZERO, 0.0,
+                    0L, 0L, 0,
                     null, null));
         }
         return PlaceListIndex.of(entries);

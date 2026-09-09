@@ -307,11 +307,16 @@ public final class PlaceListIndex {
             }
         },
 
-        /** 평점순 — 평점 DESC, 리뷰 수 DESC, id ASC. 리뷰 0건은 0점으로 맨 뒤다 (V37) */
+        /**
+         * 평점순 — 평점 DESC, 리뷰 수 DESC, id ASC. 리뷰 0건은 0점으로 맨 뒤다 (V37).
+         *
+         * <p>엔트리가 든 평점은 DECIMAL(3,2)의 정수부라({@link PlaceListEntry}) 비교도 정수끼리다.
+         * 커서만 double을 실어 오므로 {@link #ratingKeyOf}로 정수를 되찾아 맞춘다.
+         */
         RATING(PlaceSortType.RATING) {
             @Override
             int compare(PlaceListEntry a, PlaceListEntry b) {
-                int byRating = Double.compare(b.avgRatingValue(), a.avgRatingValue());
+                int byRating = Integer.compare(b.ratingX100(), a.ratingX100());
                 if (byRating != 0) {
                     return byRating;
                 }
@@ -321,7 +326,7 @@ public final class PlaceListIndex {
 
             @Override
             int compareToCursor(PlaceListEntry entry, PlaceListCursor cursor) {
-                int byRating = Double.compare(cursor.key(0), entry.avgRatingValue());
+                int byRating = Integer.compare(ratingKeyOf(cursor.key(0)), entry.ratingX100());
                 if (byRating != 0) {
                     return byRating;
                 }
@@ -370,6 +375,11 @@ public final class PlaceListIndex {
 
         /** 양수면 {@code entry}가 커서 뒤 = 다음 페이지 대상이다 */
         abstract int compareToCursor(PlaceListEntry entry, PlaceListCursor cursor);
+
+        /** 커서는 double을 싣는다 — 원값이 백분의 일 단위라 ×100 뒤 반올림이 정확히 정수를 되찾는다 */
+        private static int ratingKeyOf(double cursorKey) {
+            return (int) Math.round(cursorKey * 100);
+        }
 
         static Axis of(PlaceSortType sort) {
             return switch (sort) {

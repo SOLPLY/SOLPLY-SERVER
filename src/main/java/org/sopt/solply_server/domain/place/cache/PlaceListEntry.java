@@ -1,7 +1,5 @@
 package org.sopt.solply_server.domain.place.cache;
 
-import java.math.BigDecimal;
-
 /**
  * 목록 한 항목의 <b>정렬·필터·거리 값</b>. 출처는 {@code place_stats} 한 행 + {@code places}의
  * 좌표다. 화면에 그리는 값(이름·썸네일·대표 태그)은 여기 없고 {@link PlaceView}에 있다.
@@ -25,12 +23,13 @@ import java.math.BigDecimal;
  *       ({@code createdAt.toEpochSecond(ZoneOffset.UTC)})으로 <b>빌드 시점에</b> 좁혀 둔다 —
  *       {@code created_at}이 초 정밀도 DATETIME이라 정보가 상하지 않고, 조회 경로에서 시각 변환을
  *       하지 않는 것이 이 필드의 목적이다.</li>
- *   <li><b>평점이 두 벌인 것은 의도다.</b> {@code avgRating}(BigDecimal)은 응답에 그대로 실리는
- *       표시값이고 — DB 경로가 컬럼에서 읽어 오는 것과 <b>스케일까지</b> 같아야 응답이 바이트째
- *       같다 — {@code avgRatingValue}는 정렬·커서 비교용이다. 커서가 double 튜플이라 seek이
- *       double 공간에서 일어나고, MySQL도 DECIMAL과 DOUBLE 파라미터를 DOUBLE로 올려 비교하므로
- *       두 경로의 경계 판정이 같아진다. 카운트·평점이 표시값이면서도 홀더로 가지 않는 것은 이들이
- *       <b>정렬 축</b>이라 순서와 한 회차로 묶여야 하기 때문이다.</li>
+ *   <li><b>평점은 정수 한 벌이다.</b> {@code avg_rating}이 DECIMAL(3,2)라 자리 수가 상수이므로
+ *       {@code ratingX100}은 그 정수부만 든다({@code 4.50} → {@code 450}). 비교는 정수끼리 하고,
+ *       응답에 실을 때만 {@code BigDecimal.valueOf(ratingX100, 2)}로 {@code 4.50}을 복원해 DB
+ *       경로가 컬럼에서 읽어 오는 것과 <b>스케일까지</b> 같은 값을 낸다. 커서는 double 튜플이라
+ *       평점도 double로 실리지만, 안에서 {@code Math.round(v × 100)}으로 정수를 되찾아 비교한다 —
+ *       원값이 백분의 일 단위라 그 왕복에 오차가 없다. 카운트·평점이 표시값이면서도 홀더로 가지
+ *       않는 것은 이들이 <b>정렬 축</b>이라 순서와 한 회차로 묶여야 하기 때문이다.</li>
  *   <li><b>좌표는 null일 수 있다.</b> 거리를 잴 수 없는 장소이며, 거리순 후보에서 제외하는 규칙은
  *       DB 경로의 {@code p.latitude IS NOT NULL} 술어와 같다. 0으로 채우면 기니만 앞바다가 실재
  *       좌표라 "좌표 없음"과 섞인다.</li>
@@ -45,8 +44,7 @@ public record PlaceListEntry(
         long createdAtEpochSecond,
         long bookmarkCount,
         long reviewCount,
-        BigDecimal avgRating,
-        double avgRatingValue,
+        int ratingX100,
         Double latitude,
         Double longitude
 ) {
