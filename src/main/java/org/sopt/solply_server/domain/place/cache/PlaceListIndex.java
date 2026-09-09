@@ -70,7 +70,7 @@ public final class PlaceListIndex {
     private final int[] reviewCount;
     private final int[] bookmarkCount;
     /** 무척도 정수 — {@code 4.50}이 {@code 450}으로 든다 ({@link PlaceListEntry}) */
-    private final int[] ratingX100;
+    private final int[] ratingToInt;
     private final double[] popularScore;
     /** 좌표 없음은 {@code Double.NaN}이다 — 0.0으로 채우면 실재 좌표와 섞인다 */
     private final double[] latitude;
@@ -102,7 +102,7 @@ public final class PlaceListIndex {
         this.createdAtEpochSecond = new long[count];
         this.reviewCount = new int[count];
         this.bookmarkCount = new int[count];
-        this.ratingX100 = new int[count];
+        this.ratingToInt = new int[count];
         this.popularScore = new double[count];
         this.latitude = new double[count];
         this.longitude = new double[count];
@@ -116,7 +116,7 @@ public final class PlaceListIndex {
             createdAtEpochSecond[slot] = entry.createdAtEpochSecond();
             reviewCount[slot] = entry.reviewCount();
             bookmarkCount[slot] = entry.bookmarkCount();
-            ratingX100[slot] = entry.ratingX100();
+            ratingToInt[slot] = entry.ratingToInt();
             popularScore[slot] = entry.popularScore();
             latitude[slot] = entry.latitude() == null ? Double.NaN : entry.latitude();
             longitude[slot] = entry.longitude() == null ? Double.NaN : entry.longitude();
@@ -205,8 +205,8 @@ public final class PlaceListIndex {
     }
 
     /** 무척도 정수 평점 — {@code 450}이 {@code 4.50}이다 ({@link PlaceListEntry}) */
-    public int ratingX100(int slot) {
-        return ratingX100[slot];
+    public int ratingToInt(int slot) {
+        return ratingToInt[slot];
     }
 
     /** 좌표가 없으면 {@code Double.NaN}이다 — 쓰기 전에 {@link #hasCoordinates}를 물을 것 */
@@ -454,12 +454,12 @@ public final class PlaceListIndex {
          * 평점순 — 평점 DESC, 리뷰 수 DESC, id ASC. 리뷰 0건은 0점으로 맨 뒤다 (V37).
          *
          * <p>장소 표가 든 평점은 DECIMAL(3,2)의 무척도 정수라({@link PlaceListEntry}) 비교도
-         * 정수끼리다. 커서만 double을 실어 오므로 {@link #ratingX100Of}로 정수를 되찾아 맞춘다.
+         * 정수끼리다. 커서만 double을 실어 오므로 {@link #cursorRatingToInt}로 정수를 되찾아 맞춘다.
          */
         RATING(PlaceSortType.RATING) {
             @Override
             int compare(PlaceListIndex t, int a, int b) {
-                int byRating = Integer.compare(t.ratingX100[b], t.ratingX100[a]);
+                int byRating = Integer.compare(t.ratingToInt[b], t.ratingToInt[a]);
                 if (byRating != 0) {
                     return byRating;
                 }
@@ -469,7 +469,7 @@ public final class PlaceListIndex {
 
             @Override
             int compareToCursor(PlaceListIndex t, int slot, PlaceListCursor cursor) {
-                int byRating = Integer.compare(ratingX100Of(cursor.key(0)), t.ratingX100[slot]);
+                int byRating = Integer.compare(cursorRatingToInt(cursor.key(0)), t.ratingToInt[slot]);
                 if (byRating != 0) {
                     return byRating;
                 }
@@ -532,7 +532,7 @@ public final class PlaceListIndex {
          * 커서 값이 그런 k에서 나온 것이라 두 판정이 같은 자리에 떨어진다. 등가 IT의 픽스처 평점은
          * ÷100이 정확한 값뿐이라 이 근거를 지키는 것은 테스트가 아니라 이 문장이다.
          */
-        private static int ratingX100Of(double cursorKey) {
+        private static int cursorRatingToInt(double cursorKey) {
             return (int) Math.round(cursorKey * 100);
         }
 

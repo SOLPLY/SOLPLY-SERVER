@@ -372,7 +372,7 @@ public class PlaceService {
               index.bookmarkCount(slot),
               index.reviewCount(slot),
               // 표는 무척도 정수만 든다 — 스케일 2를 여기서 되씌워 컬럼 값과 같은 BigDecimal을 낸다
-              BigDecimal.valueOf(index.ratingX100(slot), 2));
+              BigDecimal.valueOf(index.ratingToInt(slot), 2));
         })
         .toList();
 
@@ -462,9 +462,9 @@ public class PlaceService {
     return switch (sort) {
       case POPULAR -> List.of(index.popularScore(slot));
       case LATEST -> List.of((double) index.createdAtEpochSecond(slot));
-      // ratingX100 / 100.0은 정수/100이라는 정확한 값에 가장 가까운 double이다 — DB 경로가
+      // ratingToInt / 100.0은 정수/100이라는 정확한 값에 가장 가까운 double이다 — DB 경로가
       // DECIMAL을 double로 올린 값과 같으므로 커서에 실리는 비트가 두 경로에서 같다.
-      case RATING -> List.of(index.ratingX100(slot) / 100.0, (double) index.reviewCount(slot));
+      case RATING -> List.of(index.ratingToInt(slot) / 100.0, (double) index.reviewCount(slot));
       case REVIEW_COUNT -> List.of((double) index.reviewCount(slot));
       case BOOKMARK_COUNT -> List.of((double) index.bookmarkCount(slot));
       // 거리 키는 사진 표에 없다 — 기준 좌표가 요청마다 달라 그 자리에서 계산된다

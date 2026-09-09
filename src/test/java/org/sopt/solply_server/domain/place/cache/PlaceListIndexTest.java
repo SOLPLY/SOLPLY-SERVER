@@ -58,11 +58,11 @@ class PlaceListIndexTest {
     }
 
     /** 평점 축만 갈라 두는 픽스처 — 나머지 축은 고정해 순서에 끼어들지 않게 한다 */
-    private static PlaceListEntry ratingEntry(long placeId, int ratingX100, int reviewCount) {
+    private static PlaceListEntry ratingEntry(long placeId, int ratingToInt, int reviewCount) {
         return new PlaceListEntry(
                 placeId, TOWN_A, 0L,
                 0.0, 1_767_225_600L,
-                0, reviewCount, ratingX100,
+                0, reviewCount, ratingToInt,
                 null, null);
     }
 

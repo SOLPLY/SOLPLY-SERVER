@@ -257,7 +257,7 @@ DB 커넥션을 쥐고 있어서 어드민 둘이 겹치면 발급 커넥션이 
 PlaceListIndex
   장소 표 (전체 장소, 열별 원시 배열, 행 번호 = slot)
     long[]   placeId, townId, tagMask, createdAtEpochSecond
-    int[]    reviewCount, bookmarkCount, ratingX100
+    int[]    reviewCount, bookmarkCount, ratingToInt
     double[] popularScore, latitude, longitude   (좌표 없음은 NaN 같은 표지값 — 0.0 금지, §Entry javadoc)
   orders: EnumMap<정렬 종류, HashMap<동네 id, int[] order>>
     order[i] = 그 동네·그 정렬에서 i번째 장소의 slot
@@ -273,7 +273,7 @@ scan:  tagMask[order[i]]
 
 | 열 | 타입 | 이유 |
 |---|---|---|
-| reviewCount, bookmarkCount, ratingX100 | int | 21억을 넘을 일이 없다 |
+| reviewCount, bookmarkCount, ratingToInt | int | 21억을 넘을 일이 없다 |
 | placeId, townId | long | DB 컬럼이 BIGINT. 좁히면 컬럼과 어긋나는 날 조용히 틀린다 |
 | tagMask | long | 63비트 |
 | createdAtEpochSecond | long | 2038년에 int를 넘는다 |
@@ -283,9 +283,9 @@ scan:  tagMask[order[i]]
 ### 11-3. 평점 — BigDecimal을 버리고 int 하나
 
 `avg_rating`은 `DECIMAL(3,2)`라 소수점 자리가 2로 고정이다. BigDecimal이 내부에 드는 것(정수 450 +
-자리 2) 중 자리는 상수이므로 **정수 450만** `ratingX100`에 든다. 비교는 정수끼리. 커서는 지금처럼
+자리 2) 중 자리는 상수이므로 **정수 450만** `ratingToInt`에 든다. 비교는 정수끼리. 커서는 지금처럼
 double을 싣되 안에서 `Math.round(v × 100)`으로 정수로 바꿔 비교한다(원값이 백분의 일 단위라 오차
-없음). 응답에 실을 때만 `BigDecimal.valueOf(ratingX100, 2)`로 `4.50`을 만든다 — 등가 IT의 바이트
+없음). 응답에 실을 때만 `BigDecimal.valueOf(ratingToInt, 2)`로 `4.50`을 만든다 — 등가 IT의 바이트
 동일이 이걸로 유지된다. 정렬용 double 열(`avgRatingValue`)은 없앤다.
 
 ### 11-4. 열 분리(필드마다 배열)를 택한 이유

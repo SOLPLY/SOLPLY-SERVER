@@ -29,8 +29,8 @@ package org.sopt.solply_server.domain.place.cache;
  *       {@code created_at}이 초 정밀도 DATETIME이라 정보가 상하지 않고, 조회 경로에서 시각 변환을
  *       하지 않는 것이 이 필드의 목적이다.</li>
  *   <li><b>평점은 정수 한 벌이다.</b> {@code avg_rating}이 DECIMAL(3,2)라 자리 수가 상수이므로
- *       {@code ratingX100}은 <b>무척도 정수(unscaled, {@code 4.50} → {@code 450})</b> 하나만 든다.
- *       비교는 정수끼리 하고, 응답에 실을 때만 {@code BigDecimal.valueOf(ratingX100, 2)}로
+ *       {@code ratingToInt}은 <b>무척도 정수(unscaled, {@code 4.50} → {@code 450})</b> 하나만 든다.
+ *       비교는 정수끼리 하고, 응답에 실을 때만 {@code BigDecimal.valueOf(ratingToInt, 2)}로
  *       {@code 4.50}을 복원해 DB 경로가 컬럼에서 읽어 오는 것과 <b>스케일까지</b> 같은 값을 낸다.
  *       커서는 double 튜플이라 평점도 double로 실리지만, 안에서 {@code Math.round(v × 100)}으로
  *       정수를 되찾아 비교한다 — 원값이 백분의 일 단위라 그 왕복에 오차가 없다. 카운트·평점이
@@ -51,7 +51,7 @@ public record PlaceListEntry(
         long createdAtEpochSecond,
         int bookmarkCount,
         int reviewCount,
-        int ratingX100,
+        int ratingToInt,
         Double latitude,
         Double longitude
 ) {
