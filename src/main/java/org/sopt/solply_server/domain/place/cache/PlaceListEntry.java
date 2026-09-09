@@ -55,9 +55,4 @@ public record PlaceListEntry(
         Double latitude,
         Double longitude
 ) {
-
-    /** 거리를 잴 수 있는 장소인가 — 좌표 둘이 모두 있어야 한다 */
-    public boolean hasCoordinates() {
-        return latitude != null && longitude != null;
-    }
 }

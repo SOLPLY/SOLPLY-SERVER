@@ -266,7 +266,15 @@ public final class PlaceListIndex {
      */
     public DistanceSort.Candidates distanceCandidates(List<Long> townIds, TagMasks masks) {
         Map<Long, int[]> perTown = orders.get(DISTANCE_SOURCE);
-        int[] slots = new int[PAGE_BUFFER_SEED];
+        // 상한은 동네 전 원소 수라 미리 안다 — 버퍼는 한 번 잡고 끝에서 자른다
+        int bound = 0;
+        for (Long town : townIds) {
+            int[] order = perTown.get(town);
+            if (order != null) {
+                bound += order.length;
+            }
+        }
+        int[] slots = new int[bound];
         int size = 0;
         for (Long town : townIds) {
             int[] order = perTown.get(town);
@@ -276,9 +284,6 @@ public final class PlaceListIndex {
             for (int position = 0; position < order.length; position++) {
                 int slot = order[position];
                 if (hasCoordinates(slot) && masks.matches(tagMask[slot])) {
-                    if (size == slots.length) {
-                        slots = Arrays.copyOf(slots, slots.length * 2);
-                    }
                     slots[size++] = slot;
                 }
             }
@@ -518,7 +523,14 @@ public final class PlaceListIndex {
 
         /**
          * 커서는 double을 싣는다 — 원값이 백분의 일 단위라 ×100 뒤 반올림이 정확히 정수를 되찾는다.
-         * <b>발급된 커서 값만 전제한다</b> — NaN·Infinity는 막지 않는다 ({@link PlaceListCursor} 참조).
+         * 반올림이어야 한다: {@code 4.35 × 100}처럼 double에서 정수 바로 아래에 떨어지는 값이 있어
+         * 버림이면 1 작다. <b>발급된 커서 값만 전제한다</b> — NaN·Infinity는 막지 않는다
+         * ({@link PlaceListCursor} 참조).
+         *
+         * <p><b>DB 경로와 경계 판정이 같은 근거.</b> 그쪽은 DECIMAL 컬럼을 double로 올려 커서와
+         * 비교하고 여기는 int 공간에서 비교하지만, {@code k → k / 100.0}이 이 범위에서 순서를 지키고
+         * 커서 값이 그런 k에서 나온 것이라 두 판정이 같은 자리에 떨어진다. 등가 IT의 픽스처 평점은
+         * ÷100이 정확한 값뿐이라 이 근거를 지키는 것은 테스트가 아니라 이 문장이다.
          */
         private static int ratingX100Of(double cursorKey) {
             return (int) Math.round(cursorKey * 100);

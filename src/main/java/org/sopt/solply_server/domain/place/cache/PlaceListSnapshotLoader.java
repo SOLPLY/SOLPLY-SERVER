@@ -399,8 +399,9 @@ public class PlaceListSnapshotLoader {
      * (근거는 {@code PlaceListDbQueryRepository#findLatestRows}의 왕복 계약), 평점은 DECIMAL(3,2)의
      * 무척도 정수만 {@code ratingX100}으로 든다 ({@link PlaceListEntry} javadoc).
      *
-     * <p>{@code intValueExact}는 의도다 — 컬럼이 스케일 2를 벗어나는 날 여기서 터진다. 그 자리 수가
-     * 상수라는 것이 {@code ratingX100}의 전제이므로, 전제가 깨지면 조용히 값을 버리는 대신 멈춰야 한다.
+     * <p>{@code intValueExact}는 의도다 — 컬럼 스케일이 2를 <b>넘는</b> 날 여기서 터진다(정보가 상하는
+     * 쪽만 막는다). 그 자리 수가 상수라는 것이 {@code ratingX100}의 전제이므로, 전제가 깨지면 조용히
+     * 값을 버리는 대신 멈춰야 한다.
      */
     private static PlaceListEntry toEntry(Object[] row) {
         int ratingX100 = ((BigDecimal) row[7]).movePointRight(2).intValueExact();
