@@ -8,12 +8,15 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.query.NativeQuery;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -45,6 +48,20 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>JPA를 쓰지 않는 것이 핵심 결정이다.</b> 엔티티로 전량을 읽으면 없애려는 하이드레이션 비용을
  * 배치에서 그대로 다시 치른다 — 조회 경로에서 덜어낸 CPU가 배치로 옮겨갈 뿐이다. {@code Object[]}만
  * 받아 자바에서 record로 접는다.
+ *
+ * <p><b>대량 문장 둘은 결과를 통째로 받지 않는다.</b> {@code getResultList()}는 드라이버가 결과
+ * 전체를 버퍼링한 뒤 하이버네이트가 {@code List<Object[]>}를 완성해야 끝나서, 어느 순간 드라이버
+ * 버퍼와 중간 리스트를 함께 든다. 그래서 문장 ①·②는
+ * {@code setFetchSize(Integer.MIN_VALUE)} + {@code stream()}으로 열어 행을 받는 즉시 접는다 —
+ * {@code Integer.MIN_VALUE}는 행 수가 아니라 Connector/J에게 <b>한 행씩 넘기라</b>는 신호이고
+ * (forward-only · read-only와 함께 세 조건이 맞아야 켜진다), 하이버네이트의 {@code stream()}은
+ * {@code scroll(FORWARD_ONLY)} 위에 얹혀 그 값을 {@code PreparedStatement}까지 그대로 넘긴다.
+ * <b>함정은 다음 문장을 열기 전에 스트림을 반드시 닫아야 한다는 것</b>이다 — streaming 결과가 열려
+ * 있는 동안 Connector/J는 같은 커넥션의 다른 문장을 거부하고, 세 문장이 한 읽기 트랜잭션(= 한
+ * 커넥션)을 쓰므로 이것은 성능이 아니라 <b>정확성</b> 조건이다. 벤치·운영이 쓰는 서버 prepared
+ * statement 구성({@code useServerPrepStmts=true})에서는 이것을 어겨도 깔끔한 예외로 끝나지 않는다 —
+ * 거부된 뒤 남은 행을 드레인하다 소켓 읽기에서 멈추는 것을 실측했다. 문장 ③(수십 행)과 단건
+ * {@link #SINGLE_VIEW_SQL}은 얻을 것이 없어 {@code getResultList()} 그대로 둔다.
  *
  * <p><b>읽기를 트랜잭션 하나로 묶는 이유는 세 문장이 같은 일관 읽기를 보게 하기 위해서다.</b>
  * 트랜잭션이 없으면 문장마다 커넥션이 갈려, 그 사이에 커밋된 이미지 변경이 장소 목록과 어긋난
@@ -306,8 +323,12 @@ public class SnapshotLoader {
     private record Source(List<PlaceEntry> entries, ConcurrentMap<Long, PlaceView> views) {}
 
     /**
-     * 두 결과를 접어 엔트리 목록과 표시값 맵을 만든다. 부분 결과가 캐시로 새지 않는다 — 교체는
+     * 두 문장을 차례로 흘려 엔트리 목록과 표시값 맵을 만든다. 행을 받는 즉시 접으므로 중간
+     * {@code List<Object[]>}가 없다. 부분 결과가 캐시로 새지 않는다 — 교체는
      * {@link #rebuildInLock()}이 이 메서드를 끝까지 받은 뒤 한 번뿐이다.
+     *
+     * <p><b>썸네일 문장을 끝까지 닫은 뒤에 장소 문장을 연다.</b> 두 스트림을 겹쳐 열면 뒤엣것이
+     * 드라이버에 거부된다(근거는 클래스 javadoc).
      *
      * <p>중복 스킵을 <b>직전 id 비교</b>로 하는 것은 {@link #LIST_SOURCE_SQL}의
      * {@code ORDER BY ps.place_id}에 기대는 것이다 — 같은 장소의 행이 반드시 붙어 나온다.
@@ -316,23 +337,27 @@ public class SnapshotLoader {
     private Source readSource() {
         Map<Long, String> thumbnailKeyByPlaceId = readThumbnailKeys();
 
-        List<Object[]> rows = readListSource();
-        List<PlaceEntry> entries = new ArrayList<>(rows.size());
+        // 용량 힌트를 두지 않는다 — streaming이라 행 수를 미리 모르고, 재할당은 그때뿐인 배열
+        // 복사라 이 이슈가 겨누는 "동시에 살아 있는 양"을 늘리지 않는다
+        List<PlaceEntry> entries = new ArrayList<>();
         // 홀더가 그대로 받아 쓰는 맵이라 여기서 처음부터 동시 수정 가능한 것으로 만든다
-        ConcurrentMap<Long, PlaceView> views = new ConcurrentHashMap<>(rows.size() * 2);
+        ConcurrentMap<Long, PlaceView> views = new ConcurrentHashMap<>();
         long previousPlaceId = -1L;
-        for (Object[] row : rows) {
-            long placeId = ((Number) row[0]).longValue();
-            if (placeId == previousPlaceId) {
-                continue;   // MAIN 태그가 둘 이상인 비정상 데이터 — 첫 행을 유지한다
+        try (Stream<Object[]> rows = streamListSource()) {
+            for (Iterator<Object[]> it = rows.iterator(); it.hasNext(); ) {
+                Object[] row = it.next();
+                long placeId = ((Number) row[0]).longValue();
+                if (placeId == previousPlaceId) {
+                    continue;   // MAIN 태그가 둘 이상인 비정상 데이터 — 첫 행을 유지한다
+                }
+                previousPlaceId = placeId;
+                entries.add(toEntry(row));
+                views.put(placeId, new PlaceView(
+                        placeId,
+                        (String) row[10],
+                        thumbnailKeyByPlaceId.get(placeId),
+                        toNullableLong(row[11])));
             }
-            previousPlaceId = placeId;
-            entries.add(toEntry(row));
-            views.put(placeId, new PlaceView(
-                    placeId,
-                    (String) row[10],
-                    thumbnailKeyByPlaceId.get(placeId),
-                    toNullableLong(row[11])));
         }
         return new Source(entries, views);
     }
@@ -347,13 +372,16 @@ public class SnapshotLoader {
      * 않는다.
      */
     private Map<Long, String> readThumbnailKeys() {
-        List<Object[]> rows = readThumbnails();
-        Map<Long, String> keyByPlaceId = new HashMap<>(rows.size() * 2);
-        for (Object[] row : rows) {
-            long placeId = ((Number) row[0]).longValue();
-            // 첫 행이 display_order가 가장 앞선 이미지다
-            if (!keyByPlaceId.containsKey(placeId)) {
-                keyByPlaceId.put(placeId, (String) row[1]);
+        // 용량 힌트를 두지 않는 이유는 readSource와 같다
+        Map<Long, String> keyByPlaceId = new HashMap<>();
+        try (Stream<Object[]> rows = streamThumbnails()) {
+            for (Iterator<Object[]> it = rows.iterator(); it.hasNext(); ) {
+                Object[] row = it.next();
+                long placeId = ((Number) row[0]).longValue();
+                // 첫 행이 display_order가 가장 앞선 이미지다
+                if (!keyByPlaceId.containsKey(placeId)) {
+                    keyByPlaceId.put(placeId, (String) row[1]);
+                }
             }
         }
         return keyByPlaceId;
@@ -379,14 +407,28 @@ public class SnapshotLoader {
         return views;
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Object[]> readListSource() {
-        return em.createNativeQuery(LIST_SOURCE_SQL).getResultList();
+    /**
+     * 문장 ①을 행 단위 streaming으로 연다. <b>닫는 것은 호출자의 책임</b>이고, 닫기 전에는 같은
+     * 커넥션의 다른 문장이 거부된다(클래스 javadoc).
+     *
+     * <p>{@code private}이 아닌 것은 streaming 계약 IT 때문이다 — SQL과 fetch size를 테스트가
+     * 복사해 재현하면 {@link #streamRows}에서 {@code setFetchSize}가 사라져도 그린이 된다.
+     */
+    Stream<Object[]> streamListSource() {
+        return streamRows(LIST_SOURCE_SQL);
     }
 
+    private Stream<Object[]> streamThumbnails() {
+        return streamRows(THUMBNAIL_SQL);
+    }
+
+    /** fetch size {@code Integer.MIN_VALUE}가 드라이버의 행 단위 streaming 스위치다 — 지우지 말 것 */
     @SuppressWarnings("unchecked")
-    private List<Object[]> readThumbnails() {
-        return em.createNativeQuery(THUMBNAIL_SQL).getResultList();
+    private Stream<Object[]> streamRows(String sql) {
+        return em.createNativeQuery(sql)
+                .unwrap(NativeQuery.class)
+                .setFetchSize(Integer.MIN_VALUE)
+                .stream();
     }
 
     @SuppressWarnings("unchecked")
