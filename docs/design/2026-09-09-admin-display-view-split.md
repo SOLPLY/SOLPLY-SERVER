@@ -243,7 +243,72 @@ DB 커넥션을 쥐고 있어서 어드민 둘이 겹치면 발급 커넥션이 
 싣는 이벤트로 전파해 각 인스턴스가 DB에서 다시 읽게 하거나. 후자가 09-01의 "페이로드 없는
 발행"과 같은 결이다. 착수하는 날 정한다.
 
-## 11. 이 문서로 말할 수 없는 것
+## 11. 다음 작업 — 정렬 배열을 객체 배열에서 원시 배열로 (같은 이슈 #400, 다른 세션에 핸드오프)
+
+사용자 결정(2026-09-09). 측정 없이 착수하는 이유는 성능 주장이 아니라 **구조 선택**이기 때문이다.
+사진이 불변이라 정확성에는 영향이 없고, 얻는 것은 "장소당 객체 1개 → 0개"(GC 마킹 대상 소멸)와
+스캔·거리순이 연속 배열을 읽는 것이다. 지금 규모에서 빠르다고 주장하지 않는다. 100배 측정(§9)은
+이 형상으로 한 번만 한다.
+
+### 11-1. 모양 — 정렬마다 순서 배열 하나, 값은 장소 표 한 벌
+
+```
+PlaceListIndex
+  장소 표 (전체 장소, 열별 원시 배열, 행 번호 = slot)
+    long[]   placeId, townId, tagMask, createdAtEpochSecond
+    int[]    reviewCount, bookmarkCount, ratingX100
+    double[] popularScore, latitude, longitude   (좌표 없음은 NaN 같은 표지값 — 0.0 금지, §Entry javadoc)
+  orders: EnumMap<정렬 종류, HashMap<동네 id, int[] order>>
+    order[i] = 그 동네·그 정렬에서 i번째 장소의 slot
+
+seek:  key[order[mid]], placeId[order[mid]]    연속 배열에 한 번 접근
+scan:  tagMask[order[i]]
+응답:  slot으로 장소 표에서 10건의 나머지 값
+```
+
+정렬마다 키·id·마스크를 복사하는 모양(점프 0)은 100배에서 사진당 약 140MB라 기각. 이 모양은 약 60MB.
+
+### 11-2. 열 타입 — 범위가 확실한 열만 int
+
+| 열 | 타입 | 이유 |
+|---|---|---|
+| reviewCount, bookmarkCount, ratingX100 | int | 21억을 넘을 일이 없다 |
+| placeId, townId | long | DB 컬럼이 BIGINT. 좁히면 컬럼과 어긋나는 날 조용히 틀린다 |
+| tagMask | long | 63비트 |
+| createdAtEpochSecond | long | 2038년에 int를 넘는다 |
+| popularScore, latitude, longitude | double | |
+| order | int | 장소 표 행 번호 |
+
+### 11-3. 평점 — BigDecimal을 버리고 int 하나
+
+`avg_rating`은 `DECIMAL(3,2)`라 소수점 자리가 2로 고정이다. BigDecimal이 내부에 드는 것(정수 450 +
+자리 2) 중 자리는 상수이므로 **정수 450만** `ratingX100`에 든다. 비교는 정수끼리. 커서는 지금처럼
+double을 싣되 안에서 `Math.round(v × 100)`으로 정수로 바꿔 비교한다(원값이 백분의 일 단위라 오차
+없음). 응답에 실을 때만 `BigDecimal.valueOf(ratingX100, 2)`로 `4.50`을 만든다 — 등가 IT의 바이트
+동일이 이걸로 유지된다. 정렬용 double 열(`avgRatingValue`)은 없앤다.
+
+### 11-4. 열 분리(필드마다 배열)를 택한 이유
+
+한 배열에 장소당 N칸씩 몰아넣는 모양과 비교했다. 무거운 경로(스캔·거리순 후보 수집)가 "많은 행 ×
+적은 필드"라 열 분리가 캐시 라인을 덜 낭비하고, 응답 조립(한 행 × 전 필드)은 페이지당 10행이라
+비용이 안 된다. 다만 동네당 100~300개 규모에서는 어느 배치든 캐시에 다 들어가 차이가 측정에
+안 잡힌다. 그래서 기준은 성능이 아니라 단순성이고, `mask[i]`가 `packed[i*12+2]`보다 읽기 쉽다.
+
+### 11-5. 바뀌는 곳과 지켜야 할 것
+
+- **로더**: 세 문장 결과를 장소 표 열에 채우고, 동네·정렬마다 `int[] order`를 정렬한다. 자바 표준에
+  "인덱스 배열을 비교자로 정렬"이 없어 박싱(`Integer[]`)하거나 정렬을 직접 짠다. 재빌드 비용은
+  §9 측정에 그대로 잡힌다.
+- **PlaceListIndex**: seek·scan·병합 Leg·거리순 후보가 `order`와 열을 읽는다. 커서 비교는 축별로
+  열 타입이 다르다(인기순 double, 최신순 long, 평점 int, 카운트 int).
+- **PlaceService**: `PlaceListEntry` 대신 slot으로 열을 읽어 응답·커서를 만든다. `PlaceListEntry`
+  record는 사라지거나 로더 내부 조립용으로만 남는다.
+- **`DistanceSort.topK`**: 후보를 Entry 리스트가 아니라 slot 배열(또는 lat/lng 열 + slot)로 받는다.
+- **지켜야 할 게이트**: `PlaceListSnapshotEquivalenceIT`(메모리 경로 = DB 경로 응답 바이트 동일),
+  `PlaceListViewPatchEquivalenceIT`, 커서 v6 포맷 무변경, 표시 홀더·락·발급 구조 무변경(§4).
+- **기준선(§4-2)은 그대로**: 비교·스캔이 읽는 값만 장소 표에, 표시값은 홀더에.
+
+## 12. 이 문서로 말할 수 없는 것
 
 - **어드민 빈도.** 측정 수단이 없다. "하루 수십 회"는 가정이고 이 가정이 §5의 산수를 떠받친다.
 - **표시 맵 조회가 요청 경로에 더한 비용.** 페이지당 맵 조회 20번(장소 10 + 태그 10)이다.
