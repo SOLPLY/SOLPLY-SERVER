@@ -32,7 +32,7 @@ class PlaceListSnapshotTest {
             entries.add(new PlaceListEntry(
                     i, 1L, 0L,
                     1.0, 1_767_225_600L,
-                    0L, 0L, 0,
+                    0, 0, 0,
                     null, null));
         }
         return PlaceListIndex.of(entries);

@@ -9,7 +9,6 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.sopt.solply_server.domain.place.cache.PlaceListEntry;
 import org.sopt.solply_server.domain.place.cache.PlaceListIndex;
 import org.sopt.solply_server.domain.place.cache.PlaceListPhoto;
 import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
@@ -233,23 +232,23 @@ public class PlaceService {
   //=== Private Methods ===//
 
   /**
-   * 페이지에 실린 항목 하나 — 스냅샷 엔트리와, 그 엔트리가 이 정렬에서 갖는 커서 좌표.
+   * 페이지에 실린 항목 하나 — 사진 표의 행 번호와, 그 행이 이 정렬에서 갖는 커서 좌표.
    *
-   * <p>정렬마다 키의 개수가 다르고(인기순 하나 / 평점순 둘 / 거리순 셋) 거리순의 키는 엔트리에
+   * <p>정렬마다 키의 개수가 다르고(인기순 하나 / 평점순 둘 / 거리순 셋) 거리순의 키는 사진에
    * 들어 있지 않은 <b>요청 시점 계산값</b>이라, 커서 좌표만 따로 떼어 여기서 합류시킨다. 그 합류를
    * 페이지 확정 직후로 당기면 이후 — hasNext 판정, 응답 조립, 커서 발급 — 에 정렬 분기가 없다.
    *
    * @param sortKeys 커서에 그대로 실리는 정렬 키 튜플. 길이는 {@code PlaceSortType#keyArity()}와 같다
    */
-  private record ListRow(PlaceListEntry entry, List<Double> sortKeys) {}
+  private record ListRow(int slot, List<Double> sortKeys) {}
 
   /**
-   * 응답에 실릴 것이 확정된 항목 — 회차 사진의 엔트리와, 홀더에서 방금 꺼낸 표시값이 합류한 자리.
+   * 응답에 실릴 것이 확정된 항목 — 회차 사진 표의 행 번호와, 홀더에서 방금 꺼낸 표시값이 합류한 자리.
    *
    * <p>둘이 <b>다른 회차</b>일 수 있다는 것이 계약이다. 커서가 보장하는 것은 순서의 일관성이고,
    * 표시값과 소속(생성·삭제)은 최신일 수 있다 ({@code PlaceViewHolder}).
    */
-  private record DisplayedRow(PlaceListEntry entry, PlaceView view) {}
+  private record DisplayedRow(int slot, PlaceView view) {}
 
   /**
    * 장소 목록의 <b>유일한</b> 경로 — 읽는 곳은 인메모리 캐시뿐이고, 쿼리는 북마크 여부 조회만
@@ -279,7 +278,7 @@ public class PlaceService {
    * 컨텍스트가 뜨지 않으므로, 요청이 {@code null}을 보는 창이 구조적으로 없다
    * ({@code PlaceListSnapshot} 계약 3). 장소가 실제로 0개면 비어 있는 인덱스가 온다.
    *
-   * <p><b>표시 카운트·골격은 엔트리가 실어 온 값 그대로다.</b> 스냅샷은 회차 단위의 사진이라
+   * <p><b>표시 카운트·골격은 사진 표가 실어 온 값 그대로다.</b> 스냅샷은 회차 단위의 사진이라
    * 낡음의 상한이 회차 간격이고, 그 창은 {@code PlaceListSnapshotScheduler}가 SLA로 명시한다.
    * 요청 시점에 값을 덧대 신선하게 만들려는 시도는 회차의 정합성을 깨므로 하지 않는다.
    *
@@ -327,10 +326,11 @@ public class PlaceService {
     // ⚠️ 이 회차의 사진을 여기서 한 번만 잡는다. 아래 어느 단계도 스냅샷을 다시 읽지 않는다 —
     // 다시 읽으면 한 응답이 두 회차를 섞어 볼 수 있다 (메서드 javadoc의 계약).
     PlaceListPhoto photo = photoFor(cursor);
+    PlaceListIndex index = photo.index();
 
     List<ListRow> rows = sort == PlaceSortType.DISTANCE
-        ? distanceRows(photo.index(), leafTownIds, request, cursor, fetchSize)
-        : staticRows(photo.index(), leafTownIds, request, sort, cursor, fetchSize);
+        ? distanceRows(index, leafTownIds, request, cursor, fetchSize)
+        : staticRows(index, leafTownIds, request, sort, cursor, fetchSize);
 
     boolean hasNext = paging && rows.size() > pageSize;
     if (hasNext) {
@@ -338,21 +338,21 @@ public class PlaceService {
     }
 
     // 표시값은 사진 밖 홀더에서 지금 값을 꺼내 붙인다. 없는 행 = 그 사이 삭제된 장소이므로
-    // 건너뛴다 — 아래 커서는 그래도 "소비한 마지막 엔트리" 기준이라 그 행을 다시 보지 않는다.
+    // 건너뛴다 — 아래 커서는 그래도 "소비한 마지막 행" 기준이라 그 행을 다시 보지 않는다.
     List<DisplayedRow> displayed = new ArrayList<>(rows.size());
     for (ListRow row : rows) {
-      PlaceView view = placeViewHolder.get(row.entry().placeId());
+      PlaceView view = placeViewHolder.get(index.placeId(row.slot()));
       if (view != null) {
-        displayed.add(new DisplayedRow(row.entry(), view));
+        displayed.add(new DisplayedRow(row.slot(), view));
       }
     }
 
-    List<Long> pageIds = displayed.stream().map(row -> row.entry().placeId()).toList();
+    List<Long> pageIds = displayed.stream().map(row -> index.placeId(row.slot())).toList();
 
     // 응답에서 유일하게 사용자별인 값이라 스냅샷에 담을 수 없다 — 그래서 요청 시점에 조회한다.
     Map<Long, Boolean> bookmarkStatus = placeBookmarkFacade.getPlaceBookmarkStatusMap(userId, pageIds);
 
-    // 표시 카운트는 엔트리가 실어 온 place_stats 값 그대로다 — 응답을 만들면서 더하거나 빼지 않는다.
+    // 표시 카운트는 사진 표가 실어 온 place_stats 값 그대로다 — 응답을 만들면서 더하거나 빼지 않는다.
     // 예전에는 "내 북마크가 배치 이후면 +1"이라는 표시 보정이 있었다. 당시 배치가 하루 1회뿐이라
     // 내가 방금 누른 것이 다음 새벽까지 숫자에 안 나타나는 문제를 화면에서만 덮던 장치였는데,
     // 이벤트 증분(PlaceStatsIncrementListener)이 그 구간을 수십 ms로 줄이면서 걷어냈다
@@ -360,19 +360,19 @@ public class PlaceService {
     // 되살리지 말 것 — PlaceServiceStatsWiringTest가 그 회귀를 감시한다.
     List<PlacePreviewDto> previews = displayed.stream()
         .map(row -> {
-          PlaceListEntry entry = row.entry();
+          int slot = row.slot();
           PlaceView view = row.view();
           return PlacePreviewDto.of(
-              entry.placeId(),
+              index.placeId(slot),
               view.name(),
               view.imageUrl(),
               mainTagNameOf(view),
-              bookmarkStatus.getOrDefault(entry.placeId(), false),
-              entry.townId(),
-              entry.bookmarkCount(),
-              entry.reviewCount(),
-              // 엔트리는 정수부만 든다 — 스케일 2를 여기서 되씌워 컬럼 값과 같은 BigDecimal을 낸다
-              BigDecimal.valueOf(entry.ratingX100(), 2));
+              bookmarkStatus.getOrDefault(index.placeId(slot), false),
+              index.townId(slot),
+              index.bookmarkCount(slot),
+              index.reviewCount(slot),
+              // 표는 무척도 정수만 든다 — 스케일 2를 여기서 되씌워 컬럼 값과 같은 BigDecimal을 낸다
+              BigDecimal.valueOf(index.ratingX100(slot), 2));
         })
         .toList();
 
@@ -380,14 +380,16 @@ public class PlaceService {
     // hasNext(1 > 0)가 참인데 subList로 페이지는 비어, 커서를 발급하려다 get(-1)로 터진다.
     // 빈 페이지를 조용히 돌려주는 것이 이 메서드의 계약이다. @Min(1)이 HTTP 경로를 막지만
     // 그것은 컨트롤러의 계약이지 이 메서드의 계약이 아니다.
-    String nextCursor = hasNext && !rows.isEmpty()
-        ? new PlaceListCursor(sort,
-            rows.get(rows.size() - 1).sortKeys(),
-            rows.get(rows.size() - 1).entry().placeId(),
-            filterPrint,
-            // 서빙한 회차를 그대로 실어 다음 페이지도 같은 사진에서 이어지게 한다
-            photo.version()).encode()
-        : null;
+    String nextCursor = null;
+    if (hasNext && !rows.isEmpty()) {
+      ListRow lastRow = rows.get(rows.size() - 1);
+      nextCursor = new PlaceListCursor(sort,
+          lastRow.sortKeys(),
+          index.placeId(lastRow.slot()),
+          filterPrint,
+          // 서빙한 회차를 그대로 실어 다음 페이지도 같은 사진에서 이어지게 한다
+          photo.version()).encode();
+    }
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
 
@@ -430,21 +432,24 @@ public class PlaceService {
    * 정적 정렬 다섯의 한 페이지 — 쿼리를 하나도 내지 않고 사진의 사전 정렬 배열에서 만든다.
    *
    * <p>순서·타이브레이크·술어는 전부 {@code PlaceListIndex}의 축이 정하고, 여기서 하는 일은
-   * <b>엔트리에 커서 좌표를 붙이는 것</b>뿐이다.
+   * <b>인덱스가 내준 행 번호에 커서 좌표를 붙이는 것</b>뿐이다.
    */
   private static List<ListRow> staticRows(
-      PlaceListIndex photo, List<Long> leafTownIds, PlaceFilterGetRequest request,
+      PlaceListIndex index, List<Long> leafTownIds, PlaceFilterGetRequest request,
       PlaceSortType sort, PlaceListCursor cursor, int fetchSize) {
 
     TagMasks masks = TagMasks.of(
         request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
-    return photo.page(sort, leafTownIds, masks, cursor, fetchSize).stream()
-        .map(entry -> new ListRow(entry, sortKeys(sort, entry)))
-        .toList();
+    int[] slots = index.page(sort, leafTownIds, masks, cursor, fetchSize);
+    List<ListRow> rows = new ArrayList<>(slots.length);
+    for (int slot : slots) {
+      rows.add(new ListRow(slot, sortKeys(sort, index, slot)));
+    }
+    return rows;
   }
 
   /**
-   * 엔트리가 이 정렬에서 갖는 커서 키 튜플.
+   * 그 행이 이 정렬에서 갖는 커서 키 튜플.
    *
    * <p><b>{@code PlaceListIndex}의 축이 커서를 읽는 순서와 한 쌍이다</b> — 여기서 싣는 자리와
    * 거기서 {@code cursor.key(i)}로 꺼내는 자리가 어긋나면 다음 페이지가 조용히 다른 곳에서
@@ -453,16 +458,16 @@ public class PlaceService {
    * <p>정수 축(epoch 초·카운트)을 double로 싣는 것은 안전하다 — 커서가 double 튜플이고
    * 2^53까지는 왕복이 값을 잃지 않는다(epoch 초 기준 약 2.8억 년).
    */
-  private static List<Double> sortKeys(PlaceSortType sort, PlaceListEntry entry) {
+  private static List<Double> sortKeys(PlaceSortType sort, PlaceListIndex index, int slot) {
     return switch (sort) {
-      case POPULAR -> List.of(entry.popularScore());
-      case LATEST -> List.of((double) entry.createdAtEpochSecond());
+      case POPULAR -> List.of(index.popularScore(slot));
+      case LATEST -> List.of((double) index.createdAtEpochSecond(slot));
       // ratingX100 / 100.0은 정수/100이라는 정확한 값에 가장 가까운 double이다 — DB 경로가
       // DECIMAL을 double로 올린 값과 같으므로 커서에 실리는 비트가 두 경로에서 같다.
-      case RATING -> List.of(entry.ratingX100() / 100.0, (double) entry.reviewCount());
-      case REVIEW_COUNT -> List.of((double) entry.reviewCount());
-      case BOOKMARK_COUNT -> List.of((double) entry.bookmarkCount());
-      // 거리 키는 엔트리에 없다 — 기준 좌표가 요청마다 달라 그 자리에서 계산된다
+      case RATING -> List.of(index.ratingX100(slot) / 100.0, (double) index.reviewCount(slot));
+      case REVIEW_COUNT -> List.of((double) index.reviewCount(slot));
+      case BOOKMARK_COUNT -> List.of((double) index.bookmarkCount(slot));
+      // 거리 키는 사진 표에 없다 — 기준 좌표가 요청마다 달라 그 자리에서 계산된다
       case DISTANCE -> throw new IllegalStateException("거리순은 distanceRows가 맡는다");
     };
   }
@@ -477,10 +482,10 @@ public class PlaceService {
    * 새로 잡으면 같은 장소가 두 번 나오거나 통째로 사라지므로, 파라미터는 <b>무시</b>한다.
    * 그래서 좌표가 필수인 것은 커서가 없는 첫 페이지뿐이다.
    *
-   * <p>카운트·평점은 후보 엔트리가 이미 실어 온 place_stats 값이다 — 정렬 뒤에 다시 조회하지 않는다.
+   * <p>카운트·평점은 사진 표가 이미 실어 온 place_stats 값이다 — 정렬 뒤에 다시 조회하지 않는다.
    */
   private static List<ListRow> distanceRows(
-      PlaceListIndex photo, List<Long> leafTownIds, PlaceFilterGetRequest request,
+      PlaceListIndex index, List<Long> leafTownIds, PlaceFilterGetRequest request,
       PlaceListCursor cursor, int fetchSize) {
 
     double refLat;
@@ -502,38 +507,21 @@ public class PlaceService {
 
     TagMasks masks = TagMasks.of(
         request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
-    List<PlaceListEntry> candidates = photo.distanceCandidates(leafTownIds, masks);
-    if (candidates.isEmpty()) {
+    DistanceSort.Candidates candidates = index.distanceCandidates(leafTownIds, masks);
+    if (candidates.size() == 0) {
       return List.of();
-    }
-    // 열을 여기서 만드는 것은 사진이 아직 엔트리 배열이기 때문이다 — 사진이 열을 들면 그 열을
-    // 그대로 넘긴다. 자리 번호는 후보 목록의 첨자이므로 순위를 받아 같은 첨자로 엔트리를 되찾는다.
-    // 좌표 언박싱이 안전한 것은 distanceCandidates가 좌표 없는 엔트리를 이미 뺀 뒤이기 때문이다.
-    int n = candidates.size();
-    int[] slots = new int[n];
-    long[] placeIds = new long[n];
-    double[] latitudes = new double[n];
-    double[] longitudes = new double[n];
-    for (int i = 0; i < n; i++) {
-      PlaceListEntry c = candidates.get(i);
-      slots[i] = i;
-      placeIds[i] = c.placeId();
-      latitudes[i] = c.latitude();
-      longitudes[i] = c.longitude();
     }
 
     // 페이징이 없는 요청의 fetchSize는 Integer.MAX_VALUE − 1이다. 그 수를 그대로 넘기면 정렬
     // 컴포넌트가 그 크기로 버퍼를 잡을 수 있어 후보 수로 눌러 준다 — 어차피 그보다 많이 나올 수 없다.
-    List<DistanceSort.Ranked> ranked = DistanceSort.topK(
-        new DistanceSort.Candidates(slots, placeIds, latitudes, longitudes),
-        refLat, refLng, cursorDistance, cursorPlaceId, Math.min(fetchSize, n));
+    List<DistanceSort.Ranked> ranked = DistanceSort.topK(candidates,
+        refLat, refLng, cursorDistance, cursorPlaceId, Math.min(fetchSize, candidates.size()));
 
     double baseLat = refLat;
     double baseLng = refLng;
     return ranked.stream()
         // 기준 좌표를 함께 실어야 다음 페이지가 같은 좌표계에서 이어진다
-        .map(r -> new ListRow(candidates.get(r.slot()),
-            List.of(baseLat, baseLng, r.distanceMeters())))
+        .map(r -> new ListRow(r.slot(), List.of(baseLat, baseLng, r.distanceMeters())))
         .toList();
   }
 

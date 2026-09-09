@@ -397,7 +397,7 @@ public class PlaceListSnapshotLoader {
     /**
      * <b>값의 좁힘이 여기서 한 번만 일어난다.</b> 생성일은 커서와 같은 식으로 epoch 초가 되고
      * (근거는 {@code PlaceListDbQueryRepository#findLatestRows}의 왕복 계약), 평점은 DECIMAL(3,2)의
-     * 정수부만 {@code ratingX100}으로 든다 ({@link PlaceListEntry} javadoc).
+     * 무척도 정수만 {@code ratingX100}으로 든다 ({@link PlaceListEntry} javadoc).
      *
      * <p>{@code intValueExact}는 의도다 — 컬럼이 스케일 2를 벗어나는 날 여기서 터진다. 그 자리 수가
      * 상수라는 것이 {@code ratingX100}의 전제이므로, 전제가 깨지면 조용히 값을 버리는 대신 멈춰야 한다.
@@ -410,8 +410,8 @@ public class PlaceListSnapshotLoader {
                 ((Number) row[2]).longValue(),
                 ((Number) row[3]).doubleValue(),
                 toLocalDateTime(row[4]).toEpochSecond(ZoneOffset.UTC),
-                ((Number) row[5]).longValue(),
-                ((Number) row[6]).longValue(),
+                ((Number) row[5]).intValue(),
+                ((Number) row[6]).intValue(),
                 ratingX100,
                 toNullableDouble(row[8]),
                 toNullableDouble(row[9]));

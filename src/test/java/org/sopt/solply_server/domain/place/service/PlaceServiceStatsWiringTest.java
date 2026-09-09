@@ -109,18 +109,19 @@ class PlaceServiceStatsWiringTest {
    * 같은 한 행이 나온다 — 정렬마다 픽스처를 갈아 끼우면 "정렬 하나에서만 카운트를 싣는" 변이가
    * 나머지 정렬의 픽스처 차이에 숨는다.
    *
-   * @param bookmarkCount 엔트리가 싣고 온 {@code ps.bookmark_count} — 이 값이 곧 응답의 카운트여야 한다
+   * @param bookmarkCount 사진이 싣고 온 {@code ps.bookmark_count} — 이 값이 곧 응답의 카운트여야 한다
    */
   private void givenListRow(long bookmarkCount) {
     givenListRow(bookmarkCount, REVIEW_COUNT, AVG_RATING);
   }
 
   private void givenListRow(long bookmarkCount, long reviewCount, BigDecimal avgRating) {
-    // 엔트리는 DECIMAL(3,2)의 정수부만 든다 — 응답에서 스케일 2로 복원되는 것이 여기 계약이다
+    // 사진 표는 DECIMAL(3,2)의 무척도 정수만 든다. 여기 단언은 스케일을 묻지 않는
+    // isEqualByComparingTo이고, 응답이 스케일 2까지 같은지는 PlaceListSnapshotEquivalenceIT가 지킨다.
     PlaceListEntry entry = new PlaceListEntry(
         PLACE_ID, TOWN_ID, 0L,
         9.0, 1_767_225_600L,
-        bookmarkCount, reviewCount, avgRating.movePointRight(2).intValueExact(),
+        (int) bookmarkCount, (int) reviewCount, avgRating.movePointRight(2).intValueExact(),
         37.5, 127.0);
     given(placeListSnapshot.current())
         .willReturn(new PlaceListPhoto(VERSION, PlaceListIndex.of(List.of(entry))));
