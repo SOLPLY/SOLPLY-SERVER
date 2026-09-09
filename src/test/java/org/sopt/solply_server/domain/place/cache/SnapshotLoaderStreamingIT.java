@@ -149,8 +149,9 @@ class SnapshotLoaderStreamingIT extends MySqlContainerSupport {
         jdbcTemplate.update("""
                 INSERT INTO place_stats (place_id, town_id, popular_score, bookmark_count,
                                          review_count, avg_rating, score_calculated_at,
-                                         created_at, tag_bitmask)
-                VALUES (?, ?, 0, 0, 0, 0, NULL, ?, 0)""", placeId, townId, PLACE_CREATED_AT);
+                                         created_at, tag_bitmask, name)
+                VALUES (?, ?, 0, 0, 0, 0, NULL, ?, 0, '스트리밍IT장소')""",
+                placeId, townId, PLACE_CREATED_AT);
     }
 
     /**

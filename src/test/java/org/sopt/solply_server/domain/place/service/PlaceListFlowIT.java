@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
@@ -24,6 +25,7 @@ import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
+import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -33,6 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 장소 목록 <b>유일 경로</b>의 사슬 IT — 북마크·리뷰 INSERT → 배치 → 조회 → 정렬 → 커서 왕복까지
@@ -103,6 +106,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     @Autowired private AdminPlaceFacade adminPlaceFacade;
     /** 동네 재활성은 파사드에 없다 — {@code AdminTownService}가 이 메서드를 직접 부른다 */
     @Autowired private AdminPlaceService adminPlaceService;
+    /** DB 직행으로 places·place_tag를 고친 픽스처가 어드민 쓰기의 나머지 한 걸음을 대신할 때 쓴다 */
+    @Autowired private PlaceStatsRepository placeStatsRepository;
+    @Autowired private TransactionTemplate transactionTemplate;
 
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
@@ -805,6 +811,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         jdbcTemplate.update(
                 "UPDATE places SET latitude = 37.510, longitude = 127.010 WHERE id = ?", placeB);
         // 좌표도 스냅샷에 실려 있다 — 다시 찍지 않으면 이 요청은 좌표 없던 회차를 본다
+        resyncStats(placeA, placeB);
         takeSnapshot();
 
         PlaceFilterGetResponse page1 = placeService.getPlaces(
@@ -916,6 +923,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         linkTag(placeA, optionTagId);
         String mainTagName = jdbcTemplate.queryForObject(
                 "SELECT name FROM tags WHERE id = ?", String.class, mainTagId);
+        resyncStats(placeA);
         takeSnapshot();
 
         PlaceFilterGetResponse page = placeService.getPlaces(me, popularRequest(null, 3));
@@ -1027,6 +1035,19 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         snapshotLoader.rebuild();
     }
 
+    /**
+     * 어드민 쓰기가 하는 일 중 DB 직행 픽스처가 건너뛴 걸음 — place_stats의 어드민 소유 칸을 원본에서
+     * 다시 짓는다. 이름·좌표·대표 태그가 그 테이블의 칸이 된 뒤로(V40) {@code places}·
+     * {@code place_tag}만 고치고 회차를 찍으면 스냅샷이 옛 값을 그대로 본다. 카운트·점수 칸은
+     * 이 문장이 건드리지 않으므로 배치가 채워 둔 값이 살아남는다.
+     */
+    private void resyncStats(long... placeIds) {
+        List<Long> ids = Arrays.stream(placeIds).boxed().toList();
+        // 쓰기 문장이라 트랜잭션이 있어야 한다 — 이 클래스에는 테스트 트랜잭션이 없다
+        transactionTemplate.executeWithoutResult(
+                status -> placeStatsRepository.upsertRowsForActivePlaces(ids));
+    }
+
     /** place_stats에 이 장소의 행이 있는가 — 인기순 노출 여부의 물리적 근거다 */
     private boolean statsRowExists(long placeId) {
         Integer count = jdbcTemplate.queryForObject(
@@ -1136,9 +1157,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         long placeId = jdbcTemplate.queryForObject("SELECT MAX(id) FROM places", Long.class);
         jdbcTemplate.update("""
                 INSERT INTO place_stats
-                    (place_id, town_id, created_at, tag_bitmask, bookmark_count, review_count,
-                     avg_rating)
-                SELECT p.id, p.town_id, p.created_at, 0, 0, 0, 0
+                    (place_id, town_id, created_at, tag_bitmask, name, bookmark_count,
+                     review_count, avg_rating)
+                SELECT p.id, p.town_id, p.created_at, 0, p.name, 0, 0, 0
                 FROM places p WHERE p.id = ? AND p.active = 1""", placeId);
         return placeId;
     }
