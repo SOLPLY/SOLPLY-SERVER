@@ -35,7 +35,7 @@ import org.springframework.context.ApplicationEventPublisher;
  * 전량 재빌드로, 표시값만 바뀐 수정은 그 장소 하나의 표시값 패치로.
  *
  * <p><b>틀리는 방향이 둘 다 조용하다</b>는 것이 이 테스트의 이유다. 표시 수정이 재빌드로 새면
- * 화면은 멀쩡한 채 어드민 한 번의 비용이 장소 수에 비례하고 사진 보존 창이 그만큼 빨리 밀린다.
+ * 화면은 멀쩡한 채 어드민 한 번의 비용이 장소 수에 비례하고 스냅샷 보존 창이 그만큼 빨리 밀린다.
  * 반대로 동네·좌표·태그 수정이 표시 패치로 새면 파생 컬럼이 낡아 <b>결과 집합이 틀린다</b> —
  * 뗀 태그로 계속 검색되고 옮기기 전 동네 목록에 낀다.
  *
@@ -73,7 +73,7 @@ class AdminPlaceServiceUpdateRoutingTest {
             "02-000-0000", "매일 09:00-18:00", Map.of(), List.of());
 
     @Test
-    void 이름만_바꾸면_표시값만_고치고_사진은_그대로다() {
+    void 이름만_바꾸면_표시값만_고치고_스냅샷은_그대로다() {
         AdminPlaceUpsertRequest req = withName(UNCHANGED, "바뀐이름");
 
         updateWith(req);
@@ -82,7 +82,7 @@ class AdminPlaceServiceUpdateRoutingTest {
     }
 
     @Test
-    void 동네가_바뀌면_사진을_다시_찍는다() {
+    void 동네가_바뀌면_스냅샷을_다시_짓는다() {
         AdminPlaceUpsertRequest req = new AdminPlaceUpsertRequest(
                 UNCHANGED.name(), UNCHANGED.introduction(), UNCHANGED.address(),
                 UNCHANGED.latitude(), UNCHANGED.longitude(), OTHER_TOWN_ID,
@@ -96,7 +96,7 @@ class AdminPlaceServiceUpdateRoutingTest {
     }
 
     @Test
-    void 위도가_바뀌면_사진을_다시_찍는다() {
+    void 위도가_바뀌면_스냅샷을_다시_짓는다() {
         AdminPlaceUpsertRequest req = new AdminPlaceUpsertRequest(
                 UNCHANGED.name(), UNCHANGED.introduction(), UNCHANGED.address(),
                 LATITUDE + 0.001, UNCHANGED.longitude(), UNCHANGED.townId(),
@@ -110,7 +110,7 @@ class AdminPlaceServiceUpdateRoutingTest {
     }
 
     @Test
-    void 옵션_태그가_하나_늘면_사진을_다시_찍는다() {
+    void 옵션_태그가_하나_늘면_스냅샷을_다시_짓는다() {
         AdminPlaceUpsertRequest req = new AdminPlaceUpsertRequest(
                 UNCHANGED.name(), UNCHANGED.introduction(), UNCHANGED.address(),
                 UNCHANGED.latitude(), UNCHANGED.longitude(), UNCHANGED.townId(),

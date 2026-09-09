@@ -44,7 +44,7 @@ public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
     private final PlaceStatsRepository placeStatsRepository;
-    /** 목록 사진을 <b>커밋 뒤에</b> 다시 찍게 한다 — 시점의 근거는 리프레셔 javadoc */
+    /** 목록 스냅샷을 <b>커밋 뒤에</b> 다시 짓게 한다 — 시점의 근거는 리프레셔 javadoc */
     private final SnapshotRefresher snapshotRefresher;
     private final EntityManager entityManager;
 
@@ -114,7 +114,7 @@ public class AdminPlaceService {
      *
      * <ul>
      *   <li><b>닿는다</b>(동네·좌표·태그 집합 중 하나라도 바뀜) — place_stats의 파생 컬럼을 같은
-     *       트랜잭션에서 다시 짓고 사진을 통째로 다시 찍는다. 파생 컬럼이 낡으면 순위가 아니라
+     *       트랜잭션에서 다시 짓고 스냅샷을 통째로 다시 짓는다. 파생 컬럼이 낡으면 순위가 아니라
      *       <em>결과 집합</em>이 틀린다: 뗀 태그({@code tag_bitmask})로 계속 검색되고, 옮긴 동네가
      *       아니라 이전 동네({@code town_id}) 목록에 낀다.</li>
      *   <li><b>안 닿는다</b>(이름·소개·주소·연락처·영업시간·SNS·이미지·체크포인트) — 파생 컬럼이
@@ -323,13 +323,13 @@ public class AdminPlaceService {
      * place_stats 행을 원본(places · place_tag)에서 다시 짓는다. 비활성 장소는 문장이 걸러내므로
      * 여기서 활성 여부를 묻지 않는다 ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
      *
-     * <p><b>파생 컬럼을 다시 짓는 것과 사진을 다시 찍는 것은 한 몸이라 여기 묶어 둔다.</b> 사진의
-     * 원천이 {@code place_stats ⋈ places}이므로, 이 문장이 도는 곳은 곧 사진이 낡는 곳이다.
+     * <p><b>파생 컬럼을 다시 짓는 것과 스냅샷을 다시 짓는 것은 한 몸이라 여기 묶어 둔다.</b> 스냅샷의
+     * 원천이 {@code place_stats ⋈ places}이므로, 이 문장이 도는 곳은 곧 스냅샷이 낡는 곳이다.
      * 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다. 실제 재빌드는 커밋 뒤로
-     * 미뤄진다 — 커밋 전에 지으면 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어 낡은 사진으로 덮는다
+     * 미뤄진다 — 커밋 전에 지으면 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어 낡은 스냅샷으로 덮는다
      * ({@code SnapshotRefresher} javadoc).
      *
-     * <p><b>어드민 쓰기가 전부 여기로 오지는 않는다.</b> 사진을 통째로 다시 찍는 경로는 생성 ·
+     * <p><b>어드민 쓰기가 전부 여기로 오지는 않는다.</b> 스냅샷을 통째로 다시 짓는 경로는 생성 ·
      * 재활성 · {@link #deletePlace} · 그리고 목록 배열에 닿는 수정
      * ({@link PlaceListMembershipKey})뿐이다. 표시값만 바뀐 수정은 파생 컬럼이 그대로라 이 문장을
      * 부르지 않고 표시값 패치로 빠진다 — <b>배열에 닿는 값을 새로 추가한다면 그 열쇠와 이 문장을

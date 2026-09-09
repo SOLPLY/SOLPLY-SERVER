@@ -65,7 +65,7 @@ public class SnapshotScheduler {
         try {
             loader.rebuild();
         } catch (Exception e) {
-            log.error("장소 목록 스냅샷 주기 갱신 실패 - 직전 회차 사진을 유지한다"
+            log.error("장소 목록 스냅샷 주기 갱신 실패 - 직전 회차 스냅샷을 유지한다"
                     + "(다음 성공까지 낡은 값이 나간다)", e);
         }
     }

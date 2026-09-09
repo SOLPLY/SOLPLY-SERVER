@@ -27,11 +27,11 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * 어드민 장소 수정이 <b>커밋을 건너 목록에 닿는 경로 전체</b> — 트랜잭션 커밋 → 훅 → 홀더/사진 →
+ * 어드민 장소 수정이 <b>커밋을 건너 목록에 닿는 경로 전체</b> — 트랜잭션 커밋 → 훅 → 홀더/스냅샷 →
  * 조회 응답 — 를 실제 DB로 한 번 밟는다. 단위 테스트는 서비스가 어느 훅을 부르는지까지만 보므로,
  * 그 훅이 <b>정말 화면을 바꾸는지</b>와 <b>정말 회차를 안 쓰는지</b>는 여기서만 드러난다.
  *
- * <p><b>회차를 세는 것이 이 분리의 값어치다.</b> 표시값 하나 고치자고 사진을 다시 찍으면 보존
+ * <p><b>회차를 세는 것이 이 분리의 값어치다.</b> 표시값 하나 고치자고 스냅샷을 다시 지으면 보존
  * 창(최근 3장)이 그만큼 빨리 밀려 정상 스크롤이 만료된다. 반대 방향도 함께 못 박는다 — 동네를
  * 옮기는 수정은 배열이 달라지므로 <b>반드시</b> 회차를 써야 한다.
  */
@@ -96,7 +96,7 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
         adminPlaceService.updatePlace(placeId, request("수정후이름", townId, LATITUDE));
 
         assertThat(snapshotBox.current().version())
-                .as("표시값만 바뀌었으므로 사진은 그대로다").isEqualTo(versionBefore);
+                .as("표시값만 바뀌었으므로 스냅샷은 그대로다").isEqualTo(versionBefore);
         assertThat(previewOf(previews(townId), placeId).placeName()).isEqualTo("수정후이름");
     }
 

@@ -205,7 +205,7 @@ class PlaceServiceSnapshotSourceTest {
      */
     @Test
     @DisplayName("커서 없는 요청은 최신 회차의 스냅샷을 잡는다")
-    void picksCurrentPhotoWithoutCursor() {
+    void picksCurrentSnapshotWithoutCursor() {
         given(snapshotBox.current()).willReturn(snapshot(CURRENT_VERSION, entry(1L)));
         givenView(1L, "장소A");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
@@ -243,7 +243,7 @@ class PlaceServiceSnapshotSourceTest {
      */
     @Test
     @DisplayName("커서가 있으면 그 회차의 스냅샷에서 이어 서빙한다")
-    void continuesFromCursorPhoto() {
+    void continuesFromCursorSnapshot() {
         given(snapshotBox.byVersion(OLD_VERSION))
                 .willReturn(snapshot(OLD_VERSION, entry(1L), entry(2L)));
         givenView(1L, "옛회차A");

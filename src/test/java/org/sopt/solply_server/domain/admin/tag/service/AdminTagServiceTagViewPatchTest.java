@@ -71,12 +71,12 @@ class AdminTagServiceTagViewPatchTest {
 
     /**
      * <b>타입 변경은 거부한다.</b> MAIN↔OPTION이 갈리면 그 태그를 대표로 쓰던 장소의
-     * {@code mainTagId}가 낡는데, 그 값은 표시 맵이 아니라 사진과 함께 지어진다 — 맵만 고치면
-     * 다음 전량 재빌드(≤10분)까지 대표 태그가 틀린 채 아무 오류도 나지 않는다. 막아 두면 사진을
-     * 다시 찍을 이유 자체가 없어져, 태그 쓰기에는 전량 재빌드 경로가 남지 않는다.
+     * {@code mainTagId}가 낡는데, 그 값은 표시 맵이 아니라 스냅샷과 함께 지어진다 — 맵만 고치면
+     * 다음 전량 재빌드(≤10분)까지 대표 태그가 틀린 채 아무 오류도 나지 않는다. 막아 두면 스냅샷을
+     * 다시 지을 이유 자체가 없어져, 태그 쓰기에는 전량 재빌드 경로가 남지 않는다.
      */
     @Test
-    void 태그_타입을_바꾸려_하면_거부하고_사진도_다시_찍지_않는다() {
+    void 태그_타입을_바꾸려_하면_거부하고_스냅샷도_다시_짓지_않는다() {
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag("이름", true));
         AdminTagUpsertRequest typeChanged = new AdminTagUpsertRequest(
                 TagType.OPTION1, null, "이름", true, null, TagUsage.PLACE);
