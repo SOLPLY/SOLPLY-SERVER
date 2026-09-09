@@ -103,7 +103,7 @@ class PlaceServiceSnapshotSourceTest {
         return new PlaceListEntry(
                 placeId, TOWN_ID, 0L,
                 placeId, 1_767_225_600L + placeId,
-                3, 2, 450,
+                3L, 2L, 450,
                 37.5, 127.0);
     }
 

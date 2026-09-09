@@ -411,8 +411,8 @@ public class PlaceListSnapshotLoader {
                 ((Number) row[2]).longValue(),
                 ((Number) row[3]).doubleValue(),
                 toLocalDateTime(row[4]).toEpochSecond(ZoneOffset.UTC),
-                ((Number) row[5]).intValue(),
-                ((Number) row[6]).intValue(),
+                ((Number) row[5]).longValue(),
+                ((Number) row[6]).longValue(),
                 ratingToInt,
                 toNullableDouble(row[8]),
                 toNullableDouble(row[9]));

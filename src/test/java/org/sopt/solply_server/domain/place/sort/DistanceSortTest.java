@@ -6,9 +6,8 @@ import static org.assertj.core.api.Assertions.within;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
-import org.sopt.solply_server.domain.place.sort.DistanceSort.Candidates;
+import org.sopt.solply_server.domain.place.sort.DistanceSort.Candidate;
 import org.sopt.solply_server.domain.place.sort.DistanceSort.Ranked;
 
 class DistanceSortTest {
@@ -17,35 +16,12 @@ class DistanceSortTest {
     private static final double REF_LAT = 0.0;
     private static final double REF_LNG = 0.0;
 
-    /** 한 행의 원본 값. 열 배열을 만들기 전 단계라 테스트가 읽기 쉬운 모양으로만 든다. */
-    private record Row(long placeId, double latitude, double longitude) {}
-
-    private static Row at(long placeId, double lat, double lng) {
-        return new Row(placeId, lat, lng);
+    private static Candidate at(long placeId, double lat, double lng) {
+        return new Candidate(placeId, lat, lng);
     }
 
-    /** 행 전부를 후보로 삼는다 — 자리 번호는 행 번호와 같다 */
-    private static Candidates columns(List<Row> rows) {
-        return subset(rows, IntStream.range(0, rows.size()).toArray());
-    }
-
-    /** 열은 rows 전량으로 만들고, 후보는 slots가 가리키는 행만 그 순서대로 */
-    private static Candidates subset(List<Row> rows, int... slots) {
-        int n = rows.size();
-        long[] placeId = new long[n];
-        double[] latitude = new double[n];
-        double[] longitude = new double[n];
-        for (int i = 0; i < n; i++) {
-            Row row = rows.get(i);
-            placeId[i] = row.placeId();
-            latitude[i] = row.latitude();
-            longitude[i] = row.longitude();
-        }
-        return new Candidates(slots, placeId, latitude, longitude);
-    }
-
-    private static List<Ranked> topK(List<Row> rows, int limit) {
-        return DistanceSort.topK(columns(rows), REF_LAT, REF_LNG, null, null, limit);
+    private static List<Ranked> topK(List<Candidate> candidates, int limit) {
+        return DistanceSort.topK(candidates, REF_LAT, REF_LNG, null, null, limit);
     }
 
     private static List<Long> idsOf(List<Ranked> ranked) {
@@ -53,14 +29,14 @@ class DistanceSortTest {
     }
 
     /** 빈 페이지가 나올 때까지 커서로 끝까지 훑는다. 페이지 경계에서 새는 것이 있으면 여기서 드러난다. */
-    private static List<Ranked> allPages(List<Row> rows, int pageSize) {
+    private static List<Ranked> allPages(List<Candidate> candidates, int pageSize) {
         List<Ranked> collected = new ArrayList<>();
         Double cursorDistance = null;
         Long cursorPlaceId = null;
 
         while (true) {
             List<Ranked> page = DistanceSort.topK(
-                    columns(rows), REF_LAT, REF_LNG, cursorDistance, cursorPlaceId, pageSize);
+                    candidates, REF_LAT, REF_LNG, cursorDistance, cursorPlaceId, pageSize);
             if (page.isEmpty()) {
                 return collected;
             }
@@ -71,27 +47,6 @@ class DistanceSortTest {
         }
     }
 
-    // === 후보의 모양 ===
-
-    /**
-     * 후보는 열 한 벌과 그 위의 자리 목록이다 — 자리는 열의 부분집합이고 순서도 열과 무관하다.
-     * 매겨진 순위가 자리 번호를 그대로 실어야 호출자가 나머지 열을 그 번호로 읽을 수 있다.
-     */
-    @Test
-    void slots는_열의_행_번호다() {
-        List<Row> rows = List.of(
-                at(10L, 0.04, 0.0),
-                at(20L, 0.02, 0.0),
-                at(30L, 0.03, 0.0),
-                at(40L, 0.01, 0.0));
-
-        List<Ranked> ranked = DistanceSort.topK(
-                subset(rows, 3, 1), REF_LAT, REF_LNG, null, null, 10);
-
-        assertThat(ranked).extracting(Ranked::slot).containsExactly(3, 1);
-        assertThat(idsOf(ranked)).containsExactly(40L, 20L);
-    }
-
     // === 정렬 순서 ===
 
     /**
@@ -100,7 +55,7 @@ class DistanceSortTest {
      */
     @Test
     void 가까운_순서로_정렬된다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(3L, 0.03, 0.0),
                 at(1L, 0.01, 0.0),
                 at(4L, 0.04, 0.0),
@@ -111,7 +66,7 @@ class DistanceSortTest {
 
     @Test
     void 거리가_먼_후보는_limit_밖으로_밀려난다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(3L, 0.03, 0.0),
                 at(1L, 0.01, 0.0),
                 at(4L, 0.04, 0.0),
@@ -141,8 +96,7 @@ class DistanceSortTest {
         double cityHallLng = 126.9779;
 
         List<Ranked> ranked = DistanceSort.topK(
-                columns(List.of(at(1L, 37.4979, 127.0276))),
-                cityHallLat, cityHallLng, null, null, 1);
+                List.of(at(1L, 37.4979, 127.0276)), cityHallLat, cityHallLng, null, null, 1);
 
         assertThat(ranked.get(0).distanceMeters()).isCloseTo(8778.0, within(50.0));
     }
@@ -155,7 +109,7 @@ class DistanceSortTest {
      */
     @Test
     void 거리가_같으면_placeId_오름차순이다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(30L, 0.01, 0.0),
                 at(10L, 0.01, 0.0),
                 at(20L, 0.01, 0.0));
@@ -165,7 +119,7 @@ class DistanceSortTest {
 
     @Test
     void 거리가_같은_후보들_사이에서도_limit이_placeId_순으로_잘린다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(30L, 0.01, 0.0),
                 at(10L, 0.01, 0.0),
                 at(20L, 0.01, 0.0));
@@ -187,7 +141,7 @@ class DistanceSortTest {
 
     @Test
     void 커서가_없으면_처음부터_준다() {
-        List<Row> candidates = List.of(at(1L, 0.01, 0.0), at(2L, 0.02, 0.0));
+        List<Candidate> candidates = List.of(at(1L, 0.01, 0.0), at(2L, 0.02, 0.0));
 
         assertThat(idsOf(topK(candidates, 2))).containsExactly(1L, 2L);
     }
@@ -198,7 +152,7 @@ class DistanceSortTest {
      */
     @Test
     void 커서로_이어받으면_중복도_누락도_없다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(5L, 0.05, 0.0),
                 at(1L, 0.01, 0.0),
                 at(3L, 0.03, 0.0),
@@ -215,7 +169,7 @@ class DistanceSortTest {
      */
     @Test
     void 거리가_모두_같아도_커서로_중복_없이_이어진다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(50L, 0.01, 0.0),
                 at(10L, 0.01, 0.0),
                 at(40L, 0.01, 0.0),
@@ -228,26 +182,25 @@ class DistanceSortTest {
     /** 거리가 같을 때 커서와 placeId가 같은 항목(경계 자신)은 다시 나오면 안 된다. */
     @Test
     void 거리가_같으면_커서_placeId_이하는_제외한다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(10L, 0.01, 0.0),
                 at(20L, 0.01, 0.0),
                 at(30L, 0.01, 0.0));
         double sameDistance = topK(candidates, 1).get(0).distanceMeters();
 
         List<Ranked> next = DistanceSort.topK(
-                columns(candidates), REF_LAT, REF_LNG, sameDistance, 20L, 10);
+                candidates, REF_LAT, REF_LNG, sameDistance, 20L, 10);
 
         assertThat(idsOf(next)).containsExactly(30L);
     }
 
     @Test
     void 커서가_마지막_항목이면_빈_리스트다() {
-        List<Row> candidates = List.of(at(1L, 0.01, 0.0), at(2L, 0.02, 0.0));
+        List<Candidate> candidates = List.of(at(1L, 0.01, 0.0), at(2L, 0.02, 0.0));
         Ranked last = topK(candidates, 2).get(1);
 
         List<Ranked> next = DistanceSort.topK(
-                columns(candidates), REF_LAT, REF_LNG,
-                last.distanceMeters(), last.placeId(), 10);
+                candidates, REF_LAT, REF_LNG, last.distanceMeters(), last.placeId(), 10);
 
         assertThat(next).isEmpty();
     }
@@ -255,7 +208,7 @@ class DistanceSortTest {
     /** 반쪽 커서는 "커서 없음"이 아니라 호출부의 버그다. 조용히 넘기면 첫 페이지가 반복된다. */
     @Test
     void 커서가_반쪽만_있으면_예외를_던진다() {
-        Candidates candidates = columns(List.of(at(1L, 0.01, 0.0)));
+        List<Candidate> candidates = List.of(at(1L, 0.01, 0.0));
 
         assertThatThrownBy(() -> DistanceSort.topK(
                 candidates, REF_LAT, REF_LNG, 100.0, null, 10))
@@ -269,7 +222,7 @@ class DistanceSortTest {
     @Test
     void 반쪽_커서는_limit이_0이어도_예외를_던진다() {
         assertThatThrownBy(() -> DistanceSort.topK(
-                columns(List.of()), REF_LAT, REF_LNG, 100.0, null, 0))
+                List.of(), REF_LAT, REF_LNG, 100.0, null, 0))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -287,7 +240,7 @@ class DistanceSortTest {
 
     @Test
     void limit이_1이면_가장_가까운_하나만_준다() {
-        List<Row> candidates = List.of(
+        List<Candidate> candidates = List.of(
                 at(3L, 0.03, 0.0),
                 at(1L, 0.01, 0.0),
                 at(2L, 0.02, 0.0));
@@ -297,7 +250,7 @@ class DistanceSortTest {
 
     @Test
     void limit이_후보_수보다_크면_전부_준다() {
-        List<Row> candidates = List.of(at(2L, 0.02, 0.0), at(1L, 0.01, 0.0));
+        List<Candidate> candidates = List.of(at(2L, 0.02, 0.0), at(1L, 0.01, 0.0));
 
         assertThat(idsOf(topK(candidates, 100))).containsExactly(1L, 2L);
     }
@@ -309,7 +262,6 @@ class DistanceSortTest {
 
     @Test
     void 커서가_있어도_후보가_비면_빈_리스트다() {
-        assertThat(DistanceSort.topK(
-                columns(List.of()), REF_LAT, REF_LNG, 100.0, 1L, 10)).isEmpty();
+        assertThat(DistanceSort.topK(List.of(), REF_LAT, REF_LNG, 100.0, 1L, 10)).isEmpty();
     }
 }

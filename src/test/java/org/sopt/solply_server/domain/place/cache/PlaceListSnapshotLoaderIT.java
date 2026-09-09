@@ -6,7 +6,6 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -186,7 +185,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         assertThat(tagViewHolder.get(viewOf(placeInactiveTag).mainTagId()).active()).isFalse();
         // MAIN이 아닌 태그만 가진 장소가 사진에서 사라지면 안 된다
         // (태그 조건을 파생 테이블이 아니라 바깥 WHERE로 올리면 여기가 깨진다)
-        assertThat(slotOf(placeOptionTagOnly)).isNotEqualTo(-1);
+        assertThat(entryOf(placeOptionTagOnly)).isNotNull();
     }
 
     /**
@@ -208,7 +207,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         assertThat(loader.readView(placeTwoMainTags))
                 .as("패치 경로도 같은 쪽을 뽑는다")
                 .contains(viewOf(placeTwoMainTags));
-        assertThat(slotCountOf(placeTwoMainTags)).as("행이 둘이어도 사진에는 하나다").isEqualTo(1);
+        assertThat(entryCountOf(placeTwoMainTags)).as("행이 둘이어도 엔트리는 하나다").isEqualTo(1);
     }
 
     /** 썸네일은 {@code display_order}가 가장 앞선 이미지다 — 삽입 순서가 아니다 */
@@ -268,7 +267,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeFull);
         loader.rebuild();
 
-        assertThat(slotOf(placeFull)).isNotEqualTo(-1);
+        assertThat(entryOf(placeFull)).isNotNull();
 
         // 이 클래스는 롤백하지 않아 회차마다 픽스처가 쌓인다 — 페이징을 걸면 대상이 페이지 밖으로
         // 밀려날 수 있으므로 size를 주지 않는다(= 전체 조회)
@@ -295,45 +294,39 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         long added = createPlace("엔트리신규", true);
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
-        assertThat(slotOf(added)).as("아직 이 회차의 사진에는 없다").isEqualTo(-1);
+        assertThat(entryOf(added)).as("아직 이 회차의 사진에는 없다").isNull();
 
         loader.rebuild();
 
-        assertThat(slotOf(added)).as("다음 회차부터 보인다").isNotEqualTo(-1);
+        assertThat(entryOf(added)).as("다음 회차부터 보인다").isNotNull();
     }
 
     // === helpers ===
 
-    /** 사진 한 행이 담는 표시 필드 넷 — 두 경로의 비교 단위다 */
+    /** 엔트리가 담는 표시 필드 넷 — 두 경로의 비교 단위다 */
     private record Display(String name, String imageUrl, String mainTagName, long townId) {}
 
     /**
-     * 최신 회차의 사진에서 이 장소의 <b>행 번호</b>를 찾는다. 인덱스에 id 조회구가 없는 것은
-     * 의도이므로 (조회 경로가 쓰지 않는다) 정렬 없는 축으로 전량을 훑어 고른다.
-     *
-     * @return 사진에 없으면 {@code -1}
+     * 최신 회차의 사진에서 이 장소의 엔트리를 찾는다. 인덱스에 id 조회구가 없는 것은 의도이므로
+     * (조회 경로가 쓰지 않는다) 정렬 없는 축으로 전량을 훑어 고른다.
      */
-    private int slotOf(long placeId) {
-        PlaceListIndex index = snapshot.current().index();
-        for (int slot : allSlots(index)) {
-            if (index.placeId(slot) == placeId) {
-                return slot;
-            }
-        }
-        return -1;
+    private PlaceListEntry entryOf(long placeId) {
+        return snapshot.current().index()
+                .page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
+                        null, Integer.MAX_VALUE - 1)
+                .stream()
+                .filter(entry -> entry.placeId() == placeId)
+                .findFirst().orElse(null);
     }
 
-    /** 같은 장소의 행이 몇 개인지 — MAIN 태그가 둘인 장소가 두 번 서면 안 된다 */
-    private long slotCountOf(long placeId) {
-        PlaceListIndex index = snapshot.current().index();
-        return Arrays.stream(allSlots(index))
-                .filter(slot -> index.placeId(slot) == placeId)
+    /** 같은 장소의 엔트리가 몇 개인지 — MAIN 태그가 둘인 장소가 두 번 서면 안 된다 */
+    private long entryCountOf(long placeId) {
+        return snapshot.current().index()
+                .page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
+                        null, Integer.MAX_VALUE - 1)
+                .stream()
+                .filter(entry -> entry.placeId() == placeId)
                 .count();
-    }
-
-    private int[] allSlots(PlaceListIndex index) {
-        return index.page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
-                null, Integer.MAX_VALUE - 1);
     }
 
     /** 표시값은 사진이 아니라 홀더에 있다 — 조회 경로가 조립하는 자리와 같은 곳에서 읽는다 */
@@ -354,7 +347,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private Display displayOf(long placeId) {
         PlaceView view = viewOf(placeId);
         return new Display(view.name(), view.imageUrl(), mainTagNameOf(placeId),
-                snapshot.current().index().townId(slotOf(placeId)));
+                entryOf(placeId).townId());
     }
 
     /**

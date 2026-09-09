@@ -2,7 +2,7 @@ package org.sopt.solply_server.domain.place.cache;
 
 /**
  * 목록 한 항목의 <b>표시값</b> — 정렬·필터에 쓰이지 않고 화면에만 나가는 값들이다.
- * 정렬용 값(회차 사진의 장소 표, {@link PlaceListIndex})과 갈라져 있고, 사는 곳도 회차 사진이 아니라
+ * 정렬용 값({@link PlaceListEntry})과 갈라져 있고, 사는 곳도 회차 사진이 아니라
  * {@link PlaceViewHolder}다.
  *
  * <ul>
