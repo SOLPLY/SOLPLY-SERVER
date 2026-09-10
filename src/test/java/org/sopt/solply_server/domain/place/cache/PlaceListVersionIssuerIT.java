@@ -11,9 +11,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,7 +34,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 회차 버전이 <b>DB 발급 테이블의 번호</b>라는 것을 실제 DB 위에서 못 박는다. 겨누는 것은 다섯이다 —
  * 번호가 단조인가, 읽기 전용 재빌드 트랜잭션 안에서도 발급이 되고 곧바로 커밋되는가, 스냅샷에 붙는
  * 번호가 정말 방금 발급된 그 번호인가, 발급이 실패했을 때 직전 회차가 통째로 남는가, 그리고
- * <b>실제 로더가 락으로 어드민 수정을 지키는가</b>.
+ * <b>실제 로더가 락으로 쓰기를 한 줄로 세우는가</b>.
+ *
+ * <p>뒤의 둘은 전량 재빌드와 <b>어드민 부분 패치</b> 양쪽에 걸린다. 부분 패치는 "지금 스냅샷을 집어
+ * → 손댄 자리를 얹어 → 새 스냅샷으로 공표"하는 읽고-고쳐-쓰기라, 락이 없으면 잃는 것이 표시값 한
+ * 칸이 아니라 그 사이에 끝난 <b>전량 회차 전체</b>다.
  *
  * <p><b>왜 IT인가.</b> 이 기능의 값이 전부 DB 쪽에 있다. AUTO_INCREMENT가 단조를 만들고,
  * {@code REQUIRES_NEW}가 읽기 전용 트랜잭션 안의 INSERT를 가능하게 하며, 그 트랜잭션이 즉시
@@ -182,6 +188,98 @@ class PlaceListVersionIssuerIT extends MySqlContainerSupport {
                 .as("장소 표시값도 직전 값 그대로다").isEqualTo(heldPlaceView);
         assertThat(tagViewHolder.get(tagId))
                 .as("태그 표시값도 직전 값 그대로다").isEqualTo(heldTagView);
+    }
+
+    /**
+     * <b>부분 패치도 같은 정책을 받는다 — 발급이 실패하면 스냅샷도 표시값도 직전 그대로다.</b>
+     * 여기가 무너지는 방향이 전량과 다르다: 부분 패치는 손댄 장소의 표시값을 홀더에 <em>넣는</em>
+     * 경로라, 발급보다 먼저 넣으면 스냅샷은 옛 회차인데 이름만 새것인 상태가 남는다. 그 어긋남은
+     * 아무 오류도 내지 않고 다음 전량 회차까지 간다.
+     *
+     * <p>정렬 배열이 실제로 달라져야 발급까지 가므로 태그 비트마스크를 함께 비튼다 — 표시값만
+     * 바뀐 수정은 애초에 발급을 부르지 않아 이 테스트가 아무것도 확인하지 못한다.
+     */
+    @Test
+    void 부분_패치의_발급이_실패하면_스냅샷도_표시값도_직전_그대로다() {
+        Snapshot heldSnapshot = snapshotBox.current();
+        PlaceView heldPlaceView = placeViewHolder.get(placeId);
+
+        jdbcTemplate.update("""
+                UPDATE place_stats SET tag_bitmask = tag_bitmask + 1, name = ?
+                WHERE place_id = ?""", PLACE_NAME + "_갈릴이름", placeId);
+        willThrow(new IllegalStateException("발급 실패")).given(issuer).issue();
+
+        assertThatThrownBy(() -> loader.patch(List.of(placeId)))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(snapshotBox.current()).as("스냅샷이 교체되지 않았다").isSameAs(heldSnapshot);
+        assertThat(placeViewHolder.get(placeId))
+                .as("표시값도 직전 값 그대로다 — 발급이 공표보다 앞이다").isEqualTo(heldPlaceView);
+    }
+
+    /**
+     * <b>부분 패치와 전량 재빌드가 겹치지 않는다 — 나중에 끝난 쪽의 값이 남는다.</b>
+     *
+     * <p>부분 패치는 스냅샷을 <em>집어서 고쳐 쓴다</em>. 락이 없으면 이 순서가 가능하다 — 패치가
+     * 스냅샷을 집고 DB를 읽는다 → 전량 재빌드가 통째로 새로 지어 공표한다 → 패치가 <b>집어 둔 옛
+     * 스냅샷</b> 위에 자기 수정만 얹어 더 큰 번호로 공표한다. 방금 끝난 전량 회차가 통째로 사라지고,
+     * 그 사이 배치가 채운 점수·카운트도 함께 되돌아간다.
+     *
+     * <p>그 창을 실제로 벌린다: 패치를 발급 지점에서 붙잡아 <b>읽기는 끝났고 공표는 아직인</b>
+     * 상태로 세운 뒤, 패치가 볼 수 없는 값을 DB에 하나 더 커밋하고 전량 재빌드를 들여보낸다.
+     * 락이 있으면 재빌드가 패치 뒤에 서므로 마지막에 남는 것은 재빌드가 읽은 값이고, 없으면
+     * 패치가 나중에 공표해 <em>더 낡은 값</em>이 남는다.
+     */
+    @Test
+    void 부분_패치가_도는_동안_들어온_전량_재빌드가_뒤에_선다() throws Exception {
+        String patchRead = PLACE_NAME + "_패치가읽은이름";
+        String rebuildRead = PLACE_NAME + "_재빌드가읽은이름";
+
+        // 어드민이 태그를 고치고 커밋한 모양 — 배열이 달라져야 패치가 발급까지 간다
+        jdbcTemplate.update("""
+                UPDATE place_stats SET tag_bitmask = tag_bitmask + 1, name = ?
+                WHERE place_id = ?""", patchRead, placeId);
+
+        CountDownLatch issuing = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        // 붙잡는 것은 패치의 발급 한 번뿐이다 — 뒤이은 재빌드의 발급까지 막으면 서로를 기다린다
+        AtomicBoolean firstIssue = new AtomicBoolean(true);
+        willAnswer(invocation -> {
+            if (firstIssue.compareAndSet(true, false)) {
+                issuing.countDown();
+                await(resume);
+            }
+            return invocation.callRealMethod();
+        }).given(issuer).issue();
+
+        FutureTask<Void> patchTask = new FutureTask<>(() -> {
+            loader.patch(List.of(placeId));
+            return null;
+        });
+        Thread patching = new Thread(patchTask, "발급IT-부분패치");
+        patching.start();
+        assertThat(issuing.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                .as("패치가 읽기를 끝내고 발급 앞에 섰다").isTrue();
+
+        // 패치가 읽은 뒤에 커밋된 값 — 전량 재빌드만 이것을 본다
+        jdbcTemplate.update(
+                "UPDATE place_stats SET name = ? WHERE place_id = ?", rebuildRead, placeId);
+        FutureTask<Integer> rebuildTask = new FutureTask<>(loader::rebuild);
+        Thread rebuilding = new Thread(rebuildTask, "발급IT-재빌드");
+        rebuilding.start();
+        // 재빌드가 락 앞에 실제로 줄을 섰는지 확인한 뒤에야 패치를 풀어 준다 —
+        // 그러지 않으면 순서가 우연히 맞아 락 없이도 통과하는 테스트가 된다
+        awaitBlocked(rebuilding);
+        assertThat(placeViewHolder.get(placeId).name())
+                .as("둘 다 아직 공표 전이라 홀더는 직전 회차 값이다").isEqualTo(PLACE_NAME);
+
+        resume.countDown();
+        patchTask.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        rebuildTask.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(placeViewHolder.get(placeId).name())
+                .as("나중에 끝난 전량 재빌드의 값이 남는다 — 패치가 옛 스냅샷으로 덮지 않았다")
+                .isEqualTo(rebuildRead);
     }
 
     /**

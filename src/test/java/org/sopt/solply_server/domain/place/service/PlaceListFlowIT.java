@@ -527,26 +527,33 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>스크롤 도중 스냅샷이 교체돼도 남은 페이지는 시작한 회차에서 이어진다 (커서 v6).</b>
+     * <b>스크롤 도중 스냅샷이 교체되면 그 커서는 명시 만료다 (커서 v6).</b>
      *
      * <p>여기는 하루 전까지 <b>수용한 중복</b>을 값으로 남기던 자리다. 커서가 좌표만 싣던 시절에는
      * 회차가 바뀌면 2페이지가 <em>새</em> 좌표계에서 재개돼, 점수가 미세하게 내려앉은 placeA가
      * 1페이지에 이어 또 나왔다(≈1.609434 → ≈1.609412). 새벽 배치라 마주칠 확률이 희박하다는 것이
      * 그때의 근거였는데, 스냅샷을 10분마다 다시 찍는 지금은 그 창이 <b>상시</b>가 되어 수용할 수 없다.
-     * 그래서 커서가 자기 회차를 싣고 다니고 서버는 그 회차의 스냅샷으로만 이어 서빙한다.
+     * 그래서 커서가 자기 회차를 싣고 다니고, 서버는 지금 잡은 스냅샷이 <b>그 회차인지</b>만 본다.
      *
-     * <p><b>중복도 누락도 없다</b>는 것이 그 장치의 결과다 — 2페이지는 옛 회차의 순서를 그대로
-     * 잇는다. 대신 옛 회차를 보므로 방금 돈 배치의 결과는 그 스크롤 세션에 반영되지 않는데,
-     * 그것이 이 설계가 고른 쪽이다(조용한 중복보다 한 세션의 일관성).
+     * <p><b>답은 "옛 회차로 이어 서빙"이 아니라 "끊기"다.</b> 홀더가 최신 한 장만 들기 때문이고,
+     * 그것은 <b>어드민 변경을 곧바로 보여주되 옛 회차로 스크롤을 이어 주지는 않는다</b>는 정책
+     * 그대로다({@code SnapshotBox} 계약 4). 중복·누락을 막는 방식이 "옛 좌표계 유지"에서
+     * "명시 만료"로 바뀐 것이지, 조용한 오답을 허용한 것이 아니다.
      *
      * <p>placeB에 북마크를 몰아 넣는 것은 2회차 순위를 실제로 흔들기 위해서다 — 두 회차가 똑같으면
-     * "회차가 갈렸다"는 전제 자체가 성립하지 않아 이 테스트가 아무것도 보지 않는다.
+     * 만료가 났는지 우연히 같은 답을 냈는지 구분되지 않는다.
      * (그래도 placeB가 1위가 되지는 않는다. 1점 리뷰 5건의 페널티가 −2.0으로 붙어 있다.)
+     *
+     * <p>마지막 단언이 <b>복구 경로</b>다. 커서 없는 재요청은 새 회차의 순서를 그대로 줘야 한다 —
+     * 만료가 스크롤을 끊는 것이지 목록을 막는 것이 아니라는 것, 그리고 새 스냅샷이 죽어 있지
+     * 않다는 것을 함께 본다.
      */
     @Test
-    void 스크롤_도중_회차가_바뀌어도_커서는_시작한_회차에서_이어진다() {
+    void 스크롤_도중_회차가_바뀌면_커서는_만료로_끊긴다() {
         PlaceFilterGetResponse page1 = placeService.getPlaces(me, popularRequest(null, 2));
         assertThat(ids(page1)).containsExactly(placeC, placeA);
+        String cursor = page1.nextCursor();
+        assertThat(cursor).isNotNull();
 
         // 스크롤 도중 회차 1번 — placeB에 북마크 20건을 몰아 순위를 실제로 흔든다
         for (int i = 0; i < 20; i++) {
@@ -555,44 +562,14 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         runBothBatches(CALCULATED_AT.plusHours(1));
         takeSnapshot();
 
-        PlaceFilterGetResponse page2 =
-                placeService.getPlaces(me, popularRequest(page1.nextCursor(), 2));
-
-        // 옛 회차에서 이어진다 — placeA가 다시 나오지 않는다
-        assertThat(ids(page2)).containsExactly(placeB);
-        assertThat(ids(page1)).doesNotContainAnyElementsOf(ids(page2));
-        // 커서 없는 재요청은 새 회차의 순서를 그대로 준다 — 새 스냅샷이 죽어 있는 것이 아니다
-        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 3))))
-                .containsExactly(placeC, placeA, placeB);
-    }
-
-    /**
-     * <b>보존(최근 3장) 밖으로 밀린 회차의 커서는 명시 만료다.</b>
-     *
-     * <p>그때 최신 회차로 조용히 갈아타면 커서 좌표가 다른 좌표계에서 해석돼 항목이 흘리거나
-     * 겹친다 — 위 테스트가 막은 그 상태다. 오류로 끊어야 클라이언트가 처음부터 다시 조회한다.
-     *
-     * <p>회차 간격이 10분이므로 이 만료가 실제로 나려면 <b>한 스크롤 세션이 20~30분</b>을 넘어야
-     * 한다({@code SnapshotBox} 계약 4). 여기서는 그 시간을 회차 세 번으로 대신한다.
-     */
-    @Test
-    void 보존_밖으로_밀린_회차의_커서는_만료로_끊긴다() {
-        String cursor = placeService.getPlaces(me, popularRequest(null, 2)).nextCursor();
-        assertThat(cursor).isNotNull();
-
-        // 최신 + 직전 2장이 보존이라, 세 번 더 찍으면 이 커서의 회차가 목록에서 밀려난다
-        takeSnapshot();
-        takeSnapshot();
-        takeSnapshot();
-
         assertThatThrownBy(() -> placeService.getPlaces(me, popularRequest(cursor, 2)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
 
-        // 커서 없는 재요청은 정상이다 — 클라이언트의 복구 경로가 막히지 않았다
-        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 2))))
-                .containsExactly(placeC, placeA);
+        // 커서 없는 재요청은 새 회차의 순서를 그대로 준다 — 클라이언트의 복구 경로가 막히지 않았다
+        assertThat(ids(placeService.getPlaces(me, popularRequest(null, 3))))
+                .containsExactly(placeC, placeA, placeB);
     }
 
     /**

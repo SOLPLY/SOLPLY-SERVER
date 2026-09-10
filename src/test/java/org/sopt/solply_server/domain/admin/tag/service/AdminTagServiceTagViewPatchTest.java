@@ -2,6 +2,8 @@ package org.sopt.solply_server.domain.admin.tag.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -72,11 +74,11 @@ class AdminTagServiceTagViewPatchTest {
     /**
      * <b>타입 변경은 거부한다.</b> MAIN↔OPTION이 갈리면 그 태그를 대표로 쓰던 장소의
      * {@code mainTagId}가 낡는데, 그 값은 표시 맵이 아니라 스냅샷과 함께 지어진다 — 맵만 고치면
-     * 다음 전량 재빌드(≤10분)까지 대표 태그가 틀린 채 아무 오류도 나지 않는다. 막아 두면 스냅샷을
-     * 다시 지을 이유 자체가 없어져, 태그 쓰기에는 전량 재빌드 경로가 남지 않는다.
+     * 다음 전량 재빌드(≤10분)까지 대표 태그가 틀린 채 아무 오류도 나지 않는다. 막아 두면 장소
+     * 스냅샷을 건드릴 이유 자체가 없어져, 태그 쓰기에는 장소 갱신 경로가 남지 않는다.
      */
     @Test
-    void 태그_타입을_바꾸려_하면_거부하고_스냅샷도_다시_짓지_않는다() {
+    void 태그_타입을_바꾸려_하면_거부하고_장소_스냅샷도_건드리지_않는다() {
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag("이름", true));
         AdminTagUpsertRequest typeChanged = new AdminTagUpsertRequest(
                 TagType.OPTION1, null, "이름", true, null, TagUsage.PLACE);
@@ -86,17 +88,21 @@ class AdminTagServiceTagViewPatchTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.TAG_TYPE_IMMUTABLE);
 
-        verify(snapshotRefresher, never()).refreshAfterCommit();
+        assertNoPlaceSnapshotWork();
     }
 
-    /** 표시값만 바뀐 수정에 전량이 돌면 안 된다 — 분리한 값이 사라진다 */
+    /**
+     * <b>태그 수정은 장소 갱신을 하나도 부르지 않는다.</b> 태그 맵이 회차 스냅샷 밖에 살기에
+     * 성립하는 분리이고, 여기가 새면 태그 이름 하나 고칠 때마다 장소 경로가 함께 도는 비용이
+     * 돌아온다 — 그것이 이 분리로 없앤 값이다.
+     */
     @Test
-    void 태그를_수정해도_전량_재빌드를_걸지_않는다() {
+    void 태그를_수정해도_장소_갱신은_부르지_않는다() {
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag("옛이름", true));
 
         adminTagService.updateTag(TAG_ID, upsertRequest("새이름", true));
 
-        verify(snapshotRefresher, never()).refreshAfterCommit();
+        assertNoPlaceSnapshotWork();
     }
 
     /**
@@ -133,6 +139,16 @@ class AdminTagServiceTagViewPatchTest {
     }
 
     // === helpers ===
+
+    /**
+     * 태그 쓰기가 장소 쪽 문을 하나도 두드리지 않았다는 것 — 장소 갱신 진입점이 둘이라
+     * ({@code refreshPlacesAfterCommit} · {@code patchPlaceViewAfterCommit}) 하나만 보면 나머지
+     * 하나로 새는 변이를 놓친다.
+     */
+    private void assertNoPlaceSnapshotWork() {
+        verify(snapshotRefresher, never()).refreshPlacesAfterCommit(anyCollection());
+        verify(snapshotRefresher, never()).patchPlaceViewAfterCommit(anyLong());
+    }
 
     private static AdminTagUpsertRequest upsertRequest(String name, boolean active) {
         return new AdminTagUpsertRequest(TagType.MAIN, null, name, active, null, TagUsage.PLACE);

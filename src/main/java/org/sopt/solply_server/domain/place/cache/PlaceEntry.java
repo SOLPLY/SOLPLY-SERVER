@@ -53,4 +53,24 @@ public record PlaceEntry(
     public boolean hasCoordinates() {
         return latitude != null && longitude != null;
     }
+
+    /**
+     * 어드민 수정 한 건을 입힌 엔트리 — <b>최신 행에서 가져오는 것은 동네·태그 비트마스크·좌표뿐이고,
+     * 정렬 키 다섯(점수·생성일·북마크 수·리뷰 수·평점)은 이 회차 값을 그대로 지킨다.</b>
+     *
+     * <p>정렬 키는 회차 주기의 전량 재빌드로만 공표되는 값이다. 어드민이 태그 하나를 고치는 사이에도
+     * DB의 점수·카운트는 계속 흐르는데, 그 최신값을 여기서 끌어오면 <b>손댄 장소만</b> 새 값으로,
+     * 나머지 전량은 옛 값으로 서게 되어 한 회차의 순서가 장소마다 다른 기준으로 갈린다. 지금 값을
+     * 지키면 그 회차의 순서는 끝까지 한 벌이고, 다음 재빌드에서 전량이 함께 새 값으로 옮겨 간다.
+     *
+     * <p>그 덕에 {@code SortedPlaces#patch}의 같은 동네 수정이 <b>정렬 없이</b> 끝난다 — 순서를
+     * 정하는 값이 하나도 안 바뀌었으니 새 엔트리의 자리가 옛 엔트리의 자리와 같다.
+     */
+    public PlaceEntry patchedBy(PlaceEntry latest) {
+        return new PlaceEntry(
+                placeId, latest.townId(), latest.tagBitmask(),
+                popularScore, createdAtEpochSecond,
+                bookmarkCount, reviewCount, ratingToInt,
+                latest.latitude(), latest.longitude());
+    }
 }

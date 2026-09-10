@@ -12,17 +12,25 @@ import org.springframework.stereotype.Component;
  * 스크롤도 이름·썸네일·대표 태그는 지금 값을 본다 — 이름 하나 고치자고 전량을 다시 짓지 않기
  * 위해 받아들인 계약이다.
  *
+ * <p><b>맵을 고치는 경로는 둘이다.</b> 전량 재빌드가 참조를 통째로 갈고
+ * ({@link SnapshotLoader#rebuild()}), 어드민 쓰기가 손댄 장소의 항목만 갈아 끼운다
+ * ({@link SnapshotLoader#patch}·{@link SnapshotRefresher#patchPlaceViewAfterCommit}). <b>지우는
+ * 경로는 없다</b> — 삭제된 장소의 표시값은 그대로 남고, 실제로 사라지는 것은 다음 전량 재빌드가
+ * 맵을 통째로 갈 때다. 새 정렬 배열에 그 장소가 없으니 새 요청은 닿지 않고, 옛 회차를 들고 있는
+ * 진행 중 요청만 그 값을 본다.
+ *
  * <p><b>조회는 락을 잡지 않는다.</b> {@link #get}은 {@code volatile} 참조 한 번과
  * {@code ConcurrentHashMap} 읽기 한 번이 전부다. 반대로 쓰기({@link #replaceAll}·{@link #put})는
  * {@link CacheWriteLock} 안에서만 불러야 한다 — 그 이유는 그쪽 javadoc.
  *
- * <p><b>{@code get}이 {@code null}일 수 있다.</b> 옛 스냅샷에만 남아 있고 그 사이 삭제된 장소가
- * 그렇다. 조회 경로는 그 행을 건너뛴다({@code PlaceService#listPlaces}).
+ * <p><b>{@code get}이 {@code null}일 수 있다.</b> 전량 재빌드가 맵을 갈아 치운 뒤에도 옛 스냅샷을
+ * 들고 있는 요청이 그 사이 삭제된 장소를 만나는 경우다. 조회 경로는 그 행을 건너뛴다
+ * ({@code PlaceService#listPlaces}).
  */
 @Component
 public class PlaceViewHolder {
 
-    /** 재빌드는 이 참조를 통째로 갈고, 패치는 가리키는 맵의 한 항목만 고친다 */
+    /** 전량 재빌드는 이 참조를 통째로 갈고, 어드민 패치는 가리키는 맵의 항목만 고친다 */
     private volatile ConcurrentMap<Long, PlaceView> views = new ConcurrentHashMap<>();
 
     /** 없으면 {@code null} — 호출자가 "그 사이 사라진 장소"로 번역한다 */
@@ -52,7 +60,7 @@ public class PlaceViewHolder {
         this.views = fresh;
     }
 
-    /** 어드민 수정 한 건 — 그 장소만 갈아 끼운다 */
+    /** 어드민이 손댄 장소 하나 — 그 항목만 갈아 끼운다 */
     void put(PlaceView view) {
         views.put(view.placeId(), view);
     }
