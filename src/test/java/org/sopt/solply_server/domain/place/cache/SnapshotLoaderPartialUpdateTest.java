@@ -428,6 +428,8 @@ class SnapshotLoaderPartialUpdateTest {
     private static Thread start(String name, Runnable body, AtomicReference<Throwable> failure) {
         Thread thread = new Thread(body, name);
         thread.setUncaughtExceptionHandler((ignored, thrown) -> failure.set(thrown));
+        // join이 타임아웃으로 빠져나와도 테스트 JVM이 이 스레드에 붙잡히지 않도록 daemon으로 둔다
+        thread.setDaemon(true);
         thread.start();
         return thread;
     }

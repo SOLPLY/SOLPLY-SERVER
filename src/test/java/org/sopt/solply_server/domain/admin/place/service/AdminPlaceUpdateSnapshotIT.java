@@ -336,7 +336,12 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
                 "SELECT id FROM users WHERE nickname = ?", Long.class, nickname);
     }
 
-    /** {@code PlaceListSnapshotLoaderIT}과 같은 이유·같은 방식의 뒷정리 */
+    /**
+     * {@code PlaceListSnapshotLoaderIT}과 같은 이유의 뒷정리.
+     * <p>
+     * place_stats만 그쪽과 다르다 — 이 클래스의 픽스처 장소로 범위를 좁힌다.
+     * 같은 컨테이너를 쓰는 다른 IT가 커밋해 둔 칸까지 지우지 않기 위해서다.
+     */
     @AfterAll
     static void cleanUpCommittedFixtures() throws Exception {
         String myTowns = "SELECT id FROM towns WHERE name LIKE '" + TOWN_NAME_PREFIX + "%'";
@@ -344,7 +349,7 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
         try (Connection con = DriverManager.getConnection(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
                 Statement st = con.createStatement()) {
-            st.executeUpdate("DELETE FROM place_stats");
+            st.executeUpdate("DELETE FROM place_stats WHERE place_id IN (" + myPlaces + ")");
             st.executeUpdate("DELETE FROM place_tag WHERE place_id IN (" + myPlaces + ")");
             st.executeUpdate("DELETE FROM courses WHERE town_id IN (" + myTowns + ")");
             st.executeUpdate("DELETE FROM places WHERE town_id IN (" + myTowns + ")");
