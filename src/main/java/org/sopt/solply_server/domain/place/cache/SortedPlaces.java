@@ -5,9 +5,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Set;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.util.PlaceListCursor;
 import org.sopt.solply_server.domain.place.util.TagMasks;
@@ -53,6 +55,13 @@ public final class SortedPlaces {
      */
     private static final PlaceSortType DISTANCE_SOURCE = PlaceSortType.LATEST;
 
+    /**
+     * <b>순서는 필요 없고 원소만 필요할 때</b> 훑는 축 — {@link #patch}가 손댄 장소의 현재 엔트리를
+     * 찾고 손댄 동네의 원소를 다시 모을 때 쓴다. 어느 축을 골라도 같다는 근거는
+     * {@link #DISTANCE_SOURCE}와 같은 <b>전 원소 불변식</b>이며, 쓰임이 다르니 이름을 따로 둔다.
+     */
+    private static final PlaceSortType MEMBERSHIP_SOURCE = PlaceSortType.LATEST;
+
     /** (정적 정렬, 동네) → 그 축으로 사전 정렬된 배열 */
     private final Map<PlaceSortType, Map<Long, PlaceEntry[]>> orders;
 
@@ -93,6 +102,79 @@ public final class SortedPlaces {
             orders.put(axis.sortType, perTown);
         }
         return new SortedPlaces(orders, entries.size(), grouped.size(), arrayCount);
+    }
+
+    /**
+     * 어드민 수정 한 묶음을 반영한 <b>새 스냅샷</b>. 원본은 한 글자도 건드리지 않고, 손댄 동네의
+     * 배열만 새로 세운 뒤 나머지 동네는 배열 객체를 그대로 물려준다 — 태그 하나 고치자고 전량
+     * (6,320개 × 정렬 다섯)을 다시 정렬하지 않는 것이 이 메서드의 전부다.
+     *
+     * <p><b>정렬 키 다섯은 손대지 않는다.</b> 이미 있던 장소는 언제나 이 스냅샷이 든 점수·생성일·
+     * 북마크 수·리뷰 수·평점을 지키고, 최신 행에서 가져오는 것은 동네·태그 비트마스크·좌표뿐이다
+     * (근거는 {@link PlaceEntry#patchedBy}). 신규 장소만 지킬 옛 값이 없으니 DB 정렬 키를 그대로
+     * 쓴다.
+     *
+     * <p>그 계약이 갈림길을 만든다. <b>같은 동네의 태그·좌표 수정은 정렬하지 않는다</b> — 순서를
+     * 정하는 값이 그대로라 자리도 그대로이므로, 배열을 한 벌 복사해 그 자리의 참조만 바꾼다.
+     * <b>생성·삭제·동네 이동만</b> 그 동네의 원소 집합을 갈아서 다섯 배열을 다시 세운다. 어느 쪽이든
+     * 손대지 않은 동네의 배열은 원본과 <b>같은 객체</b>다.
+     *
+     * <p>손댄 id는 동네별로 한데 모아 처리한다 — 같은 동네에 여러 건이 와도 그 동네를 한 번만
+     * 복사한다.
+     *
+     * @param changedPlaceIds 이번에 손댄 장소 id 전량. 이 중 {@code latestEntries}에 없는 id는
+     *                        <b>삭제</b>다(soft delete·비공개 전환 모두 여기로 온다)
+     * @param latestEntries   그 id들의 최신 행. 여기 실린 정렬 키는 신규 장소에만 쓰인다
+     * @return 반영된 새 스냅샷. 정렬 배열이 볼 값이 하나도 안 바뀌었으면 <b>{@code this} 그대로</b> —
+     *         이름·썸네일 같은 표시값만 갈린 수정(홀더가 맡는 몫)이 스냅샷 복사를 부르지 않는 자리다
+     */
+    public SortedPlaces patch(Collection<Long> changedPlaceIds,
+            Collection<PlaceEntry> latestEntries) {
+        if (changedPlaceIds.isEmpty()) {
+            return this;
+        }
+        Map<Long, PlaceEntry> latestById = new HashMap<>(latestEntries.size() * 2);
+        for (PlaceEntry latest : latestEntries) {
+            latestById.put(latest.placeId(), latest);
+        }
+        Set<Long> ids = new HashSet<>(changedPlaceIds);
+        Map<Long, PlaceEntry> currentById = locate(ids);
+
+        Map<Long, TownPatch> byTown = new HashMap<>();
+        int created = 0;
+        int deleted = 0;
+        for (Long placeId : ids) {
+            PlaceEntry current = currentById.get(placeId);
+            PlaceEntry latest = latestById.get(placeId);
+
+            if (latest == null) {
+                if (current == null) {
+                    continue; // 스냅샷에도 최신 행에도 없다 — 지울 것이 없다
+                }
+                townPatch(byTown, current.townId()).remove(placeId);
+                deleted++;
+                continue;
+            }
+            if (current == null) {
+                townPatch(byTown, latest.townId()).add(latest); // 신규만 DB 정렬 키를 그대로 쓴다
+                created++;
+                continue;
+            }
+            PlaceEntry merged = current.patchedBy(latest);
+            if (merged.equals(current)) {
+                continue; // 정렬 배열이 보는 값은 그대로다 — 표시값만 갈린 수정
+            }
+            if (merged.townId() == current.townId()) {
+                townPatch(byTown, current.townId()).swap(current, merged);
+            } else {
+                townPatch(byTown, current.townId()).remove(placeId);
+                townPatch(byTown, merged.townId()).add(merged);
+            }
+        }
+        if (byTown.isEmpty()) {
+            return this;
+        }
+        return withTownsPatched(byTown, created, deleted);
     }
 
     public int placeCount() {
@@ -255,6 +337,158 @@ public final class SortedPlaces {
         private boolean hasNext() {
             return position < sorted.length;
         }
+    }
+
+    /**
+     * 손댄 id들의 <b>지금 엔트리</b>를 정렬 배열에서 찾는다.
+     *
+     * <p><b>id → 엔트리 색인을 상시로 들지 않는 이유.</b> 그 색인은 장소 전량만큼 커지는 자료구조라
+     * 스냅샷마다 한 벌씩 늘고, 회차 교체 때마다 함께 다시 지어진다. 반면 어드민 수정은 회차 사이에
+     * 드물게, 한 번에 몇 건이 올 뿐이다 — 그때 축 하나를 훑는 편이 싸다. 축 하나로 충분한 근거는
+     * {@link #MEMBERSHIP_SOURCE}의 전 원소 불변식이고, 다 찾으면 남은 동네는 보지 않는다.
+     */
+    private Map<Long, PlaceEntry> locate(Set<Long> ids) {
+        Map<Long, PlaceEntry> found = new HashMap<>(ids.size() * 2);
+        for (PlaceEntry[] town : orders.get(MEMBERSHIP_SOURCE).values()) {
+            for (PlaceEntry entry : town) {
+                if (ids.contains(entry.placeId())) {
+                    found.put(entry.placeId(), entry);
+                    if (found.size() == ids.size()) {
+                        return found;
+                    }
+                }
+            }
+        }
+        return found;
+    }
+
+    private static TownPatch townPatch(Map<Long, TownPatch> byTown, long townId) {
+        return byTown.computeIfAbsent(townId, key -> new TownPatch());
+    }
+
+    /**
+     * 손댄 동네만 새로 세운 스냅샷. 동네 → 배열 맵은 <b>얕게</b> 복사하므로, 손대지 않은 동네는
+     * 배열 객체를 원본과 공유한다 — 복사 비용은 동네 수(수십)이지 장소 수가 아니다.
+     */
+    private SortedPlaces withTownsPatched(Map<Long, TownPatch> byTown, int created, int deleted) {
+        Map<PlaceSortType, Map<Long, PlaceEntry[]>> next = new EnumMap<>(PlaceSortType.class);
+        for (Axis axis : Axis.values()) {
+            next.put(axis.sortType, new HashMap<>(orders.get(axis.sortType)));
+        }
+
+        int townDelta = 0;
+        for (Map.Entry<Long, TownPatch> town : byTown.entrySet()) {
+            TownPatch patch = town.getValue();
+            townDelta += patch.changesMembers()
+                    ? resortTown(next, town.getKey(), patch)
+                    : swapInTown(next, town.getKey(), patch);
+        }
+
+        int nextTownCount = townCount + townDelta;
+        return new SortedPlaces(next, placeCount + created - deleted, nextTownCount,
+                Axis.values().length * nextTownCount);
+    }
+
+    /**
+     * 태그·좌표만 갈린 동네 — <b>정렬하지 않는다.</b> 순서를 정하는 값(정렬 키 다섯 + id)이 그대로라
+     * 새 엔트리의 자리가 옛 엔트리의 자리와 같다. 그래서 배열을 한 벌 복사해 그 자리의 참조만 바꾼다.
+     *
+     * <p>자리는 옛 엔트리로 <b>이진 탐색</b>해 찾는다. 배열이 그 축의 전순서로 정렬돼 있고 타이브레이크가
+     * id라 전순서가 유일하므로 정확히 한 자리에 떨어진다. 여러 건을 이어 바꿔도 성립한다 — 앞서 바꾼
+     * 자리의 값도 순서가 그대로라 배열이 계속 정렬 상태다.
+     *
+     * @return 동네 수 증감 — 원소 집합이 그대로이므로 언제나 0
+     */
+    private int swapInTown(Map<PlaceSortType, Map<Long, PlaceEntry[]>> next, long townId,
+            TownPatch patch) {
+        for (Axis axis : Axis.values()) {
+            PlaceEntry[] copy = orders.get(axis.sortType).get(townId).clone();
+            for (Swap swap : patch.swaps.values()) {
+                int at = Arrays.binarySearch(copy, swap.from(), axis::compare);
+                if (at < 0) {
+                    throw new IllegalStateException(
+                            "정렬 배열에서 옛 엔트리를 찾지 못했다 - place=" + swap.from().placeId());
+                }
+                copy[at] = swap.to();
+            }
+            next.get(axis.sortType).put(townId, copy);
+        }
+        return 0;
+    }
+
+    /**
+     * 원소 집합이 갈린 동네 — 생성·삭제·이동이 섞였으니 그 동네의 다섯 배열을 다시 세운다.
+     * {@link #of}와 같은 {@link Axis} 비교자를 쓰므로 순서의 정본은 변하지 않는다.
+     *
+     * <p>원소가 하나도 남지 않으면 동네 키째 지운다 — {@code of}가 빈 동네를 만들지 않으므로,
+     * 여기서 빈 배열을 남기면 두 경로가 다른 모양의 스냅샷을 낸다.
+     *
+     * @return 동네 수 증감 — 새 동네가 생기면 +1, 빈 동네가 사라지면 -1
+     */
+    private int resortTown(Map<PlaceSortType, Map<Long, PlaceEntry[]>> next, long townId,
+            TownPatch patch) {
+        PlaceEntry[] before = orders.get(MEMBERSHIP_SOURCE).get(townId);
+        List<PlaceEntry> members =
+                new ArrayList<>((before == null ? 0 : before.length) + patch.added.size());
+        if (before != null) {
+            for (PlaceEntry entry : before) {
+                if (!patch.removed.contains(entry.placeId())) {
+                    members.add(patch.latestOf(entry));
+                }
+            }
+        }
+        members.addAll(patch.added);
+
+        if (members.isEmpty()) {
+            for (Axis axis : Axis.values()) {
+                next.get(axis.sortType).remove(townId);
+            }
+            return -1;
+        }
+        for (Axis axis : Axis.values()) {
+            PlaceEntry[] sorted = members.toArray(EMPTY);
+            Arrays.sort(sorted, axis::compare);
+            next.get(axis.sortType).put(townId, sorted);
+        }
+        return before == null ? 1 : 0;
+    }
+
+    /**
+     * 한 동네에 떨어진 변경을 한데 모은 것 — 같은 동네에 여러 건이 와도 배열 복사가 한 번이게 한다.
+     * 이동은 옛 동네의 {@code removed}와 새 동네의 {@code added} 두 조각으로 들어온다.
+     */
+    private static final class TownPatch {
+
+        private final List<PlaceEntry> added = new ArrayList<>();
+        private final Set<Long> removed = new HashSet<>();
+        private final Map<Long, Swap> swaps = new HashMap<>();
+
+        private void add(PlaceEntry entry) {
+            added.add(entry);
+        }
+
+        private void remove(long placeId) {
+            removed.add(placeId);
+        }
+
+        private void swap(PlaceEntry from, PlaceEntry to) {
+            swaps.put(from.placeId(), new Swap(from, to));
+        }
+
+        /** 원소 집합이 갈리는가 — 갈리면 자리를 다시 정해야 하고, 아니면 참조만 바꾸면 된다 */
+        private boolean changesMembers() {
+            return !added.isEmpty() || !removed.isEmpty();
+        }
+
+        /** 교체 대상이면 새 엔트리를, 아니면 받은 것을 그대로 */
+        private PlaceEntry latestOf(PlaceEntry entry) {
+            Swap swap = swaps.get(entry.placeId());
+            return swap == null ? entry : swap.to();
+        }
+    }
+
+    /** 같은 자리에 선 옛 엔트리와 새 엔트리 — 자리를 이진 탐색으로 찾으려면 옛 것이 필요하다 */
+    private record Swap(PlaceEntry from, PlaceEntry to) {
     }
 
     /**

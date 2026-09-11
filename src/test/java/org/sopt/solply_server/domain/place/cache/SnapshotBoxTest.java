@@ -7,13 +7,17 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * 보존 목록의 계약 — <b>최신 + 직전 2장, 그 너머는 없다</b>. 그리고 <b>최신은 도착 순서가 아니라
- * 버전이 정한다</b>.
+ * 홀더의 계약 — <b>최신 한 장만 든다</b>, <b>최신은 도착 순서가 아니라 버전이 정한다</b>, 그리고
+ * <b>이미 잡아 간 참조는 교체와 무관하다</b>.
  *
- * <p>앞의 셈이 스크롤 세션의 수명을 정한다. 회차 간격이 10분이므로 3장은 20~30분의 스크롤을
- * 보장하고, 그보다 오래 든 커서는 {@code byVersion}이 {@code null}을 내 조회 경로가
- * {@code EXPIRED_PLACE_CURSOR}로 끊는다 ({@code PlaceService#snapshotFor}). 보존이 한 장만 줄어도
- * 그 창이 통째로 짧아지므로 값으로 못 박는다.
+ * <p>앞의 둘이 스크롤 세션의 수명을 정한다. 옛 회차를 남기지 않으므로 회차가 한 번 바뀌면 그 앞의
+ * 커서는 만료다 — 그 판정 자체는 홀더가 아니라 조회 경로의 몫이고
+ * ({@code PlaceService#requireCursorMatchesSnapshot}), 여기서는 <b>홀더가 옛 회차를 내주지
+ * 않는다</b>는 것만 본다. 예전의 3장 보존을 걷어낸 근거는 {@code SnapshotBox} 계약 4다 — 어드민
+ * 변경을 곧바로 보여주되 옛 회차로 스크롤을 이어 주지는 않는다는 정책이다.
+ *
+ * <p>마지막 하나가 그 단순화를 떠받친다. 홀더가 한 장만 들어도 <b>진행 중인 요청</b>이 반쪽 목록을
+ * 보지 않는 이유는 보존이 아니라 스냅샷이 불변이라는 것이고, 그래서 그 성질을 값으로 못 박는다.
  *
  * <p><b>버전을 손으로 찍는 이유.</b> 운영에서 번호를 받아 스냅샷에 붙이는 것은 빌더 하나이고
  * ({@code SnapshotLoader#rebuild}) 홀더는 완성된 스냅샷을 받기만 한다. 그래서 여기서는
@@ -45,8 +49,9 @@ class SnapshotBoxTest {
     }
 
     /**
-     * <b>채택은 최신을 갈아 끼우는 것이지 덧붙이는 것이 아니다.</b> 직전 회차가 여전히 보존
-     * 목록에 있어도 {@code current}는 언제나 방금 지은 스냅샷이어야 한다.
+     * <b>채택은 최신을 갈아 끼우는 것이지 덧붙이는 것이 아니다.</b> {@code current}는 언제나 방금
+     * 지은 스냅샷이어야 하고, 직전 회차는 그 자리에서 사라진다 — 장소 수를 함께 보는 것은 버전만
+     * 갈리고 정렬 배열은 옛것이 남는 변이를 잡기 위해서다.
      */
     @Test
     void 채택하면_최신은_방금_지은_스냅샷이다() {
@@ -60,109 +65,66 @@ class SnapshotBoxTest {
     }
 
     /**
-     * <b>보존은 3장이고 네 번째 채택에서 가장 옛 스냅샷이 떨어진다.</b> 이 테스트가 빨개지는 방향은
-     * 둘 다 문제다 — 덜 보존하면 정상 스크롤이 만료되고, 더 보존하면 옛 정렬 배열이 힙에 쌓인다.
-     */
-    @Test
-    void 네_번째_채택에서_가장_옛_회차가_보존_밖으로_밀린다() {
-        SnapshotBox snapshotBox = new SnapshotBox();
-
-        long first = adopt(snapshotBox, 100L, 1);
-        long second = adopt(snapshotBox, 200L, 2);
-        long third = adopt(snapshotBox, 300L, 3);
-
-        // 세 장까지는 전부 남아 있다
-        assertThat(snapshotBox.byVersion(first)).isNotNull();
-        assertThat(snapshotBox.byVersion(second)).isNotNull();
-        assertThat(snapshotBox.byVersion(third)).isNotNull();
-
-        long fourth = adopt(snapshotBox, 400L, 4);
-
-        assertThat(snapshotBox.byVersion(first)).as("가장 옛 회차").isNull();
-        assertThat(snapshotBox.byVersion(second)).isNotNull();
-        assertThat(snapshotBox.byVersion(third)).isNotNull();
-        assertThat(snapshotBox.byVersion(fourth)).isNotNull();
-    }
-
-    /**
      * <b>늦게 도착한 낡은 스냅샷은 최신을 밀어내지 못한다.</b> 번호가 빌드를 <em>끝낸</em> 순서로
      * 발급되므로, 어드민 훅 빌드와 타이머 빌드가 겹치면 먼저 번호를 받은 스냅샷이 나중에 홀더에
      * 도착하는 역전이 생긴다. 가드가 없으면 그 한 번에 사용자가 보는 목록이 한 회차 뒤로 되감긴다.
      *
-     * <p>그래도 <b>보존 목록에는 넣는다</b> — 그 스냅샷 역시 완결된 한 회차라, 그 버전을 든 커서가
-     * 오면 이어 서빙할 수 있어야 한다. 버리면 그 커서가 이유 없이 만료된다.
+     * <p>한 장만 드는 지금은 <b>낡은 스냅샷이 아무 자리도 얻지 못한다</b> — 예전에는 그 버전을 든
+     * 커서를 위해 보존 목록에 넣어 뒀지만, 지금은 최신이 아닌 회차의 커서가 어차피 만료라 넣을 이유가
+     * 없다. 채택은 참조를 그대로 두는 것으로 끝난다.
      */
     @Test
-    void 낡은_버전은_current를_바꾸지_않고_보존_목록에만_들어간다() {
+    void 낡은_버전은_채택되지_않는다() {
         SnapshotBox snapshotBox = new SnapshotBox();
         long fresh = adopt(snapshotBox, 200L, 2);
+        Snapshot held = snapshotBox.current();
 
-        long stale = adopt(snapshotBox, 100L, 1);
+        adopt(snapshotBox, 100L, 1);
 
-        assertThat(snapshotBox.current().version()).as("최신은 그대로다").isEqualTo(fresh);
+        assertThat(snapshotBox.current()).as("참조까지 그대로다").isSameAs(held);
+        assertThat(snapshotBox.current().version()).isEqualTo(fresh);
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(2);
-        assertThat(snapshotBox.byVersion(stale)).as("낡은 회차도 커서를 위해 남는다").isNotNull();
-        assertThat(snapshotBox.byVersion(stale).sortedPlaces().placeCount()).isEqualTo(1);
     }
 
     /**
-     * <b>같은 버전을 다시 받아도 결과가 같다.</b> 버전 발급 주체가 빌더 하나라 같은 버전은 정의상
-     * 같은 내용이고, 그래서 중복 도착을 그냥 통과시켜도 된다 — 확장 설계에서 발행이 두 번 오는 경우가
-     * 별도 처리 없이 흡수되는 근거가 이 멱등성이다. 여기서는 <b>다른 내용</b>을 같은 버전으로 밀어
-     * 넣어, 홀더가 뒤엣것을 조용히 덮지 않는지까지 본다.
+     * <b>같은 버전이 두 번 와도 먼저 든 것을 지킨다.</b> 버전 발급 주체가 빌더 하나라 같은 버전은
+     * 정의상 같은 내용이고, 그래서 중복 도착을 그냥 통과시켜도 된다.
+     *
+     * <p>여기서 <b>다른 내용</b>을 같은 버전으로 밀어 넣는 것은 그 전제가 깨진 경우를 세우기
+     * 위해서다 — 홀더가 뒤엣것으로 덮으면 같은 버전이 두 내용을 가리키게 되고, 커서가 박제한
+     * "그 회차"라는 말의 뜻이 사라진다. 장수가 아니라 이 성질이 버전↔내용 1:1을 지킨다.
      */
     @Test
-    void 같은_버전을_다시_채택해도_아무것도_바뀌지_않는다() {
+    void 같은_버전을_다시_채택해도_먼저_든_스냅샷이_남는다() {
         SnapshotBox snapshotBox = new SnapshotBox();
-        adopt(snapshotBox, 100L, 1);
         long version = adopt(snapshotBox, 200L, 2);
         Snapshot held = snapshotBox.current();
 
         adopt(snapshotBox, version, 99);
 
         assertThat(snapshotBox.current()).isSameAs(held);
-        assertThat(snapshotBox.byVersion(version).sortedPlaces().placeCount()).isEqualTo(2);
+        assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(2);
     }
 
     /**
-     * <b>{@code byVersion}이 돌려주는 것은 그 회차의 스냅샷이다.</b> 버전만 맞춰 두고 내용은 최신을
-     * 돌려주는 변이는 만료 판정을 통과하면서 목록만 조용히 갈아 끼운다 — 회차마다 장소 수를 달리
-     * 세운 것이 그 변이를 잡기 위해서다.
+     * <b>이미 잡아 간 스냅샷은 채택 뒤에도 그대로다.</b> 한 장만 들고도 <em>진행 중인</em> 요청이
+     * 두 회차가 섞인 목록을 볼 수 없는 이유가 오직 이것이다 ({@code SnapshotBox} 계약 2) —
+     * 홀더는 참조를 갈아 끼울 뿐 내용을 고치지 않으므로, 응답을 만드는 도중 회차가 바뀌어도 그 요청은
+     * 자기 회차를 끝까지 온전히 본다.
+     *
+     * <p>홀더에서 밀려난 것과 요청이 그것을 못 쓰게 되는 것은 다른 문제다 — 홀더가 이미 새 회차를
+     * 가리킨 뒤에도 잡아 둔 쪽의 {@code placeCount}는 그대로여야 한다.
      */
     @Test
-    void byVersion은_그_회차의_스냅샷을_돌려준다() {
-        SnapshotBox snapshotBox = new SnapshotBox();
-
-        long first = adopt(snapshotBox, 100L, 1);
-        long second = adopt(snapshotBox, 200L, 2);
-
-        assertThat(snapshotBox.byVersion(first).sortedPlaces().placeCount()).isEqualTo(1);
-        assertThat(snapshotBox.byVersion(second).sortedPlaces().placeCount()).isEqualTo(2);
-    }
-
-    /** 지은 적 없는 버전은 만료와 같은 취급이다 — 호출자가 {@code null}을 만료로 번역한다 */
-    @Test
-    void 알지_못하는_버전은_null이다() {
-        SnapshotBox snapshotBox = new SnapshotBox();
-        long only = adopt(snapshotBox, 100L, 1);
-
-        assertThat(snapshotBox.byVersion(only + 1)).isNull();
-    }
-
-    /**
-     * <b>채택은 옛 스냅샷의 내용을 건드리지 않는다.</b> 그래야 옛 커서로 온 요청이 스크롤을 시작할
-     * 때와 같은 목록을 본다 ({@code SnapshotBox} 계약 2). 참조를 들고 있는 동안 내용이
-     * 바뀌면 한 세션 안에서 두 회차가 섞인다.
-     */
-    @Test
-    void 들고_있던_옛_스냅샷은_채택_뒤에도_그대로다() {
+    void 잡아_간_스냅샷은_회차가_바뀌어도_그대로다() {
         SnapshotBox snapshotBox = new SnapshotBox();
         adopt(snapshotBox, 100L, 1);
         Snapshot held = snapshotBox.current();
 
         adopt(snapshotBox, 200L, 5);
 
-        assertThat(held.sortedPlaces().placeCount()).isEqualTo(1);
-        assertThat(snapshotBox.byVersion(held.version())).isSameAs(held);
+        assertThat(held.version()).isEqualTo(100L);
+        assertThat(held.sortedPlaces().placeCount()).as("잡아 둔 회차의 내용").isEqualTo(1);
+        assertThat(snapshotBox.current()).as("홀더는 이미 새 회차다").isNotSameAs(held);
     }
 }

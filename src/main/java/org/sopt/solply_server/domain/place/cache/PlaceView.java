@@ -6,16 +6,18 @@ package org.sopt.solply_server.domain.place.cache;
  * {@link PlaceViewHolder}다.
  *
  * <ul>
- *   <li><b>{@code imageUrl}은 이미 완성된 URL이다.</b> {@code fileKey}가 아니라
- *       {@code ImageUrlProvider.getImageUrl(fileKey)}의 결과를 <b>빌드 시점에</b> 담는다.
- *       CloudFront 도메인 + fileKey 문자열 결합이라 만료가 없어 미리 만들어도 안전하고,
- *       조회 경로에서 문자열 결합조차 하지 않는 것이 이 필드의 목적이다.
- *       썸네일이 없는 장소는 {@code null}이다(provider가 blank 키에 null을 낸다).</li>
+ *   <li><b>{@code thumbnailFileKey}는 완성된 URL이 아니라 {@code image_file_key} 원값이다.</b>
+ *       담기는 값의 출처는 {@code place_stats.thumbnail_file_key}이고, 어느 이미지를 고르는지는
+ *       그 칸을 채우는 쓰기 문장이 정한다 (V40 — {@code PlaceStatsRepository}).
+ *       URL 결합({@code ImageUrlProvider.getImageUrl})은 조회 경로로 미룬다 — 재빌드는 전 장소의
+ *       URL 문자열을 만들어야 하지만 그중 실제로 쓰이는 것은 응답 페이지에 실리는 열 몇 건뿐이라,
+ *       나머지는 만들자마자 버려지는 문자열이다. 썸네일이 없는 장소는 {@code null}이고, 빈 키는
+ *       빈 키 그대로 담는다 — provider가 blank에 null을 내므로 응답은 어느 쪽이든 {@code null}이다.</li>
  *   <li><b>{@code mainTagId}는 첫 MAIN 태그의 id이고 활성 여부를 묻지 않는다.</b> 비활성이라고
  *       여기서 비워 두면 안 된다 — 엔티티 경로는 "첫 MAIN 태그를 고른 뒤 비활성이면 이름을 null"
  *       이라, 비활성을 미리 거르면 <em>다음</em> MAIN 태그가 뽑혀 두 경로가 갈린다. 활성 판정은
  *       조회 시점에 {@link TagViewHolder}가 한다. MAIN 태그가 없으면 {@code null}.</li>
  * </ul>
  */
-public record PlaceView(long placeId, String name, String imageUrl, Long mainTagId) {
+public record PlaceView(long placeId, String name, String thumbnailFileKey, Long mainTagId) {
 }

@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.willAnswer;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -57,14 +58,16 @@ class CacheWriteLockTest {
         willAnswer(invocation -> writeLock.call(() -> {
             reading.countDown();
             await(resume);
-            placeViewHolder.replaceAll(
-                    Map.of(PLACE_ID, new PlaceView(PLACE_ID, STALE_NAME, null, null)));
+            // 홀더는 넘어온 맵을 복사하지 않고 그대로 쓴다 — 실제 로더처럼 동시 수정이 되는 맵을 준다
+            placeViewHolder.replaceAll(new ConcurrentHashMap<>(
+                    Map.of(PLACE_ID, new PlaceView(PLACE_ID, STALE_NAME, null, null))));
             return 1;
         })).given(loader).rebuild();
         given(loader.readView(PLACE_ID)).willReturn(
                 Optional.of(new PlaceView(PLACE_ID, PATCHED_NAME, null, null)));
 
-        Thread rebuilding = new Thread(refresher::refreshAfterCommit, "rebuild");
+        // 타이머 회차를 그대로 흉내 낸다 — 전량 재빌드를 부르는 것은 스케줄러 하나다
+        Thread rebuilding = new Thread(loader::rebuild, "rebuild");
         rebuilding.start();
         assertThat(reading.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
                 .as("재빌드가 읽기 구간에 들어갔다").isTrue();

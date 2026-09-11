@@ -3,10 +3,9 @@ package org.sopt.solply_server.domain.place.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.util.List;
@@ -51,15 +50,16 @@ import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
  * 여기로 옮겨왔다 — <b>목록 응답을 만드는 데 엔티티를 읽지 않는다</b>. 그 위에 통합 스냅샷이
  * 새로 들여온 계약 하나가 더해진다 — <b>스크롤 세션은 시작한 회차에 고정된다</b>.
  *
- * <p>이 파일이 지키는 것은 넷이다.
+ * <p>이 파일이 지키는 것은 다섯이다.
  * <ul>
- *   <li>표시값(이름·썸네일·대표 태그)이 <b>홀더에서</b> 오고 동네는 엔트리에서 온다. 엔티티
- *       조회도, URL 결합도 하지 않는다 — 이 작업이 줄이려던 비용 그 자체다</li>
+ *   <li>표시값(이름·썸네일·대표 태그)이 <b>홀더에서</b> 오고 동네는 엔트리에서 온다. 엔티티 조회는
+ *       나가지 않고, 썸네일 URL 결합은 <b>응답에 실리는 행에만</b> 일어난다 — 이 작업이 줄이려던
+ *       비용 그 자체다</li>
  *   <li>홀더에 표시값이 없는 행은 <b>건너뛰되 커서는 그 행 뒤에서</b> 발급된다</li>
- *   <li>커서가 없으면 <b>최신 회차</b>({@code current})를, 있으면 <b>커서가 박제한 회차</b>
- *       ({@code byVersion})를 잡는다</li>
+ *   <li>커서가 있든 없든 <b>홀더를 한 번만</b> 읽어 최신 회차({@code current})를 잡고, 커서는
+ *       <b>그 참조의 버전과</b> 대조한다</li>
  *   <li>발급하는 커서에 <b>서빙한 회차</b>를 그대로 실어 다음 페이지가 같은 스냅샷에서 이어진다</li>
- *   <li>보존 밖 회차는 조용히 최신으로 갈아타지 않고 {@code EXPIRED_PLACE_CURSOR}로 끊는다</li>
+ *   <li>다른 회차의 커서는 조용히 최신으로 갈아타지 않고 {@code EXPIRED_PLACE_CURSOR}로 끊는다</li>
  * </ul>
  *
  * <p>엔트리가 담는 <em>값</em>이 엔티티 경로와 같은지는 여기서 다루지 않는다 — 그것은 실제 DB가
@@ -71,7 +71,10 @@ class PlaceServiceSnapshotSourceTest {
     private static final long TOWN_ID = 100L;
     private static final long USER_ID = 7L;
 
-    /** 최신 회차 / 그 직전 회차. 두 스냅샷이 <b>다른 값</b>을 담아야 어느 쪽을 봤는지 값에서 드러난다 */
+    /**
+     * 홀더가 들고 있는 최신 회차 / 그보다 앞선 회차. 홀더는 최신 한 장만 들므로 {@code OLD_VERSION}은
+     * <b>커서에만</b> 실린다 — 그 커서가 만료로 끊기는지가 이 파일의 마지막 계약이다.
+     */
     private static final long CURRENT_VERSION = 2_000L;
     private static final long OLD_VERSION = 1_000L;
 
@@ -113,7 +116,7 @@ class PlaceServiceSnapshotSourceTest {
      */
     private void givenView(long placeId, String name) {
         given(placeViewHolder.get(placeId))
-                .willReturn(new PlaceView(placeId, name, "https://cdn/" + name, null));
+                .willReturn(new PlaceView(placeId, name, name + "_이미지키", null));
     }
 
     private static Snapshot snapshot(long version, PlaceEntry... entries) {
@@ -129,16 +132,18 @@ class PlaceServiceSnapshotSourceTest {
      * <b>표시값은 홀더에서 오고, 엔티티는 읽지 않는다.</b> 값만 확인하면 "엔티티도 읽고 홀더
      * 값을 쓰는" 변이가 통과한다 — 그 변이는 응답이 옳으면서 절감은 0이라 가장 위험하다.
      *
-     * <p>{@code imageUrlProvider}까지 호출되지 않는지 보는 이유: {@code PlaceView.imageUrl}은
-     * <b>빌드 시점에 완성된 URL</b>이라는 것이 계약이고, 조회 경로에서 문자열 결합조차 하지 않는
-     * 것이 그 필드를 그렇게 정의한 목적이다.
+     * <p>{@code imageUrlProvider} 호출 <b>횟수</b>를 함께 보는 이유: 뷰가 드는 것은 파일 키뿐이라
+     * URL 결합이 조회 경로로 넘어왔고({@code PlaceView}), 그 결합은 <b>응답에 실리는 행에만</b>
+     * 일어나야 값이 있다. 재빌드가 전 장소분을 미리 만들던 것을 여기로 옮긴 것이 이 작업이므로,
+     * "표시된 행마다 정확히 한 번"이 그 계약이다.
      */
     @Test
     @DisplayName("목록 표시값은 홀더에서 오고 엔티티 조회가 나가지 않는다")
     void servesFromSnapshotWithoutEntityQuery() {
         given(snapshotBox.current()).willReturn(snapshot(CURRENT_VERSION, entry(1L)));
         given(placeViewHolder.get(1L))
-                .willReturn(new PlaceView(1L, "장소A", "https://cdn/장소A", 55L));
+                .willReturn(new PlaceView(1L, "장소A", "장소A_이미지키", 55L));
+        given(imageUrlProvider.getImageUrl("장소A_이미지키")).willReturn("https://cdn/장소A");
         given(tagViewHolder.get(55L)).willReturn(new TagView(55L, "장소A대표태그", true));
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());
@@ -152,7 +157,7 @@ class PlaceServiceSnapshotSourceTest {
         assertThat(preview.townId()).isEqualTo(TOWN_ID);
 
         verify(placeRepository, never()).findPlacesWithTagsByIds(anyList());
-        verify(imageUrlProvider, never()).getImageUrl(anyString());
+        verify(imageUrlProvider, times(1)).getImageUrl("장소A_이미지키");
     }
 
     /**
@@ -165,7 +170,7 @@ class PlaceServiceSnapshotSourceTest {
     void hidesInactiveMainTagName() {
         given(snapshotBox.current()).willReturn(snapshot(CURRENT_VERSION, entry(1L)));
         given(placeViewHolder.get(1L))
-                .willReturn(new PlaceView(1L, "장소A", "https://cdn/장소A", 55L));
+                .willReturn(new PlaceView(1L, "장소A", "장소A_이미지키", 55L));
         given(tagViewHolder.get(55L)).willReturn(new TagView(55L, "내려간태그", false));
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());
@@ -200,12 +205,13 @@ class PlaceServiceSnapshotSourceTest {
     }
 
     /**
-     * 커서가 없는 요청은 <b>최신 회차</b>를 잡는다. {@code byVersion}을 부르지 않는 것까지 보는
-     * 이유는, 커서 없는 요청이 옛 회차로 들어갈 경로가 아예 없어야 하기 때문이다.
+     * <b>홀더를 읽는 것은 요청당 한 번뿐이다.</b> 페이지 선택·거리순 후보·응답 조립이 전부 그때 잡은
+     * 참조 하나만 보아야 한다 — 단계마다 다시 읽으면 그 사이에 회차가 교체됐을 때 한 응답이 두 회차를
+     * 섞는다 ({@code SnapshotBox} 계약 2). 횟수를 값으로 못 박아야 "한 번만"이 유지된다.
      */
     @Test
-    @DisplayName("커서 없는 요청은 최신 회차의 스냅샷을 잡는다")
-    void picksCurrentSnapshotWithoutCursor() {
+    @DisplayName("커서 없는 요청은 홀더를 한 번만 읽어 최신 회차를 잡는다")
+    void readsHolderOnceWithoutCursor() {
         given(snapshotBox.current()).willReturn(snapshot(CURRENT_VERSION, entry(1L)));
         givenView(1L, "장소A");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
@@ -213,7 +219,7 @@ class PlaceServiceSnapshotSourceTest {
 
         get(null, null);
 
-        verify(snapshotBox, never()).byVersion(anyLong());
+        verify(snapshotBox, times(1)).current();
     }
 
     /**
@@ -236,64 +242,83 @@ class PlaceServiceSnapshotSourceTest {
     }
 
     /**
-     * <b>커서가 온 요청은 최신 회차를 보지 않는다 — 커서가 박제한 회차를 본다.</b>
-     *
-     * <p>두 스냅샷이 <em>다른 장소</em>를 담고 있어, 회차를 잘못 잡으면 이름 단언에서 먼저 걸린다.
-     * 스크롤 도중 스냅샷이 교체돼도 남은 페이지가 처음 본 목록에서 이어진다는 계약이 이것이다.
+     * <b>회차가 그대로면 커서는 이어진다.</b> 커서가 든 버전이 지금 잡은 스냅샷의 버전과 같으면
+     * 그 스냅샷에서 다음 페이지를 만든다 — 스크롤이 정상적으로 이어지는 경로가 이것이다.
      */
     @Test
-    @DisplayName("커서가 있으면 그 회차의 스냅샷에서 이어 서빙한다")
-    void continuesFromCursorSnapshot() {
-        given(snapshotBox.byVersion(OLD_VERSION))
-                .willReturn(snapshot(OLD_VERSION, entry(1L), entry(2L)));
-        givenView(1L, "옛회차A");
+    @DisplayName("커서의 회차가 지금 회차와 같으면 그 스냅샷에서 이어 서빙한다")
+    void continuesWhenCursorMatchesCurrentVersion() {
+        given(snapshotBox.current())
+                .willReturn(snapshot(CURRENT_VERSION, entry(1L), entry(2L)));
+        givenView(1L, "같은회차A");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(1L)))
                 .willReturn(Map.of());
 
-        // 2번(생성일이 더 늦다)까지 본 커서 — 옛 회차에서 그 뒤는 1번뿐이다
-        PlaceFilterGetResponse page2 = get(cursorAfter(2L, OLD_VERSION), 1);
+        // 2번(생성일이 더 늦다)까지 본 커서 — 그 뒤는 1번뿐이다
+        PlaceFilterGetResponse page2 = get(cursorAfter(2L, CURRENT_VERSION), 1);
 
         assertThat(page2.places()).extracting(PlacePreviewDto::placeName)
-                .containsExactly("옛회차A");
-        verify(snapshotBox, never()).current();
+                .containsExactly("같은회차A");
+        verify(snapshotBox, times(1)).current();
     }
 
     /**
-     * 이어진 페이지의 커서도 <b>같은 회차</b>를 싣는다 — 한 세션이 세 페이지째에서 최신 회차로
-     * 갈아타면 앞 두 페이지와 좌표계가 갈린다.
+     * 이어진 페이지의 커서도 <b>서빙한 회차</b>를 싣는다 — 이 값이 빠지거나 다른 값이 실리면 다음
+     * 페이지의 대조가 엉뚱한 회차를 상대로 이뤄져, 정상 스크롤이 만료되거나 만료돼야 할 커서가
+     * 통과한다.
      */
     @Test
-    @DisplayName("이어진 페이지의 커서도 같은 회차를 싣는다")
-    void continuedCursorKeepsSameVersion() {
-        given(snapshotBox.byVersion(OLD_VERSION)).willReturn(
-                snapshot(OLD_VERSION, entry(1L), entry(2L), entry(3L)));
-        givenView(2L, "옛회차B");
+    @DisplayName("이어진 페이지의 커서도 서빙한 회차를 싣는다")
+    void continuedCursorKeepsServedVersion() {
+        given(snapshotBox.current()).willReturn(
+                snapshot(CURRENT_VERSION, entry(1L), entry(2L), entry(3L)));
+        givenView(2L, "같은회차B");
         given(placeBookmarkFacade.getPlaceBookmarkStatusMap(USER_ID, List.of(2L)))
                 .willReturn(Map.of());
 
-        PlaceFilterGetResponse page2 = get(cursorAfter(3L, OLD_VERSION), 1);
+        PlaceFilterGetResponse page2 = get(cursorAfter(3L, CURRENT_VERSION), 1);
 
         assertThat(page2.nextCursor()).isNotNull();
-        assertThat(PlaceListCursor.decode(page2.nextCursor()).version()).isEqualTo(OLD_VERSION);
+        assertThat(PlaceListCursor.decode(page2.nextCursor()).version())
+                .isEqualTo(CURRENT_VERSION);
     }
 
     /**
-     * <b>보존 밖 회차는 명시 만료다.</b> 최신 회차로 조용히 갈아타면 커서 좌표가 다른 좌표계에서
-     * 해석돼 항목이 흘리거나 겹친다 — 오류로 끊어야 클라이언트가 처음부터 다시 조회한다.
+     * <b>회차가 바뀐 뒤 온 커서는 명시 만료다.</b> 최신 회차로 조용히 이어 서빙하면 커서 좌표가 다른
+     * 좌표계에서 해석돼 항목이 흘리거나 겹치는데, 그것은 200 응답이라 클라이언트가 알 방법이 없다 —
+     * 오류로 끊어야 처음부터 다시 조회한다.
      *
-     * <p>{@code current}를 부르지 않는 것까지 보는 이유가 그것이다: 폴백이 하나라도 남아 있으면
-     * 만료가 조용한 오답으로 바뀐다.
+     * <p>홀더가 최신 한 장만 들므로 이것이 <b>회차 교체 한 번</b>으로 도달하는 정상 경로가 됐다
+     * ({@code SnapshotBox} 계약 4). 최신 회차에 그 커서 뒤 항목이 <em>있는데도</em> 응답이 나가지
+     * 않아야 하므로, 만료를 지우면 이 테스트는 초록이 아니라 "1번 장소" 목록을 받는다.
      */
     @Test
-    @DisplayName("보존 밖 회차의 커서는 만료로 끊고 최신 회차로 갈아타지 않는다")
-    void expiresCursorOutsideRetention() {
-        given(snapshotBox.byVersion(OLD_VERSION)).willReturn(null);
+    @DisplayName("다른 회차의 커서는 만료로 끊고 최신 회차로 갈아타지 않는다")
+    void expiresCursorFromAnotherVersion() {
+        given(snapshotBox.current())
+                .willReturn(snapshot(CURRENT_VERSION, entry(1L), entry(2L)));
 
         assertThatThrownBy(() -> get(cursorAfter(2L, OLD_VERSION), 1))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
-        verify(snapshotBox, never()).current();
+    }
+
+    /**
+     * <b>만료 판정은 커서를 읽는 즉시가 아니라 스냅샷을 잡은 뒤에 난다.</b> 그래서 커서가 <em>앞선</em>
+     * 회차든 홀더가 알지 못하는 <em>더 큰</em> 번호든 답이 같다 — 후자는 다른 인스턴스가 찍은 회차의
+     * 커서가 이 인스턴스로 온 경우이고, 다중 인스턴스에서는 정상 경로다({@code SnapshotBox} 한계).
+     */
+    @Test
+    @DisplayName("이 인스턴스가 모르는 더 큰 회차의 커서도 만료다")
+    void expiresCursorFromUnknownNewerVersion() {
+        given(snapshotBox.current())
+                .willReturn(snapshot(CURRENT_VERSION, entry(1L), entry(2L)));
+
+        assertThatThrownBy(() -> get(cursorAfter(2L, CURRENT_VERSION + 1), 1))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
     }
 
     /**

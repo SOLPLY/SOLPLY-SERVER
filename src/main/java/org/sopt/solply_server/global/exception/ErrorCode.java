@@ -72,7 +72,7 @@ public enum ErrorCode {
     // 거리순은 기준점이 요청에서 오는 유일한 정렬이라, 좌표가 없으면 순서를 정의할 수 없다.
     // 두 번째 페이지부터는 커서에 박제된 기준 좌표를 쓰므로 이 오류는 첫 페이지에서만 난다.
     MISSING_PLACE_COORDINATES(HttpStatus.BAD_REQUEST, "PLACE-005", "거리순 정렬에는 현재 위치(latitude, longitude)가 필요합니다."),
-    // 커서가 가리키는 회차가 캐시 보존(최근 3장) 밖으로 밀려난 상태. 토큰 자체는 멀쩡하므로
+    // 커서가 가리키는 회차가 캐시가 지금 든 회차(최신 한 장)와 다른 상태. 토큰 자체는 멀쩡하므로
     // PLACE-003과 상태 코드는 같고 코드로 구분한다 — 클라이언트는 이것만 처음부터 다시 조회한다.
     EXPIRED_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-006", "커서가 가리키는 목록 회차가 만료되었습니다. 목록을 처음부터 다시 조회해 주세요."),
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),

@@ -261,15 +261,18 @@ public class PlaceService {
    * 꺼낸다. 그래서 커서의 계약은 <b>"정렬 순서의 일관성"까지</b>이고 표시값과 소속(생성·삭제)은
    * 최신일 수 있다 — 옛 스냅샷에만 있고 지금은 삭제된 장소는 표시값이 없어 그 행을 건너뛴다.
    *
-   * <p><b>스냅샷은 진입부에서 한 번만 잡는다.</b> {@code snapshot}을 지역 변수로 고정한 뒤 페이지 선택·
-   * 거리순 후보·응답 조립이 전부 그 하나만 본다. 스냅샷 참조는 회차마다 교체되므로 단계마다 다시
-   * 읽으면 한 응답 안에서 두 회차가 섞일 수 있다 — 요청 하나는 어느 한 회차의 <b>완결된</b> 스냅샷만
-   * 본다는 것이 이 경로의 계약이다 ({@code SnapshotBox} 계약 2).
+   * <p><b>스냅샷은 진입부에서 한 번만 잡는다.</b> {@code snapshot}을 지역 변수로 고정한 뒤 커서 검증·
+   * 페이지 선택·거리순 후보·응답 조립이 전부 그 하나만 본다. 홀더의 참조는 회차마다 교체되므로
+   * 단계마다 다시 읽으면 한 응답 안에서 두 회차가 섞일 수 있다 — 요청 하나는 어느 한 회차의
+   * <b>완결된</b> 스냅샷만 본다는 것이 이 경로의 계약이다 ({@code SnapshotBox} 계약 2). 잡아 둔
+   * 뒤 회차가 교체돼도 이 요청은 옛 회차를 끝까지 온전히 서빙한다.
    *
-   * <p><b>스크롤 세션은 시작한 회차에 고정된다.</b> 잡을 스냅샷을 커서가 정한다 — 커서가 없으면 최신
-   * 회차, 있으면 그 커서의 버전이 가리키는 회차이고, 발급하는 다음 커서에도 <b>같은 버전</b>을
-   * 실어 다음 페이지까지 이어진다. 보존(최근 3장) 밖으로 밀려난 버전은 조용히 최신 회차로 갈아타
-   * 항목을 흘리는 대신 {@code EXPIRED_PLACE_CURSOR}로 끊는다 ({@link #snapshotFor}).
+   * <p><b>스크롤 세션은 회차가 바뀌지 않는 동안만 이어진다.</b> 잡는 스냅샷은 언제나 최신 회차이고,
+   * 커서가 있으면 그 커서가 <b>바로 그 회차의 것인지</b>만 본다 — 발급하는 다음 커서에 서빙한 버전을
+   * 실어 두는 것이 그 대조의 근거다. 회차가 바뀐 뒤 온 커서는 조용히 최신으로 갈아타 항목을 흘리는
+   * 대신 {@code EXPIRED_PLACE_CURSOR}로 끊는다 ({@link #requireCursorMatchesSnapshot}).
+   * 홀더가 옛 회차를 몇 장 보존해 그 창을 늘리던 장치는 걷어냈다 — 어드민 변경을 곧바로 보여주되
+   * 옛 회차로 스크롤을 이어 주지는 않는다는 정책이고, 근거는 {@code SnapshotBox} 계약 4.
    *
    * <p>옛 회차를 서빙하는 동안 요청 시점 값인 것은 둘이다 — {@code isBookmarked}(사용자별이라 스냅샷에
    * 담기지 않는다)와 <b>표시값</b>(이름·썸네일·대표 태그. 홀더가 스냅샷 밖에 한 벌이다). 카운트·평점·
@@ -324,9 +327,10 @@ public class PlaceService {
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
 
-    // ⚠️ 이 회차의 스냅샷을 여기서 한 번만 잡는다. 아래 어느 단계도 스냅샷을 다시 읽지 않는다 —
+    // ⚠️ 홀더를 읽는 것은 여기 한 번뿐이다. 아래 어느 단계도 스냅샷을 다시 읽지 않는다 —
     // 다시 읽으면 한 응답이 두 회차를 섞어 볼 수 있다 (메서드 javadoc의 계약).
-    Snapshot snapshot = snapshotFor(cursor);
+    Snapshot snapshot = snapshotBox.current();
+    requireCursorMatchesSnapshot(cursor, snapshot);
 
     List<ListRow> rows = sort == PlaceSortType.DISTANCE
         ? distanceRows(snapshot.sortedPlaces(), leafTownIds, request, cursor, fetchSize)
@@ -365,7 +369,9 @@ public class PlaceService {
           return PlacePreviewDto.of(
               entry.placeId(),
               view.name(),
-              view.imageUrl(),
+              // 썸네일 URL은 여기서 만든다 — 재빌드가 전 장소분을 미리 만들어 두면 그중 응답에
+              // 실리는 것은 이 페이지의 열 몇 건뿐이라 나머지는 버려진다 (PlaceView 참조)
+              imageUrlProvider.getImageUrl(view.thumbnailFileKey()),
               mainTagNameOf(view),
               bookmarkStatus.getOrDefault(entry.placeId(), false),
               entry.townId(),
@@ -406,24 +412,25 @@ public class PlaceService {
   }
 
   /**
-   * 이 요청이 볼 회차의 스냅샷 — 커서가 없으면 최신, 있으면 커서가 박제한 버전이다.
+   * 커서가 <b>지금 잡은 그 스냅샷</b>의 회차인지 본다. 아니면 만료다.
    *
-   * <p><b>보존 밖은 명시 만료다.</b> 버전을 찾지 못했다는 것은 그 회차가 캐시 보존(최근 3장)에서
-   * 밀려났다는 뜻이고, 그때 최신 회차로 조용히 갈아타면 커서 좌표가 다른 좌표계에서 해석돼 항목이
-   * 흘리거나 겹친다. 오류로 끊어야 클라이언트가 처음부터 다시 조회한다.
+   * <p><b>검사 대상이 홀더가 아니라 잡아 둔 참조라는 것이 요점이다.</b> 홀더에 "그 버전 있느냐"를
+   * 따로 묻고 서빙은 다시 읽은 스냅샷으로 하면, 그 사이에 회차가 교체됐을 때 검사에 쓴 회차와 서빙한
+   * 회차가 갈린다. 홀더를 한 번만 읽고 그 참조의 버전과 대조하면 통과한 커서가 곧 서빙할 회차의
+   * 커서다 — 홀더에 버전으로 회차를 묻는 진입점을 두지 않은 것도 같은 이유다.
    *
-   * <p>커서가 인스턴스 로컬 버전을 든다는 한계는 {@code SnapshotBox} 참조 — 다중 인스턴스에서는
-   * sticky session 없이 성립하지 않는다.
+   * <p><b>다른 회차는 조용히 갈아타지 않고 명시 만료다.</b> 최신 회차로 이어 서빙하면 커서 좌표가
+   * 다른 좌표계에서 해석돼 항목이 흘리거나 겹치는데, 그것은 200 응답이라 클라이언트가 알 방법이
+   * 없다. 오류로 끊어야 처음부터 다시 조회한다.
+   *
+   * <p>홀더가 최신 한 장만 들고 있으므로 <b>회차가 한 번만 바뀌어도 스크롤 세션이 끊긴다</b> —
+   * 옛 회차를 몇 장 보존하던 창을 걷어낸 근거는 {@code SnapshotBox} 계약 4. 이미 응답을 만들고
+   * 있던 요청은 자기가 잡은 참조로 끝까지 간다(계약 2).
    */
-  private Snapshot snapshotFor(PlaceListCursor cursor) {
-    if (cursor == null) {
-      return snapshotBox.current();
-    }
-    Snapshot snapshot = snapshotBox.byVersion(cursor.version());
-    if (snapshot == null) {
+  private static void requireCursorMatchesSnapshot(PlaceListCursor cursor, Snapshot snapshot) {
+    if (cursor != null && cursor.version() != snapshot.version()) {
       throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
     }
-    return snapshot;
   }
 
   /**

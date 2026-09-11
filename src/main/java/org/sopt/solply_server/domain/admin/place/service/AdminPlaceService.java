@@ -44,7 +44,7 @@ public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
     private final PlaceStatsRepository placeStatsRepository;
-    /** 목록 스냅샷을 <b>커밋 뒤에</b> 다시 짓게 한다 — 시점의 근거는 리프레셔 javadoc */
+    /** 손댄 장소를 <b>커밋 뒤에</b> 목록 캐시로 옮기게 한다 — 시점의 근거는 리프레셔 javadoc */
     private final SnapshotRefresher snapshotRefresher;
     private final EntityManager entityManager;
 
@@ -109,25 +109,26 @@ public class AdminPlaceService {
     }
 
     /**
-     * <b>수정은 두 갈래다 — 기준은 "이 수정이 목록 배열에 닿는가"이고, 판정은
-     * {@link PlaceListMembershipKey}의 수정 전후 비교다.</b>
+     * <b>수정은 갈래를 가리지 않는다 — 언제나 place_stats를 다시 짓고 그 장소 id를 캐시로 넘긴다.</b>
      *
-     * <ul>
-     *   <li><b>닿는다</b>(동네·좌표·태그 집합 중 하나라도 바뀜) — place_stats의 파생 컬럼을 같은
-     *       트랜잭션에서 다시 짓고 스냅샷을 통째로 다시 짓는다. 파생 컬럼이 낡으면 순위가 아니라
-     *       <em>결과 집합</em>이 틀린다: 뗀 태그({@code tag_bitmask})로 계속 검색되고, 옮긴 동네가
-     *       아니라 이전 동네({@code town_id}) 목록에 낀다.</li>
-     *   <li><b>안 닿는다</b>(이름·소개·주소·연락처·영업시간·SNS·이미지·체크포인트) — 파생 컬럼이
-     *       그대로이므로 place_stats upsert를 건너뛰고, 그 장소의 표시값만 갈아 끼운다.</li>
-     * </ul>
+     * <p>이름이 place_stats의 칸이 된 뒤로(V40) "표시값만 고친 수정은 place_stats가 그대로"라는
+     * 전제가 사라져 upsert는 이미 언제나 돌고 있었다. 여기서 <b>갈래 판정 자체를 걷어낸다</b> —
+     * 이 서비스가 수정 전후의 동네·좌표·태그 집합을 견주어 "배열에 닿는가"를 미리 가리던 일은
+     * 이제 없다.
      *
-     * <p><b>수정 전 열쇠는 {@code clearTags} 전에 잡아야 한다</b> — 비운 뒤에 읽으면 태그 집합이
-     * 언제나 빈 것으로 보여 모든 수정이 재빌드로 샌다.
+     * <p><b>판정의 주인이 하나여야 하기 때문이다.</b> 배열에 닿는 값이 무엇인지는 정렬 배열
+     * ({@code SortedPlaces#patch})이 최신 행과 이 회차 엔트리를 견주며 이미 판정한다. 서비스가
+     * 같은 판정을 한 벌 더 들고 있으면 배열이 읽는 값이 하나 늘 때 두 곳을 함께 고쳐야 하고,
+     * 한쪽을 빠뜨리면 <b>결과 집합이 조용히 틀린다</b> — 뗀 태그로 계속 검색되고, 옮긴 동네가
+     * 아니라 이전 동네 목록에 낀다. 반대 방향의 대가도 없다: 표시값만 바뀐 수정은 배열이 스스로
+     * "달라진 것 없음"을 알아보고 회차를 쓰지 않는다.
+     *
+     * <p><b>upsert가 훅보다 앞이다.</b> 커밋 뒤 패치가 읽는 원천이 방금 이 문장이 채운 place_stats
+     * 행이라, 순서가 뒤집히면 패치가 옛 값을 싣는다 ({@code SnapshotLoader#patch}).
      */
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
         Place place = adminEntityLoader.getPlaceWithTown(placeId);
-        PlaceListMembershipKey membershipBefore = PlaceListMembershipKey.from(place);
         Town updatedTown = adminEntityLoader.getTown(req.townId());
 
         // 태그 검증(타입 + 관계)
@@ -163,11 +164,7 @@ public class AdminPlaceService {
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
 
-        if (PlaceListMembershipKey.from(place).equals(membershipBefore)) {
-            snapshotRefresher.patchPlaceViewAfterCommit(place.getId());
-        } else {
-            syncPlaceStats(place.getId());
-        }
+        syncPlaceStats(place.getId());
 
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
@@ -289,7 +286,9 @@ public class AdminPlaceService {
 
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
-        snapshotRefresher.refreshAfterCommit();
+        // 지운 장소도 손댄 장소로 넘긴다 — 커밋 뒤 패치가 그 id를 다시 읽어 <b>행이 없는 것</b>을
+        // 보고 배열에서 뺀다. "없어졌다"를 여기서 따로 말하지 않는 것이 계약이다
+        snapshotRefresher.refreshPlacesAfterCommit(List.of(placeId));
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
@@ -307,6 +306,10 @@ public class AdminPlaceService {
      *
      * <p>{@code updateActiveByTownId}가 {@code clearAutomatically}라 갱신 결과를 엔티티로 다시 읽지
      * 않고 id만 모아 넘긴다. 활성 여부 판정은 넘긴 뒤 SQL이 원본에서 다시 한다.
+     *
+     * <p><b>동네 하나가 수백 장소여도 캐시 갱신은 한 번이다.</b> id를 통째로 한 번에 넘기므로 커밋
+     * 뒤 패치가 {@code IN} 문장 하나로 그 행들을 읽고 회차도 하나만 쓴다 — 장소마다 훅을 걸면
+     * 문장도 회차도 장소 수만큼 늘고, 그 사이 진행 중이던 스크롤이 전부 만료된다.
      */
     @Transactional
     public void activatePlacesByTownIds(final List<Long> townIds) {
@@ -320,27 +323,28 @@ public class AdminPlaceService {
     }
 
     /**
-     * place_stats 행을 원본(places · place_tag)에서 다시 짓는다. 비활성 장소는 문장이 걸러내므로
-     * 여기서 활성 여부를 묻지 않는다 ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
+     * place_stats 행을 원본(places · place_tag)에서 다시 짓고, 그 장소들을 목록 캐시로 넘긴다.
+     * 비활성 장소는 문장이 걸러내므로 여기서 활성 여부를 묻지 않는다
+     * ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
      *
-     * <p><b>파생 컬럼을 다시 짓는 것과 스냅샷을 다시 짓는 것은 한 몸이라 여기 묶어 둔다.</b> 스냅샷의
-     * 원천이 {@code place_stats ⋈ places}이므로, 이 문장이 도는 곳은 곧 스냅샷이 낡는 곳이다.
-     * 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다. 실제 재빌드는 커밋 뒤로
-     * 미뤄진다 — 커밋 전에 지으면 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어 낡은 스냅샷으로 덮는다
-     * ({@code SnapshotRefresher} javadoc).
+     * <p><b>행을 짓는 것과 캐시에 알리는 것은 한 몸이라 여기 묶어 둔다.</b> 스냅샷의 원천이
+     * {@code place_stats}뿐이라(V40), 이 문장이 손대는 행은 곧 배열이 달라질 수 있는 자리다.
+     * 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다. <b>장소를 쓰는 세 경로(생성 ·
+     * 수정 · 재활성)가 전부 이 묶음을 쓴다</b> — 갈래 판정을 걷어낸 뒤로 셋의 모양이 같아졌다.
      *
-     * <p><b>어드민 쓰기가 전부 여기로 오지는 않는다.</b> 스냅샷을 통째로 다시 짓는 경로는 생성 ·
-     * 재활성 · {@link #deletePlace} · 그리고 목록 배열에 닿는 수정
-     * ({@link PlaceListMembershipKey})뿐이다. 표시값만 바뀐 수정은 파생 컬럼이 그대로라 이 문장을
-     * 부르지 않고 표시값 패치로 빠진다 — <b>배열에 닿는 값을 새로 추가한다면 그 열쇠와 이 문장을
-     * 함께 짚을 것.</b>
+     * <p>실제 패치는 커밋 뒤로 미뤄진다 — 커밋 전에 읽으면 로더의 새 커넥션이 <b>옛 데이터</b>를
+     * 읽어 낡은 값으로 덮는다 ({@code SnapshotRefresher} javadoc). 롤백되면 훅은 아예 돌지 않는다.
+     *
+     * <p><b>넘기는 것은 id뿐이고, 값은 하나도 싣지 않는다.</b> 커밋 뒤 패치가 그 id로 place_stats를
+     * 다시 읽으므로, 이 트랜잭션이 들고 있던 값이 늦게 깨어난 훅을 타고 남의 최신 값을 덮는 창이
+     * 없다 — 태그 훅이 값 대신 DB를 다시 읽는 것과 같은 이유다.
      */
     private void syncPlaceStats(final List<Long> placeIds) {
         if (placeIds.isEmpty()) {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        snapshotRefresher.refreshAfterCommit();
+        snapshotRefresher.refreshPlacesAfterCommit(placeIds);
     }
 
 

@@ -212,22 +212,23 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
     /** 썸네일은 {@code display_order}가 가장 앞선 이미지다 — 삽입 순서가 아니다 */
     @Test
-    void 썸네일은_display_order가_가장_앞선_이미지의_URL이다() {
-        assertThat(viewOf(placeFull).imageUrl())
-                .isEqualTo(imageUrlProvider.getImageUrl("엔트리A_1번이미지"));
-        assertThat(viewOf(placeBare).imageUrl()).isNull();
+    void 썸네일은_display_order가_가장_앞선_이미지의_파일_키다() {
+        assertThat(viewOf(placeFull).thumbnailFileKey()).isEqualTo("엔트리A_1번이미지");
+        assertThat(viewOf(placeBare).thumbnailFileKey()).isNull();
     }
 
     /**
-     * <b>빈 파일 키의 답은 null이지 "다음 이미지"가 아니다.</b> 로더가 장소별 첫 행을
-     * {@code putIfAbsent}·{@code computeIfAbsent}로 담으면 null을 "아직 없음"으로 취급해 둘째
-     * 이미지를 대신 집어 든다 — 엔티티 경로는 그 경우 null 그대로라 두 경로가 갈린다.
+     * <b>빈 파일 키의 답은 "썸네일 없음"이지 "다음 이미지"가 아니다.</b> 로더가 장소별 첫 행을
+     * {@code putIfAbsent}·{@code computeIfAbsent}로 담으면 빈 값이 "아직 없음"으로 접혀 둘째
+     * 이미지를 대신 집어 든다 — 엔티티 경로는 그 경우 썸네일이 없는 것이라 두 경로가 갈린다.
+     *
+     * <p>뷰에는 빈 키가 그대로 남고, 응답의 URL이 {@code null}이 되는 것은 조회 경로에서
+     * {@code getImageUrl}이 blank에 null을 내기 때문이다.
      */
     @Test
-    void 첫_이미지의_키가_비어_있으면_썸네일은_null이고_다음_이미지로_넘어가지_않는다() {
-        assertThat(viewOf(placeBlankKey).imageUrl()).isNull();
-        assertThat(viewOf(placeBlankKey).imageUrl())
-                .isNotEqualTo(imageUrlProvider.getImageUrl("엔트리E_2번이미지"));
+    void 첫_이미지의_키가_비어_있으면_썸네일은_없고_다음_이미지로_넘어가지_않는다() {
+        assertThat(viewOf(placeBlankKey).thumbnailFileKey()).isNotEqualTo("엔트리E_2번이미지");
+        assertThat(imageUrlProvider.getImageUrl(viewOf(placeBlankKey).thumbnailFileKey())).isNull();
     }
 
     /**
@@ -346,8 +347,10 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
     private Display displayOf(long placeId) {
         PlaceView view = viewOf(placeId);
-        return new Display(view.name(), view.imageUrl(), mainTagNameOf(placeId),
-                entryOf(placeId).townId());
+        // 뷰는 파일 키만 들고 URL 결합은 조회 경로가 한다 — 엔티티 경로와 맞댈 값은 URL이므로
+        // 여기서 조회 경로와 같은 결합을 거쳐 비교한다
+        return new Display(view.name(), imageUrlProvider.getImageUrl(view.thumbnailFileKey()),
+                mainTagNameOf(placeId), entryOf(placeId).townId());
     }
 
     /**
