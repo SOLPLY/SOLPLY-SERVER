@@ -72,7 +72,7 @@ public enum ErrorCode {
     // 거리순은 기준점이 요청에서 오는 유일한 정렬이라, 좌표가 없으면 순서를 정의할 수 없다.
     // 두 번째 페이지부터는 커서에 박제된 기준 좌표를 쓰므로 이 오류는 첫 페이지에서만 난다.
     MISSING_PLACE_COORDINATES(HttpStatus.BAD_REQUEST, "PLACE-005", "거리순 정렬에는 현재 위치(latitude, longitude)가 필요합니다."),
-    // 커서가 가리키는 회차가 캐시 보존(최근 3장) 밖으로 밀려난 상태. 토큰 자체는 멀쩡하므로
+    // 커서가 가리키는 회차가 캐시가 지금 든 회차(최신 한 장)와 다른 상태. 토큰 자체는 멀쩡하므로
     // PLACE-003과 상태 코드는 같고 코드로 구분한다 — 클라이언트는 이것만 처음부터 다시 조회한다.
     EXPIRED_PLACE_CURSOR(HttpStatus.BAD_REQUEST, "PLACE-006", "커서가 가리키는 목록 회차가 만료되었습니다. 목록을 처음부터 다시 조회해 주세요."),
     ALREADY_BOOKMARKED(HttpStatus.CONFLICT, "PlACE-010", "이미 북마크된 장소입니다."),
@@ -108,6 +108,9 @@ public enum ErrorCode {
     // 태그 id가 곧 place_stats.tag_bitmask의 비트 자리다 (TagBitmask 참조). 이 상한을 넘기려면
     // 마스크 폭을 넓히는 스키마 결정이 먼저라, 요청을 받아 두고 나중에 고치는 형태로 두지 않는다.
     TAG_ID_BIT_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "TAG-009", "태그를 더 만들 수 없습니다. 태그 id 상한(62)에 도달했습니다."),
+    // 대표 태그(mainTagId)는 목록 스냅샷과 함께 지어지므로, 타입이 MAIN↔OPTION으로 갈리면 그 태그를
+    // 대표로 쓰던 장소가 전부 낡는다. 쓰이지 않는 기능이라 허용하고 뒷수습하는 대신 막는다.
+    TAG_TYPE_IMMUTABLE(HttpStatus.BAD_REQUEST, "TAG-010", "태그 타입은 수정할 수 없습니다."),
 
 
     // 북마크 관련 (BOOKMARK-xxx)

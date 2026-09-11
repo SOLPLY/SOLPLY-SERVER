@@ -18,7 +18,7 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -44,8 +44,8 @@ public class AdminPlaceService {
 
     private final AdminPlaceRepository adminPlaceRepository;
     private final PlaceStatsRepository placeStatsRepository;
-    /** 목록 사진을 <b>커밋 뒤에</b> 다시 찍게 한다 — 시점의 근거는 리프레셔 javadoc */
-    private final PlaceListSnapshotRefresher placeListSnapshotRefresher;
+    /** 손댄 장소를 <b>커밋 뒤에</b> 목록 캐시로 옮기게 한다 — 시점의 근거는 리프레셔 javadoc */
+    private final SnapshotRefresher snapshotRefresher;
     private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -109,12 +109,22 @@ public class AdminPlaceService {
     }
 
     /**
-     * <b>수정도 place_stats의 파생 컬럼을 같은 트랜잭션에서 다시 짓는다.</b> 여기서 바뀔 수 있는
-     * 것이 둘이다 — 태그({@code tag_bitmask})와 동네({@code town_id}). 둘 다 낡으면 순위가 아니라
-     * <em>결과 집합</em>이 틀린다: 뗀 태그로 계속 검색되고, 옮긴 동네가 아니라 이전 동네 목록에 낀다.
+     * <b>수정은 갈래를 가리지 않는다 — 언제나 place_stats를 다시 짓고 그 장소 id를 캐시로 넘긴다.</b>
      *
-     * <p>{@code town_id} 쪽은 V24부터 알려져 있던 stale 창(≤1h)이었고, V34의 동기 갱신이 그것을
-     * 함께 닫는다.
+     * <p>이름이 place_stats의 칸이 된 뒤로(V40) "표시값만 고친 수정은 place_stats가 그대로"라는
+     * 전제가 사라져 upsert는 이미 언제나 돌고 있었다. 여기서 <b>갈래 판정 자체를 걷어낸다</b> —
+     * 이 서비스가 수정 전후의 동네·좌표·태그 집합을 견주어 "배열에 닿는가"를 미리 가리던 일은
+     * 이제 없다.
+     *
+     * <p><b>판정의 주인이 하나여야 하기 때문이다.</b> 배열에 닿는 값이 무엇인지는 정렬 배열
+     * ({@code SortedPlaces#patch})이 최신 행과 이 회차 엔트리를 견주며 이미 판정한다. 서비스가
+     * 같은 판정을 한 벌 더 들고 있으면 배열이 읽는 값이 하나 늘 때 두 곳을 함께 고쳐야 하고,
+     * 한쪽을 빠뜨리면 <b>결과 집합이 조용히 틀린다</b> — 뗀 태그로 계속 검색되고, 옮긴 동네가
+     * 아니라 이전 동네 목록에 낀다. 반대 방향의 대가도 없다: 표시값만 바뀐 수정은 배열이 스스로
+     * "달라진 것 없음"을 알아보고 회차를 쓰지 않는다.
+     *
+     * <p><b>upsert가 훅보다 앞이다.</b> 커밋 뒤 패치가 읽는 원천이 방금 이 문장이 채운 place_stats
+     * 행이라, 순서가 뒤집히면 패치가 옛 값을 싣는다 ({@code SnapshotLoader#patch}).
      */
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
@@ -153,6 +163,7 @@ public class AdminPlaceService {
         );
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
+
         syncPlaceStats(place.getId());
 
         log.info("어드민 장소 수정 - placeId: {}", placeId);
@@ -275,7 +286,9 @@ public class AdminPlaceService {
 
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
-        placeListSnapshotRefresher.refreshAfterCommit();
+        // 지운 장소도 손댄 장소로 넘긴다 — 커밋 뒤 패치가 그 id를 다시 읽어 <b>행이 없는 것</b>을
+        // 보고 배열에서 뺀다. "없어졌다"를 여기서 따로 말하지 않는 것이 계약이다
+        snapshotRefresher.refreshPlacesAfterCommit(List.of(placeId));
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
@@ -293,6 +306,10 @@ public class AdminPlaceService {
      *
      * <p>{@code updateActiveByTownId}가 {@code clearAutomatically}라 갱신 결과를 엔티티로 다시 읽지
      * 않고 id만 모아 넘긴다. 활성 여부 판정은 넘긴 뒤 SQL이 원본에서 다시 한다.
+     *
+     * <p><b>동네 하나가 수백 장소여도 캐시 갱신은 한 번이다.</b> id를 통째로 한 번에 넘기므로 커밋
+     * 뒤 패치가 {@code IN} 문장 하나로 그 행들을 읽고 회차도 하나만 쓴다 — 장소마다 훅을 걸면
+     * 문장도 회차도 장소 수만큼 늘고, 그 사이 진행 중이던 스크롤이 전부 만료된다.
      */
     @Transactional
     public void activatePlacesByTownIds(final List<Long> townIds) {
@@ -306,22 +323,28 @@ public class AdminPlaceService {
     }
 
     /**
-     * place_stats 행을 원본(places · place_tag)에서 다시 짓는다. 비활성 장소는 문장이 걸러내므로
-     * 여기서 활성 여부를 묻지 않는다 ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
+     * place_stats 행을 원본(places · place_tag)에서 다시 짓고, 그 장소들을 목록 캐시로 넘긴다.
+     * 비활성 장소는 문장이 걸러내므로 여기서 활성 여부를 묻지 않는다
+     * ({@code PlaceStatsRepository#upsertRowsForActivePlaces}).
      *
-     * <p><b>어드민 쓰기는 커밋 뒤 목록 사진을 즉시 다시 찍는다.</b> 재생성을 여기 함께 두는 것은
-     * 자리 선택이다 — 사진의 원천이 {@code place_stats ⋈ places}이고, 그 둘을 어드민이 바꾸는
-     * 지점은 이 문장(생성·수정·재활성)과 {@link #deletePlace} 둘뿐이다. 호출부마다 훅을 흩으면
-     * 나중에 경로가 하나 늘 때 조용히 빠진다. 실제 재생성은 커밋 뒤로 미뤄진다 — 커밋 전에 지으면
-     * 로더의 새 커넥션이 <b>옛 데이터</b>를 읽어 낡은 사진으로 덮는다
-     * ({@code PlaceListSnapshotRefresher} javadoc).
+     * <p><b>행을 짓는 것과 캐시에 알리는 것은 한 몸이라 여기 묶어 둔다.</b> 스냅샷의 원천이
+     * {@code place_stats}뿐이라(V40), 이 문장이 손대는 행은 곧 배열이 달라질 수 있는 자리다.
+     * 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다. <b>장소를 쓰는 세 경로(생성 ·
+     * 수정 · 재활성)가 전부 이 묶음을 쓴다</b> — 갈래 판정을 걷어낸 뒤로 셋의 모양이 같아졌다.
+     *
+     * <p>실제 패치는 커밋 뒤로 미뤄진다 — 커밋 전에 읽으면 로더의 새 커넥션이 <b>옛 데이터</b>를
+     * 읽어 낡은 값으로 덮는다 ({@code SnapshotRefresher} javadoc). 롤백되면 훅은 아예 돌지 않는다.
+     *
+     * <p><b>넘기는 것은 id뿐이고, 값은 하나도 싣지 않는다.</b> 커밋 뒤 패치가 그 id로 place_stats를
+     * 다시 읽으므로, 이 트랜잭션이 들고 있던 값이 늦게 깨어난 훅을 타고 남의 최신 값을 덮는 창이
+     * 없다 — 태그 훅이 값 대신 DB를 다시 읽는 것과 같은 이유다.
      */
     private void syncPlaceStats(final List<Long> placeIds) {
         if (placeIds.isEmpty()) {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        placeListSnapshotRefresher.refreshAfterCommit();
+        snapshotRefresher.refreshPlacesAfterCommit(placeIds);
     }
 
 

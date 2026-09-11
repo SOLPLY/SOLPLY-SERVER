@@ -33,11 +33,12 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 그러지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또 더한다
      * ({@code PlaceStatsBatchProcessor#recalculateCountsAndClearOutbox}).
      *
-     * <p><b>UPDATE이지 UPSERT가 아닌 것이 이 문장의 요점이다.</b> 행의 존재와 파생 세 칸
-     * ({@code town_id}·{@code created_at}·{@code tag_bitmask})의 주인은 어드민 쓰기 트랜잭션
-     * 하나이고({@code AdminPlaceService}), 배치는 거기에 손대지 않는다. 예전에는 이 회차가 활성
-     * 장소 전량을 원본에서 다시 지어 그 세 칸까지 덮었는데, 그것은 안전망이 아니라 <b>어드민이
-     * 방금 커밋한 값을 배치가 읽은 낡은 스냅샷으로 되돌릴 수 있는 경로</b>였다.
+     * <p><b>UPDATE이지 UPSERT가 아닌 것이 이 문장의 요점이다.</b> 행의 존재와 어드민 소유 칸
+     * ({@code town_id}·{@code created_at}·{@code tag_bitmask}·{@code name}·좌표 둘·
+     * {@code main_tag_id}·{@code thumbnail_file_key})의 주인은 어드민 쓰기 트랜잭션 하나이고
+     * ({@code AdminPlaceService}), 배치는 거기에 손대지 않는다. 예전에는 이 회차가 활성 장소 전량을 원본에서 다시 지어 그 칸들까지
+     * 덮었는데, 그것은 안전망이 아니라 <b>어드민이 방금 커밋한 값을 배치가 읽은 낡은 스냅샷으로
+     * 되돌릴 수 있는 경로</b>였다.
      *
      * <p>그래서 {@code places}·{@code place_tag}가 이 문장에 없다. 딸려 사라진 것이 둘이다 —
      * FK 부모 검사가 {@code places}에 남기던 S 락(어드민의 동네 일괄 작업을 배치 시간만큼 세우던
@@ -162,6 +163,12 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 전용인 지금은 그 대기가 정기적으로 일어나지 않는다.
      * 전제: {@code binlog_format = ROW}. STATEMENT/MIXED면 이 문장 자체가 {@code ERROR 1665}로 거부된다.
      *
+     * <p><b>썸네일을 상관 서브쿼리로 고르는 이유.</b> 이 문장은 기동·복구의 전량이거나 어드민 쓰기
+     * 한 건({@link #upsertRowsForActivePlaces}의 PK IN 소수 행)이라, 장소마다 서브쿼리를 한 번씩
+     * 도는 비용을 받아들인다. {@code docs/design/2026-09-09-rebuild-streaming.md} §4-3이 측정으로
+     * 기각한 것은 <b>재빌드마다</b> 도는 같은 서브쿼리다 — 10분 주기 × 전 장소에서는 그 비용이
+     * 문장 하나를 더 도는 것보다 비쌌지만, 여기서는 어드민 빈도의 일회성 비용이다.
+     *
      * <p>{@code VALUES(col)}은 deprecated라 실행마다 {@code Warning 1287}이 참조 수만큼 뜬다.
      * {@code INSERT ... SELECT}에서는 행 별칭 문법이 {@code ERROR 1054}로 깨져 쓸 수 없고,
      * 대안은 SELECT 전체를 파생 테이블로 감싸는 형태뿐이다 — MySQL 8.4 이상으로 올려 함수가
@@ -174,11 +181,21 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
+            name, latitude, longitude, main_tag_id, thumbnail_file_key,
             bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
+               p.name,
+               p.latitude,
+               p.longitude,
+               mpt.tag_id,
+               (SELECT pi.image_file_key
+                  FROM place_images pi
+                 WHERE pi.place_id = p.id
+                 ORDER BY pi.display_order, pi.image_file_key
+                 LIMIT 1),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
                COALESCE(r.avg_rating, 0)
@@ -189,6 +206,15 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             FROM place_tag pt
             GROUP BY pt.place_id
         ) t ON t.place_id = p.id
+        LEFT JOIN (
+            SELECT pt.place_id AS place_id,
+                   MIN(pt.id) AS pt_id
+            FROM place_tag pt
+            JOIN tags tg ON tg.id = pt.tag_id
+            WHERE tg.type = 'MAIN'
+            GROUP BY pt.place_id
+        ) mm ON mm.place_id = p.id
+        LEFT JOIN place_tag mpt ON mpt.id = mm.pt_id
         LEFT JOIN (
             SELECT bm.target_id AS place_id,
                    COUNT(*) AS cnt
@@ -207,12 +233,17 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         ) r ON r.place_id = p.id
         WHERE p.active = 1
         ON DUPLICATE KEY UPDATE
-            town_id        = VALUES(town_id),
-            created_at     = VALUES(created_at),
-            tag_bitmask    = VALUES(tag_bitmask),
-            bookmark_count = VALUES(bookmark_count),
-            review_count   = VALUES(review_count),
-            avg_rating     = VALUES(avg_rating)
+            town_id            = VALUES(town_id),
+            created_at         = VALUES(created_at),
+            tag_bitmask        = VALUES(tag_bitmask),
+            name               = VALUES(name),
+            latitude           = VALUES(latitude),
+            longitude          = VALUES(longitude),
+            main_tag_id        = VALUES(main_tag_id),
+            thumbnail_file_key = VALUES(thumbnail_file_key),
+            bookmark_count     = VALUES(bookmark_count),
+            review_count       = VALUES(review_count),
+            avg_rating         = VALUES(avg_rating)
         """, nativeQuery = true)
     int rebuildRowsFromSource(@Param("calculatedAt") LocalDateTime calculatedAt);
 
@@ -224,14 +255,27 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 내려간 장소를 수정해도 행이 되살아나지 않는다 — "행이 있는 장소 = 목록에 나와도 되는 장소"가
      * 이 문장 하나로 유지된다. 그래서 세 경로가 분기 없이 같은 문장을 부를 수 있다.
      *
-     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 표시 카운트 셋과
-     * 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
+     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 어드민 소유 여덟 칸뿐이다.</b> 표시 카운트
+     * 셋과 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
      * 반대로 <b>신규 행</b>은 카운트
      * 0·평점 0·점수 0으로 들어가고, 두 정렬 모두 그 자리에서 장소를 보여준다 — 인기순은 점수 0
      * 자리에, 최신순은 맨 앞에 (근거는 {@code PlaceListDbQueryRepository#findPopularRows}).
      *
      * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다</b> — 근거와 가드는
      * {@link #rebuildRowsFromSource} javadoc과 같다.
+     *
+     * <p><b>어드민 소유 칸이 다섯 늘면서(V40 — {@code name}·좌표 둘·{@code main_tag_id}·
+     * {@code thumbnail_file_key}) 표시값만 고친 수정도 이 문장을 부른다.</b> 이름이
+     * {@code place_stats}의 칸이 된 순간 "소속 열쇠가 같으면 파생 컬럼도 그대로"라는 전제가 깨졌기
+     * 때문이다. {@code main_tag_id}는 {@code place_tag.id} 오름차순 첫 MAIN 태그이고 <b>태그의 활성
+     * 여부로 거르지 않는다</b> — 거르면 다음 MAIN 태그가 뽑혀 엔티티 경로와 값이 갈린다.
+     *
+     * <p><b>비동기 이미지 이동 후처리도 이 문장을 부른다</b> ({@code PlaceImageFieldUpdater}).
+     * 어드민 커밋 뒤에 {@code place_images}의 키가 스테이징에서 최종으로 바뀌므로, 그 자리에서
+     * {@code thumbnail_file_key}를 다시 짓지 않으면 표시값 패치가 죽은 키를 읽는다.
+     *
+     * <p>썸네일을 상관 서브쿼리로 고르는 근거는 {@link #rebuildRowsFromSource} javadoc에 있다 —
+     * 여기는 PK IN 소수 행이라 장소마다 한 번 도는 비용이 문제가 되지 않는다.
      *
      * @param placeIds 비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
      * @return 영향 행 수 (MySQL은 INSERT를 1, UPDATE를 2로 센다)
@@ -240,11 +284,21 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
+            name, latitude, longitude, main_tag_id, thumbnail_file_key,
             bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
+               p.name,
+               p.latitude,
+               p.longitude,
+               mpt.tag_id,
+               (SELECT pi.image_file_key
+                  FROM place_images pi
+                 WHERE pi.place_id = p.id
+                 ORDER BY pi.display_order, pi.image_file_key
+                 LIMIT 1),
                0,
                0,
                0
@@ -256,12 +310,27 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             WHERE pt.place_id IN (:placeIds)
             GROUP BY pt.place_id
         ) t ON t.place_id = p.id
+        LEFT JOIN (
+            SELECT pt.place_id AS place_id,
+                   MIN(pt.id) AS pt_id
+            FROM place_tag pt
+            JOIN tags tg ON tg.id = pt.tag_id
+            WHERE tg.type = 'MAIN'
+              AND pt.place_id IN (:placeIds)
+            GROUP BY pt.place_id
+        ) mm ON mm.place_id = p.id
+        LEFT JOIN place_tag mpt ON mpt.id = mm.pt_id
         WHERE p.id IN (:placeIds)
           AND p.active = 1
         ON DUPLICATE KEY UPDATE
-            town_id     = VALUES(town_id),
-            created_at  = VALUES(created_at),
-            tag_bitmask = VALUES(tag_bitmask)
+            town_id            = VALUES(town_id),
+            created_at         = VALUES(created_at),
+            tag_bitmask        = VALUES(tag_bitmask),
+            name               = VALUES(name),
+            latitude           = VALUES(latitude),
+            longitude          = VALUES(longitude),
+            main_tag_id        = VALUES(main_tag_id),
+            thumbnail_file_key = VALUES(thumbnail_file_key)
         """, nativeQuery = true)
     int upsertRowsForActivePlaces(@Param("placeIds") List<Long> placeIds);
 

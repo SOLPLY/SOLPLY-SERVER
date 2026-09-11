@@ -33,17 +33,18 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  * 바뀌면 같은 장소가 페이지마다 다른 거리를 가져 중복·누락이 난다. 그래서 파라미터 불일치는
  * 오류가 아니라 <b>무시</b>다 ({@code PlaceService#listPlaces}).
  *
- * <p><b>v6의 버전은 회차 고정 장치다 (2026-09-01).</b> 목록이 10분 주기로 사진을 다시 찍는데,
+ * <p><b>v6의 버전은 회차 고정 장치다 (2026-09-01).</b> 목록이 10분 주기로 스냅샷을 다시 짓는데,
  * 스크롤 세션이 그 교체를 넘으면 다음 페이지가 다른 회차에서 재개돼 항목이 흘리거나 겹친다.
- * 그래서 커서가 <b>자기가 시작한 회차의 버전</b>을 싣고 다니고, 서버는 그 버전의 사진으로만 이어
- * 서빙한다. 보존은 캐시가 들고 있는 최근 3장뿐이며({@code PlaceListSnapshot}) 그 밖의 버전은
- * {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다. DB에는 아무것도 남지 않는다 — 버전은 사진을 찍은
- * 인스턴스의 메모리에만 있다.
+ * 그래서 커서가 <b>자기가 시작한 회차의 버전</b>을 싣고 다니고, 서버는 지금 들고 있는 스냅샷이
+ * 그 회차일 때만 이어 서빙한다. 캐시는 <b>최신 한 장</b>만 들므로({@code SnapshotBox}) 회차가
+ * 한 번만 바뀌어도 그 앞의 커서는 {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다. 번호 자체는
+ * DB 발급 테이블에서 나오지만({@code SnapshotVersionIssuer}) 그 번호가 가리키는 <b>스냅샷</b>은
+ * 그것을 지은 인스턴스의 메모리에만 있다.
  *
  * <p><b>v3의 세대와 혼동하지 말 것.</b> 세대는 인기 점수 <b>배치</b>가 좌표계를 통째로 바꾸는 문제의
  * 장치였고, 배치를 새벽 01:00 1회로 내려 그 창이 트래픽 최저 시각의 수 초로 줄면서 걷어냈다(v4).
- * v6이 다시 든 것은 <b>다른 문제</b>(주기적 사진 교체를 넘는 스크롤)를 <b>다른 재료</b>(DB 세대 행이
- * 아니라 캐시 보존 3장 + 명시 만료)로 푸는 것이다. 점수 배치 주기는 v6의 근거가 아니다.
+ * v6이 다시 든 것은 <b>다른 문제</b>(주기적 스냅샷 교체를 넘는 스크롤)를 <b>다른 재료</b>(DB 세대 행이
+ * 아니라 캐시가 든 회차와의 대조 + 명시 만료)로 푸는 것이다. 점수 배치 주기는 v6의 근거가 아니다.
  *
  * <p><b>필터 지문은 그대로 남는다.</b> 세대와 달리 이 구멍은 배치 주기와 무관하다 — 동네 A의
  * 커서를 동네 B 요청에 그대로 쓰면 서버는 아무 불평 없이 "동네 B에서 점수 X 아래"를 돌려주고,
@@ -77,7 +78,7 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  *
  * @param sortKeys    정렬 축의 값들. 길이는 반드시 {@link PlaceSortType#keyArity()}와 같다
  * @param filterPrint 요청 필터의 정규형. {@link #filterPrintOf}가 만든 것이어야 한다
- * @param version     이 커서가 시작한 목록 회차. 캐시 보존 밖이면 만료다
+ * @param version     이 커서가 시작한 목록 회차. 캐시가 든 회차와 다르면 만료다
  */
 public record PlaceListCursor(
         PlaceSortType sort, List<Double> sortKeys, long placeId, String filterPrint, long version) {

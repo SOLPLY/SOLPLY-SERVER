@@ -40,6 +40,9 @@ public abstract class MySqlContainerSupport {
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
+        // 컨텍스트마다 풀이 하나씩 살아 남는다 — 기본값 10이면 IT 클래스가 늘 때
+        // 컨테이너의 max_connections(151)를 넘어 엉뚱한 IT가 "Too many connections"로 죽는다
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("spring.flyway.locations", () -> "classpath:db/migration");
         registry.add("spring.flyway.baseline-on-migrate", () -> "true");

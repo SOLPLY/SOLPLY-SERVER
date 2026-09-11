@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
  * {@code place_stats} 집계 배치의 진입점. 정기 스케줄 <b>셋</b>과 부팅 시 최초 적재를 연다.
  *
  * <p><b>이 배치는 목록 캐시를 모른다.</b> 여기서 하는 일은 {@code place_stats}를 고치는 것까지이고,
- * 그 값이 목록에 나타나는 것은 다음 스냅샷 회차다 ({@code PlaceListSnapshotScheduler}).
+ * 그 값이 목록에 나타나는 것은 다음 스냅샷 회차다 ({@code SnapshotScheduler}).
  *
  * <p><b>주기를 가른 이유는 값마다 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>

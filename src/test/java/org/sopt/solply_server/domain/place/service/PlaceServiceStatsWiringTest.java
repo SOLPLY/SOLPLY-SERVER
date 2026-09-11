@@ -23,10 +23,13 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.sopt.solply_server.domain.place.cache.PlaceListEntry;
-import org.sopt.solply_server.domain.place.cache.PlaceListIndex;
-import org.sopt.solply_server.domain.place.cache.PlaceListPhoto;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshot;
+import org.sopt.solply_server.domain.place.cache.PlaceEntry;
+import org.sopt.solply_server.domain.place.cache.SortedPlaces;
+import org.sopt.solply_server.domain.place.cache.Snapshot;
+import org.sopt.solply_server.domain.place.cache.SnapshotBox;
+import org.sopt.solply_server.domain.place.cache.PlaceView;
+import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
+import org.sopt.solply_server.domain.place.cache.TagViewHolder;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -66,7 +69,7 @@ import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
  * </table>
  * 목록 경로가 0회인 것은 최적화가 아니라 <b>설계</b>다 — 스냅샷이 회차마다 그 행을 이미 읽어
  * 엔트리에 담았으므로 요청 시점에 같은 값을 다시 조회하면 순전한 낭비다. 정렬 쿼리가 카운트를
- * 실어 오던 시절에도 0회였고, 실어 오는 주체만 쿼리에서 사진으로 바뀌었다.
+ * 실어 오던 시절에도 0회였고, 실어 오는 주체만 쿼리에서 스냅샷으로 바뀌었다.
  *
  * <p>PlaceService 전반을 덮으려는 테스트가 아니다. 의존성 중 이 경로가 실제로 쓰는 것만 스텁한다.
  */
@@ -77,7 +80,7 @@ class PlaceServiceStatsWiringTest {
   private static final long USER_ID = 7L;
   private static final long PLACE_ID = 1L;
 
-  /** 사진의 회차 버전. 이 파일의 관심사가 아니라 아무 값이나 하나로 고정한다 */
+  /** 스냅샷의 회차 버전. 이 파일의 관심사가 아니라 아무 값이나 하나로 고정한다 */
   private static final long VERSION = 4_242L;
 
   @Mock private PlaceRepository placeRepository;
@@ -89,8 +92,11 @@ class PlaceServiceStatsWiringTest {
   @Mock private PlaceReviewRepository placeReviewRepository;
   @Mock private TownHierarchyResolver townHierarchyResolver;
   @Mock private PlaceStatsRepository placeStatsRepository;
-  /** 목록 경로의 유일한 출처. 카운트가 어디서 오는지가 이 파일의 주제라 실제로 값을 세운다 */
-  @Mock private PlaceListSnapshot placeListSnapshot;
+  /** 목록 경로의 카운트 출처. 카운트가 어디서 오는지가 이 파일의 주제라 실제로 값을 세운다 */
+  @Mock private SnapshotBox snapshotBox;
+  /** 카운트는 여기서 오지 않는다 — 응답 조립이 성립하도록 이름·썸네일만 세운다 */
+  @Mock private PlaceViewHolder placeViewHolder;
+  @Mock private TagViewHolder tagViewHolder;
 
   /** 표시용 평점·리뷰 수. 카운트와 구분되는 값이라야 실어 나르는 자리가 뒤바뀐 변이를 잡는다 */
   private static final long REVIEW_COUNT = 12L;
@@ -99,7 +105,7 @@ class PlaceServiceStatsWiringTest {
   @InjectMocks private PlaceService placeService;
 
   /**
-   * 목록 경로: 사진 한 장에 장소 하나. <b>정렬 축 다섯이 모두 채워져 있어</b> 어느 정렬로 물어도
+   * 목록 경로: 스냅샷 한 장에 장소 하나. <b>정렬 축 다섯이 모두 채워져 있어</b> 어느 정렬로 물어도
    * 같은 한 행이 나온다 — 정렬마다 픽스처를 갈아 끼우면 "정렬 하나에서만 카운트를 싣는" 변이가
    * 나머지 정렬의 픽스처 차이에 숨는다.
    *
@@ -110,14 +116,17 @@ class PlaceServiceStatsWiringTest {
   }
 
   private void givenListRow(long bookmarkCount, long reviewCount, BigDecimal avgRating) {
-    PlaceListEntry entry = new PlaceListEntry(
+    // 엔트리는 DECIMAL(3,2)의 무척도 정수만 든다. 응답의 스케일 2 복원은 PlaceListSnapshotEquivalenceIT가
+    // 바이트 단위로 지키고, 여기 단언은 값만 본다(isEqualByComparingTo).
+    PlaceEntry entry = new PlaceEntry(
         PLACE_ID, TOWN_ID, 0L,
         9.0, 1_767_225_600L,
-        bookmarkCount, reviewCount, avgRating, avgRating.doubleValue(),
-        37.5, 127.0,
-        "장소1", "https://img/1", null);
-    given(placeListSnapshot.current())
-        .willReturn(new PlaceListPhoto(VERSION, PlaceListIndex.of(List.of(entry))));
+        bookmarkCount, reviewCount, avgRating.movePointRight(2).intValueExact(),
+        37.5, 127.0);
+    given(snapshotBox.current())
+        .willReturn(new Snapshot(VERSION, SortedPlaces.of(List.of(entry))));
+    given(placeViewHolder.get(PLACE_ID))
+        .willReturn(new PlaceView(PLACE_ID, "장소1", "key1", null));
   }
 
   /**
@@ -204,7 +213,7 @@ class PlaceServiceStatsWiringTest {
    *
    * <p>이 분기는 북마크 검색 경로에만 있다. 목록 경로의 카운트는 스냅샷 엔트리가 실어 오는 값이라
    * "행이 없다"는 상태가 존재할 수 없다 — 엔트리를 짓는 기준 테이블이 place_stats라 행이 없는
-   * 장소는 애초에 사진에 없다.
+   * 장소는 애초에 스냅샷에 없다.
    */
   @Test
   @DisplayName("북마크 검색: place_stats에 행이 없는 장소는 카운트 0으로 응답한다")
