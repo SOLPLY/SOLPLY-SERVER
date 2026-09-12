@@ -108,10 +108,10 @@ ShedLock.
 
 ```
 ./gradlew compileJava                                     → BUILD SUCCESSFUL
-grep -rn "SnapshotRefreshSignal|Notifier|ListenerConfig|SnapshotVersionIssuer" src/main/   → 없음
-grep -rni "redis" src/main/java/.../domain/place/          → 없음
+rg -n "SnapshotRefreshSignal|Notifier|ListenerConfig|SnapshotVersionIssuer" src/main/   → 없음
+rg -ni "redis" src/main/java/org/sopt/solply_server/domain/place/          → 없음
 grep -rn "place_list_snapshot_versions" src/main/java/     → 커서 javadoc의 전환 설명 한 줄뿐
-ls db/migration/V39* V43*                                  → V39 그대로, V43 신규
+ls src/main/resources/db/migration/V39* src/main/resources/db/migration/V43*                                  → V39 그대로, V43 신규
 git status --short src/test/                               → 세션 시작 시점과 같은 두 줄
 ```
 

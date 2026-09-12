@@ -35,7 +35,7 @@ JAVA_HOME=<temurin-21.0.8> ./gradlew clean build
 | payload 측정 | `scratchpad/payload.log` |
 | 직전 560 기준선 | `scratchpad/cleanbuild4.log` |
 
-(`scratchpad` = `/private/tmp/claude-501/-Users-mkyu-orca-workspaces-solply-server-feat-404-auth-mysql-stats-schedules/962a1bb9-d626-4dd8-b776-0a8375f868df/scratchpad`)
+(`scratchpad`는 검증 작업자의 로컬 실행 로그 디렉터리이며 저장소에 포함하지 않는다.)
 
 ---
 
