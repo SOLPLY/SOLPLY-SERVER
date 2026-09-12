@@ -20,6 +20,15 @@ decorator:
   datasource:
     enabled: false
 
+solply:
+  place-list-snapshot:
+    # 발행 폴은 사실상 멈춘다 — 발행은 테스트가 명시적으로 부르는 것만 돌아야 한다.
+    # 채택 폴은 짧게 둔다: 기동 복원이 최초 발행 직후 이 간격만큼 잠들기 때문에(SnapshotScheduler)
+    # 크게 잡으면 컨텍스트 기동이 그만큼 멈춘다.
+    # 키가 하나(poll-interval-ms)에서 둘로 갈렸고 refresh-notification-enabled는 사라졌다.
+    publish-poll-interval-ms: 3600000
+    adopt-poll-interval-ms: 1500
+
 app:
   env-prefix: test
 

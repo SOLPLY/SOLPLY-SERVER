@@ -12,7 +12,15 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 /**
- * 인증 주체 로딩 — <b>요청당 1회, 트랜잭션 없이</b> 유저 1행을 읽는다.
+ * 인증 주체 로딩.
+ *
+ * <p><b>⚠️ 인증 필터는 더 이상 이 클래스를 부르지 않는다(2026-09-12).</b> role 클레임이 없는 옛
+ * 토큰을 위한 폴백이 유일한 호출처였는데, 그 토큰들이 새 필수 클레임을 갖지 않아 파싱 단계에서
+ * 거절되면서 폴백이 받아 줄 대상 자체가 없어졌다. 남아 있는 이유는 스프링 시큐리티가 요구하는
+ * {@code UserDetailsService} 구현이기 때문이고, <b>여기에 새 호출을 붙이면 "인증 경로는 저장소를
+ * 읽지 않는다"가 깨진다.</b>
+ *
+ * <p>아래는 그 폴백이 살아 있던 시절의 기록이다 — <b>요청당 1회, 트랜잭션 없이</b> 유저 1행.
  *
  * <p>{@code UserRepository#findById} 대신 {@code findForAuthentication}을 쓴다. 이유는 그쪽
  * javadoc에 있다: 필터 단계라 바깥 트랜잭션이 없어 {@code findById}의 클래스 레벨

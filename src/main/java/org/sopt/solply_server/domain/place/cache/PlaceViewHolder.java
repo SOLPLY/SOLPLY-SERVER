@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.cache;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Component;
@@ -12,12 +13,15 @@ import org.springframework.stereotype.Component;
  * 스크롤도 이름·썸네일·대표 태그는 지금 값을 본다 — 이름 하나 고치자고 전량을 다시 짓지 않기
  * 위해 받아들인 계약이다.
  *
- * <p><b>맵을 고치는 경로는 둘이다.</b> 전량 재빌드가 참조를 통째로 갈고
- * ({@link SnapshotLoader#rebuild()}), 어드민 쓰기가 손댄 장소의 항목만 갈아 끼운다
- * ({@link SnapshotLoader#patch}·{@link SnapshotRefresher#patchPlaceViewAfterCommit}). <b>지우는
- * 경로는 없다</b> — 삭제된 장소의 표시값은 그대로 남고, 실제로 사라지는 것은 다음 전량 재빌드가
- * 맵을 통째로 갈 때다. 새 정렬 배열에 그 장소가 없으니 새 요청은 닿지 않고, 옛 회차를 들고 있는
- * 진행 중 요청만 그 값을 본다.
+ * <p><b>맵을 고치는 경로는 하나다 — 발행물 설치다</b>({@link SnapshotInstaller#installLatest()}).
+ * 전량 재빌드든 어드민이 손댄 장소 하나든, 바뀐 내용은 먼저 발행물로 올라가고 그것을 내려받은
+ * 설치가 {@link #replaceAll}로 참조를 통째로 간다. 어드민 훅이 자기 힙을 직접 고치던 경로는
+ * 없앴다 — 발행이 성공해야 설치한다({@link SnapshotRefresher}). {@link #put}은 그 시절의
+ * 진입점이 남은 것이고 지금 부르는 곳이 없다.
+ *
+ * <p><b>항목 하나를 지우는 경로는 없다</b> — 삭제된 장소의 표시값은 다음 설치가 맵을 통째로 갈
+ * 때 사라진다. 그때까지는 새 정렬 배열에 그 장소가 없으니 새 요청이 닿지 않고, 옛 회차를 들고
+ * 있는 진행 중 요청만 그 값을 본다.
  *
  * <p><b>조회는 락을 잡지 않는다.</b> {@link #get}은 {@code volatile} 참조 한 번과
  * {@code ConcurrentHashMap} 읽기 한 번이 전부다. 반대로 쓰기({@link #replaceAll}·{@link #put})는
@@ -63,5 +67,13 @@ public class PlaceViewHolder {
     /** 어드민이 손댄 장소 하나 — 그 항목만 갈아 끼운다 */
     void put(PlaceView view) {
         views.put(view.placeId(), view);
+    }
+
+    /**
+     * 발행 payload를 지을 때 쓰는 전량 읽기. 부르는 쪽이 읽기만 하도록 불변 사본을 준다 —
+     * 살아 있는 맵을 그대로 넘기면 직렬화 도중 다른 훅의 {@link #put}이 끼어든다.
+     */
+    Map<Long, PlaceView> all() {
+        return Map.copyOf(views);
     }
 }

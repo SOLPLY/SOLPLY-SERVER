@@ -33,4 +33,9 @@ public class TagViewHolder {
     void replaceAll(Map<Long, TagView> fresh) {
         this.views = Map.copyOf(fresh);
     }
+
+    /** 발행 payload를 지을 때 쓰는 전량 읽기. {@link #replaceAll}이 이미 불변으로 만들어 둔다. */
+    Map<Long, TagView> all() {
+        return views;
+    }
 }

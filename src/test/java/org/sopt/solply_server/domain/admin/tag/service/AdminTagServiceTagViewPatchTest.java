@@ -21,6 +21,7 @@ import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
 import org.sopt.solply_server.domain.tag.entity.TagUsage;
@@ -47,28 +48,35 @@ class AdminTagServiceTagViewPatchTest {
     @Mock private AdminTagValidator adminTagValidator;
     @Mock private EntityManager entityManager;
     @Mock private SnapshotRefresher snapshotRefresher;
+    @Mock private SnapshotRebuildRequestRepository rebuildRequestRepository;
 
     @InjectMocks private AdminTagService adminTagService;
 
     private static final long TAG_ID = 7L;
+    /** 이 트랜잭션이 자기 요청에 받은 번호 */
+    private static final long MY_SEQ = 31L;
 
     @Test
     void 태그를_만들면_그_자리에서_태그_맵을_다시_읽게_한다() {
         AdminTagUpsertRequest req = upsertRequest("새태그", true);
         given(adminTagRepository.save(any(Tag.class))).willReturn(tag("새태그", true));
 
+        given(rebuildRequestRepository.request()).willReturn(MY_SEQ);
+
         adminTagService.createTag(req);
 
-        verify(snapshotRefresher).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher).refreshTagViewsAfterCommit(MY_SEQ);
     }
 
     @Test
     void 태그를_수정하면_태그_맵을_다시_읽게_한다() {
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag("옛이름", true));
 
+        given(rebuildRequestRepository.request()).willReturn(MY_SEQ);
+
         adminTagService.updateTag(TAG_ID, upsertRequest("새이름", true));
 
-        verify(snapshotRefresher).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher).refreshTagViewsAfterCommit(MY_SEQ);
     }
 
     /**
@@ -114,9 +122,11 @@ class AdminTagServiceTagViewPatchTest {
         given(adminEntityLoader.getTag(TAG_ID)).willReturn(tag("그대로인이름", true));
         given(adminTagRepository.findChildren(TAG_ID)).willReturn(List.of());
 
+        given(rebuildRequestRepository.request()).willReturn(MY_SEQ);
+
         adminTagService.toggleActive(TAG_ID, new AdminTagActivationRequest(false));
 
-        verify(snapshotRefresher).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher).refreshTagViewsAfterCommit(MY_SEQ);
     }
 
     /**
@@ -133,9 +143,11 @@ class AdminTagServiceTagViewPatchTest {
                 .willReturn(List.of(tag(TAG_ID + 2, "손자", true)));
         given(adminTagRepository.findChildren(TAG_ID + 2)).willReturn(List.of());
 
+        given(rebuildRequestRepository.request()).willReturn(MY_SEQ);
+
         adminTagService.toggleActive(TAG_ID, new AdminTagActivationRequest(false));
 
-        verify(snapshotRefresher, times(1)).refreshTagViewsAfterCommit();
+        verify(snapshotRefresher, times(1)).refreshTagViewsAfterCommit(MY_SEQ);
     }
 
     // === helpers ===
@@ -146,8 +158,8 @@ class AdminTagServiceTagViewPatchTest {
      * 하나로 새는 변이를 놓친다.
      */
     private void assertNoPlaceSnapshotWork() {
-        verify(snapshotRefresher, never()).refreshPlacesAfterCommit(anyCollection());
-        verify(snapshotRefresher, never()).patchPlaceViewAfterCommit(anyLong());
+        verify(snapshotRefresher, never()).refreshPlacesAfterCommit(anyCollection(), anyLong());
+        verify(snapshotRefresher, never()).patchPlaceViewAfterCommit(anyLong(), anyLong());
     }
 
     private static AdminTagUpsertRequest upsertRequest(String name, boolean active) {

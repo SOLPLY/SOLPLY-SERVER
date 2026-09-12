@@ -23,6 +23,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -114,6 +115,17 @@ public class GlobalExceptionHandler {
 //            details.put("suggestion", "파라미터 이름을 확인해주세요. 필요한 파라미터: " + e.getParameterName());
 //        }
 
+        return CustomApiResponse.error(ErrorCode.MISSING_REQUIRED_PARAMETER);
+    }
+
+    // 400: 필수 RequestHeader가 누락된 경우
+    // 핸들러가 없으면 포괄 핸들러로 떨어져 클라이언트 입력 실수가 500으로 나간다
+    // (`POST /api/auth/refresh`에 `Refresh-Token` 헤더를 빼고 부른 경우가 그랬다).
+    // 값은 토큰일 수 있으므로 헤더 이름만 남긴다.
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<CustomApiResponse<Void>> handleMissingRequestHeaderException(
+            final MissingRequestHeaderException e) {
+        log.warn("Missing request header: {}", e.getHeaderName());
         return CustomApiResponse.error(ErrorCode.MISSING_REQUIRED_PARAMETER);
     }
 

@@ -13,7 +13,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertRequest;
 import org.sopt.solply_server.domain.place.cache.SnapshotBox;
+import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
 import org.sopt.solply_server.domain.place.cache.SnapshotLoader;
+import org.sopt.solply_server.domain.place.cache.SnapshotPublisher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRebuilder;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -34,7 +39,7 @@ import org.springframework.test.context.DynamicPropertySource;
  *
  * <p><b>세 축을 함께 못 박는다.</b>
  * <ul>
- *   <li><b>반영</b> — 생성·삭제·동네 이동·태그·좌표가 {@code loader.rebuild()} 없이 그 자리에서
+ *   <li><b>반영</b> — 생성·삭제·동네 이동·태그·좌표가 전량 재빌드 없이 그 자리에서
  *       목록에 나타난다. 이 파일의 시나리오는 어느 것도 재빌드를 직접 부르지 않는다.</li>
  *   <li><b>회차</b> — 배열이 달라지는 수정만 새 버전을 찍는다. 표시값만 바뀐 수정이 회차를 쓰면
  *       진행 중인 스크롤이 그 자리에서 만료되고, 반대로 배열이 달라졌는데 안 쓰면 커서가 옛 순서
@@ -51,8 +56,11 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
     static void adminUpdateProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        // 매시 회차가 둘로 갈렸다(2026-09-12) — 새 키를 빠뜨리면 :15에 델타 소비가 깨어난다
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
     }
 
     private static final String TOWN_NAME_PREFIX = "어드민수정IT동네";
@@ -70,6 +78,10 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
 
     @Autowired private AdminPlaceService adminPlaceService;
     @Autowired private SnapshotLoader loader;
+    @Autowired private SnapshotPublisher snapshotPublisher;
+    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
+    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private SnapshotInstaller snapshotInstaller;
     @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
@@ -105,7 +117,8 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        loader.rebuild();
+        new SnapshotRebuilder(snapshotPublisher, snapshotPublicationRepository,
+                snapshotPublicationService, snapshotInstaller).rebuildAndInstall();
     }
 
     @Test

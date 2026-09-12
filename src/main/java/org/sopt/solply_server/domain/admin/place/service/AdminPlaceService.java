@@ -19,6 +19,7 @@ import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -46,6 +47,7 @@ public class AdminPlaceService {
     private final PlaceStatsRepository placeStatsRepository;
     /** 손댄 장소를 <b>커밋 뒤에</b> 목록 캐시로 옮기게 한다 — 시점의 근거는 리프레셔 javadoc */
     private final SnapshotRefresher snapshotRefresher;
+    private final SnapshotRebuildRequestRepository rebuildRequestRepository;
     private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -124,7 +126,7 @@ public class AdminPlaceService {
      * "달라진 것 없음"을 알아보고 회차를 쓰지 않는다.
      *
      * <p><b>upsert가 훅보다 앞이다.</b> 커밋 뒤 패치가 읽는 원천이 방금 이 문장이 채운 place_stats
-     * 행이라, 순서가 뒤집히면 패치가 옛 값을 싣는다 ({@code SnapshotLoader#patch}).
+     * 행이라, 순서가 뒤집히면 패치가 옛 값을 싣는다 ({@code SnapshotLoader#readChangedState}).
      */
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
@@ -288,7 +290,8 @@ public class AdminPlaceService {
         adminPlaceRepository.delete(place);
         // 지운 장소도 손댄 장소로 넘긴다 — 커밋 뒤 패치가 그 id를 다시 읽어 <b>행이 없는 것</b>을
         // 보고 배열에서 뺀다. "없어졌다"를 여기서 따로 말하지 않는 것이 계약이다
-        snapshotRefresher.refreshPlacesAfterCommit(List.of(placeId));
+        snapshotRefresher.refreshPlacesAfterCommit(
+                List.of(placeId), rebuildRequestRepository.request());
 
         log.info("어드민 장소 삭제 - placeId: {}", placeId);
     }
@@ -344,7 +347,7 @@ public class AdminPlaceService {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        snapshotRefresher.refreshPlacesAfterCommit(placeIds);
+        snapshotRefresher.refreshPlacesAfterCommit(placeIds, rebuildRequestRepository.request());
     }
 
 
