@@ -76,8 +76,11 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
     static void equivalenceProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        // 매시 회차가 둘로 갈렸다(2026-09-12) — 새 키를 빠뜨리면 :15에 델타 소비가 깨어난다
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
     }
 
     /** 뒷정리가 픽스처를 역추적하는 유일한 기준점. 다른 IT의 접두사와 겹치면 안 된다 */

@@ -46,8 +46,12 @@ class BookmarkCountEventPublishIT extends MySqlContainerSupport {
     static void publishProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        // 2026-09-12 분리로 매시 회차가 둘이 됐다 — 이 키를 빠뜨리면 스위트가 매시 :15를 지나는
+        // 순간 델타 소비가 깨어나 이 파일이 심어 둔 전표를 삼킨다
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
     }
 
     /** users.nickname UNIQUE — 같은 싱글턴 컨테이너를 쓰는 다른 IT의 접두사와 겹치면 안 된다 */

@@ -11,6 +11,7 @@ import java.sql.Statement;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,8 +43,18 @@ import org.springframework.test.util.AopTestUtils;
 @SpringBootTest
 class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
 
-    /** 락 이름 — 배포 단위 전체에서 유일해야 한다. {@code PlaceStatsFacade}와 반드시 같은 문자열. */
+    /**
+     * 리뷰 축 회차의 락 — 배포 단위 전체에서 유일해야 한다. {@code PlaceStatsFacade}와 반드시 같은
+     * 문자열이고, <b>옛 통합 회차의 이름을 그대로 물려받았다</b>(2026-09-12). {@code shedlock}의 이 한
+     * 행이 "배치가 마지막으로 돈 시각"을 읽는 지점이라 개명하면 그 관찰이 끊긴다.
+     */
     private static final String COUNT_LOCK_NAME = "place-stats-count";
+
+    /**
+     * 북마크 델타 회차의 락. <b>리뷰 축과 이름을 공유하면 안 된다</b> — 두 회차가 겹친 시각에
+     * 깨어났을 때 한쪽이 통째로 건너뛰어지고, 그러면 그 축의 값이 한 회차만큼 낡는다.
+     */
+    private static final String BOOKMARK_DELTA_LOCK_NAME = "place-stats-bookmark-delta";
 
     /**
      * 카운트 안전망 회차의 락. 매시 회차와 이름이 겹치면 새벽에 둘 중 하나가 통째로 건너뛰어지고,
@@ -67,8 +78,10 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
     static void schedulerLockProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
     }
 
     @Autowired private PlaceStatsFacade facade;
@@ -84,29 +97,40 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
     @SpyBean private PlaceStatsBatchProcessor processor;
 
     /**
+     * 북마크 델타 회차가 <b>돌았는가</b>를 세는 지점. 리뷰 축과 다른 빈이라는 것 자체가 계약이고,
+     * 락 이름이 하나로 합쳐지면 두 회차 중 하나가 건너뛰어져 이 스파이의 호출 수가 0이 된다.
+     */
+    @SpyBean private BookmarkCountDeltaProcessor deltaProcessor;
+
+    /**
      * 락 이름까지 함께 못 박는다. 실행 횟수만 보면 <b>어떤</b> 이름으로 잠갔는지 알 수 없어,
      * 이름이 다른 배치와 겹치도록 바뀌어도(그러면 서로의 회차를 잡아먹는다) 그린이다.
      *
-     * <p><b>세 회차를 한 테스트에서 함께 거는 이유는 이름 분리가 검증 대상이기 때문이다.</b>
-     * 카운트 배치가 락을 쥔 상태에서 점수 배치와 안전망 배치가 <em>돌아야</em> 한다 — 이름이 하나로
+     * <p><b>네 회차를 한 테스트에서 함께 거는 이유는 이름 분리가 검증 대상이기 때문이다.</b>
+     * 리뷰 축이 락을 쥔 상태에서 북마크 델타·점수·안전망 회차가 <em>돌아야</em> 한다 — 이름이 하나로
      * 합쳐지면 그 회차가 통째로 건너뛰어져 {@code times(1)} 단언이 {@code times(0)}로 깨진다.
+     * 2026-09-12 분리로 매시 회차가 둘이 되면서 이 단언이 걸러야 할 실수가 하나 늘었다 —
+     * 북마크 축이 {@code place-stats-count}를 그대로 물려받는 실수다.
      * (같은 회차의 중복 호출이 건너뛰어지는 것과 정반대 방향의 단언이라 한 무대에서 봐야 한다.)
      */
     @Test
     void 같은_회차의_두_번째_호출은_락을_잡지_못해_건너뛰고_다른_회차는_제_락으로_돈다() {
-        facade.recalculatePlaceCounts();
-        facade.recalculatePlaceCounts();
+        facade.recalculateReviewCounts();
+        facade.recalculateReviewCounts();
+        facade.consumeBookmarkCountDeltas();
+        facade.consumeBookmarkCountDeltas();
         facade.recalculatePopularScores();
         facade.recalculatePlaceCountsSafety();
 
         verify(spiedProcessor(), times(1)).recalculateReviewCounts(any());
+        verify(spiedDeltaProcessor(), times(1)).consumeAndApply();
         verify(spiedProcessor(), times(1)).recalculateScores(any());
         verify(spiedProcessor(), times(1)).recalculateCountsAndClearOutbox(any());
 
         List<String> lockNames = jdbcTemplate.queryForList(
                 "SELECT name FROM shedlock ORDER BY name", String.class);
-        assertThat(lockNames)
-                .containsExactly(COUNT_LOCK_NAME, COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME);
+        assertThat(lockNames).containsExactly(
+                BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME, COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME);
     }
 
     /**
@@ -115,6 +139,10 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
      */
     private PlaceStatsBatchProcessor spiedProcessor() {
         return AopTestUtils.getUltimateTargetObject(processor);
+    }
+
+    private BookmarkCountDeltaProcessor spiedDeltaProcessor() {
+        return AopTestUtils.getUltimateTargetObject(deltaProcessor);
     }
 
     /**
