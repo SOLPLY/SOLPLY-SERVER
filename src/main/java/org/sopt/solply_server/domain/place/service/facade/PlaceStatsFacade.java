@@ -16,21 +16,21 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * {@code place_stats} 집계 배치의 진입점. 정기 스케줄 <b>셋</b>과 부팅 시 최초 적재를 연다.
+ * {@code place_stats} 집계 배치의 진입점. 정기 스케줄 <b>넷</b>과 부팅 시 최초 적재를 연다.
  *
  * <p><b>이 배치는 목록 캐시를 모른다.</b> 여기서 하는 일은 {@code place_stats}를 고치는 것까지이고,
  * 그 값이 목록에 나타나는 것은 다음 스냅샷 회차다 ({@code SnapshotScheduler}).
  *
  * <p><b>주기를 가른 이유는 값마다 신선도 요구가 다르기 때문이다 (2026-08-07 결정).</b>
  * <ol>
- *   <li><b>카운트 — 매시 30분.</b> 화면에 찍히는 북마크 수·리뷰 수·평점이고, 방금 누른 북마크가
- *       <em>수</em>에 반영되는 지연이 곧 이 간격이다. <b>이 회차가 만지는 것은 그 세 값뿐이고,
- *       그중에서도 값이 실제로 달라진 행뿐이다</b> (V35) — 파생 컬럼({@code town_id}·
- *       {@code tag_bitmask}·{@code created_at})과 행의 존재 여부는 어드민 쓰기 트랜잭션의 소유라
- *       여기서 손대지 않는다 ({@code AdminPlaceService}).
- *       <b>회차의 구성이 2026-08-17에 둘로 갈렸다</b> — 리뷰 축은 전량 재계산(실측 117ms),
- *       북마크 축은 아웃박스 델타 소비다. 북마크 전량 스캔(1,040만 행, 옛 회차 비용의 98%)이
- *       빠지면서 이 회차의 비용은 총 행 수가 아니라 <b>지난 한 시간의 토글 수</b>에 붙는다.</li>
+ *   <li><b>리뷰 카운트 — 매시 30분.</b> 화면에 찍히는 리뷰 수·평점이고, 방금 쓴 리뷰가 <em>수</em>에
+ *       반영되는 지연이 곧 이 간격이다. 전량 재계산이다(실측 117ms, 2026-08-15 창).
+ *       <b>이 회차가 만지는 것은 그 두 값뿐이고, 그중에서도 값이 실제로 달라진 행뿐이다</b> (V35) —
+ *       파생 컬럼({@code town_id}·{@code tag_bitmask}·{@code created_at})과 행의 존재 여부는
+ *       어드민 쓰기 트랜잭션의 소유라 여기서 손대지 않는다 ({@code AdminPlaceService}).</li>
+ *   <li><b>북마크 카운트 델타 소비 — 매시 15분.</b> 아웃박스 전표를 삼켜 {@code bookmark_count}에
+ *       더한다(2026-08-17). 북마크 전량 스캔(1,040만 행, 옛 회차 비용의 98%)이 빠지면서 이 회차의
+ *       비용은 총 행 수가 아니라 <b>지난 한 시간의 토글 수</b>에 붙는다.</li>
  *   <li><b>카운트 안전망 — 매일 01:45 (KST).</b> 옛 매시 문장(표시 카운트 셋 전량 재계산)이
  *       내려온 자리다. 델타는 발행·소비·표류 방어의 규칙 위에 서 있으므로, 버그로 어긋난 값의
  *       상한을 하루로 잡는 겹이 하나 필요하다. 근거는
@@ -44,17 +44,35 @@ import org.springframework.stereotype.Component;
  * 카운트와 점수의 분리가 스캔을 아끼지는 않는다. 두 회차가 각자 {@code place_reviews}를 훑으므로
  * 오히려 원본을 하루에 한 번 더 훑는다. 얻는 것은 비용이 아니라 <b>주기를 따로 잡을 자유</b>다.
  *
- * <p><b>세 회차는 시각이 갈려 있다.</b> 점수 배치가 {@code place_stats} 전 행에 X 락을 커밋까지
- * 들고 있어 같은 시각에 카운트 쪽이 돌면 서로를 기다리고, 안전망과 매시 회차는 아웃박스 전표를
- * {@code FOR UPDATE}로 잡아 같은 관문에서 직렬화된다. 그래서 01:00(점수) · 01:30(매시 카운트) ·
- * 01:45(안전망)로 15분 이상씩 벌려 뒀다 — 재시도까지 다 쓴 회차의 최장 시간이 약 21초라
- * 40배 이상 여유다(옛 카운트 실측 3.5초 기준이고, 매시 회차는 북마크 전량 스캔을 잃어 그보다
- * 훨씬 짧다). <b>주기나 {@code batch-max-attempts}를 바꿀 때 이 간격을 함께 확인할 것.</b>
- * 락 이름을 셋으로 나눠 둔 것은 그 반대 이유다 — 하나로 묶으면 정시에 겹친 회차 중 하나가
+ * <p><b>매시 두 축을 회차로 가른 것은 성능 개선이 아니다 (2026-09-12).</b> 두 축은 갈리기 전에도
+ * 각자 트랜잭션이었고 SET 목록이 겹치지 않아({@code PlaceStatsRepository}) DB가 하는 일의 총량은
+ * 그대로다. 얻은 것은 둘뿐이다 — ① 두 축의 주기를 따로 잡을 자유(빈도를 유지하는 지금은 쓰지 않는다),
+ * ② 한 축의 재시도 대기가 다른 축의 <em>시작</em>에 매번 얹히지 않는 것.
+ * <b>②를 "지연이 전파되지 않는다"로 읽지 말 것</b> — 아래 단일 스레드 문단이 그 한계다.
+ *
+ * <p><b>네 회차는 시각이 갈려 있다.</b> 점수 배치가 {@code place_stats} 전 행에 X 락을 커밋까지
+ * 들고 있어 같은 시각에 카운트 쪽이 돌면 서로를 기다리고, 안전망과 델타 소비는 아웃박스 전표를
+ * {@code FOR UPDATE}로 잡아 같은 관문에서 직렬화된다. 그래서 01:00(점수) · 01:15(델타 소비) ·
+ * 01:30(리뷰 카운트) · 01:45(안전망)로 15분 이상씩 벌려 뒀다.
+ * 전표를 두고 다투는 델타 소비와 안전망이 가장 멀리(30분) 떨어졌다.
+ * <b>15분이 충분하다는 보장은 없다</b> — 회차 소요는 데이터 양과 그때의 DB 상태에 달렸고,
+ * 시도 횟수와 대기를 곱해 나오는 것은 <em>대기의 합</em>이지 회차의 상한이 아니다. 간격이 실제로
+ * 지켜지는지는 회차 종료 로그의 {@code elapsed}로 본다.
+ * <b>주기나 재시도 설정을 바꿀 때 이 간격을 함께 확인할 것</b> — 이제 시도 횟수·대기가 회차마다
+ * 따로 있다({@code review-count-*}·{@code bookmark-delta-*}·{@code batch-*}).
+ * 락 이름을 넷으로 나눠 둔 것은 그 반대 이유다 — 하나로 묶으면 정시에 겹친 회차 중 하나가
  * 통째로 건너뛰어진다.
  *
- * <p><b>정각이 아니라 30분인 이유</b>는 장소 임베딩(03:00)·코스 임베딩(04:00)과의 스케줄러
- * 스레드 경합 회피다. {@code @Scheduled} 기본 실행기는 단일 스레드라 정각에 겹치면 한쪽이 밀린다.
+ * <p><b>{@code @Scheduled} 기본 실행기가 단일 스레드라는 사실은 분리 뒤에도 그대로다.</b>
+ * 네 회차와 스냅샷 회차가 한 스레드를 나눠 쓰므로, 앞 회차가 길어지면 뒤 회차의 발화가 그만큼
+ * 밀린다 — 회차를 갈랐다고 두 축이 서로를 못 밀게 되는 것이 아니다. 갈라서 얻은 것은 <b>한 축의
+ * 재시도 대기가 다른 축의 회차에 매번 얹히지 않는다</b>는 것뿐이고, 실행 스레드는 여전히 공유 자원이다.
+ * {@code lockAtMostFor}도 무제한 상호배제가 아니다 — 상한을 넘겨 돌던 회차는 락이 풀린 뒤에도
+ * 계속 돌고, 그 사이 다른 인스턴스가 같은 회차를 시작할 수 있다. 회차가 얼마나 걸릴지에 상한이
+ * 없으므로 그 창을 없앨 수는 없고, 상한을 관측된 소요보다 넉넉히 잡아 확률을 낮출 뿐이다.
+ *
+ * <p><b>매시 두 축이 정각이 아니라 :15·:30인 이유</b>는 장소 임베딩(03:00)·코스 임베딩(04:00)과의
+ * 스케줄러 스레드 경합 회피다. 위의 단일 스레드 때문에 정각에 겹치면 한쪽이 밀린다.
  * 점수 배치의 01:00은 그 둘과 두 시간 이상 떨어져 있어 같은 문제가 없다.
  *
  * <p><b>리더 선출(ShedLock)을 넣은 이유 — "동시 실행이 위험해서"가 아니다.</b> 동시 실행 자체는
@@ -94,27 +112,34 @@ import org.springframework.stereotype.Component;
 public class PlaceStatsFacade {
 
     private final PlaceStatsBatchProcessor batchProcessor;
-    /** 매시 회차의 북마크 축. 트랜잭션 경계를 스스로 가지므로 여기서는 부르기만 한다 */
+    /** 매시 :15 회차. 트랜잭션 경계를 스스로 가지므로 여기서는 부르기만 한다 */
     private final BookmarkCountDeltaProcessor deltaProcessor;
     private final PlaceStatsProperties placeStatsProperties;
 
     /**
-     * 표시 카운트 회차 — 매시 30분 (KST). <b>리뷰 축 전량 재계산 + 북마크 축 델타 소비</b> 둘로
-     * 이루어진다.
+     * 리뷰 카운트 회차 — 매시 30분 (KST). <b>{@code review_count}·{@code avg_rating} 전량 재계산.</b>
+     *
+     * <p><b>cron 키 {@code count-cron}과 락 이름 {@code place-stats-count}는 옛 통합 회차의
+     * 것을 그대로 쓴다</b> (2026-09-12). 환경별 yml을 고치지 않아도 발화 시각이 유지되고,
+     * "배치가 마지막으로 돈 시각"을 {@code shedlock} 한 행의 {@code locked_at}으로 보던 관찰이
+     * 끊기지 않는다 ({@code V35__drop_place_stats_count_calculated_at.sql}).
+     * 북마크 축은 {@link #consumeBookmarkCountDeltas()}에 있다.
      *
      * <p><b>매시 배치에 {@code zone}이 필요한가 — 발화 시각만 보면 아니다.</b> 시간대가 무엇이든
      * 매시 30분은 매시 30분이다(30분 단위 오프셋을 쓰는 지역이 아닌 한). 그럼에도 명시하는 이유는
-     * <b>두 회차의 시간대 계약을 한 줄로 읽히게 하기 위해서다</b> — 한쪽만 {@code zone}을 달아 두면
+     * <b>회차들의 시간대 계약을 한 줄로 읽히게 하기 위해서다</b> — 한쪽만 {@code zone}을 달아 두면
      * 다음 사람이 "카운트는 서버 시간대, 점수는 KST"라는 있지도 않은 비대칭을 읽는다. 실제 계약은
-     * "두 회차 모두 KST 벽시계"이고, 아래 30분 간격이 그 위에서만 성립한다.
+     * "네 회차 모두 KST 벽시계"이고, 회차 사이의 간격이 그 위에서만 성립한다.
      *
      * <p>{@code lockAtMostFor PT10M} — 락 보유 인스턴스가 죽었을 때의 자동 해제 상한.
-     * <b>재시도가 들어온 뒤로는 회차 하나의 최장 시간을 담을 수 있어야 한다</b> —
-     * 최대 시도 3회 × 실측 3.5초 + 대기 2회 × 5초 ≈ 21초로 약 29배 여유다
-     * (2026-08-15 실측, `docs/perf/2026-08-15-count-batch-duration-lock.md`).
+     * <b>재시도가 들어온 뒤로는 회차 하나의 소요를 담을 수 있어야 한다.</b> 10분을 고른 근거는
+     * 2026-08-15 창의 카운트 회차 관측(3.5초, `docs/perf/2026-08-15-count-batch-duration-lock.md`)에
+     * 재시도 대기를 얹어 잡은 여유였다. <b>그때의 관측이지 상한의 계산이 아니다</b> — 데이터가
+     * 늘거나 DB가 느린 순간에 걸리면 회차는 얼마든지 길어질 수 있다. 실제 소요는 회차 종료 로그의
+     * {@code elapsed}에 남으므로, 그 값이 10분에 가까워지는지를 보고 조정한다.
      * 다음 회차 간격(60분)보다는 짧아야 페일오버가 성립한다 — 길게 잡으면 죽은 인스턴스의 락이
      * 다음 회차까지 살아 배치가 통째로 건너뛰어진다.
-     * <b>{@code batch-max-attempts}를 올릴 때 이 상한을 함께 볼 것.</b>
+     * <b>{@code review-count-max-attempts}를 올릴 때 이 상한을 함께 볼 것.</b>
      *
      * <p>{@code lockAtLeastFor PT1M} — 배치가 6초 만에 끝나도 1분간은 락을 유지한다.
      * 인스턴스 간 발화 시각이 수 초 어긋나도 뒤늦게 깨어난 쪽이 "이미 풀린 락"을 잡아
@@ -122,12 +147,12 @@ public class PlaceStatsFacade {
      */
     @Scheduled(cron = "${solply.place-stats.count-cron:0 30 * * * *}", zone = "Asia/Seoul")
     @SchedulerLock(name = "place-stats-count", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
-    public void recalculatePlaceCounts() {
+    public void recalculateReviewCounts() {
         LocalDateTime calculatedAt = LocalDateTime.now();
         // 시작 로그가 없으면 "배치가 도는 중"과 "스케줄이 애초에 안 돌은 상태"를 로그로 구분할 수
         // 없다. 다중 인스턴스에서 락을 못 잡은 쪽은 블록 없이 회차를 건너뛰므로 이 줄도 남기지
         // 않는다 — 즉 회차마다 이 줄은 클러스터 전체에서 정확히 한 번 찍힌다.
-        log.info("인기순 카운트 배치 시작 - calculatedAt={}", calculatedAt);
+        log.info("인기순 리뷰 카운트 배치 시작 - calculatedAt={}", calculatedAt);
 
         // affectedRows는 문장이 걸린 행 수(matched)이고, 순수 UPDATE인 지금은 그것이 곧
         // place_stats 행 수 = 목록 노출 대상 장소 수다. 배치가 실제로 쓴 행 수가 아니다 —
@@ -135,34 +160,91 @@ public class PlaceStatsFacade {
         // 이 수치는 그와 무관하게 전 행을 센다. 둘이 갈라진 것이 V35의 실익 그 자체다.
         // UPSERT였던 시절에는 MySQL이 INSERT를 1, UPDATE를 2로 세어 장소 수의 약 2배가
         // 찍혔다 — 옛 로그를 비교할 때 그 차이를 감안할 것.
-        runWithRetry("인기순 리뷰 카운트 재계산", calculatedAt,
+        long roundStartNanos = System.nanoTime();
+        boolean succeeded = runWithRetry("인기순 리뷰 카운트 재계산", calculatedAt,
+                placeStatsProperties.getReviewCountMaxAttempts(),
+                placeStatsProperties.getReviewCountRetryDelay(),
                 () -> batchProcessor.recalculateReviewCounts(calculatedAt));
+        logRoundFinished("인기순 리뷰 카운트 회차", calculatedAt, roundStartNanos, succeeded);
+    }
 
-        // 델타 소비의 affectedRows는 성질이 정반대다 — 장소 수가 아니라 이번 회차가 삼킨
-        // 전표 수, 곧 지난 한 시간의 토글 수다. 이 수치가 회차의 비용 그 자체이므로 로그로
+    /**
+     * 북마크 카운트 델타 소비 회차 — 매시 15분 (KST). <b>아웃박스 전표를 삼켜
+     * {@code bookmark_count}에 더한다.</b>
+     *
+     * <p><b>리뷰 축과 락 이름을 공유하면 안 된다.</b> 겹친 시각에 깨어났을 때 한쪽이 통째로
+     * 건너뛰어진다. {@code shedlock} 행은 첫 발화 때 ShedLock이 만들므로 새 이름에 마이그레이션이
+     * 필요 없다 ({@code V27}). cron 키는 {@code bookmark-delta-cron}이다.
+     *
+     * <p><b>리뷰 축과 회차를 가른 것이 비용을 줄이지는 않는다.</b> 이 축은 갈리기 전에도 자기
+     * 트랜잭션이었고 {@code review_count}·{@code avg_rating}과 SET 목록이 겹치지 않았다
+     * ({@code PlaceStatsRepository}). 얻은 것은 주기를 따로 잡을 자유와, 리뷰 축의 재시도 대기가
+     * 이 회차의 시작에 매번 얹히지 않는다는 것이다.
+     * <b>같은 실행 스레드를 쓰므로 지연이 전파되지 않는다는 뜻은 아니다</b> — 클래스 javadoc 참조.
+     *
+     * <p>{@code lockAtMostFor}·{@code lockAtLeastFor}의 근거는 리뷰 축과 같다. 이 회차의 비용은
+     * 총 행 수가 아니라 지난 회차 이후 쌓인 전표 수에 붙는다.
+     */
+    @Scheduled(cron = "${solply.place-stats.bookmark-delta-cron:0 15 * * * *}", zone = "Asia/Seoul")
+    @SchedulerLock(
+            name = "place-stats-bookmark-delta", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
+    public void consumeBookmarkCountDeltas() {
+        LocalDateTime calculatedAt = LocalDateTime.now();
+        log.info("북마크 카운트 델타 배치 시작 - calculatedAt={}", calculatedAt);
+
+        // 델타 소비의 affectedRows는 리뷰 축과 성질이 정반대다 — 장소 수가 아니라 이번 회차가
+        // 삼킨 전표 수, 곧 지난 한 시간의 토글 수다. 이 수치가 회차의 비용 그 자체이므로 로그로
         // 남는 값도 그쪽이어야 한다.
         // 재시도가 안전한 근거는 재계산의 멱등성이 아니라 소비의 트랜잭션성이다 — 적용과 삭제가
-        // 한 트랜잭션이라 실패한 시도는 전표를 그대로 남기고 롤백된다.
-        runWithRetry("북마크 카운트 델타 소비", calculatedAt,
+        // 한 트랜잭션이라 실패한 시도는 전표를 그대로 남기고 롤백된다. 그래서 여기서
+        // calculatedAt은 계산에 쓰이지 않고 로그 표식일 뿐이다.
+        long roundStartNanos = System.nanoTime();
+        boolean succeeded = runWithRetry("북마크 카운트 델타 소비", calculatedAt,
+                placeStatsProperties.getBookmarkDeltaMaxAttempts(),
+                placeStatsProperties.getBookmarkDeltaRetryDelay(),
                 () -> deltaProcessor.consumeAndApply().consumedEvents());
+        logRoundFinished("북마크 카운트 델타 회차", calculatedAt, roundStartNanos, succeeded);
+    }
+
+    /**
+     * 매시 두 회차의 종료 줄. <b>{@code runWithRetry}의 시도별 완료 로그와 재는 구간이 다르다</b> —
+     * 저쪽은 성공한 시도 하나의 소요이고, 여기는 실패한 시도와 재시도 대기까지 포함한 회차 전체다.
+     * 이 값이 {@code lockAtMostFor}·회차 간격과 비교할 수 있는 유일한 수치다.
+     *
+     * <p>회차마다 시작 줄 하나와 이 종료 줄 하나가 짝을 이룬다. {@code runWithRetry}는 예외를
+     * 삼키고 인터럽트에도 {@code false}를 돌려주므로 실패한 회차·중단된 회차도 이 줄을 남긴다 —
+     * 짝이 없는 시작 줄은 {@code Error}처럼 스케줄러 스레드를 통째로 빠져나간 경우뿐이다.
+     *
+     * <p><b>실패해도 {@code info}로 남기는 것은 의도다.</b> 실패의 원인과 스택은
+     * {@code runWithRetry}가 이미 {@code error}로 냈다. 여기서 한 번 더 올리면 회차 하나가 알림을
+     * 두 번 울린다 — 이 줄이 더하는 것은 경보가 아니라 소요 시간이다.
+     */
+    private void logRoundFinished(
+            String label, LocalDateTime calculatedAt, long roundStartNanos, boolean succeeded) {
+        log.info("{} 종료 - 결과={}, calculatedAt={}, elapsed={}ms",
+                label, succeeded ? "성공" : "실패", calculatedAt,
+                Duration.ofNanos(System.nanoTime() - roundStartNanos).toMillis());
     }
 
     /**
      * 카운트 안전망 회차 — 매일 01:45 (KST). <b>표시 카운트 셋을 원본에서 다시 세고 아웃박스를
      * 같은 트랜잭션에서 비운다.</b>
      *
-     * <p>매시 회차의 북마크 축이 델타가 되면서, 그 값의 정확성은 전표 발행·소비 규칙 위에 선다.
+     * <p>북마크 축이 델타가 되면서, 그 값의 정확성은 전표 발행·소비 규칙 위에 선다.
      * 규칙에 버그가 생기면 카운트가 조용히 어긋나는데 <b>오류도 로그도 없다</b> — 이 회차가
      * 그 표류의 상한을 하루로 자른다. 전량 재계산이 버려지지 않고 여기로 내려온 것이지, 새로 생긴
      * 문장이 아니다 ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4).
      *
      * <p><b>01:45인 이유는 다른 배치들과 시각을 가르기 위해서다.</b> 01:00 점수 회차는
-     * {@code place_stats} 전 행에 X 락을 커밋까지 들고, 01:30 매시 회차는 같은 아웃박스 전표를
-     * {@code FOR UPDATE}로 잡는다. 03:00 장소 임베딩·04:00 코스 임베딩과도 떨어져 있어
+     * {@code place_stats} 전 행에 X 락을 커밋까지 들고, 01:15 델타 소비 회차는 같은 아웃박스 전표를
+     * {@code FOR UPDATE}로 잡는다 — 전표를 두고 다투는 그 짝이 2026-09-12 분리로 15분에서 30분
+     * 간격이 됐다. 03:00 장소 임베딩·04:00 코스 임베딩과도 떨어져 있어
      * {@code @Scheduled} 단일 스레드를 두고 다투지 않는다.
      *
-     * <p>{@code lockAtMostFor}·{@code lockAtLeastFor}의 근거는 매시 회차와 같다. 재계산 문장이
-     * 매시 회차에서 내려온 그 문장이므로 최장 시간의 셈도 그대로다.
+     * <p>{@code lockAtMostFor}·{@code lockAtLeastFor}의 근거는 리뷰 카운트 회차와 같다.
+     *
+     * <p><b>재시도 설정은 {@code batch-max-attempts}·{@code batch-retry-delay}를 그대로 쓴다</b> —
+     * 매시 두 축이 자기 키를 갖게 된 뒤에도 이 회차와 점수 회차는 공통 키에 남았다.
      */
     @Scheduled(cron = "${solply.place-stats.count-safety-cron:0 45 1 * * *}", zone = "Asia/Seoul")
     @SchedulerLock(name = "place-stats-count-safety", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
@@ -171,6 +253,8 @@ public class PlaceStatsFacade {
         log.info("인기순 카운트 안전망 배치 시작 - calculatedAt={}", calculatedAt);
 
         runWithRetry("인기순 카운트 안전망 배치", calculatedAt,
+                placeStatsProperties.getBatchMaxAttempts(),
+                placeStatsProperties.getBatchRetryDelay(),
                 () -> batchProcessor.recalculateCountsAndClearOutbox(calculatedAt));
     }
 
@@ -195,9 +279,14 @@ public class PlaceStatsFacade {
      *
      * <p>예외를 스케줄러 스레드로 흘리지 않는 것은 예전과 같다. 여기서 던지면
      * {@code @Scheduled} 기본 실행기가 단일 스레드라 이후 회차의 등록에까지 영향을 준다.
+     *
+     * <p><b>{@code maxAttempts}·{@code retryDelay}를 프로퍼티에서 직접 읽지 않고 인자로 받는 것이
+     * 계약이다</b> (2026-09-12). 회차마다 재시도 설정이 갈린 뒤로, 여기서 읽으면 어느 회차가 어느
+     * 키를 따르는지가 호출부에서 보이지 않는다. 호출부가 자기 키를 명시하게 두면 설정을 옮길 때
+     * 빠뜨린 회차가 그 자리에서 드러난다.
      */
-    private boolean runWithRetry(String label, LocalDateTime calculatedAt, IntSupplier attempt) {
-        int maxAttempts = placeStatsProperties.getBatchMaxAttempts();
+    private boolean runWithRetry(String label, LocalDateTime calculatedAt,
+            int maxAttempts, Duration retryDelay, IntSupplier attempt) {
         for (int n = 1; n <= maxAttempts; n++) {
             long startNanos = System.nanoTime();
             try {
@@ -212,10 +301,9 @@ public class PlaceStatsFacade {
                             label, maxAttempts, calculatedAt, e);
                     return false;
                 }
-                Duration delay = placeStatsProperties.getBatchRetryDelay();
                 log.warn("{} 실패 - {}ms 뒤 재시도한다 (시도 {}/{}), calculatedAt={}",
-                        label, delay.toMillis(), n, maxAttempts, calculatedAt, e);
-                if (!sleepBeforeRetry(label, delay)) {
+                        label, retryDelay.toMillis(), n, maxAttempts, calculatedAt, e);
+                if (!sleepBeforeRetry(label, retryDelay)) {
                     return false;
                 }
             }
@@ -249,12 +337,16 @@ public class PlaceStatsFacade {
      * <p><b>{@code zone}을 명시하는 이유.</b> {@code TimezoneConfig}가 JVM 기본 시간대를 이미
      * Asia/Seoul로 고정하므로 생략해도 지금은 같은 시각에 돈다. 그럼에도 적어 두는 것은 이 배치의
      * 시각이 <b>"트래픽 최저 시각"이라는 이유로 고른 값</b>이기 때문이다 — 그 근거는 서버가 어느
-     * 시간대에 뜨느냐와 무관하게 KST에 매여 있다. 카운트 회차도 같은 값을 달아 두 회차의 시간대
+     * 시간대에 뜨느냐와 무관하게 KST에 매여 있다. 다른 회차들도 같은 값을 달아 네 회차의 시간대
      * 계약을 한 벌로 유지한다.
      *
      * <p>{@code lockAtMostFor PT30M} — 카운트 회차보다 넉넉히 잡는다. 회차 간격이 24시간이라
      * 페일오버 상한을 짧게 유지할 이유가 없고, 점수 문장은 {@code place_stats} 전 행을 갱신하므로
      * 데이터가 늘면 카운트보다 먼저 길어진다. {@code lockAtLeastFor}의 근거는 카운트와 같다.
+     *
+     * <p><b>재시도 설정은 안전망 회차와 함께 공통 키({@code batch-max-attempts}·
+     * {@code batch-retry-delay})에 남아 있다</b> — 2026-09-12 분리에서 자기 키를 갖게 된 것은
+     * 매시 두 축뿐이다.
      */
     @Scheduled(cron = "${solply.place-stats.score-cron:0 0 1 * * *}", zone = "Asia/Seoul")
     @SchedulerLock(name = "place-stats-score", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
@@ -263,8 +355,10 @@ public class PlaceStatsFacade {
         log.info("인기점수 배치 시작 - calculatedAt={}", calculatedAt);
         // 재시도가 카운트보다 여기서 더 값어치 있다 — 회차 간격이 24시간이라 한 번 죽으면
         // 하루치 점수가 낡는다. 점수는 정렬 축이라 그 낡음이 표시값이 아니라 순서로 드러난다.
-        runWithRetry(
-                "인기점수 배치", calculatedAt, () -> batchProcessor.recalculateScores(calculatedAt));
+        runWithRetry("인기점수 배치", calculatedAt,
+                placeStatsProperties.getBatchMaxAttempts(),
+                placeStatsProperties.getBatchRetryDelay(),
+                () -> batchProcessor.recalculateScores(calculatedAt));
     }
 
     /**
