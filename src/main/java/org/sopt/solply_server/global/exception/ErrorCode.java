@@ -40,6 +40,24 @@ public enum ErrorCode {
     NOT_ADMIN_USER(HttpStatus.FORBIDDEN, "AUTH-010", "어드민 권한이 없는 사용자입니다."),
     INVALID_ADMIN_AUTH_CODE(HttpStatus.UNAUTHORIZED, "AUTH-011", "유효하지 않거나 만료된 인증 코드입니다."),
     INVALID_OAUTH_STATE(HttpStatus.UNAUTHORIZED, "AUTH-012", "유효하지 않거나 만료된 OAuth state 값입니다."),
+    // 유예가 끝난 회전 토큰 또는 이미 폐기된 토큰으로 재발급을 시도했다. 그 사용자의 모든
+    // refresh를 폐기한 뒤 내보내는 코드다 — 클라이언트는 재로그인 외에 할 수 있는 일이 없다.
+    // "탈취 확정"이 아니라 보안 정책이다. 정상 지연도 여기에 걸릴 수 있다.
+    REFRESH_TOKEN_REUSE_DETECTED(HttpStatus.UNAUTHORIZED, "AUTH-013", "리프레시 토큰 재사용이 감지되어 모든 토큰을 폐기했습니다. 다시 로그인해 주세요."),
+    // 서명은 우리 것이 맞는데 대응하는 행이 없다(보존 기간이 지나 정리됐거나, 옛 배포의 토큰).
+    // 재사용과 구분한다 — 폐기할 계열조차 특정할 수 없는 상태다.
+    REFRESH_TOKEN_NOT_FOUND(HttpStatus.UNAUTHORIZED, "AUTH-014", "더 이상 유효하지 않은 리프레시 토큰입니다."),
+    // 유예 중인 부모로 들어왔지만 그 자식이 이미 회전·폐기·만료됐다. 이것만으로는 전체 폐기를
+    // 하지 않는다 — 자식이 정상적으로 쓰였다는 뜻일 수도 있기 때문이다.
+    REFRESH_TOKEN_SUPERSEDED(HttpStatus.UNAUTHORIZED, "AUTH-015", "이미 대체된 리프레시 토큰입니다. 최신 토큰으로 다시 시도해 주세요."),
+    // 있을 수 없는 조합(유예 시각 누락, 자식 미존재, 소유자·계열 불일치). 재사용으로 단정하지
+    // 않는 이유는 그것이 공격의 증거가 아니라 우리 코드나 데이터가 깨졌다는 증거이기 때문이다.
+    REFRESH_TOKEN_STATE_INCONSISTENT(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH-016", "리프레시 토큰 상태가 정합적이지 않습니다."),
+    // 재발급 경로에서만 쓴다. 서명은 맞는 refresh를 들고 왔는데 그 주인이 탈퇴했거나 행이 없다.
+    // 404 NOT_FOUND_USER로 내보내면 "401이면 토큰을 버리고 재로그인"이라는 클라이언트 규칙에
+    // 걸리지 않아 죽은 토큰으로 무한 재시도가 된다. 조회 API의 사용자 없음(USER-001, 404)과는
+    // 다른 사건이므로 코드도 갈라 둔다 — 저쪽은 자원이 없다는 말이고 이쪽은 자격이 끝났다는 말이다.
+    REFRESH_TOKEN_USER_INACTIVE(HttpStatus.UNAUTHORIZED, "AUTH-017", "더 이상 사용할 수 없는 계정의 리프레시 토큰입니다. 다시 로그인해 주세요."),
 
     // 소셜 로그인 관련 (SOCIAL-xxx)
     UNSUPPORTED_OAUTH_PROVIDER(HttpStatus.BAD_REQUEST, "SOCIAL-001", "지원하지 않는 OAuth 플랫폼입니다."),

@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.auth.dto.response.SocialLoginResponse;
 import org.sopt.solply_server.domain.auth.dto.response.RefreshResponse;
 import org.sopt.solply_server.domain.auth.service.AuthService;
 import org.sopt.solply_server.global.annotation.CurrentSocialLoginPlatform;
+import org.sopt.solply_server.global.annotation.CurrentTokenFamilyId;
 import org.sopt.solply_server.global.annotation.CurrentUserId;
 import org.sopt.solply_server.global.dto.CustomApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -42,11 +43,15 @@ public class AuthController {
         );
     }
 
+    // 계열 로그아웃 — 이 access를 낸 로그인의 refresh만 끊는다. 끊는 범위가 계열이라는 것이지
+    // 다른 기기가 이 뒤로도 안전하다는 뜻은 아니다: 로그아웃한 계열의 refresh가 한 번이라도 더
+    // 도착하면 재사용으로 읽혀 그 사용자의 모든 계열이 끊긴다(AuthService#logout).
     @DeleteMapping("/logout")
     public ResponseEntity<CustomApiResponse<Void>> logout(
-            @CurrentUserId Long currentUserId
+            @CurrentUserId Long currentUserId,
+            @CurrentTokenFamilyId String familyId
     ) {
-        authService.logout(currentUserId);
+        authService.logout(currentUserId, familyId);
         return CustomApiResponse.success(
                 "로그아웃에 성공했습니다.",
                 null
