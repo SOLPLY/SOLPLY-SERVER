@@ -10,6 +10,9 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -65,6 +68,14 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
 
     @Autowired private SnapshotLoader loader;
     @Autowired private SnapshotRefresher refresher;
+    @Autowired private SnapshotPublisher snapshotPublisher;
+    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
+    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private SnapshotInstaller snapshotInstaller;
+    @Autowired private SnapshotRebuildRequestRepository rebuildRequestRepository;
+
+    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    private SnapshotRebuilder snapshotRebuilder;
     @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
@@ -114,7 +125,18 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        loader.rebuild();
+        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
+                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+        snapshotRebuilder.rebuildAndInstall();
+    }
+
+    /**
+     * 어드민 훅이 받는 재빌드 요청 번호를 <b>실제 경로로</b> 매긴다. {@code request()}가
+     * {@code MANDATORY}라 트랜잭션 밖에서는 거절되므로, 여기서 여는 트랜잭션이 운영의 어드민
+     * 쓰기 트랜잭션 자리를 대신한다.
+     */
+    private long newRequestSeq() {
+        return transactionTemplate.execute(status -> rebuildRequestRepository.request());
     }
 
     /**
@@ -127,7 +149,7 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
 
         List<PlacePreviewDto> afterPatch = previews();
 
-        loader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
         List<PlacePreviewDto> afterRebuild = previews();
 
         assertThat(afterPatch).isEqualTo(afterRebuild);
@@ -165,7 +187,7 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
 
         assertThat(previewOf(previews(), placeTiedOrder).thumbnailImageUrl()).isEqualTo(expected);
 
-        refresher.patchPlaceViewAfterCommit(placeTiedOrder);
+        refresher.patchPlaceViewAfterCommit(placeTiedOrder, newRequestSeq());
 
         assertThat(previewOf(previews(), placeTiedOrder).thumbnailImageUrl())
                 .as("패치 경로도 같은 값을 고른다").isEqualTo(expected);
@@ -198,13 +220,13 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         // display_order가 더 앞선 이미지를 끼워 넣는다 — 썸네일 선택 규칙이 갈리면 여기서 드러난다
         insertImage(placeRenamed, "패치A_새이미지", 1);
         resyncStats(placeRenamed);
-        refresher.patchPlaceViewAfterCommit(placeRenamed);
+        refresher.patchPlaceViewAfterCommit(placeRenamed, newRequestSeq());
 
         // 태그 둘을 고치고 훅은 한 번 — 맵을 통째로 다시 읽으므로 어느 태그가 바뀌었는지 넘기지 않는다
         String renamed = TAG_NAME_PREFIX + "수정";
         jdbcTemplate.update("UPDATE tags SET name = ? WHERE id = ?", renamed, renamedTagId);
         jdbcTemplate.update("UPDATE tags SET active = false WHERE id = ?", disabledTagId);
-        refresher.refreshTagViewsAfterCommit();
+        refresher.refreshTagViewsAfterCommit(newRequestSeq());
     }
 
     /**

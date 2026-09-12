@@ -23,19 +23,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 목록 캐시 세 벌 — 회차 스냅샷({@link SnapshotBox}) · 장소 표시값({@link PlaceViewHolder}) ·
- * 태그 표시값({@link TagViewHolder}) — 을 짓는 <b>유일한</b> 곳.
+ * 목록 캐시의 원천을 DB에서 읽는 <b>유일한</b> 곳. <b>읽기만 한다</b> — 힙 교체도 번호 발급도
+ * 하지 않는다.
  *
- * <p><b>짓는 방식이 둘이다.</b>
+ * <p><b>읽기와 설치를 가른 것이 이 클래스의 계약이다.</b> 예전에는 읽기·짓기·홀더 교체가 한
+ * 몸이었고, 그러면 어드민 훅이 "공유 발행이 성공하기 전에는 로컬을 고치지 않는다"를 지킬 수
+ * 없다. 힙에 설치하는 일은 전부 {@code SnapshotInstaller}에 있다.
+ *
+ * <p><b>읽는 방식이 둘이다.</b>
  * <ul>
- *   <li><b>전량</b>({@link #rebuild()}) — 원본을 통째로 읽어 스냅샷과 표시값 두 벌을 새로 짓는다.
- *       부르는 것은 {@link SnapshotScheduler} 하나다(기동 한 번 · 10분 주기). 이 회차가 <b>배치가
- *       채우는 정렬 키</b>(점수·카운트·평점)를 화면으로 옮기고, 동시에 부분 패치가 남긴 어긋남을
- *       바로잡는 <b>정합 회차</b>이기도 하다.</li>
- *   <li><b>부분</b>({@link #patch(Collection)}) — 어드민이 손댄 장소들만 다시 읽어 그 자리만 갈아
- *       끼운다. 부르는 것은 어드민 커밋 훅({@link SnapshotRefresher})이다. <b>어드민 쓰기는 전량을
- *       부르지 않는다</b> — 장소 하나를 고치자고 전 장소를 다시 읽고 다섯 배열을 다시 세우는 것이
- *       이 경로가 없애려는 비용 그 자체다.</li>
+ *   <li><b>전량</b>({@link #readSourceState()}) — 발행자가 원본에서 발행물을 지을 때.</li>
+ *   <li><b>부분</b>({@link #readChangedState(Collection)}) — 어드민이 손댄 장소만. <b>어드민
+ *       쓰기는 전량을 부르지 않는다</b> — 장소 하나를 고치자고 전 장소를 다시 읽는 것이 이 경로가
+ *       없애려는 비용 그 자체다.</li>
  * </ul>
  * 어드민 훅은 그 밖에 {@link #readView(long)}(장소 한 건)과 {@link #readTagViews()}(태그 전량)도 쓴다.
  *
@@ -75,11 +75,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 트랜잭션에 참여</b>하는 모양이 되므로, 새 트랜잭션을 명시적으로 연다. 트랜잭션이 없는 다른
  * 호출자(스케줄러)에게는 그냥 새 트랜잭션 하나를 여는 것과 같아 달라지는 것이 없다.
  *
- * <p><b>읽기는 어노테이션이 아니라 {@link TransactionTemplate}으로 연다.</b>
- * {@link #rebuild()}·{@link #patch(Collection)}는 락을 트랜잭션보다 <em>먼저</em> 잡아야 하는데
- * (근거는 {@link CacheWriteLock}), 메서드에 {@code @Transactional}을 달면 프록시가 그 반대 순서를
- * 강제한다. 락 안에서 프록시를 다시 타려 해도 자기 호출이라 어노테이션이 조용히 무시되므로,
- * 템플릿을 직접 들고 여는 것이 유일하게 정확한 방법이다.
+ * <p><b>읽기는 어노테이션이 아니라 {@link TransactionTemplate}으로 연다.</b> 어드민 훅은
+ * {@link CacheWriteLock}을 트랜잭션보다 <em>먼저</em> 잡은 채로 이 메서드들을 부르는데, 메서드에
+ * {@code @Transactional}을 달면 프록시가 그 반대 순서를 강제한다. 락 안에서 프록시를 다시 타려
+ * 해도 자기 호출이라 어노테이션이 조용히 무시되므로, 템플릿을 직접 들고 여는 것이 유일하게
+ * 정확한 방법이다.
  *
  * <p><b>동치 계약 — 응답이 바뀌면 안 된다.</b> 표시값은 엔티티 경로와 같은 값을 내야 한다.
  * <ul>
@@ -100,28 +100,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class SnapshotLoader {
 
     private final EntityManager em;
-    private final SnapshotBox snapshotBox;
-    private final PlaceViewHolder placeViewHolder;
-    private final TagViewHolder tagViewHolder;
-    private final CacheWriteLock writeLock;
-    private final SnapshotVersionIssuer versionIssuer;
     /** 전량·부분 읽기를 담는 트랜잭션 — 어노테이션을 쓰지 않는 이유는 클래스 javadoc */
     private final TransactionTemplate readTransaction;
 
-    public SnapshotLoader(
-            EntityManager em,
-            SnapshotBox snapshotBox,
-            PlaceViewHolder placeViewHolder,
-            TagViewHolder tagViewHolder,
-            CacheWriteLock writeLock,
-            SnapshotVersionIssuer versionIssuer,
-            PlatformTransactionManager transactionManager) {
+    public SnapshotLoader(EntityManager em, PlatformTransactionManager transactionManager) {
         this.em = em;
-        this.snapshotBox = snapshotBox;
-        this.placeViewHolder = placeViewHolder;
-        this.tagViewHolder = tagViewHolder;
-        this.writeLock = writeLock;
-        this.versionIssuer = versionIssuer;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -179,7 +162,7 @@ public class SnapshotLoader {
      * <p>기준 테이블이 {@code place_stats}라 <b>비활성 장소는 행이 없어 패치가 no-op이 된다</b>.
      * 그래도 되는 이유는 비활성 장소가 정렬 배열에 없어 화면에 닿지 않고, 되살리는 경로
      * ({@code AdminPlaceService#activatePlacesByTownIds})는 행을 다시 짓고 그 장소들을
-     * {@link #patch(Collection)}로 넘겨 배열에 다시 세우기 때문이다.
+     * {@link #readChangedState(Collection)}로 넘겨 배열에 다시 세우기 때문이다.
      */
     private static final String SINGLE_VIEW_SQL = """
             SELECT ps.name,
@@ -190,154 +173,55 @@ public class SnapshotLoader {
             """;
 
     /**
-     * 스냅샷과 표시값 두 벌을 통째로 다시 짓고 교체한다.
+     * 원본에서 읽은 한 벌 — <b>힙을 건드리지 않고 번호도 발급하지 않는다.</b> 발행자가 이것으로
+     * payload를 만든다.
      *
-     * <p><b>부르는 것은 {@link SnapshotScheduler} 하나다</b> — 기동 한 번과 10분 주기. 어드민
-     * 쓰기는 여기로 오지 않고 {@link #patch(Collection)}로 간다. 그래서 이 회차가 맡은 것이 둘이다:
-     * 배치가 채우는 <b>정렬 키</b>(점수·카운트·평점)를 화면으로 옮기는 것과, 부분 패치가 남긴
-     * 어긋남을 <b>원본에서 다시 읽어 바로잡는 것</b>. 패치가 실패해도(로그만 남는다) 낡음의 상한이
-     * 이 주기인 근거가 뒤쪽이다.
-     *
-     * <p><b>락이 트랜잭션보다 먼저다.</b> 재빌드와 표시값 패치가 한 줄로 서야 어드민 수정이
-     * 유실되지 않고(근거는 {@link CacheWriteLock}), <b>락을 기다리는 동안 커넥션을 쥐고 있으면
-     * 안 된다</b> — 어드민 둘이 동시에 커밋하면 기다리는 쪽이 커넥션을 잡은 채 잠들고, 락을 쥔 쪽은
-     * 발급용 커넥션을 하나 더 요구해 풀이 얕을 때 서로를 굶긴다. 그래서 락을 먼저 잡고, 읽기
-     * 트랜잭션은 락 안에서 열고 닫는다.
-     *
-     * <p><b>발급은 읽기 트랜잭션이 닫힌 뒤다.</b> 읽는 동안 발급하면 읽기 커넥션과 발급 커넥션을
-     * 동시에 쥐지만, 순서를 이렇게 두면 락 안에서 쥐는 커넥션이 언제나 하나다.
-     *
-     * <p><b>버전은 여기서, 스냅샷을 완성한 순간에, 한 번만 발급한다.</b> 이것이 "버전↔내용 1:1"
-     * 불변식의 근거다 — 남의 버전에 내 내용을 붙이는 경로가 존재하지 않으므로 "버전은 같은데 목록이
-     * 다른" 사고가 구조로 봉쇄된다. 홀더({@link SnapshotBox#adopt})는 완성된 스냅샷을 받기만
-     * 하고 버전을 찍지 않는다. 번호의 출처는 DB 발급 테이블이다
-     * ({@link SnapshotVersionIssuer}) — 이 인스턴스 안의 단조는 락이 발급을 줄 세워 지켜지고,
-     * 빌더가 둘 이상이 될 때의 단조는 발급소가 하나인 것이 지켜 준다.
-     *
-     * <p><b>계약 — 스냅샷 완성과 {@code adopt} 사이가 확장 설계의 삽입 지점이다.</b> 지금 그
-     * 사이에 있는 것은 버전 발급 하나이고, 다중 인스턴스판의 아카이브 적재(Redis {@code SET})와
-     * 발행({@code PUBLISH NEW_VERSION})이 발급 바로 뒤에 들어간다
-     * ({@code docs/design/2026-09-01-multi-instance-snapshot-pipeline.md} §3-1·3-2).
-     * 그 자리를 비워 두려고 버전 발급을 홀더에서 이리로 옮겼으니, 그 사이에 다른 관심사를
-     * 끼워 넣지 말 것.
-     *
-     * <p><b>표시값 홀더를 스냅샷보다 먼저 교체한다.</b> 순서가 반대면 새 스냅샷에만 있는 장소가 옛 맵에
-     * 없어 조회 경로가 그 행을 건너뛰는 창이 열린다. 먼저 교체하면 그 창이 없고, 남는 것은
-     * "삭제된 장소를 옛 스냅샷에서 만나 건너뛰는" 계약상 정상 경로뿐이다. 버전 발급은 홀더 교체보다
-     * 앞이다 — 발급이 실패하면 스냅샷도 홀더도 직전 회차 그대로 남아 "실패하면 아무것도 바뀌지
-     * 않는다"가 성립한다.
+     * <p><b>읽기와 설치를 가른 것이 이 클래스의 계약이다.</b> 예전에는 읽기·짓기·홀더 교체가 한
+     * 몸이었는데, 그러면 어드민 훅이 "공유 발행이 성공하기 전에는 로컬을 고치지 않는다"를 지킬 수
+     * 없다. 힙 교체는 {@code SnapshotInstaller} 한 곳으로 모았다.
      *
      * <p><b>아래 로그를 지우지 말 것.</b> 나중에 회차 직후 CPU 스파이크가 문제가 됐을 때
-     * "몇 행을 몇 ms에 지었는가"가 남아 있지 않으면 원인을 이 경로로 좁힐 수 없다
-     * (실측 선례: 6,320개 94~302ms). 버전도 함께 남긴다 — 만료를 호소하는 커서의 버전이 어느
-     * 회차였는지는 이 로그 말고 대조할 곳이 없다.
-     *
-     * @return 스냅샷에 담긴 장소 수
+     * "몇 행을 몇 ms에 읽었는가"가 남아 있지 않으면 원인을 이 경로로 좁힐 수 없다
+     * (실측 선례: 6,320개 94~302ms).
      */
-    public int rebuild() {
-        return writeLock.call(this::rebuildInLock);
-    }
-
-    private int rebuildInLock() {
+    public SourceState readSourceState() {
         long startNanos = System.nanoTime();
-
         Loaded loaded = readTransaction.execute(status -> new Loaded(readSource(), readTagViews()));
         Source source = loaded.source();
-        Map<Long, TagView> tagViews = loaded.tagViews();
+        log.info("장소 목록 원본 읽기 완료 - places={}, tags={}, elapsed={}ms",
+                source.entries().size(), loaded.tagViews().size(),
+                Duration.ofNanos(System.nanoTime() - startNanos).toMillis());
+        return new SourceState(source.entries(), source.views(), loaded.tagViews());
+    }
 
-        SortedPlaces fresh = SortedPlaces.of(source.entries());
-        // 발급은 자기 트랜잭션에서 돈다 — 읽기 트랜잭션은 이미 닫혔고 그것이 읽기 전용이라
-        // INSERT를 실을 수 없었기 때문이기도 하다. 홀더 교체보다 앞에 두어, 발급이 실패하면
-        // 스냅샷도 홀더도 직전 회차 그대로 남는다.
-        Snapshot snapshot = new Snapshot(versionIssuer.issue(), fresh);
-        placeViewHolder.replaceAll(source.views());
-        tagViewHolder.replaceAll(tagViews);
-        snapshotBox.adopt(snapshot);
-
-        long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
-        log.info("장소 목록 스냅샷 교체 완료 - version={}, places={}, towns={}, arrays={}, tags={},"
-                        + " elapsed={}ms",
-                snapshot.version(), fresh.placeCount(), fresh.townCount(), fresh.arrayCount(),
-                tagViews.size(), elapsedMs);
-        return fresh.placeCount();
+    /**
+     * 어드민이 손댄 장소들만 다시 읽는다. <b>읽어 오는 것은 행 전체지만 그중 무엇을 쓸지는
+     * {@link SortedPlaces#patch}가 정한다</b> — 로더의 몫은 DB에 지금 무엇이 있는가를 전하는
+     * 것까지다(근거는 {@link PlaceEntry#patchedBy}).
+     *
+     * <p>행이 사라진 장소는 결과에 끼지 않는다. 부른 쪽이 그것을 "배열에서 뺀다"로 읽는다.
+     *
+     * @param changedPlaceIds 어드민 트랜잭션이 손댄 장소 id — 중복은 호출자가 이미 접었다
+     *                        ({@link SnapshotRefresher})
+     */
+    public SourceState readChangedState(Collection<Long> changedPlaceIds) {
+        Source source = readTransaction.execute(status -> readChangedSource(changedPlaceIds));
+        return new SourceState(source.entries(), source.views(), Map.of());
     }
 
     /** 읽기 트랜잭션 하나가 낳는 것 전부 — 이 record가 트랜잭션의 경계를 눈에 보이게 한다 */
     private record Loaded(Source source, Map<Long, TagView> tagViews) {}
 
     /**
-     * 어드민이 손댄 장소들만 다시 읽어 <b>정렬 배열의 그 자리만</b> 갈아 끼운다. 어드민 쓰기가
-     * 목록에 닿는 경로는 이것 하나이고, 전량({@link #rebuild()})은 부르지 않는다.
-     *
-     * <p><b>계약 넷.</b>
-     * <ol>
-     *   <li><b>락이 먼저, 읽기 트랜잭션은 락 안에서 열고 닫는다.</b> 커밋된 수정을 반드시 보고
-     *       (일관 읽기 스냅샷이 락 뒤에 잡힌다), 락 안에서 쥐는 커넥션이 언제나 하나다 —
-     *       근거는 {@link CacheWriteLock}.</li>
-     *   <li><b>다 짓고 번호까지 받은 뒤에 공표한다.</b> 읽기·패치·발급 중 어느 하나가 실패하면
-     *       스냅샷도 홀더도 직전 그대로다.</li>
-     *   <li><b>표시값이 스냅샷보다 먼저다.</b> 순서가 반대면 새 배열에만 있는 장소가 홀더에 아직
-     *       없어 조회 경로가 그 행을 건너뛰는 창이 열린다.</li>
-     *   <li><b>배열이 실제로 달라졌을 때만 회차를 쓴다.</b> 표시값만 바뀐 수정은
-     *       {@link SortedPlaces#patch}가 자기 자신을 돌려주므로 발급도 {@code adopt}도 건너뛴다 —
-     *       내용이 같은데 번호만 새로 찍히면 진행 중인 스크롤이 그 자리에서 만료된다.</li>
-     * </ol>
-     *
-     * <p>읽어 오는 것은 행 전체지만 그중 무엇을 쓸지는 {@link SortedPlaces#patch}가 정한다 — 로더의
-     * 몫은 <b>DB에 지금 무엇이 있는가</b>를 전하는 것까지다(근거는 {@link PlaceEntry#patchedBy}).
-     * 행이 사라진 장소는 결과에 끼지 않으므로 홀더의 옛 표시값이 남는데, 새 배열에 없어 새 요청에는
-     * 닿지 않고 다음 전량 재빌드의 맵 교체가 치운다.
-     *
-     * <p><b>아래 로그를 지우지 말 것.</b> 전량 회차와 같은 이유다 — 어드민 편집이 몰리는 시간대에
-     * 회차가 얼마나 빨리 도는지, 그때 몇 장소를 몇 ms에 갈았는지가 남아 있지 않으면 만료를 호소하는
-     * 커서의 원인을 이 경로로 좁힐 수 없다.
-     *
-     * @param changedPlaceIds 어드민 트랜잭션이 손댄 장소 id — 중복은 호출자가 이미 접었다
-     *                        ({@link SnapshotRefresher})
+     * 원본 한 벌. {@code tagViews}는 {@link #readChangedState}에서 비어 있다 — 부분 읽기는 태그를
+     * 다시 읽지 않는다.
      */
-    public void patch(Collection<Long> changedPlaceIds) {
-        if (changedPlaceIds.isEmpty()) {
-            return;
-        }
-        writeLock.run(() -> patchInLock(changedPlaceIds));
+    public record SourceState(
+            List<PlaceEntry> entries,
+            Map<Long, PlaceView> views,
+            Map<Long, TagView> tagViews) {
     }
 
-    private void patchInLock(Collection<Long> changedPlaceIds) {
-        Snapshot held = snapshotBox.current();
-        if (held == null) {
-            // 기동 빌드 전이라 손댈 회차가 없다. 정상 경로에는 없는 상태다(트래픽보다 기동 빌드가
-            // 먼저다 — SnapshotBox 계약 3). 그래도 조용히 지나가면 이 쓰기만 다음 성공한 전량
-            // 재빌드까지 목록에 없으므로, 없는 것을 짓는 유일한 답인 전량으로 간다. 락은 이미 잡았다
-            log.warn("장소 목록 스냅샷이 아직 없어 부분 패치 대신 전량으로 짓는다 - changed={}",
-                    changedPlaceIds.size());
-            rebuildInLock();
-            return;
-        }
-
-        long startNanos = System.nanoTime();
-
-        Source source = readTransaction.execute(status -> readChangedSource(changedPlaceIds));
-        SortedPlaces patched = held.sortedPlaces().patch(changedPlaceIds, source.entries());
-        boolean arraysChanged = patched != held.sortedPlaces();
-        // 발급은 읽기 트랜잭션이 닫힌 뒤이고 공표보다 앞이다 — 이유는 메서드 javadoc의 순서 2·3
-        Snapshot next = arraysChanged ? new Snapshot(versionIssuer.issue(), patched) : null;
-
-        source.views().values().forEach(placeViewHolder::put);
-        if (next != null) {
-            snapshotBox.adopt(next);
-        }
-
-        long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
-        if (next == null) {
-            log.info("장소 목록 표시값만 갱신 - version={}(그대로), changed={}, read={}, elapsed={}ms",
-                    held.version(), changedPlaceIds.size(), source.views().size(), elapsedMs);
-            return;
-        }
-        log.info("장소 목록 스냅샷 부분 교체 완료 - version={}, places={}, towns={}, arrays={},"
-                        + " changed={}, read={}, elapsed={}ms",
-                next.version(), patched.placeCount(), patched.townCount(), patched.arrayCount(),
-                changedPlaceIds.size(), source.views().size(), elapsedMs);
-    }
 
     /**
      * 장소 하나의 표시값을 다시 읽는다. 어드민이 이름·이미지·메인 태그를 고친 뒤 그 항목만 갈아
@@ -385,8 +269,8 @@ public class SnapshotLoader {
     }
 
     /**
-     * 문장 ①의 행을 엔트리 목록과 표시값 맵으로 접는다. 부분 결과가 캐시로 새지 않는다 — 교체는
-     * {@link #rebuildInLock()}·{@link #patchInLock}이 이 메서드를 끝까지 받은 뒤 한 번뿐이다.
+     * 문장 ①의 행을 엔트리 목록과 표시값 맵으로 접는다. 부분 결과가 캐시로 새지 않는다 — 이
+     * 클래스는 홀더를 아예 들고 있지 않다.
      */
     private Source toSource(List<Object[]> rows) {
         List<PlaceEntry> entries = new ArrayList<>(rows.size());
@@ -410,7 +294,7 @@ public class SnapshotLoader {
      * 것이 바뀌었는지 모아 단건으로 읽을 값어치가 없고, 규칙이 하나면 두 경로가 갈릴 자리도 없다.
      *
      * <p>{@code @Transactional}은 훅에서 들어오는 <b>바깥 호출</b>을 위한 것이다.
-     * {@link #rebuildInLock()}은 자기 호출이라 어노테이션이 무시되고 이미 열린 읽기 트랜잭션
+     * {@link #readSourceState()}는 자기 호출이라 어노테이션이 무시되고 이미 열린 읽기 트랜잭션
      * 안에서 도는데, 그것이 의도한 모양이다 — 두 문장이 한 트랜잭션을 함께 쓴다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)

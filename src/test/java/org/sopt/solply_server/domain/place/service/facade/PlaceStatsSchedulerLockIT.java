@@ -66,6 +66,13 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
     private static final String SCORE_LOCK_NAME = "place-stats-score";
 
     /**
+     * 목록 스냅샷 발행자의 락. <b>통계 회차의 것이 아니다</b> — 기동 부트스트랩이 이 이름으로
+     * 락을 잡으므로 같은 테이블에 행이 남고(2026-09-12), 통계 넷과 <b>겹치지 않는다</b>는 것이
+     * 여기서 확인할 계약이다. 겹치면 발행자가 도는 동안 통계 회차가 통째로 건너뛰어진다.
+     */
+    private static final String SNAPSHOT_PUBLISH_LOCK_NAME = "place-list-snapshot-publish";
+
+    /**
      * 메서드 이름은 베이스의 {@code datasource}와 반드시 달라야 한다({@code @DynamicPropertySource}는
      * static이라 동명이면 상위를 <em>숨긴다</em>).
      *
@@ -129,8 +136,18 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
 
         List<String> lockNames = jdbcTemplate.queryForList(
                 "SELECT name FROM shedlock ORDER BY name", String.class);
-        assertThat(lockNames).containsExactly(
-                BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME, COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME);
+        assertThat(lockNames)
+                .as("네 회차는 저마다 제 이름으로 잠근다")
+                .contains(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
+                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME);
+        assertThat(List.of(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
+                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME))
+                .as("통계 회차가 발행자 락 이름을 물려받으면 서로의 회차를 잡아먹는다")
+                .doesNotContain(SNAPSHOT_PUBLISH_LOCK_NAME);
+        assertThat(lockNames)
+                .as("이 테이블에 남는 것은 통계 넷과 발행자 락뿐이다")
+                .containsOnly(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
+                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME, SNAPSHOT_PUBLISH_LOCK_NAME);
     }
 
     /**

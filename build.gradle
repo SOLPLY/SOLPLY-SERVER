@@ -159,4 +159,9 @@ dependencyManagement {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// 스프링 컨텍스트 캐시가 IT 클래스 수만큼 살아 있고, 2026-09-12부터 각 컨텍스트가 목록 스냅샷
+	// 한 벌(정렬 배열 + 표시값 맵)과 발행 payload 바이트까지 들고 있다. Gradle 기본 512m으로는
+	// 스무 개 남짓에서 OutOfMemoryError가 나 엉뚱한 IT가 컨텍스트 기동 실패로 죽는다(실측).
+	// 운영은 컨텍스트가 하나뿐이라 이 값은 테스트 하네스 사정이다.
+	maxHeapSize = '2g'
 }

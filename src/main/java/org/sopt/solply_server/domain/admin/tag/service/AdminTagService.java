@@ -15,6 +15,7 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
 import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -49,6 +50,7 @@ public class AdminTagService {
     private final EntityManager entityManager;
     /** 태그 맵을 <b>커밋 뒤에</b> 다시 읽게 한다 — 시점의 근거는 리프레셔 javadoc */
     private final SnapshotRefresher snapshotRefresher;
+    private final SnapshotRebuildRequestRepository rebuildRequestRepository;
 
     /**
      * <b>태그 id는 {@code place_stats.tag_bitmask}의 비트 자리다</b> — 62를 넘는 id가 생기면 목록
@@ -94,7 +96,7 @@ public class AdminTagService {
             throw new BusinessException(ErrorCode.TAG_ID_BIT_LIMIT_EXCEEDED);
         }
 
-        snapshotRefresher.refreshTagViewsAfterCommit();
+        snapshotRefresher.refreshTagViewsAfterCommit(rebuildRequestRepository.request());
         return tagId;
     }
 
@@ -152,7 +154,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        snapshotRefresher.refreshTagViewsAfterCommit();
+        snapshotRefresher.refreshTagViewsAfterCommit(rebuildRequestRepository.request());
         return id;
     }
 
@@ -171,7 +173,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        snapshotRefresher.refreshTagViewsAfterCommit();
+        snapshotRefresher.refreshTagViewsAfterCommit(rebuildRequestRepository.request());
         return AdminTagActivationResponse.of(id, req.active());
     }
 
@@ -192,7 +194,7 @@ public class AdminTagService {
     /**
      * <b>여기서는 훅을 부르지 않는다.</b> 함께 내려간 자식도 맵에 반영돼야 하지만 — 목록이 대표
      * 태그 이름을 비우는 판정이 맵의 {@code active}로 이뤄지므로 빠뜨리면 그 자식이 대표인 장소는
-     * 다음 타이머 회차(≤10분)까지 내려간 태그의 이름을 계속 달고 나간다 — 진입 메서드의 훅 하나가
+     * 다음 전량 재빌드까지 내려간 태그의 이름을 계속 달고 나간다 — 진입 메서드의 훅 하나가
      * 맵을 통째로 다시 읽으므로 자식을 따로 셀 것이 없다.
      */
     private void deactivateCascade(Long parentId) {

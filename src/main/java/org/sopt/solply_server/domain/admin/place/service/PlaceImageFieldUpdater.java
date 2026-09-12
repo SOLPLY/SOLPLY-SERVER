@@ -4,6 +4,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
 import org.sopt.solply_server.domain.place.entity.PlaceImageInfo;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
@@ -22,6 +23,7 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
     private final PlaceStatsRepository placeStatsRepository;
     /** 이미지 키가 바뀌면 썸네일 URL이 바뀐다 — 이유는 {@link #replaceImages} */
     private final SnapshotRefresher snapshotRefresher;
+    private final SnapshotRebuildRequestRepository rebuildRequestRepository;
 
     @Override
     public TargetDir supportedDir() {
@@ -35,7 +37,8 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
      *
      * <p><b>여기서 표시값 패치를 걸지 않으면 목록이 죽은 URL을 낸다.</b> 어드민 쓰기가 건 재빌드는
      * 이 트랜잭션보다 <em>먼저</em> 끝나므로 스테이징 키를 찍고, 이동(MOVE)은 원본을 지운다. 그
-     * 상태가 다음 전량 재빌드(≤10분)까지 남으면서 아무 오류도 나지 않는다.
+     * 상태가 다음 전량 재빌드까지 남으면서 아무 오류도 나지 않는다(실패하면 그 자리에서 재빌드를
+     * 예약하므로 다음 폴이 되돌린다 — {@code SnapshotRefresher}).
      *
      * <p><b>upsert가 패치보다 앞이다.</b> 썸네일 키가 {@code place_stats}의 칸이라(V40) 패치가 읽는
      * 원천이 그 칸이다 — 순서가 뒤집히면 패치는 방금 갈아 끼운 키가 아니라 스테이징 키를 다시
@@ -56,6 +59,6 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
         }
 
         placeStatsRepository.upsertRowsForActivePlaces(List.of(placeId));
-        snapshotRefresher.patchPlaceViewAfterCommit(placeId);
+        snapshotRefresher.patchPlaceViewAfterCommit(placeId, rebuildRequestRepository.request());
     }
 }

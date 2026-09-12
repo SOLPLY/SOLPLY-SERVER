@@ -20,7 +20,11 @@ import org.sopt.solply_server.domain.admin.place.facade.AdminPlaceFacade;
 import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
-import org.sopt.solply_server.domain.place.cache.SnapshotLoader;
+import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
+import org.sopt.solply_server.domain.place.cache.SnapshotPublisher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRebuilder;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -101,7 +105,19 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     /** 회차를 손으로 돌린다 — 운영에서 이 자리를 채우는 것은 10분 주기 타이머다 */
-    @Autowired private SnapshotLoader snapshotLoader;
+    @Autowired private SnapshotPublisher snapshotPublisher;
+    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
+    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private SnapshotInstaller snapshotInstaller;
+
+    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    private SnapshotRebuilder snapshotRebuilder;
+
+    @BeforeEach
+    void wireSnapshotRebuilder() {
+        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
+                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+    }
     @Autowired private JdbcTemplate jdbcTemplate;
     /** 실제 북마크 생성 경로. 리포지토리를 직접 부르면 서비스 층의 계약이 검증에서 빠진다. */
     @Autowired private BookmarkService bookmarkService;
@@ -1007,12 +1023,16 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 회차 하나 — 지금 DB의 상태로 스냅샷을 다시 찍는다. 운영에서 이 자리를 채우는 것은 10분 주기
      * 타이머이고, 여기서 이 호출을 생략한 조회는 <b>이전 회차의 스냅샷</b>을 본다.
      *
-     * <p>회차 버전이 DB 발급 테이블의 AUTO_INCREMENT 번호라({@code SnapshotVersionIssuer})
-     * 연달아 두 번 찍어도 두 회차가 같은 번호를 갖지 않는다. 그래서 여기서 회차 사이를 시간으로
-     * 벌릴 필요가 없다 — 보존 밖 판정을 세우는 테스트가 그 전제 위에 서 있다.
+     * <p>회차 버전이 발행물 행의 AUTO_INCREMENT id라(2026-09-12) 연달아 두 번 찍어도 두 회차가
+     * 같은 번호를 갖지 않는다. 그래서 여기서 회차 사이를 시간으로 벌릴 필요가 없다 — 보존 밖
+     * 판정을 세우는 테스트가 그 전제 위에 서 있다.
+     *
+     * <p><b>짓기와 설치가 갈렸다.</b> 예전에는 로더 한 줄이 지어서 그 자리에 꽂았고, 지금은
+     * 발행물을 MySQL에 쓴 뒤 그것을 되읽어 설치한다. 이 IT가 보는 것은 그 뒤의 조회 결과이므로
+     * 둘을 한 손잡이로 묶는다.
      */
     private void takeSnapshot() {
-        snapshotLoader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
     }
 
     /**

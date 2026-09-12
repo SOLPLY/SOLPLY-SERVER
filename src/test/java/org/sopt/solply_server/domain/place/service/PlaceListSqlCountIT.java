@@ -11,7 +11,11 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.sopt.solply_server.domain.place.cache.SnapshotLoader;
+import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
+import org.sopt.solply_server.domain.place.cache.SnapshotPublisher;
+import org.sopt.solply_server.domain.place.cache.SnapshotRebuilder;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -67,7 +71,13 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
 
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
-    @Autowired private SnapshotLoader snapshotLoader;
+    @Autowired private SnapshotPublisher snapshotPublisher;
+    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
+    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private SnapshotInstaller snapshotInstaller;
+
+    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    private SnapshotRebuilder snapshotRebuilder;
     @Autowired private JdbcTemplate jdbcTemplate;
 
     private long townId;
@@ -89,7 +99,9 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
         // 조회가 읽는 것은 스냅샷뿐이라, 픽스처를 다 심은 뒤 한 회차를 찍어야 목록이 이 행들을 본다
-        snapshotLoader.rebuild();
+        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
+                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+        snapshotRebuilder.rebuildAndInstall();
     }
 
     /**
@@ -132,7 +144,7 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
         assertThat(statementsReadingPlaceStats()).isEmpty();
 
         SqlStatementProbe.clear();
-        snapshotLoader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
         assertThat(statementsReadingPlaceStats()).isNotEmpty();
     }
 

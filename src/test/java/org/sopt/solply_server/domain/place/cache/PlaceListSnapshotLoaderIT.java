@@ -14,6 +14,8 @@ import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.PlaceService;
@@ -74,6 +76,13 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
 
     @Autowired private SnapshotLoader loader;
+    @Autowired private SnapshotPublisher snapshotPublisher;
+    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
+    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private SnapshotInstaller snapshotInstaller;
+
+    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    private SnapshotRebuilder snapshotRebuilder;
     @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceViewHolder placeViewHolder;
     @Autowired private TagViewHolder tagViewHolder;
@@ -150,7 +159,9 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        loader.rebuild();
+        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
+                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+        snapshotRebuilder.rebuildAndInstall();
     }
 
     /**
@@ -269,7 +280,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     @Test
     void 비활성_장소도_행이_있으면_스냅샷에_남고_목록_표시값이_온전하다() {
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeFull);
-        loader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
 
         assertThat(entryOf(placeFull)).isNotNull();
 
@@ -289,9 +300,9 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
      * 아니라 이 캐시의 정의라는 것을 값으로 남긴다.
      *
      * <p>여기서 지연이 보이는 것은 이 픽스처가 <b>어드민 경로를 지나치기</b> 때문이다 — 어드민
-     * 쓰기는 커밋 뒤 스스로 스냅샷을 다시 지으므로({@code SnapshotRefresher}) 그 경로의
-     * 변경은 이 창을 만들지 않고, 배치가 채우는 카운트·점수만 다음 타이머 회차를 기다린다
-     * ({@code SnapshotScheduler}).
+     * 쓰기는 커밋 뒤 스스로 발행하므로({@code SnapshotRefresher}) 그 경로의 변경은 이 창을
+     * 만들지 않고, 배치가 채우는 카운트·점수만 다음 발행자 회차를 기다린다
+     * ({@code SnapshotPublisher}).
      */
     @Test
     void 다시_짓기_전에는_새_장소가_스냅샷에_없다() {
@@ -300,7 +311,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
         assertThat(entryOf(added)).as("아직 이 회차의 스냅샷에는 없다").isNull();
 
-        loader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
 
         assertThat(entryOf(added)).as("다음 회차부터 보인다").isNotNull();
     }

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
@@ -50,7 +51,8 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class})
+@Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class,
+        SnapshotRebuildRequestRepository.class})
 class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     private static final double BOOKMARK_WEIGHT = 1.0;
@@ -457,6 +459,14 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 기준 시각이 앞으로 가도 쓸 것이 없어야 한다. 뒤이어 북마크 1건을 넣고 다시 재는 것은 "그냥
      * 아무것도 안 쓰는 문장"과 구분하기 위해서다.
      */
+    /**
+     * <b>회차마다 반드시 쓰이는 한 행 — 재빌드 요청 카운터.</b> 2026-09-12에 통계 트랜잭션이 같은
+     * 트랜잭션에서 {@code place_list_rebuild_requests}의 {@code requested_seq}를 올리게 되면서
+     * 이 카운터가 회차마다 1씩 늘어난다. {@code Innodb_rows_updated}는 테이블을 가리지 않으므로
+     * 그 한 줄을 빼고 나서 place_stats의 쓰기를 본다 — 빼지 않으면 "아무것도 안 썼다"를 말할 수 없다.
+     */
+    private static final long REQUEST_ROW_WRITES_PER_ROUND = 1L;
+
     @Test
     void 카운트_회차는_값이_달라진_행만_쓴다() {
         clearStats();
@@ -472,8 +482,12 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
         long realRoundWrites = innodbRowsUpdated() - beforeRealRound;
 
-        assertThat(idleRoundWrites).isZero();
-        assertThat(realRoundWrites).isEqualTo(1);
+        assertThat(idleRoundWrites - REQUEST_ROW_WRITES_PER_ROUND)
+                .as("원본이 그대로면 place_stats에는 한 행도 쓰지 않는다")
+                .isZero();
+        assertThat(realRoundWrites - REQUEST_ROW_WRITES_PER_ROUND)
+                .as("북마크가 생긴 장소 한 행만 쓴다")
+                .isEqualTo(1);
         assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(1);
         assertThat(placeStatsRepository.count()).isEqualTo(activePlaceCount());
     }

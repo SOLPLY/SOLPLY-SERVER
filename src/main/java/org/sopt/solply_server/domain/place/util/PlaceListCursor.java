@@ -33,13 +33,14 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  * 바뀌면 같은 장소가 페이지마다 다른 거리를 가져 중복·누락이 난다. 그래서 파라미터 불일치는
  * 오류가 아니라 <b>무시</b>다 ({@code PlaceService#listPlaces}).
  *
- * <p><b>v6의 버전은 회차 고정 장치다 (2026-09-01).</b> 목록이 10분 주기로 스냅샷을 다시 짓는데,
+ * <p><b>v6의 버전은 회차 고정 장치다 (2026-09-01).</b> 목록이 통계 커밋·어드민 수정마다 스냅샷을 다시 짓는데,
  * 스크롤 세션이 그 교체를 넘으면 다음 페이지가 다른 회차에서 재개돼 항목이 흘리거나 겹친다.
  * 그래서 커서가 <b>자기가 시작한 회차의 버전</b>을 싣고 다니고, 서버는 지금 들고 있는 스냅샷이
  * 그 회차일 때만 이어 서빙한다. 캐시는 <b>최신 한 장</b>만 들므로({@code SnapshotBox}) 회차가
- * 한 번만 바뀌어도 그 앞의 커서는 {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다. 번호 자체는
- * DB 발급 테이블에서 나오지만({@code SnapshotVersionIssuer}) 그 번호가 가리키는 <b>스냅샷</b>은
- * 그것을 지은 인스턴스의 메모리에만 있다.
+ * 한 번만 바뀌어도 그 앞의 커서는 {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다. 번호는 발행물
+ * 행의 {@code cursor_version}이고, <b>그 번호가 가리키는 스냅샷도 같은 행에 실려 공유된다</b> —
+ * 그래서 같은 발행물을 복원한 인스턴스들이 서로의 커서를 받는다. 다만 인스턴스마다 폴 시점이
+ * 달라 교체가 동시에 일어나지는 않는다.
  *
  * <p><b>v3의 세대와 혼동하지 말 것.</b> 세대는 인기 점수 <b>배치</b>가 좌표계를 통째로 바꾸는 문제의
  * 장치였고, 배치를 새벽 01:00 1회로 내려 그 창이 트래픽 최저 시각의 수 초로 줄면서 걷어냈다(v4).
@@ -84,7 +85,19 @@ public record PlaceListCursor(
         PlaceSortType sort, List<Double> sortKeys, long placeId, String filterPrint, long version) {
 
     /** 토큰 <b>포맷</b>의 버전. 필드 {@code version}(목록 회차)과는 다른 것이다 */
-    private static final String FORMAT_VERSION = "v6";
+    /**
+     * <b>{@code v6}에서 올린 이유는 회차 번호의 네임스페이스가 갈렸기 때문이다.</b> 회차는 이제
+     * 발행물 행의 id이고, 옛 배포는 {@code place_list_snapshot_versions}의 번호를 실었다. 롤아웃
+     * 중에는 두 바이너리가 함께 도는데, 두 번호가 <b>우연히 같으면</b> 서로의 커서가 만료 판정을
+     * 통과해 다른 좌표계에서 해석된다 — 항목이 흘리거나 겹치는데 200이라 클라이언트가 알아챌
+     * 방법이 없다. 형식을 가르면 그 우연이 성립하지 않는다.
+     *
+     * <p>대가는 이 배포 시점의 진행 중 커서가 전부 만료되는 것이고, 그것은 발행물 없이 힙에만
+     * 스냅샷을 들고 있던 옛 인스턴스 때문에 어차피 치를 대가였다
+     * ({@code docs/design/2026-09-12-stats-commit-snapshot-and-db-delta.md} §4-6·§9).
+     * <b>다음 배포부터는</b> 같은 형식의 발행물을 복원하는 한 커서가 이어진다.
+     */
+    private static final String FORMAT_VERSION = "v7";
 
     /** 토큰의 필드 수. 버전·정렬·정렬키 튜플·id·지문·회차 */
     private static final int FIELD_COUNT = 6;

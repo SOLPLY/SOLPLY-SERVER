@@ -166,7 +166,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * <p><b>썸네일을 상관 서브쿼리로 고르는 이유.</b> 이 문장은 기동·복구의 전량이거나 어드민 쓰기
      * 한 건({@link #upsertRowsForActivePlaces}의 PK IN 소수 행)이라, 장소마다 서브쿼리를 한 번씩
      * 도는 비용을 받아들인다. {@code docs/design/2026-09-09-rebuild-streaming.md} §4-3이 측정으로
-     * 기각한 것은 <b>재빌드마다</b> 도는 같은 서브쿼리다 — 10분 주기 × 전 장소에서는 그 비용이
+     * 기각한 것은 <b>재빌드마다</b> 도는 같은 서브쿼리다 — 회차마다 × 전 장소에서는 그 비용이
      * 문장 하나를 더 도는 것보다 비쌌지만, 여기서는 어드민 빈도의 일회성 비용이다.
      *
      * <p>{@code VALUES(col)}은 deprecated라 실행마다 {@code Warning 1287}이 참조 수만큼 뜬다.

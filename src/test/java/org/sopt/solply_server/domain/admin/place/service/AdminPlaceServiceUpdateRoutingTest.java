@@ -2,12 +2,14 @@ package org.sopt.solply_server.domain.admin.place.service;
 
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -17,6 +19,7 @@ import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertReq
 import org.sopt.solply_server.domain.admin.place.repository.AdminPlaceRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
@@ -53,6 +56,7 @@ class AdminPlaceServiceUpdateRoutingTest {
     @Mock private AdminPlaceRepository adminPlaceRepository;
     @Mock private PlaceStatsRepository placeStatsRepository;
     @Mock private SnapshotRefresher snapshotRefresher;
+    @Mock private SnapshotRebuildRequestRepository rebuildRequestRepository;
     @Mock private EntityManager entityManager;
     @Mock private ImageFileKeyValidator imageFileKeyValidator;
     @Mock private ApplicationEventPublisher applicationEventPublisher;
@@ -62,7 +66,18 @@ class AdminPlaceServiceUpdateRoutingTest {
 
     @InjectMocks private AdminPlaceService adminPlaceService;
 
+    /**
+     * 재빌드 요청 번호는 쓰기 경로 어디서나 매겨진다 — 이 파일이 보는 것은 라우팅이지 번호가
+     * 아니므로 느슨하게 깔아 두고, 번호가 훅까지 흘러가는지는 {@code assertForwardsPlaceId}가 본다.
+     */
+    @BeforeEach
+    void givenRequestSeq() {
+        lenient().when(rebuildRequestRepository.request()).thenReturn(MY_SEQ);
+    }
+
     private static final long PLACE_ID = 100L;
+    /** 이 트랜잭션이 자기 요청에 받은 번호 */
+    private static final long MY_SEQ = 21L;
     private static final long TOWN_ID = 10L;
     private static final long OTHER_TOWN_ID = 11L;
     private static final long MAIN_TAG_ID = 1L;
@@ -150,8 +165,8 @@ class AdminPlaceServiceUpdateRoutingTest {
      */
     private void assertForwardsPlaceId() {
         verify(placeStatsRepository).upsertRowsForActivePlaces(List.of(PLACE_ID));
-        verify(snapshotRefresher).refreshPlacesAfterCommit(List.of(PLACE_ID));
-        verify(snapshotRefresher, never()).patchPlaceViewAfterCommit(anyLong());
+        verify(snapshotRefresher).refreshPlacesAfterCommit(List.of(PLACE_ID), MY_SEQ);
+        verify(snapshotRefresher, never()).patchPlaceViewAfterCommit(anyLong(), anyLong());
     }
 
     private static AdminPlaceUpsertRequest withName(AdminPlaceUpsertRequest req, String name) {

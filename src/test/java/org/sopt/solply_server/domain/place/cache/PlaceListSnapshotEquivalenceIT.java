@@ -103,6 +103,12 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
 
     @Autowired private PlaceService placeService;
     @Autowired private SnapshotLoader loader;
+    @Autowired private SnapshotPublisher snapshotPublisher;
+    @Autowired private org.sopt.solply_server.domain.place.cache.publication
+            .SnapshotPublicationRepository snapshotPublicationRepository;
+    @Autowired private org.sopt.solply_server.domain.place.cache.publication
+            .SnapshotPublicationService snapshotPublicationService;
+    @Autowired private SnapshotInstaller snapshotInstaller;
     @Autowired private PlaceListDbQueryRepository dbQueryRepository;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private TownHierarchyResolver townHierarchyResolver;
@@ -183,7 +189,8 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
         // 픽스처를 다 심은 뒤에 스냅샷을 짓는다 — 조회 경로가 보는 것은 이 회차뿐이다
-        loader.rebuild();
+        new SnapshotRebuilder(snapshotPublisher, snapshotPublicationRepository,
+                snapshotPublicationService, snapshotInstaller).rebuildAndInstall();
     }
 
     /**

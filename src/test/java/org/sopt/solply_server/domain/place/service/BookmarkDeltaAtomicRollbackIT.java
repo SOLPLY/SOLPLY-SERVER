@@ -2,11 +2,12 @@ package org.sopt.solply_server.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.reset;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDateTime;
@@ -134,6 +135,12 @@ class BookmarkDeltaAtomicRollbackIT extends MySqlContainerSupport {
         assertThat(remainingEventIds())
                 .as("전표는 소비되지 않고 그대로 남는다")
                 .hasSize(2);
+        assertThat(bookmarkCountOnOwnConnection())
+                .as("독립 커넥션에서도 회차 전 값이다 — 커밋된 것이 없다")
+                .isEqualTo(BASE_BOOKMARK_COUNT);
+        assertThat(claimedEventCountOnOwnConnection())
+                .as("표식까지 함께 롤백돼 칸이 NULL로 남는다")
+                .isZero();
     }
 
     /**
@@ -174,11 +181,16 @@ class BookmarkDeltaAtomicRollbackIT extends MySqlContainerSupport {
      * 회차의 마지막 문장인 전표 삭제를 터뜨린다. 던지기 <b>직전</b>에 같은 트랜잭션에서 카운트를
      * 읽어 두는 것이 이 헬퍼의 요점이다 — 롤백 뒤에는 그 중간 상태를 어디서도 볼 수 없다.
      */
+    /**
+     * <b>적용은 끝나고 삭제가 죽는 지점</b>을 만든다. 소비 경계가 표식 claim으로 갈린 뒤
+     * (2026-09-12) 삭제 문장은 {@code deleteClaimed}이고, 옛 {@code deleteAllByIdInBatch}를 계속
+     * 스텁하면 <b>아무것도 붙잡지 못한 채 회차가 성공해</b> 이 IT가 통째로 무의미해진다.
+     */
     private void failDeletionAfterRecording(AtomicInteger countAtFailure) {
         willAnswer(invocation -> {
             countAtFailure.set(bookmarkCountOf(placeId));
             throw new DataIntegrityViolationException("전표 삭제가 죽은 회차");
-        }).given(spiedEventRepository()).deleteAllByIdInBatch(any());
+        }).given(spiedEventRepository()).deleteClaimed(anyString());
     }
 
     /**
@@ -200,6 +212,34 @@ class BookmarkDeltaAtomicRollbackIT extends MySqlContainerSupport {
     private int bookmarkCountOf(long placeId) {
         return jdbcTemplate.queryForObject(
                 "SELECT bookmark_count FROM place_stats WHERE place_id = ?", Integer.class, placeId);
+    }
+
+    /**
+     * 진행 중인 스프링 트랜잭션과 <b>아무 관계가 없는</b> 커넥션으로 읽는다. 같은 트랜잭션의
+     * {@code JdbcTemplate}으로 읽으면 커밋되지 않은 값을 보고 "커밋됐다"고 말하게 되는데,
+     * 이 IT가 묻는 것이 정확히 그 경계다.
+     */
+    private long bookmarkCountOnOwnConnection() {
+        return queryOnOwnConnection(
+                "SELECT bookmark_count FROM place_stats WHERE place_id = " + placeId);
+    }
+
+    /** 표식이 커밋된 채 남은 전표 수 — 정상이라면 언제 읽어도 0이다 */
+    private long claimedEventCountOnOwnConnection() {
+        return queryOnOwnConnection(
+                "SELECT COUNT(*) FROM bookmark_count_events WHERE consumption_id IS NOT NULL");
+    }
+
+    private static long queryOnOwnConnection(String sql) {
+        try (Connection connection = DriverManager.getConnection(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+                Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery(sql)) {
+            rs.next();
+            return rs.getLong(1);
+        } catch (Exception e) {
+            throw new IllegalStateException("독립 커넥션 조회 실패: " + sql, e);
+        }
     }
 
     private List<Long> remainingEventIds() {
