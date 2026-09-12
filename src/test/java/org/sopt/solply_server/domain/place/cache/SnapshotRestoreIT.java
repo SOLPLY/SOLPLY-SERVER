@@ -104,19 +104,28 @@ class SnapshotRestoreIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>두 노드의 표시값과 태그도 같은 발행물에서 온다.</b> 이름·썸네일이 payload에 실려 있으므로
-     * 다른 노드가 원본을 다시 읽지 않고도 같은 값을 그린다.
+     * <b>두 노드의 표시값과 태그도 같은 발행물에서 온다.</b> 이름·썸네일·태그가 payload에 실려
+     * 있으므로 다른 노드가 원본을 다시 읽지 않고도 같은 값을 그린다.
+     *
+     * <p><b>태그를 함께 보는 것이 요점이다.</b> 표시값만 비교하면 payload에서 태그가 통째로 빠져도
+     * 그린이고, 그때 다른 노드의 목록은 대표 태그 이름이 전부 사라진 채로 나간다 — 장소는 그대로라
+     * 배열 비교로도 잡히지 않는 종류의 누락이다.
      */
     @Test
     void 두_노드의_표시값과_태그가_같다() {
         rebuilder.rebuildAndInstall();
         long placeId = anyPlaceId();
+        long tagId = anyTagId();
 
         SnapshotInstaller otherNode = newNode();
         otherNode.installIfChanged();
 
         assertThat(otherNodeViews.get(placeId))
                 .isEqualTo(placeViewHolderOfThisNode().get(placeId));
+        assertThat(otherNodeTagViews.get(tagId))
+                .as("태그도 발행물에 실려 함께 복원된다")
+                .isNotNull()
+                .isEqualTo(tagViewHolderOfThisNode().get(tagId));
     }
 
     /**
@@ -160,19 +169,27 @@ class SnapshotRestoreIT extends MySqlContainerSupport {
 
     // === 픽스처 ===
 
-    /** 같은 DB를 보는 <b>다른 노드</b> — 홀더·상자·락만 새로 붙인다 */
+    /**
+     * 같은 DB를 보는 <b>다른 노드</b> — 홀더·상자·락만 새로 붙인다.
+     *
+     * <p><b>태그 홀더도 참조를 남긴다.</b> 인자로만 넘기고 버리면 그 노드가 복원한 태그를 볼 길이
+     * 없어, 태그가 payload에서 빠진 회귀를 단언이 지나친다.
+     */
     private SnapshotBox otherNodeBox;
     private PlaceViewHolder otherNodeViews;
+    private TagViewHolder otherNodeTagViews;
 
     private SnapshotInstaller newNode() {
         otherNodeBox = new SnapshotBox();
         otherNodeViews = new PlaceViewHolder();
+        otherNodeTagViews = new TagViewHolder();
         return new SnapshotInstaller(publicationRepository, codec, otherNodeBox,
-                otherNodeViews, new TagViewHolder(), new CacheWriteLock());
+                otherNodeViews, otherNodeTagViews, new CacheWriteLock());
     }
 
     @Autowired private SnapshotBox thisNodeBox;
     @Autowired private PlaceViewHolder thisNodeViews;
+    @Autowired private TagViewHolder thisNodeTagViews;
 
     private SnapshotBox snapshotBoxOfThisNode() {
         return thisNodeBox;
@@ -182,6 +199,10 @@ class SnapshotRestoreIT extends MySqlContainerSupport {
         return thisNodeViews;
     }
 
+    private TagViewHolder tagViewHolderOfThisNode() {
+        return thisNodeTagViews;
+    }
+
     private static List<Long> entryIdsOf(Snapshot snapshot) {
         return snapshot.sortedPlaces().entries().stream().map(PlaceEntry::placeId).sorted().toList();
     }
@@ -189,6 +210,11 @@ class SnapshotRestoreIT extends MySqlContainerSupport {
     private long anyPlaceId() {
         return jdbcTemplate.queryForObject(
                 "SELECT MIN(place_id) FROM place_stats", Long.class);
+    }
+
+    /** 발행물이 싣고 오는 태그 하나. 비활성 태그도 맵에는 실리므로 조건을 걸지 않는다 */
+    private long anyTagId() {
+        return jdbcTemplate.queryForObject("SELECT MIN(id) FROM tags", Long.class);
     }
 
     private long snapshotVersionRowCount() {

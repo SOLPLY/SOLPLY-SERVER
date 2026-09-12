@@ -1,6 +1,7 @@
 package org.sopt.solply_server.domain.place.cache;
 
 import org.sopt.solply_server.domain.place.cache.publication.ProcessedMark;
+import org.sopt.solply_server.domain.place.cache.publication.PublicationCandidate;
 import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
 import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
 
@@ -51,5 +52,24 @@ public final class SnapshotRebuilder {
     public long publish() {
         Long base = publicationRepository.readCurrentPublicationId();
         return publicationService.publish(publisher.buildFromSource(), base, ProcessedMark.none());
+    }
+
+    /**
+     * <b>표시값만 바뀐 발행</b> — 발행 id는 오르지만 커서 회차는 넘겨받은 값을 그대로 이어받는다.
+     * 운영에서 이 모양을 만드는 것은 어드민 수정이고({@code SnapshotRefresher}), 진행 중인 커서를
+     * 끊지 않는 것이 그 발행의 요점이다.
+     *
+     * <p>설치하지 않는다 — "발행 id는 앞섰는데 회차는 그대로인" 상태를 다른 인스턴스에서 만들어
+     * 두려는 용도라, 설치까지 하면 그 상태가 사라진다.
+     *
+     * @param carriedCursorVersion 이어받을 커서 회차. 보통 직전 발행물의 {@code cursor_version}이다
+     * @return 새로 정해진 발행 id
+     */
+    public long publishCarrying(long carriedCursorVersion) {
+        PublicationCandidate built = publisher.buildFromSource();
+        PublicationCandidate carried = new PublicationCandidate(carriedCursorVersion,
+                built.formatVersion(), built.entryCount(), built.payloadSha256(), built.payload());
+        return publicationService.publish(
+                carried, publicationRepository.readCurrentPublicationId(), ProcessedMark.none());
     }
 }

@@ -174,6 +174,9 @@ class BookmarkOutboxClaimIT extends MySqlContainerSupport {
                     .as("어느 쪽이 이기든 전표는 남지 않는다").isZero();
             assertThat(claimedEventCountOnOwnConnection())
                     .as("표식이 커밋된 채 남는 상태는 존재하지 않는다").isZero();
+            assertThat(deadlocksBefore)
+                    .as("카운터를 못 읽는 환경이면 아래 '늘지 않았다'가 -1 == -1로 조용히 통과한다")
+                    .isNotNegative();
             assertThat(innodbDeadlocks())
                     .as("두 회차가 겹쳐도 데드락이 늘지 않는다 (설계 §11-7)")
                     .isEqualTo(deadlocksBefore);
@@ -237,11 +240,18 @@ class BookmarkOutboxClaimIT extends MySqlContainerSupport {
     // === claim 범위 (설계 §11-1) ===
 
     /**
-     * <b>표시한 것만 지운다.</b> 다른 회차의 표식이 붙은 행은 이 회차의 집계에도 삭제에도 들어오지
-     * 않는다 — 삭제 조건이 표식 하나라는 계약을 값으로 못 박는다.
+     * <b>남의 표식이 붙어 있어도 이번 회차가 다시 표시해 가져간다.</b> claim은 {@code WHERE
+     * consumption_id IS NULL}을 <b>일부러 달지 않은</b> 전량 표시라, 표식의 유무가 대상을 고르는
+     * 조건이 아니다 — 표식이 정하는 것은 "무엇을 가져갈까"가 아니라 <b>"내가 가져간 것이
+     * 무엇인가"</b>이고, 삭제가 그 표식으로만 지워지는 것이 exactly-once의 근거다
+     * ({@code BookmarkCountEventRepository#claimAll}).
+     *
+     * <p><b>그래서 표식이 남은 행은 유실되지 않는다.</b> 앞 회차가 표시만 하고 죽어도 다음 회차가
+     * 그 행을 다시 집어 가고, 표식이 붙은 채 영영 남는 상태가 만들어지지 않는다 — 표식을 피해 가는
+     * 구현이었다면 그 행이 아무에게도 집히지 않는다.
      */
     @Test
-    void 다른_회차의_표식이_붙은_행은_건드리지_않는다() {
+    void 남의_표식이_붙은_행도_이번_회차가_다시_표시해_가져간다() {
         insertEvents(placeId, 1, 2);
         // 남이 표시해 둔 것처럼 꾸민다 — 정상 상태에서는 생기지 않지만, 삭제 조건이 표식임을 본다
         jdbcTemplate.update(

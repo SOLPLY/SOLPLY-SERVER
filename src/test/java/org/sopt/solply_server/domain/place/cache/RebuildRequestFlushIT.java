@@ -105,6 +105,15 @@ class RebuildRequestFlushIT extends MySqlContainerSupport {
     /**
      * <b>커밋 전에는 아무것도 나가지 않는다</b>는 대조군. 위 단언이 "어차피 JPA가 그때 쓴다"로
      * 통과하는 것이 아니라 <b>{@code request()}가 불러서</b> 나갔음을 가른다.
+     *
+     * <p><b>관찰 구간을 비워 두면 이 대조군은 공허하다.</b> {@code clear()} 직후에 바로 읽으면
+     * 목록은 언제나 비어 있고 {@code noneSatisfy}는 무조건 통과한다 — 위 테스트가 통째로 거짓말을
+     * 해도 여기는 초록이다. 그래서 구간 안에서 <b>요청이 아닌 DB 작업</b>을 한 번 시키고, 그것이
+     * 실제로 관측됐는지({@code isNotEmpty})부터 확인한 뒤에 "그런데 UPDATE는 없다"를 단언한다.
+     *
+     * <p>고르는 조회가 <b>태그와 무관한 것</b>이어야 한다. 하이버네이트는 질의가 건드리는 테이블에
+     * 밀린 변경이 있으면 먼저 flush하므로, 태그를 읽는 질의를 쓰면 대조군이 스스로 flush를 일으켜
+     * 무엇을 재는지 알 수 없게 된다.
      */
     @Test
     void 요청을_부르지_않으면_엔티티_쓰기는_커밋까지_미뤄진다() {
@@ -113,9 +122,13 @@ class RebuildRequestFlushIT extends MySqlContainerSupport {
             tag.setActive(false);
 
             SqlStatementProbe.clear();
+            entityManager.createQuery("select count(t) from Town t", Long.class).getSingleResult();
             return SqlStatementProbe.sqls();
         });
 
+        assertThat(sqlsWithoutRequest)
+                .as("관찰자가 배선되지 않았다면 아래 단언은 아무것도 증명하지 않는다")
+                .isNotEmpty();
         assertThat(sqlsWithoutRequest)
                 .as("요청을 부르지 않으면 이 시점에 UPDATE가 나가지 않는다")
                 .noneSatisfy(sql -> assertThat(sql.toLowerCase(Locale.ROOT)).startsWith("update"));

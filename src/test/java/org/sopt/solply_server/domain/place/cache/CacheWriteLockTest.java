@@ -127,15 +127,20 @@ class CacheWriteLockTest {
     }
 
     /**
-     * 스레드가 <b>락 대기</b>로 들어갈 때까지 기다린다. {@code ReentrantLock}을 기다리는 스레드는
-     * {@code WAITING}(LockSupport.park)이 되므로 그 상태를 본다.
+     * 스레드가 <b>락 대기</b>로 들어갈 때까지 기다린다. {@link CacheWriteLock}이 쓰는 것은
+     * {@code lock.lock()}이라 기다리는 스레드는 {@code WAITING}(LockSupport.park)이다.
+     *
+     * <p><b>{@code TIMED_WAITING}은 받지 않는다.</b> 그것은 시한부 대기 — {@code sleep}이나
+     * {@code await(timeout)} — 의 상태라 "락 앞에 줄을 섰다"의 증거가 아니다. 받아 주면 스레드가
+     * 엉뚱한 이유로 잠깐 잠든 순간을 락 대기로 읽어, 이 테스트가 재는 것이 무엇인지 흐려진다.
+     * ({@code BLOCKED}는 {@code synchronized} 경합이라 남겨 둔다 — 홀더 구현이 바뀌면 그 모양이
+     * 될 수 있고, 둘 다 "남이 든 락 앞에서 못 나아간다"는 같은 뜻이다.)
      */
     private static void awaitBlocked(Thread thread) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
         while (System.nanoTime() < deadline) {
             Thread.State state = thread.getState();
-            if (state == Thread.State.WAITING || state == Thread.State.BLOCKED
-                    || state == Thread.State.TIMED_WAITING) {
+            if (state == Thread.State.WAITING || state == Thread.State.BLOCKED) {
                 return;
             }
             Thread.sleep(5);

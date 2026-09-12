@@ -10,6 +10,9 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.cache.publication.PublishedSnapshot;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPayload;
+import org.sopt.solply_server.domain.place.cache.publication.SnapshotPayloadCodec;
 import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
 import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
 import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
@@ -73,6 +76,9 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     @Autowired private SnapshotPublicationService snapshotPublicationService;
     @Autowired private SnapshotInstaller snapshotInstaller;
     @Autowired private SnapshotRebuildRequestRepository rebuildRequestRepository;
+    /** 발행물의 내용을 그대로 뜯어 보기 위한 것 — 잔존 표시값은 payload에서만 정확히 보인다 */
+    @Autowired private SnapshotPayloadCodec codec;
+    @Autowired private PlaceViewHolder placeViewHolder;
 
     /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
     private SnapshotRebuilder snapshotRebuilder;
@@ -194,6 +200,38 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>지운 장소는 배열에서도 표시값에서도 사라진다 — 발행물 자체에서.</b>
+     *
+     * <p>패치는 홀더 전량을 복사한 뒤 <b>다시 읽어 온 것만</b> 덮어쓴다. 삭제된 장소는 원본에
+     * 행이 없어 다시 읽히지 않으므로, 손댄 id를 먼저 비우지 않으면 <b>배열에서는 빠졌는데
+     * 표시값만 payload에 남는다.</b> 그리고 그 payload는 모든 인스턴스가 내려받아 홀더를 통째로
+     * 갈아 끼우는 것이라, 잔존값이 이 JVM 하나가 아니라 <b>전 인스턴스에 퍼져</b> 다음 전량
+     * 재빌드까지 따라다닌다 — {@code PlaceViewHolder}가 "삭제된 표시값은 다음 설치가 맵을 통째로
+     * 갈 때 사라진다"고 적어 둔 계약이 그 자리에서 깨진다.
+     *
+     * <p><b>그래서 단언을 payload에 건다.</b> 홀더만 보면 이 인스턴스가 우연히 정리된 경우와
+     * 구분되지 않고, 배열만 보면 잔존한 표시값을 놓친다 — 두 쪽을 함께 본다.
+     */
+    @Test
+    void 삭제된_장소는_발행물의_배열에서도_표시값에서도_빠진다() {
+        long doomed = createPlace("패치삭제");
+        resyncStats(doomed);
+        snapshotRebuilder.rebuildAndInstall();
+        assertThat(entryIdsInPublishedPayload()).contains(doomed);
+        assertThat(viewIdsInPublishedPayload()).contains(doomed);
+
+        deletePlaceRows(doomed);        // 어드민 삭제가 하는 일 그대로 (물리 삭제)
+        refresher.refreshPlacesAfterCommit(List.of(doomed), newRequestSeq());
+
+        assertThat(entryIdsInPublishedPayload()).doesNotContain(doomed);
+        assertThat(viewIdsInPublishedPayload())
+                .as("배열에서 뺐어도 표시값이 남으면 모든 인스턴스가 그것을 내려받는다")
+                .doesNotContain(doomed);
+        assertThat(placeViewHolder.get(doomed))
+                .as("설치가 맵을 통째로 갈았으므로 이 인스턴스의 홀더에도 없다").isNull();
+    }
+
+    /**
      * <b>패치는 회차를 쓰지 않는다.</b> 표시값 하나 고치자고 회차를 새로 찍으면 진행 중인 스크롤이
      * 그 자리에서 만료된다 — 이 분리의 값어치가 곧 이 단언이다.
      */
@@ -258,6 +296,30 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
 
     private long currentVersion() {
         return snapshotBox.current().version();
+    }
+
+    /**
+     * 어드민의 삭제가 DB에 하는 일 — {@code place_stats} 행과 {@code places} 행의 <b>물리</b>
+     * 삭제다({@code AdminPlaceService#deletePlace}). 이 도메인은 soft delete를 쓰지 않는다.
+     */
+    private void deletePlaceRows(long placeId) {
+        jdbcTemplate.update("DELETE FROM place_stats WHERE place_id = ?", placeId);
+        jdbcTemplate.update("DELETE FROM places WHERE id = ?", placeId);
+    }
+
+    /** 지금 발행물이 실제로 싣고 있는 것 — 다른 인스턴스가 내려받아 홀더로 삼는 바로 그 내용이다 */
+    private SnapshotPayload publishedPayload() {
+        PublishedSnapshot published = snapshotPublicationRepository.download().orElseThrow();
+        return codec.decode(
+                published.formatVersion(), published.payload(), published.entryCount());
+    }
+
+    private List<Long> entryIdsInPublishedPayload() {
+        return publishedPayload().entries().stream().map(SnapshotPayload.Entry::placeId).toList();
+    }
+
+    private List<Long> viewIdsInPublishedPayload() {
+        return publishedPayload().places().stream().map(SnapshotPayload.Place::placeId).toList();
     }
 
     private static int tagSeq = 0;

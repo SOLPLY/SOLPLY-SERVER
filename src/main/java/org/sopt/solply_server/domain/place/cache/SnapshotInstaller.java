@@ -40,15 +40,32 @@ public class SnapshotInstaller {
     private final CacheWriteLock writeLock;
 
     /**
-     * 마지막으로 설치한 발행 id. <b>{@link CacheWriteLock} 안에서만 읽고 쓴다</b> — 이 값이
-     * 세 홀더의 순서를 정하는 유일한 값이라, 락 밖에서 만지면 늦게 도착한 옛 payload가 새
-     * 표시값을 덮는 창이 열린다.
+     * 마지막으로 설치한 발행 id. <b>쓰기는 {@link CacheWriteLock} 안에서만 한다</b> — 이 값이
+     * 세 홀더의 순서를 정하는 유일한 값이라, 락 밖에서 고치면 늦게 도착한 옛 payload가 새
+     * 표시값을 덮는 창이 열린다. <b>{@code volatile}은 락을 잡지 않는 관측자를 위한 것이다</b>
+     * ({@link #observedPublicationId()}).
      */
-    private long installedPublicationId = -1L;
+    private volatile long installedPublicationId = -1L;
 
     /** 아직 한 번도 설치하지 못했으면 {@code -1}. */
     public long installedPublicationId() {
         return writeLock.call(() -> installedPublicationId);
+    }
+
+    /**
+     * 같은 값을 <b>락을 잡지 않고</b> 본다. 조회 경로가 "내가 뒤처졌나"를 물을 때 쓰는 자리다.
+     *
+     * <p><b>락을 잡지 않는 것이 요점이다.</b> 어드민 훅은 이 락을 자기 전 구간 동안 쥐므로
+     * ({@link SnapshotRefresher}), 목록 요청마다 락을 잡으면 어드민 수정 한 번이 그동안의 모든
+     * 첫 페이지를 그 락 앞에 줄 세운다. 조회는 캐시 쓰기를 기다리지 않는다는 것이
+     * {@link CacheWriteLock}의 계약이기도 하다.
+     *
+     * <p><b>돌려주는 것은 판정이 아니라 힌트다.</b> 읽는 순간 설치가 진행 중이면 직전 값을 볼 수
+     * 있다. 그래도 안전한 것은 이 값이 <b>단조 증가</b>라 틀리는 방향이 하나뿐이기 때문이다 —
+     * 실제보다 낮게 보여 한 번 더 기다릴 수는 있어도, 뒤처진 상태를 따라잡았다고 보지는 않는다.
+     */
+    public long observedPublicationId() {
+        return installedPublicationId;
     }
 
     /** @return 설치했으면 true. 포인터가 그대로라 할 일이 없었으면 false */

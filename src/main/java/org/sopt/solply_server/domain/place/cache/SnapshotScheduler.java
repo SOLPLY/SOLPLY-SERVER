@@ -15,11 +15,10 @@ import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublication
 import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
 import org.sopt.solply_server.domain.place.cache.publication.StalePublicationBaseException;
 import org.sopt.solply_server.domain.place.config.PlaceListSnapshotProperties;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 기동 복원과 설치 폴.
+ * 기동 복원.
  *
  * <p><b>기동에 짓지 않는다.</b> 마지막 발행물을 그대로 복원하므로 배포가 회차를 갈아치우지 않고,
  * 진행 중이던 커서가 만료되지 않는다. 원본을 읽는 것은 <b>아무도 발행한 적 없을 때</b>뿐이다.
@@ -27,9 +26,14 @@ import org.springframework.stereotype.Component;
  * <p><b>{@code @PostConstruct}로 두는 것이 계약이다.</b> 여기서 던지면 컨텍스트가 뜨지 않는다 —
  * 스냅샷이 비어 있는 인스턴스가 트래픽을 받는 상태를 만들지 않는 것이 이 배치의 요점이다.
  *
- * <p><b>설치 폴에는 ShedLock을 걸지 않는다.</b> 고치는 것이 자기 힙이라 인스턴스마다 각자 해야
- * 한다. 반대로 부트스트랩은 발행자와 <b>같은 이름의 락</b>을 잡는다 — 동시에 뜬 인스턴스들이
- * 서로 다른 최초 발행을 만들지 않게 한다.
+ * <p><b>기동 복원은 동기이고 단일 비행 밖이다.</b> 설치자를 직접 부른다 —
+ * {@link SnapshotLoadCoordinator}에 맡기면 준비 완료 판정이 남의 스레드에 걸리고, 그 스레드가
+ * 아직 뜨지 않았을 수도 있다. 겹칠 요청도 없다(포트가 열리기 전이다).
+ *
+ * <p><b>부트스트랩은 발행자와 같은 이름의 락을 잡는다</b> — 동시에 뜬 인스턴스들이 서로 다른
+ * 최초 발행을 만들지 않게 한다. 기동 뒤의 설치 폴은 여기가 아니라
+ * {@link SnapshotLoadCoordinator#pollInstall()}에 있다 — 요청이 띄운 적재와 같은 비행을 쓰려면
+ * 폴도 그 자리에 있어야 한다. 폴에 ShedLock을 걸지 않는 것은 그대로다(고치는 것이 자기 힙이다).
  */
 @Slf4j
 @Component
@@ -65,16 +69,6 @@ public class SnapshotScheduler {
         // 보는 것으로 "뜨자마자 명백히 낡은 상태"만 걷어내고, 그 뒤의 갱신은 폴에 맡긴다
         installer.installIfChanged();
         log.info("기동 목록 스냅샷 복원 완료 - publication={}", installer.installedPublicationId());
-    }
-
-    @Scheduled(fixedDelayString = "${solply.place-list-snapshot.adopt-poll-interval-ms:5000}")
-    public void installIfChanged() {
-        try {
-            installer.installIfChanged();
-        } catch (Exception e) {
-            log.error("목록 스냅샷 설치 실패 - 지금 회차를 그대로 유지한다"
-                    + "(다음 폴이 다시 시도한다)", e);
-        }
     }
 
     /**

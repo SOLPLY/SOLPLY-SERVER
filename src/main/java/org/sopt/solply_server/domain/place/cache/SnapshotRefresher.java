@@ -94,6 +94,9 @@ public class SnapshotRefresher {
             SnapshotLoader.SourceState changed = loader.readChangedState(placeIds);
             SortedPlaces patched = held.sortedPlaces().patch(placeIds, changed.entries());
             Map<Long, PlaceView> views = new HashMap<>(placeViewHolder.all());
+            // 손댄 id를 먼저 비우는 것이 삭제를 반영하는 자리다 — 지운 장소는 changed.views()에
+            // 없으므로, 비우지 않으면 배열에서 빠진 장소의 표시값만 payload에 남아 따라다닌다
+            views.keySet().removeAll(placeIds);
             views.putAll(changed.views());
             // 배열이 그대로면 표시값만 바뀐 수정이다 — 회차를 이어받아 진행 중인 커서를 지킨다
             Long carried = patched == held.sortedPlaces() ? held.version() : null;

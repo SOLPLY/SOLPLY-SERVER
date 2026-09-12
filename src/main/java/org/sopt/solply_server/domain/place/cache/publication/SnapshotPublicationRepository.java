@@ -36,6 +36,16 @@ public class SnapshotPublicationRepository {
              WHERE ptr.id = 1
             """;
 
+    // payload를 뺀 DOWNLOAD_SQL이다. 한 문장인 이유도 같다 — 포인터와 그 행을 따로 읽으면 그
+    // 사이에 포인터가 옮겨간다. 조회 경로가 "내가 낡았나"를 물으러 오는 문장이라 BLOB을 읽지 않는
+    // 것이 요점이고, 그래서 DOWNLOAD_SQL을 재사용하지 않고 따로 둔다
+    private static final String HEAD_SQL = """
+            SELECT p.id, p.cursor_version
+              FROM place_list_publication_pointer ptr
+              JOIN place_list_publications p ON p.id = ptr.publication_id
+             WHERE ptr.id = 1
+            """;
+
     private static final String INSERT_SQL = """
             INSERT INTO place_list_publications
                 (cursor_version, format_version, entry_count, payload_bytes, payload_sha256, payload)
@@ -75,6 +85,23 @@ public class SnapshotPublicationRepository {
                         rs.getInt("payload_bytes"),
                         rs.getString("payload_sha256"),
                         rs.getBytes("payload")))
+                .stream()
+                .findFirst();
+    }
+
+    /**
+     * 지금 발행물의 번호 둘만. <b>payload를 읽지 않는다</b> — 조회 경로가 부르는 유일한 발행물
+     * 문장이라 여기서 BLOB을 끌고 오면 요청마다 수 MB를 읽게 된다.
+     *
+     * <p>{@code cursor_version}이 {@code NULL}인 행을 볼 창은 없다 — 구조 발행은 회차를 채운
+     * <b>뒤에</b> 포인터를 옮기고 그 둘이 한 트랜잭션이다({@link SnapshotPublicationService}).
+     *
+     * @return 아직 아무도 발행하지 않았으면 비어 있다
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public Optional<PublicationHead> readCurrentHead() {
+        return jdbcTemplate.query(HEAD_SQL, (rs, rowNum) -> new PublicationHead(
+                        rs.getLong("id"), rs.getLong("cursor_version")))
                 .stream()
                 .findFirst();
     }

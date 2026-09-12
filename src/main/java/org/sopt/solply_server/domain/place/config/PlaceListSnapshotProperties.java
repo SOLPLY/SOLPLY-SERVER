@@ -43,4 +43,18 @@ public class PlaceListSnapshotProperties {
      */
     @Positive
     private long bootstrapTimeoutMs = 60_000L;
+
+    /**
+     * 커서가 가리키는 회차가 <b>공유 발행물의 지금 회차인데</b> 이 인스턴스만 아직 그것을 설치하지
+     * 못했을 때, 요청 하나가 설치를 기다리는 상한.
+     *
+     * <p>이 값은 <b>요청당</b>이다 — 기다리는 요청이 여럿이어도 적재는 한 번뿐이고
+     * ({@code SnapshotLoadCoordinator}) 각자 자기 시계로 끊는다. 넘기면 {@code PLACE-007}(503)로
+     * 답한다. 만료(400)가 아니므로 클라이언트는 목록을 버리지 않고 같은 커서로 다시 부른다.
+     *
+     * <p>기본값을 {@link #adoptPollIntervalMs}보다 작게 둔 것은 <b>기다림이 폴을 대신하는 것이
+     * 아니라 앞당기는 것</b>이라서다 — 기다리다 못 받아도 다음 폴이 설치하므로 재시도가 성공한다.
+     */
+    @Positive
+    private long requestWaitTimeoutMs = 2_000L;
 }

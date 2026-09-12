@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
@@ -15,6 +16,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGe
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.place.service.PlaceListRequestOrchestrator;
 import org.sopt.solply_server.domain.place.service.PlaceReportService;
 import org.sopt.solply_server.domain.place.service.PlaceRequestService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
@@ -33,6 +35,8 @@ import org.springframework.web.bind.annotation.*;
 public class PlaceController {
 
     private final PlaceService placeService;
+    /** 목록 조회만 이쪽을 거친다 — 회차가 뒤처졌을 때 설치를 앞당겨 기다리는 껍데기다 */
+    private final PlaceListRequestOrchestrator placeListRequestOrchestrator;
     private final PlaceBookmarkFacade placeBookmarkFacade;
     private final PlaceReportService placeReportService;
     private final PlaceRequestService placeRequestService;
@@ -76,14 +80,23 @@ public class PlaceController {
                     @Parameter(name = "longitude", description = "사용자 현재 경도 (거리순 첫 페이지 필수)", example = "126.9780")
             }
     )
+    /**
+     * <b>서블릿 비동기로 답한다.</b> 커서가 가리키는 회차가 공유 발행물의 지금 회차인데 이
+     * 인스턴스만 아직 그것을 설치하지 못한 경우에 한해, 설치를 앞당겨 기다렸다가 그 회차로
+     * 답하기 위해서다 — 기다리는 동안 요청 스레드를 붙잡지 않는 것이 비동기인 이유다.
+     *
+     * <p>기다릴 일이 없는 보통 요청은 <b>이미 완료된</b> future가 나가므로 응답 내용도 쿼리도
+     * 그대로다. 판정과 대기 규칙은 {@link PlaceListRequestOrchestrator}.
+     *
+     * <p>{@code userId}는 여기서 받아 그대로 넘긴다 — 재개가 다른 스레드에서 돌아도 인증
+     * ThreadLocal을 다시 뒤지지 않는다.
+     */
     @GetMapping
-    public ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>> getPlacesByTag(
+    public CompletableFuture<ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>>> getPlacesByTag(
             @CurrentUserId Long userId,
             @Parameter(hidden = true) @ModelAttribute @Validated PlaceFilterGetRequest placeFilterGetRequest) {
-        return CustomApiResponse.success(
-                "장소 리스트 조회 성공",
-                placeService.getPlaces(userId, placeFilterGetRequest)
-        );
+        return placeListRequestOrchestrator.getPlaces(userId, placeFilterGetRequest)
+                .thenApply(places -> CustomApiResponse.success("장소 리스트 조회 성공", places));
     }
 
 

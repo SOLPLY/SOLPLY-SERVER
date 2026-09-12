@@ -11,6 +11,7 @@ import java.sql.Statement;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.cache.SnapshotPublisher;
 import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.sopt.solply_server.support.MySqlContainerSupport;
@@ -95,6 +96,13 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
     @Autowired private JdbcTemplate jdbcTemplate;
 
     /**
+     * 발행자 락 행을 <b>테스트가 직접</b> 만들기 위한 진입점. 이 락은 통계 축과 이름이 겹치면 안
+     * 되는 상대라 단언에 들어가야 하는데, 스케줄러 발화에 기대면 그 행이 있을지가 시점에 달린다
+     * ({@code MySqlContainerSupport}가 발행 폴을 한 시간으로 눕혀 둔다).
+     */
+    @Autowired private SnapshotPublisher snapshotPublisher;
+
+    /**
      * 실행 횟수를 세는 지점. 파사드가 아니라 프로세서에 두는 이유는 파사드 메서드가 곧 락이 걸린
      * 지점이라 호출은 언제나 2회이고, 갈리는 것은 <b>본문이 돌았는가</b>이기 때문이다.
      *
@@ -134,20 +142,22 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
         verify(spiedProcessor(), times(1)).recalculateScores(any());
         verify(spiedProcessor(), times(1)).recalculateCountsAndClearOutbox(any());
 
-        List<String> lockNames = jdbcTemplate.queryForList(
-                "SELECT name FROM shedlock ORDER BY name", String.class);
-        assertThat(lockNames)
-                .as("네 회차는 저마다 제 이름으로 잠근다")
-                .contains(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
-                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME);
+        // 발행자 락 행은 여기서 <b>동기로</b> 만든다. 스케줄러가 기동 직후 한 번 발화하기는 하지만
+        // 그것은 다른 스레드의 일이라, 그 행에 기대면 이 단언이 스케줄러와 경주한다
+        snapshotPublisher.publishIfRequested();
+
+        // 이 축의 행만 고른다 — 같은 컨테이너를 쓰는 다른 스케줄러(예: auth-token-cleanup)가
+        // 시각대에 따라 남기는 행 때문에 "정확히 이것뿐" 단언이 깨지면 안 된다
+        List<String> placeLockNames = jdbcTemplate.queryForList(
+                "SELECT name FROM shedlock WHERE name LIKE 'place-%' ORDER BY name", String.class);
+        assertThat(placeLockNames)
+                .as("통계 넷과 발행자는 저마다 제 이름으로 잠그고, 그 축에 다른 이름은 없다")
+                .containsExactlyInAnyOrder(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
+                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME, SNAPSHOT_PUBLISH_LOCK_NAME);
         assertThat(List.of(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
                         COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME))
                 .as("통계 회차가 발행자 락 이름을 물려받으면 서로의 회차를 잡아먹는다")
                 .doesNotContain(SNAPSHOT_PUBLISH_LOCK_NAME);
-        assertThat(lockNames)
-                .as("이 테이블에 남는 것은 통계 넷과 발행자 락뿐이다")
-                .containsOnly(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
-                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME, SNAPSHOT_PUBLISH_LOCK_NAME);
     }
 
     /**
