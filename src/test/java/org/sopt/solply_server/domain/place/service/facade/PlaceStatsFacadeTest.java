@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.junit.jupiter.api.AfterEach;
@@ -43,8 +44,8 @@ import org.springframework.transaction.annotation.Transactional;
 class PlaceStatsFacadeTest {
 
     /**
-     * {@code @Scheduled}가 걸린 회차 전부. <b>순서는 발화 시각 순이다</b>(매시 :30 · 매시 :15 ·
-     * 01:45 · 01:00이 아니라 선언 순서 — 아래 단언들이 목록을 그대로 돌므로 누락이 곧 빠진 회차다).
+     * {@code @Scheduled}가 걸린 회차 전부. <b>순서는 발화 시각 순이 아니라 선언 순서다</b> —
+     * 아래 단언들이 목록을 그대로 돌므로 누락이 곧 빠진 회차다.
      * 회차를 늘리면 여기에 더하는 것이 시간대·락 이름·발화 충돌 검사에 자동으로 들어간다.
      */
     private static final List<String> SCHEDULED_METHODS = List.of(
@@ -84,8 +85,8 @@ class PlaceStatsFacadeTest {
         // 결과에서 전표 수를 꺼내다 NPE로 죽어, 회차마다 실패 로그가 하나씩 덤으로 붙는다.
         // lenient인 것은 점수 회차만 보는 테스트들이 이 스텁을 쓰지 않기 때문이다.
         lenient().when(deltaProcessor.consumeAndApply()).thenReturn(new DeltaResult(0, 0));
-        placeStatsFacade = new PlaceStatsFacade(
-                batchProcessor, deltaProcessor, placeStatsProperties);
+        placeStatsFacade =
+                new PlaceStatsFacade(batchProcessor, deltaProcessor, placeStatsProperties);
     }
 
     /**
@@ -366,82 +367,83 @@ class PlaceStatsFacadeTest {
      * 아래 단언들이 그 중복을 묶는다 — 주기를 바꾸려면 <b>세 곳</b>(두 리터럴 + 이 기대값)을
      * 함께 고쳐야 하고, 그러지 않으면 여기서 멈춘다.
      *
-     * <p>다음 실행 시각을 <b>두 번</b> 보는 이유: 정시 하나만 보면 "매일 00:30"도 통과한다.
-     * 연속 두 회가 1시간 간격임을 함께 봐야 매시라는 것이 고정된다.
+     * <p>다음 실행 시각을 <b>두 번</b> 보는 이유: 정시 하나만 보면 "매일 00:05"도 통과한다.
+     * 연속 두 회가 15분 간격임을 함께 봐야 격자가 고정된다.
      */
     @Test
-    @DisplayName("리뷰 카운트 cron 플레이스홀더는 프로퍼티가 없어도 매시 30분으로 해석된다")
-    void reviewCountCronPlaceholderFallsBackToHourlyHalfPast() throws Exception {
+    @DisplayName("리뷰 카운트 cron 플레이스홀더는 프로퍼티가 없어도 매시 :05부터 15분 격자로 해석된다")
+    void reviewCountCronPlaceholderFallsBackToQuarterHourlyAtFive() throws Exception {
         String resolved = resolvedCron("recalculateReviewCounts");
 
         LocalDateTime first =
                 CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 30));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 5));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 30));
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 20));
 
         assertThat(new PlaceStatsProperties().getCountCron()).isEqualTo(resolved);
     }
 
     /**
-     * 북마크 델타 회차의 cron 키는 <b>신설</b>이라 어느 환경의 yml에도 없다 — 기본값이 없으면
-     * 모든 환경이 스케줄러 초기화에서 죽는다. 값도 함께 지킨다: :15는 점수(01:00)·리뷰(:30)와
-     * 15분씩, 그리고 같은 아웃박스 전표를 다투는 안전망(01:45)과 <b>30분</b> 떨어지도록 고른 값이다.
+     * 델타 소비는 15분 격자에서 <b>정각 칸</b>을 쓴다 — 리뷰(:05)와 5분, 점수(:10)와 10분 엇갈린다.
+     * 같은 아웃박스 전표를 다투는 안전망(01:25)과는 <b>5분</b>뿐이라는 것이 이 값의 알려진 한계이고,
+     * 근거는 {@code PlaceStatsFacade} javadoc에 있다.
      */
     @Test
-    @DisplayName("북마크 델타 cron 플레이스홀더는 프로퍼티가 없어도 매시 15분으로 해석된다")
-    void bookmarkDeltaCronPlaceholderFallsBackToHourlyQuarterPast() throws Exception {
+    @DisplayName("북마크 델타 cron 플레이스홀더는 프로퍼티가 없어도 매시 정각부터 15분 격자로 해석된다")
+    void bookmarkDeltaCronPlaceholderFallsBackToQuarterHourlyOnTheHour() throws Exception {
         String resolved = resolvedCron("consumeBookmarkCountDeltas");
 
         LocalDateTime first =
-                CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
+                CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 1));
         assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 15));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 15));
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 30));
 
         assertThat(new PlaceStatsProperties().getBookmarkDeltaCron()).isEqualTo(resolved);
     }
 
     /**
-     * 안전망 회차도 <b>하루 1회</b>이고, 점수 회차와 같은 이유로 시각이 못 박혀 있다.
-     * 특히 매시 회차(01:30)와 겹치면 아웃박스 전표를 두고 서로를 기다린다.
+     * 안전망 회차는 <b>넷 중 유일하게 하루 1회</b>다. 북마크 전량 재계산이라 15분 격자로 옮기면
+     * 델타 설계가 걷어낸 전량 스캔이 되돌아온다 — 그 회귀를 여기서 잡는다.
      */
     @Test
-    @DisplayName("안전망 cron 플레이스홀더는 프로퍼티가 없어도 매일 01:45로 해석된다")
-    void countSafetyCronPlaceholderFallsBackToDailyOneFortyFive() throws Exception {
+    @DisplayName("안전망 cron 플레이스홀더는 프로퍼티가 없어도 매일 01:25로 해석된다")
+    void countSafetyCronPlaceholderFallsBackToDailyOneTwentyFive() throws Exception {
         String resolved = resolvedCron("recalculatePlaceCountsSafety");
 
         LocalDateTime first =
                 CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 45));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 25));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 7, 31, 1, 45));
+                .isEqualTo(LocalDateTime.of(2026, 7, 31, 1, 25));
 
+        assertThat(new PlaceStatsProperties().getScoreCron()).isNotEqualTo(resolved);
         assertThat(new PlaceStatsProperties().getCountSafetyCron()).isEqualTo(resolved);
     }
 
     /**
-     * 점수 회차는 <b>하루 1회</b>여야 한다. 다음 실행을 두 번 보는 이유가 카운트 쪽과 정반대다 —
-     * 여기서는 두 회가 24시간 간격임을 봐야 "매시 01분"류의 회귀가 걸린다.
+     * 점수 회차는 <b>매시 1회</b>다. 다음 실행을 두 번 보는 이유가 안전망 쪽과 정반대다 —
+     * 여기서는 두 회가 1시간 간격임을 봐야 "매일 01:10"류의 회귀가 걸린다.
      */
     @Test
-    @DisplayName("점수 cron 플레이스홀더는 프로퍼티가 없어도 매일 01:00으로 해석된다")
-    void scoreCronPlaceholderFallsBackToDailyOneAm() throws Exception {
+    @DisplayName("점수 cron 플레이스홀더는 프로퍼티가 없어도 매시 :10으로 해석된다")
+    void scoreCronPlaceholderFallsBackToHourlyAtTen() throws Exception {
         String resolved = resolvedCron("recalculatePopularScores");
 
         LocalDateTime first =
                 CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 0));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 10));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 7, 31, 1, 0));
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 10));
 
         assertThat(new PlaceStatsProperties().getScoreCron()).isEqualTo(resolved);
     }
 
     /**
-     * <b>두 회차의 시간대는 KST 하나로 통일돼 있다.</b> 점수 배치의 01:00을 그렇게 고른 근거가
-     * "국내 트래픽 최저 시각"이라 서버 시간대와 무관하게 매여 있어야 하고, 카운트 배치도 같은 값을
-     * 달아야 아래 30분 간격이 <em>같은 시계 위에서</em> 성립한다.
+     * <b>네 회차의 시간대는 KST 하나로 통일돼 있다.</b> 안전망의 01:25를 그렇게 고른 근거가
+     * "국내 트래픽 최저 시각"이라 서버 시간대와 무관하게 매여 있어야 하고, 나머지 셋도 같은 값을
+     * 달아야 아래 5분 간격이 <em>같은 시계 위에서</em> 성립한다.
      *
      * <p>{@code TimezoneConfig}가 JVM 기본을 이미 KST로 고정하지만, 그 설정이 사라져도 이 두 배치는
      * 흔들리지 않아야 한다. <b>한쪽만 비어 있는 상태를 특히 겨눈다</b> — 그러면 있지도 않은
@@ -477,13 +479,16 @@ class PlaceStatsFacadeTest {
     }
 
     /**
-     * <b>네 회차가 같은 시각에 겹치지 않는다.</b> 점수 문장은 {@code place_stats} 전 행에 X 락을
-     * 커밋까지 들고, 안전망과 델타 소비는 같은 아웃박스 전표를 {@code FOR UPDATE}로 잡는다 —
-     * 겹치면 서로를 기다린다. 01:00(점수) · 01:15(델타) · 01:30(리뷰) · 01:45(안전망)가 그 간격을
-     * 만들고, 한쪽 cron만 고쳐 같은 분으로 옮기는 회귀를 여기서 잡는다.
+     * <b>네 회차가 같은 시각에 겹치지 않는다.</b> 점수 문장은 {@code place_stats} 전 행을 갱신하고,
+     * 안전망과 델타 소비는 같은 아웃박스 전표에 표식을 찍는다 — 겹치면 서로를 기다린다.
+     * :00(델타) · :05(리뷰) · :10(점수) · 01:25(안전망)가 최소 5분 간격을 만들고, 한쪽 cron만 고쳐
+     * 같은 분으로 옮기는 회귀를 여기서 잡는다.
      *
-     * <p><b>매시 회차가 둘이 되면서 전 쌍 비교로 넓혔다.</b> 셋일 때는 "매시 하나 대 새벽 둘"이라
-     * 매시끼리의 충돌이 없었는데, 지금은 :15와 :30이 서로 겹칠 수 있다.
+     * <p><b>15분 격자가 된 뒤로 이 검사의 값이 커졌다.</b> 셋이 매시 격자를 나눠 쓰므로 한 회차의
+     * 분만 옮겨도 다른 회차와 겹칠 자리가 예전보다 많다.
+     *
+     * <p><b>이 검사는 "같은 분에 시작하지 않는다"까지만 본다.</b> 앞 회차가 그 간격보다 오래 돌면
+     * 뒤 회차와 실제로 겹치는데, 그것은 cron으로 막을 수 있는 성질이 아니다.
      */
     @Test
     void 네_배치의_발화_시각은_한_쌍도_겹치지_않는다() throws Exception {
@@ -715,11 +720,15 @@ class PlaceStatsFacadeTest {
     }
 
     /**
-     * <b>새벽 두 회차에는 종료 줄이 없다.</b> 2026-09-12 분리에서 동작을 바꾸지 않기로 한 부분이고,
-     * 그 선택이 의도였음을 여기서 고정한다 — 나중에 붙인다면 그것은 결정이지 사고가 아니어야 한다.
+     * <b>2026-09-13에 새벽 두 회차도 종료 줄을 갖게 됐다.</b> 예전 단언은 "새벽 회차에는 종료 줄이
+     * 없다"였고 그 자리에 "나중에 붙인다면 그것은 결정이지 사고가 아니어야 한다"고 적혀 있었다 —
+     * 네 회차가 {@code runRound} 하나로 합쳐지면서 그 결정이 내려졌으므로 단언을 뒤집는다.
+     *
+     * <p><b>뒤집되 약하게 두지 않는다.</b> "없다"를 지우고 끝내면 새벽 회차의 로그가 통째로
+     * 사라져도 그린이다. 그래서 매시 회차와 <b>같은 짝</b>(시작 1 + 종료 1, 결과=성공)을 요구한다.
      */
     @Test
-    void 새벽_두_회차는_종료_로그를_남기지_않는다() {
+    void 새벽_두_회차도_시작_종료_한_쌍을_남긴다() {
         given(batchProcessor.recalculateCountsAndClearOutbox(any(LocalDateTime.class)))
                 .willReturn(10);
         given(batchProcessor.recalculateScores(any(LocalDateTime.class))).willReturn(10);
@@ -727,7 +736,11 @@ class PlaceStatsFacadeTest {
         placeStatsFacade.recalculatePlaceCountsSafety();
         placeStatsFacade.recalculatePopularScores();
 
-        assertThat(infoMessages()).noneMatch(m -> m.contains("회차 종료"));
+        assertThat(infoMessages())
+                .anyMatch(m -> m.contains("인기순 카운트 안전망 회차 종료") && m.contains("결과=성공"))
+                .anyMatch(m -> m.contains("인기점수 회차 종료") && m.contains("결과=성공"));
+        assertThat(infoMessages()).filteredOn(m -> m.contains("배치 시작")).hasSize(2);
+        assertThat(infoMessages()).filteredOn(m -> m.contains("회차 종료")).hasSize(2);
     }
 
     private java.util.List<String> infoMessages() {

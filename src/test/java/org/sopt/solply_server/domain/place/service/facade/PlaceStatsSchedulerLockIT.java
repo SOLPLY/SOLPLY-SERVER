@@ -11,7 +11,6 @@ import java.sql.Statement;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
-import org.sopt.solply_server.domain.place.cache.SnapshotPublisher;
 import org.sopt.solply_server.domain.place.service.BookmarkCountDeltaProcessor;
 import org.sopt.solply_server.domain.place.service.PlaceStatsBatchProcessor;
 import org.sopt.solply_server.support.MySqlContainerSupport;
@@ -67,13 +66,6 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
     private static final String SCORE_LOCK_NAME = "place-stats-score";
 
     /**
-     * 목록 스냅샷 발행자의 락. <b>통계 회차의 것이 아니다</b> — 기동 부트스트랩이 이 이름으로
-     * 락을 잡으므로 같은 테이블에 행이 남고(2026-09-12), 통계 넷과 <b>겹치지 않는다</b>는 것이
-     * 여기서 확인할 계약이다. 겹치면 발행자가 도는 동안 통계 회차가 통째로 건너뛰어진다.
-     */
-    private static final String SNAPSHOT_PUBLISH_LOCK_NAME = "place-list-snapshot-publish";
-
-    /**
      * 메서드 이름은 베이스의 {@code datasource}와 반드시 달라야 한다({@code @DynamicPropertySource}는
      * static이라 동명이면 상위를 <em>숨긴다</em>).
      *
@@ -100,7 +92,6 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
      * 되는 상대라 단언에 들어가야 하는데, 스케줄러 발화에 기대면 그 행이 있을지가 시점에 달린다
      * ({@code MySqlContainerSupport}가 발행 폴을 한 시간으로 눕혀 둔다).
      */
-    @Autowired private SnapshotPublisher snapshotPublisher;
 
     /**
      * 실행 횟수를 세는 지점. 파사드가 아니라 프로세서에 두는 이유는 파사드 메서드가 곧 락이 걸린
@@ -142,22 +133,18 @@ class PlaceStatsSchedulerLockIT extends MySqlContainerSupport {
         verify(spiedProcessor(), times(1)).recalculateScores(any());
         verify(spiedProcessor(), times(1)).recalculateCountsAndClearOutbox(any());
 
-        // 발행자 락 행은 여기서 <b>동기로</b> 만든다. 스케줄러가 기동 직후 한 번 발화하기는 하지만
-        // 그것은 다른 스레드의 일이라, 그 행에 기대면 이 단언이 스케줄러와 경주한다
-        snapshotPublisher.publishIfRequested();
-
         // 이 축의 행만 고른다 — 같은 컨테이너를 쓰는 다른 스케줄러(예: auth-token-cleanup)가
         // 시각대에 따라 남기는 행 때문에 "정확히 이것뿐" 단언이 깨지면 안 된다
+        //
+        // ⚠️ 2026-09-13부터 목록 스냅샷은 ShedLock을 쓰지 않는다 — 소비자도 기동 부트스트랩도
+        //    place_list_snapshot_consumer의 행 락으로 소유권을 잡는다. 그래서 이 축에는 통계
+        //    넷만 남아야 하고, 여기에 목록 이름이 다시 나타나면 장치가 둘로 갈린 것이다
         List<String> placeLockNames = jdbcTemplate.queryForList(
                 "SELECT name FROM shedlock WHERE name LIKE 'place-%' ORDER BY name", String.class);
         assertThat(placeLockNames)
-                .as("통계 넷과 발행자는 저마다 제 이름으로 잠그고, 그 축에 다른 이름은 없다")
+                .as("통계 넷은 저마다 제 이름으로 잠그고, 그 축에 다른 이름은 없다")
                 .containsExactlyInAnyOrder(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
-                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME, SNAPSHOT_PUBLISH_LOCK_NAME);
-        assertThat(List.of(BOOKMARK_DELTA_LOCK_NAME, COUNT_LOCK_NAME,
-                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME))
-                .as("통계 회차가 발행자 락 이름을 물려받으면 서로의 회차를 잡아먹는다")
-                .doesNotContain(SNAPSHOT_PUBLISH_LOCK_NAME);
+                        COUNT_SAFETY_LOCK_NAME, SCORE_LOCK_NAME);
     }
 
     /**

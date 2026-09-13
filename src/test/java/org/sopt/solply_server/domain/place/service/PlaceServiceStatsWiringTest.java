@@ -124,7 +124,7 @@ class PlaceServiceStatsWiringTest {
         bookmarkCount, reviewCount, avgRating.movePointRight(2).intValueExact(),
         37.5, 127.0);
     given(snapshotBox.current())
-        .willReturn(new Snapshot(VERSION, SortedPlaces.of(List.of(entry))));
+        .willReturn(new Snapshot(VERSION, VERSION, SortedPlaces.of(List.of(entry))));
     given(placeViewHolder.get(PLACE_ID))
         .willReturn(new PlaceView(PLACE_ID, "장소1", "key1", null));
   }

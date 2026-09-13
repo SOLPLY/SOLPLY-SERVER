@@ -1,75 +1,67 @@
 package org.sopt.solply_server.domain.place.cache;
 
-import org.sopt.solply_server.domain.place.cache.publication.ProcessedMark;
-import org.sopt.solply_server.domain.place.cache.publication.PublicationCandidate;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 테스트가 <b>"지금 원본에서 다시 지어 설치하라"</b>고 말하는 손잡이.
  *
- * <p>옛 {@code SnapshotLoader#rebuild()} 한 줄이 하던 일이 2026-09-12에 셋으로 갈렸다 —
- * 원본 읽기(발행자) · 발행(발행 서비스) · 내려받아 설치(설치자). IT마다 그 셋을 손으로 엮으면
- * 순서를 잘못 적은 곳이 조용히 생기므로 한자리에 모은다.
+ * <p>{@code SnapshotInstaller#rebuildAndInstall()} 한 줄이면 되는 일이지만, IT에서는 그 앞에
+ * "번호를 올려 둔다"가 함께 필요할 때가 많다 — 설치자의 단조 가드가 <b>revision이 올라야만</b>
+ * 새 스냅샷을 받아들이기 때문이다. 테스트가 place_stats를 직접 고쳐 놓고 리빌드를 부르면, 번호가
+ * 그대로라 설치가 조용히 거절된다. 그 함정을 IT마다 각자 밟지 않도록 여기 모아 둔다.
  *
- * <p><b>요청 카운터를 거치지 않는다.</b> 발행자의 정상 경로({@code publishRound})는 밀린 요청이
- * 있을 때만 돌지만, 여기서는 테스트가 "지금 지어라"라고 직접 말하는 것이라 요청을 세지 않는다
- * ({@link ProcessedMark#none()}). 요청 카운터의 코얼레싱·처리 표시 자체를 보는 검증은 발행자를
- * 직접 부르는 IT의 몫이다.
- *
- * <p>이 클래스가 {@code cache} 패키지에 있는 이유는 {@code buildFromSource}가 패키지 전용이기
- * 때문이다. 다른 패키지의 IT도 public 메서드로 쓸 수 있다.
+ * <p><b>운영 경로와 다른 점을 분명히 해 둔다.</b> 운영에서는 데이터를 고친 그 트랜잭션이 번호를
+ * 함께 올린다. 여기서는 테스트가 데이터를 이미 고쳐 둔 뒤라 번호만 따로 올린다 — 원자성 검증은
+ * 쓰기 경로를 직접 부르는 IT의 몫이다.
  */
 public final class SnapshotRebuilder {
 
-    private final SnapshotPublisher publisher;
-    private final SnapshotPublicationRepository publicationRepository;
-    private final SnapshotPublicationService publicationService;
     private final SnapshotInstaller installer;
+    private final SnapshotMetadataRepository metadataRepository;
+    private final TransactionTemplate bumpTransaction;
 
-    public SnapshotRebuilder(SnapshotPublisher publisher,
-            SnapshotPublicationRepository publicationRepository,
-            SnapshotPublicationService publicationService,
-            SnapshotInstaller installer) {
-        this.publisher = publisher;
-        this.publicationRepository = publicationRepository;
-        this.publicationService = publicationService;
+    public SnapshotRebuilder(SnapshotInstaller installer,
+            SnapshotMetadataRepository metadataRepository,
+            PlatformTransactionManager transactionManager) {
         this.installer = installer;
+        this.metadataRepository = metadataRepository;
+        this.bumpTransaction = new TransactionTemplate(transactionManager);
+        this.bumpTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.bumpTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
     /**
-     * 원본에서 전량을 지어 발행하고, 그것을 내려받아 설치한다.
+     * 번호를 올리고(정렬이 갈렸다고 보고) 원본에서 전량을 다시 지어 설치한다.
      *
-     * @return 이번에 발행된 발행물 id
+     * @return 설치된 스냅샷의 번호 둘
      */
-    public long rebuildAndInstall() {
-        long publicationId = publish();
-        installer.installLatest();
-        return publicationId;
-    }
-
-    /** 발행만 한다 — 설치하지 않은 채로 두는 상황(다른 노드가 먼저 받는 경우)을 만들 때 쓴다 */
-    public long publish() {
-        Long base = publicationRepository.readCurrentPublicationId();
-        return publicationService.publish(publisher.buildFromSource(), base, ProcessedMark.none());
+    public SnapshotMetadata rebuildAndInstall() {
+        return rebuildAndInstall(SnapshotCursorPolicy.ADVANCE);
     }
 
     /**
-     * <b>표시값만 바뀐 발행</b> — 발행 id는 오르지만 커서 회차는 넘겨받은 값을 그대로 이어받는다.
-     * 운영에서 이 모양을 만드는 것은 어드민 수정이고({@code SnapshotRefresher}), 진행 중인 커서를
-     * 끊지 않는 것이 그 발행의 요점이다.
-     *
-     * <p>설치하지 않는다 — "발행 id는 앞섰는데 회차는 그대로인" 상태를 다른 인스턴스에서 만들어
-     * 두려는 용도라, 설치까지 하면 그 상태가 사라진다.
-     *
-     * @param carriedCursorVersion 이어받을 커서 회차. 보통 직전 발행물의 {@code cursor_version}이다
-     * @return 새로 정해진 발행 id
+     * 커서 정책을 지정해 다시 짓는다. {@link SnapshotCursorPolicy#PRESERVE}는 "표시값만 바뀐
+     * 회차" — revision은 오르되 진행 중인 커서는 끊기지 않는 상태를 만든다.
      */
-    public long publishCarrying(long carriedCursorVersion) {
-        PublicationCandidate built = publisher.buildFromSource();
-        PublicationCandidate carried = new PublicationCandidate(carriedCursorVersion,
-                built.formatVersion(), built.entryCount(), built.payloadSha256(), built.payload());
-        return publicationService.publish(
-                carried, publicationRepository.readCurrentPublicationId(), ProcessedMark.none());
+    public SnapshotMetadata rebuildAndInstall(SnapshotCursorPolicy policy) {
+        bump(policy);
+        installer.rebuildAndInstall();
+        return current();
+    }
+
+    /** 번호만 올린다 — "DB는 앞섰는데 이 인스턴스는 아직 못 지은" 상태를 만들 때 쓴다. */
+    public void bump(SnapshotCursorPolicy policy) {
+        bumpTransaction.executeWithoutResult(status -> metadataRepository.bump(policy));
+    }
+
+    /** 지금 DB가 말하는 번호 둘. */
+    public SnapshotMetadata current() {
+        return metadataRepository.read();
     }
 }

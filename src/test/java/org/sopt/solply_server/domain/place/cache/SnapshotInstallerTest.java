@@ -1,356 +1,339 @@
 package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.BDDMockito.willThrow;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
-import java.util.zip.GZIPOutputStream;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.sopt.solply_server.domain.place.cache.publication.PublishedSnapshot;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPayload;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPayloadCodec;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 
 /**
- * 발행물을 <b>내려받아 설치하는 쪽</b>의 계약. 설치는 이 인스턴스의 힙이 바뀌는 <b>유일한</b>
+ * <b>스냅샷 한 벌을 갈아 끼우는 쪽</b>의 계약. 설치는 이 인스턴스의 힙이 바뀌는 <b>유일한</b>
  * 경로라, 여기서 거르지 못한 것은 그대로 목록 응답이 된다.
  *
- * <p>이 파일이 잇는 것은 옛 {@code SnapshotLoaderPartialUpdateTest}의 뒷절반이다 — 그때는
- * "전량 재빌드와 부분 패치가 서로를 덮지 않는가"였고, 지금은 <b>"낡은 payload가 새것을 덮지
- * 않는가"</b>로 자리가 옮겨졌다. 옛 파일의 앞절반(정렬 배열이 어떻게 갈리는가)은
- * {@code SortedPlacesTest}가 그대로 들고 있고, 어드민 훅 쪽은 {@code SnapshotRefresherTest}가
- * 이어받았다.
+ * <p>이 파일이 무는 것은 셋이다.
+ * <ol>
+ *   <li><b>번호와 데이터가 한 벌로 설치되는가</b> — 읽어 온 revision·cursorVersion이 그대로 실린다.</li>
+ *   <li><b>낡은 리빌드가 새것을 덮지 않는가</b> — 단조 가드가 revision을 본다.</li>
+ *   <li><b>표시값 즉시 패치와 리빌드가 서로를 되감지 않는가</b> — 이 클래스에서 가장 미묘한 부분이고,
+ *       틀려도 예외가 나지 않아 화면에서만 보인다.</li>
+ * </ol>
  *
- * <p>코덱은 <b>진짜를 쓴다.</b> 이 파일의 절반이 "깨진 payload를 거절하는가"인데, 목으로 두면
- * 검증 자체가 사라져 통과만 남는다.
+ * <p>상자·홀더·락은 <b>진짜다</b>. 무엇이 설치됐고 무엇이 남았는지가 이 파일의 단언이라, 목으로
+ * 두면 검증 자체가 사라져 통과만 남는다.
  */
 @ExtendWith(MockitoExtension.class)
 class SnapshotInstallerTest {
 
-    private static final long PUBLICATION_ID = 42L;
-    private static final long CURSOR_VERSION = 42L;
+    @Mock private SnapshotLoader loader;
 
-    @Mock private SnapshotPublicationRepository publicationRepository;
-
-    /**
-     * 코덱·상자·홀더·락은 진짜다 — 무엇이 걸러지고 무엇이 설치됐는지가 이 파일의 단언이다.
-     *
-     * <p><b>목이나 스파이로 두지 않는다.</b> 픽스처가 체크섬을 만들 때 코덱을 부르는데, 스파이면
-     * 그 호출이 다른 목의 스터빙 한가운데에 끼어 {@code UnfinishedStubbingException}이 난다.
-     * 그래서 설치자도 {@code @InjectMocks} 대신 손으로 엮는다.
-     */
-    private final SnapshotPayloadCodec codec = new SnapshotPayloadCodec();
     private final SnapshotBox snapshotBox = new SnapshotBox();
     private final PlaceViewHolder placeViewHolder = new PlaceViewHolder();
     private final TagViewHolder tagViewHolder = new TagViewHolder();
     private final CacheWriteLock writeLock = new CacheWriteLock();
 
-    private SnapshotInstaller installer;
-
-    @BeforeEach
-    void wire() {
-        installer = new SnapshotInstaller(publicationRepository, codec, snapshotBox,
-                placeViewHolder, tagViewHolder, writeLock);
+    private SnapshotInstaller installer() {
+        return new SnapshotInstaller(loader, snapshotBox, placeViewHolder, tagViewHolder,
+                writeLock);
     }
 
-    // === 무부하 폴 (설계 §11-25) ===
-
-    /**
-     * <b>포인터가 그대로면 payload를 읽지 않는다.</b> payload는 전량이라 폴마다 내려받으면 5초
-     * 간격으로 스냅샷 한 벌이 네트워크와 힙을 오간다 — 폴이 싼 이유가 이 조건 하나다.
-     */
     @Test
-    void 포인터가_그대로면_payload를_읽지_않는다() {
-        givenPublished(validPayload());
-        assertThat(installer.installIfChanged()).isTrue();
+    void 읽어_온_번호_둘과_데이터를_한_벌로_설치한다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState()).willReturn(source(5L, 3L, place(1L, "밀크티집")));
 
-        boolean second = installer.installIfChanged();
+        assertThat(installer.rebuildAndInstall()).isTrue();
 
-        assertThat(second).isFalse();
-        // 내려받기는 첫 설치의 한 번뿐이다
-        verify(publicationRepository, org.mockito.Mockito.times(1)).download();
-    }
-
-    /** 아직 아무도 발행하지 않았으면 설치할 것이 없다 — 기동 부트스트랩이 맡는 자리다 */
-    @Test
-    void 발행물이_없으면_아무것도_설치하지_않는다() {
-        given(publicationRepository.readCurrentPublicationId()).willReturn(null);
-
-        assertThat(installer.installIfChanged()).isFalse();
-        verify(publicationRepository, never()).download();
-    }
-
-    // === 깨진 payload를 거절한다 (설계 §11-21·22) ===
-
-    /**
-     * <b>체크섬이 다르면 설치하지 않는다.</b> 압축된 바이트가 한 비트라도 갈리면 디코딩이 엉뚱한
-     * 값을 만들거나 조용히 성공한다 — 후자가 더 나쁘다.
-     */
-    @Test
-    void 체크섬이_다르면_설치하지_않는다() {
-        byte[] payload = validPayload();
-        given(publicationRepository.readCurrentPublicationId()).willReturn(PUBLICATION_ID);
-        given(publicationRepository.download()).willReturn(Optional.of(new PublishedSnapshot(
-                PUBLICATION_ID, CURSOR_VERSION, SnapshotPayloadCodec.FORMAT_VERSION,
-                1, payload.length, "다른체크섬", payload)));
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("깨졌다");
-        assertNothingInstalled();
-    }
-
-    /**
-     * <b>엔트리 수가 행이 말한 값과 다르면 설치하지 않는다.</b> 체크섬은 바이트가 온전한지만
-     * 말하고, 이 대조는 <b>그 바이트가 정말 그 발행의 것인지</b>를 한 겹 더 본다.
-     */
-    @Test
-    void 엔트리_수가_행과_다르면_설치하지_않는다() {
-        givenDownload(validPayload(), SnapshotPayloadCodec.FORMAT_VERSION, 99);
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("엔트리 수");
-        assertNothingInstalled();
-    }
-
-    /**
-     * <b>모르는 형식은 재해석하지 않는다.</b> 새 형식을 옛 코드가 "아는 필드만 읽는" 식으로
-     * 받아들이면 빠진 필드가 기본값이 되어 <b>정렬이 조용히 틀린다.</b> 읽지 않는 것이 맞는 답이다.
-     */
-    @Test
-    void 지원하지_않는_형식은_설치하지_않는다() {
-        givenDownload(validPayload(), SnapshotPayloadCodec.FORMAT_VERSION + 1, 1);
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("지원하지 않는");
-        assertNothingInstalled();
-    }
-
-    /** 같은 장소가 두 번 실리면 정렬 배열에 같은 원소가 둘 생겨 페이지가 겹친다 */
-    @Test
-    void 같은_장소가_두_번_실린_payload는_거절한다() {
-        byte[] payload = gzip("""
-                {"formatVersion":1,
-                 "entries":[%s,%s],
-                 "places":[],"tags":[]}
-                """.formatted(entryJson(7L), entryJson(7L)));
-        givenDownload(payload, SnapshotPayloadCodec.FORMAT_VERSION, 2);
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("같은 장소가 두 번");
-        assertNothingInstalled();
-    }
-
-    /**
-     * <b>유한하지 않은 정렬 키는 거절한다.</b> {@code NaN}은 비교에서 어느 쪽으로도 크지 않아
-     * 정렬 결과가 입력 순서에 따라 달라진다 — 노드마다 다른 순서가 나오는 자리다.
-     */
-    @Test
-    void 유한하지_않은_정렬_키는_거절한다() {
-        byte[] payload = gzip("""
-                {"formatVersion":1,
-                 "entries":[{"placeId":7,"townId":1,"tagBitmask":0,"popularScore":"NaN",
-                   "createdAtEpochSecond":1,"bookmarkCount":0,"reviewCount":0,"ratingToInt":0,
-                   "latitude":null,"longitude":null}],
-                 "places":[],"tags":[]}
-                """);
-        givenDownload(payload, SnapshotPayloadCodec.FORMAT_VERSION, 1);
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("유한하지 않다");
-        assertNothingInstalled();
-    }
-
-    /** 필수 필드가 빠지면 그 자리가 기본값으로 채워져 조용히 틀린 스냅샷이 된다 */
-    @Test
-    void 필수_필드가_빠진_payload는_거절한다() {
-        byte[] payload = gzip("""
-                {"formatVersion":1,
-                 "entries":[{"placeId":7,"townId":1}],
-                 "places":[],"tags":[]}
-                """);
-        givenDownload(payload, SnapshotPayloadCodec.FORMAT_VERSION, 1);
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(Exception.class);
-        assertNothingInstalled();
-    }
-
-    /** primitive 자리의 {@code null}도 같다 — 0으로 읽히면 그 장소가 목록 맨 뒤로 간다 */
-    @Test
-    void primitive_자리의_null은_거절한다() {
-        byte[] payload = gzip("""
-                {"formatVersion":1,
-                 "entries":[{"placeId":7,"townId":1,"tagBitmask":0,"popularScore":null,
-                   "createdAtEpochSecond":1,"bookmarkCount":0,"reviewCount":0,"ratingToInt":0,
-                   "latitude":null,"longitude":null}],
-                 "places":[],"tags":[]}
-                """);
-        givenDownload(payload, SnapshotPayloadCodec.FORMAT_VERSION, 1);
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(Exception.class);
-        assertNothingInstalled();
-    }
-
-    // === 실패해도 직전 회차를 지킨다 (설계 §11-23) ===
-
-    /**
-     * <b>내려받기가 죽어도 직전 스냅샷이 그대로 서빙된다.</b> 설치에 실패한 인스턴스가 빈 목록을
-     * 내는 것보다 조금 낡은 목록을 내는 편이 낫다. 다음 폴이 다시 시도한다.
-     */
-    @Test
-    void 내려받기가_실패해도_직전_스냅샷이_그대로다() {
-        givenPublished(validPayload());
-        installer.installIfChanged();
-        long installedBefore = installer.installedPublicationId();
-
-        given(publicationRepository.readCurrentPublicationId()).willReturn(PUBLICATION_ID + 1);
-        given(publicationRepository.download())
-                .willThrow(new IllegalStateException("내려받기 실패"));
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(IllegalStateException.class);
-        assertThat(installer.installedPublicationId()).isEqualTo(installedBefore);
-        assertThat(snapshotBox.current()).isNotNull();
-    }
-
-    /**
-     * <b>설치가 실패해도 다음 설치가 락을 잡을 수 있다.</b> 예외 경로에서 락을 놓지 않으면 그
-     * 인스턴스의 목록 갱신이 통째로 멎고, 증상은 "낡은 채로 멈춤"이라 오류 로그 없이 지나간다.
-     */
-    @Test
-    void 설치가_실패해도_다음_설치가_락을_잡을_수_있다() {
-        given(publicationRepository.readCurrentPublicationId()).willReturn(PUBLICATION_ID);
-        given(publicationRepository.download())
-                .willThrow(new IllegalStateException("첫 번째 실패"))
-                .willReturn(Optional.of(published(validPayload(), PUBLICATION_ID)));
-
-        assertThatThrownBy(() -> installer.installIfChanged())
-                .isInstanceOf(IllegalStateException.class);
-
-        assertThatCode(() -> installer.installIfChanged()).doesNotThrowAnyException();
-        assertThat(installer.installedPublicationId()).isEqualTo(PUBLICATION_ID);
-    }
-
-    // === 늦게 도착한 옛 payload (설계 §11-24) ===
-
-    /**
-     * <b>이미 설치한 것보다 낡은 발행물은 덮지 못한다.</b> 내려받기는 락 <em>밖</em>에서 도는데,
-     * 그 사이 어드민 훅이 더 새 발행물을 설치할 수 있다. 락 안에서 id를 다시 보지 않으면 늦게
-     * 도착한 옛 payload가 방금 반영한 이름·태그를 되돌린다 — 옛 구조에서 "전량이 패치를 덮는"
-     * 문제였던 자리가 그대로 여기로 옮겨 왔다.
-     */
-    @Test
-    void 낡은_발행물은_이미_설치한_것을_덮지_않는다() {
-        givenPublished(validPayload());
-        installer.installIfChanged();
-        assertThat(installer.installedPublicationId()).isEqualTo(PUBLICATION_ID);
-        String installedName = placeViewHolder.get(7L).name();
-
-        // 락 밖에서 내려받는 사이에 더 새 것이 설치됐다 — 늦게 도착한 payload가 이것이다
-        given(publicationRepository.download())
-                .willReturn(Optional.of(published(olderPayload(), PUBLICATION_ID - 1)));
-
-        assertThat(installer.installLatest()).isFalse();
-        assertThat(installer.installedPublicationId()).isEqualTo(PUBLICATION_ID);
-        assertThat(placeViewHolder.get(7L).name()).isEqualTo(installedName);
-    }
-
-    // === 설치가 실제로 갈아 끼운다 ===
-
-    /** 정상 경로 — 정렬 배열·표시값·태그가 한꺼번에 갈리고 커서 회차가 발행물의 것이 된다 */
-    @Test
-    void 설치하면_정렬과_표시값과_태그가_함께_갈린다() {
-        givenPublished(validPayload());
-
-        assertThat(installer.installIfChanged()).isTrue();
-
-        assertThat(snapshotBox.current().version()).isEqualTo(CURSOR_VERSION);
+        assertThat(installer.installedRevision()).isEqualTo(5L);
+        assertThat(installer.installedCursorVersion()).isEqualTo(3L);
+        assertThat(snapshotBox.current().revision()).isEqualTo(5L);
+        assertThat(snapshotBox.current().cursorVersion()).isEqualTo(3L);
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(1);
-        assertThat(placeViewHolder.get(7L).name()).isEqualTo("설치된 이름");
-        assertThat(tagViewHolder.get(3L).name()).isEqualTo("설치된 태그");
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("밀크티집");
     }
 
-    // === 픽스처 ===
+    /**
+     * <b>단조 가드가 보는 것은 revision이다.</b> 겹쳐 돈 리빌드 중 늦게 도착한 낡은 쪽이 최신을
+     * 되감으면, 그 뒤로 그 인스턴스는 "이미 최신이다"라고 믿으며 옛 데이터를 서빙한다.
+     */
+    @Test
+    void 읽어_온_시점이_이미_설치한_것보다_낡으면_설치하지_않는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState())
+                .willReturn(source(5L, 3L, place(1L, "새이름")))
+                .willReturn(source(4L, 2L, place(1L, "옛이름")));
 
-    private void givenPublished(byte[] payload) {
-        given(publicationRepository.readCurrentPublicationId()).willReturn(PUBLICATION_ID);
-        given(publicationRepository.download())
-                .willReturn(Optional.of(published(payload, PUBLICATION_ID)));
+        installer.rebuildAndInstall();
+        assertThat(installer.rebuildAndInstall()).isFalse();
+
+        assertThat(installer.installedRevision()).isEqualTo(5L);
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("새이름");
     }
 
-    private void givenDownload(byte[] payload, int formatVersion, int entryCount) {
-        given(publicationRepository.readCurrentPublicationId()).willReturn(PUBLICATION_ID);
-        given(publicationRepository.download()).willReturn(Optional.of(new PublishedSnapshot(
-                PUBLICATION_ID, CURSOR_VERSION, formatVersion, entryCount,
-                payload.length, codec.checksum(payload), payload)));
+    /**
+     * <b>어드민이 "스크롤 유지"를 고른 회차의 모양이다 — cursorVersion은 그대로, revision만 오른다.</b>
+     *
+     * <p>여기서 가드가 cursorVersion을 봤다면 새 배열이 "이미 들고 있는 회차"로 오인돼 그 수정은
+     * 영영 반영되지 않는다. 진행 중인 커서가 끊기지 않는 근거는 이 가드가 아니라 <b>커서가
+     * cursorVersion을 싣는다</b>는 것이다.
+     */
+    @Test
+    void 커서_회차가_같아도_시점이_새로우면_설치한다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState())
+                .willReturn(source(5L, 3L, place(1L, "옛이름")))
+                .willReturn(source(6L, 3L, place(1L, "새이름")));
+
+        installer.rebuildAndInstall();
+        assertThat(installer.rebuildAndInstall()).isTrue();
+
+        assertThat(snapshotBox.current().cursorVersion()).isEqualTo(3L);
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("새이름");
     }
 
-    private PublishedSnapshot published(byte[] payload, long publicationId) {
-        return new PublishedSnapshot(publicationId, publicationId,
-                SnapshotPayloadCodec.FORMAT_VERSION, 1, payload.length,
-                codec.checksum(payload), payload);
+    /** 읽다가 터지면 아무것도 바뀌지 않는다 — 지금 회차가 그대로 서빙된다. */
+    @Test
+    void 읽기가_실패하면_들고_있던_회차가_그대로_남는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState()).willReturn(source(5L, 3L, place(1L, "밀크티집")));
+        installer.rebuildAndInstall();
+
+        willThrow(new IllegalStateException("DB가 흔들린다")).given(loader).readSourceState();
+
+        assertThatThrownBy(installer::rebuildAndInstall).isInstanceOf(IllegalStateException.class);
+        assertThat(installer.installedRevision()).isEqualTo(5L);
+        assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(1);
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("밀크티집");
     }
 
-    private byte[] validPayload() {
-        return codec.encode(new SnapshotPayload(
-                SnapshotPayloadCodec.FORMAT_VERSION,
-                List.of(new SnapshotPayload.Entry(
-                        7L, 1L, 0b1L, 5.0, 1_700_000_000L, 3L, 2L, 450, 37.5, 127.0)),
-                List.of(new SnapshotPayload.Place(7L, "설치된 이름", "7.jpg", 3L)),
-                List.of(new SnapshotPayload.Tag(3L, "설치된 태그", true))));
+    /**
+     * <b>표시값 역행 — 이 파일의 핵심.</b> 리빌드가 revision 5의 원본을 읽고 있는 사이 어드민
+     * 수정이 revision 6으로 커밋돼 이름을 메모리에 얹었다. 그 뒤 도착한 리빌드가 자기 맵을 통째로
+     * 대입하면 방금 얹은 이름이 옛 이름으로 되돌아간다.
+     */
+    @Test
+    void 리빌드보다_새로운_표시값_패치는_설치_뒤에도_살아남는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState())
+                .willReturn(source(4L, 2L, place(1L, "처음이름")))
+                .willReturn(source(5L, 2L, place(1L, "옛이름")));
+        installer.rebuildAndInstall();
+
+        // 어드민 수정이 revision 6으로 커밋되고 그 표시값을 메모리에 얹었다
+        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
+        // revision 5를 읽고 있던 리빌드가 이제야 도착한다
+        installer.rebuildAndInstall();
+
+        assertThat(installer.installedRevision()).isEqualTo(5L);
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("방금고친이름");
     }
 
-    private byte[] olderPayload() {
-        return codec.encode(new SnapshotPayload(
-                SnapshotPayloadCodec.FORMAT_VERSION,
-                List.of(new SnapshotPayload.Entry(
-                        7L, 1L, 0b1L, 5.0, 1_700_000_000L, 3L, 2L, 450, 37.5, 127.0)),
-                List.of(new SnapshotPayload.Place(7L, "되돌아가면 안 되는 옛 이름", "old.jpg", 3L)),
-                List.of(new SnapshotPayload.Tag(3L, "옛 태그", true))));
+    /**
+     * <b>패치는 {@code installedRevision}을 올리지 않는다.</b> 올렸다면 그 번호까지의 리빌드가
+     * 전부 "이미 설치했다"로 막히는데, 그 사이 번호에는 표시값이 아닌 변경 — 집계 회차의 정렬 키 —
+     * 이 섞여 있다. 아래에서 revision 6의 리빌드가 실제로 설치돼야 그 변경이 살아난다.
+     */
+    @Test
+    void 패치가_리빌드를_건너뛰게_만들지_않는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState())
+                .willReturn(source(4L, 2L, place(1L, "처음이름")))
+                .willReturn(source(6L, 3L, place(1L, "처음이름"), place(2L, "집계가_넣은_장소")));
+        installer.rebuildAndInstall();
+
+        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
+        assertThat(installer.rebuildAndInstall()).isTrue();
+
+        assertThat(installer.installedRevision()).isEqualTo(6L);
+        assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(2);
     }
 
-    private static String entryJson(long placeId) {
-        return """
-                {"placeId":%d,"townId":1,"tagBitmask":0,"popularScore":1.0,
-                 "createdAtEpochSecond":1,"bookmarkCount":0,"reviewCount":0,"ratingToInt":0,
-                 "latitude":null,"longitude":null}
-                """.formatted(placeId);
+    /**
+     * 반대쪽 — 패치와 같은 시점(또는 그 뒤)을 읽은 리빌드는 그 패치를 이미 싣고 왔다. 보관하던
+     * 패치를 버려야 그 뒤의 정상적인 변경이 옛 패치에 가려지지 않는다.
+     */
+    @Test
+    void 패치를_이미_싣고_온_리빌드는_그_패치를_버린다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState())
+                .willReturn(source(4L, 2L, place(1L, "처음이름")))
+                .willReturn(source(6L, 2L, place(1L, "원본이_가진_이름")))
+                .willReturn(source(7L, 2L, place(1L, "그다음이름")));
+        installer.rebuildAndInstall();
+
+        installer.patchPlaceViews(5L, List.of(1L), Map.of(1L, view(1L, "잠깐얹은이름")));
+        installer.rebuildAndInstall();      // revision 6 — 패치(5)를 싣고 왔다
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("원본이_가진_이름");
+
+        installer.rebuildAndInstall();      // revision 7 — 버린 패치가 되살아나면 안 된다
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("그다음이름");
     }
 
-    private static byte[] gzip(String json) {
-        try (ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
-            try (GZIPOutputStream out = new GZIPOutputStream(bytes)) {
-                out.write(json.getBytes(StandardCharsets.UTF_8));
+    /**
+     * <b>이미 그 시점 이후를 통째로 읽어 실었다면 얹을 것이 없다.</b> 뒤늦게 도착한 패치가 리빌드가
+     * 가져온 최신 값을 옛 값으로 되돌리는 것을 막는 자리다.
+     */
+    @Test
+    void 이미_설치한_시점보다_낡은_패치는_얹지_않는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState()).willReturn(source(6L, 2L, place(1L, "리빌드가_실은_이름")));
+        installer.rebuildAndInstall();
+
+        installer.patchPlaceViews(5L, List.of(1L), Map.of(1L, view(1L, "낡은패치")));
+
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("리빌드가_실은_이름");
+    }
+
+    /**
+     * 삭제된 장소는 표시값이 없다. 홀더에서 지우는 것이 곧 목록에서 사라지는 것이다 — 조회 경로가
+     * 표시값 없는 행을 건너뛴다.
+     */
+    @Test
+    void 원본에서_사라진_장소는_표시값을_지운다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState()).willReturn(source(4L, 2L, place(1L, "곧지울집")));
+        installer.rebuildAndInstall();
+
+        installer.patchPlaceViews(5L, List.of(1L), Map.of());
+
+        assertThat(placeViewHolder.get(1L)).isNull();
+    }
+
+    /**
+     * <b>홀더에는 합쳐진 맵이 한 번에 걸린다 — 옛 값이 잠깐이라도 보이면 안 된다.</b>
+     *
+     * <p>조회는 {@link CacheWriteLock}을 잡지 않는다. 그래서 설치가 "옛 후보 맵을 먼저 걸고 그
+     * 다음에 밀린 패치를 다시 얹는" 순서였다면, 그 두 줄 사이에 들어온 요청은 되돌아간 이름을
+     * 본다 — 예외도 로그도 없이 화면에서만 보이는 종류다.
+     *
+     * <p>홀더를 감시해 <b>걸린 맵마다 그 순간의 이름</b>을 적어 두고, 옛 이름이 한 번이라도
+     * 걸렸는지 본다.
+     */
+    @Test
+    void 설치는_밀린_패치를_합친_맵을_한_번에_건다() {
+        List<String> namesAtEachSwap = new java.util.ArrayList<>();
+        PlaceViewHolder watching = new PlaceViewHolder() {
+            @Override
+            void replaceAll(ConcurrentMap<Long, PlaceView> fresh) {
+                super.replaceAll(fresh);
+                PlaceView view = fresh.get(1L);
+                namesAtEachSwap.add(view == null ? null : view.name());
             }
-            return bytes.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        };
+        SnapshotInstaller installer = new SnapshotInstaller(
+                loader, snapshotBox, watching, tagViewHolder, writeLock);
+        given(loader.readSourceState())
+                .willReturn(source(4L, 2L, place(1L, "처음이름")))
+                .willReturn(source(5L, 2L, place(1L, "옛이름")));
+        installer.rebuildAndInstall();
+
+        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
+        installer.rebuildAndInstall();
+
+        assertThat(namesAtEachSwap)
+                .as("홀더에 걸린 맵에는 옛 이름이 한 번도 실리지 않는다")
+                .containsExactly("처음이름", "방금고친이름");
     }
 
-    /** 거절된 payload는 <b>설치 id도 힙도</b> 건드리지 않았어야 한다 */
-    private void assertNothingInstalled() {
-        assertThat(installer.installedPublicationId()).isEqualTo(-1L);
-        assertThat(snapshotBox.current()).isNull();
-        assertThat(placeViewHolder.get(7L)).isNull();
+    /**
+     * <b>느리게 도착한 옛 패치가 새 패치를 덮지 않는다.</b> 두 어드민 수정이 잇따르면 뒤엣것이
+     * 먼저 읽기를 마칠 수 있다. 설치한 시점과만 비교하면 둘 다 그보다 새것이라 통과하고, 나중에
+     * 도착한 <b>옛</b> 값이 화면에 남는다.
+     */
+    @Test
+    void 더_새_패치가_이미_있으면_옛_패치는_얹지_않는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState()).willReturn(source(4L, 2L, place(1L, "처음이름")));
+        installer.rebuildAndInstall();
+
+        installer.patchPlaceViews(7L, List.of(1L), Map.of(1L, view(1L, "새패치")));
+        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "늦게도착한옛패치")));
+
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("새패치");
+    }
+
+    /** 태그 맵도 같은 규율을 따른다 — 더 새 태그 패치가 있으면 옛것을 얹지 않는다. */
+    @Test
+    void 더_새_태그_패치가_이미_있으면_옛_태그_패치는_얹지_않는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState()).willReturn(source(4L, 2L, place(1L, "밀크티집")));
+        installer.rebuildAndInstall();
+
+        installer.patchTagViews(7L, Map.of(9L, new TagView(9L, "새태그이름", true)));
+        installer.patchTagViews(6L, Map.of(9L, new TagView(9L, "늦게도착한옛이름", true)));
+
+        assertThat(tagViewHolder.get(9L).name()).isEqualTo("새태그이름");
+    }
+
+    /**
+     * <b>"지금 어느 시점을 싣고 있나"의 답은 스냅샷 하나뿐이다.</b> 번호를 별도 필드로 복제해 두면
+     * 요청이 상자와 그 필드를 따로 읽어 서로 다른 설치 상태를 볼 수 있다.
+     */
+    @Test
+    void 설치한_시점은_언제나_상자의_스냅샷에서_나온다() {
+        SnapshotInstaller installer = installer();
+        assertThat(installer.installedRevision()).isEqualTo(SnapshotMetadata.NOT_INSTALLED);
+        assertThat(installer.installedCursorVersion()).isEqualTo(SnapshotMetadata.NOT_INSTALLED);
+
+        given(loader.readSourceState()).willReturn(source(5L, 3L, place(1L, "밀크티집")));
+        installer.rebuildAndInstall();
+
+        assertThat(installer.installedRevision()).isEqualTo(snapshotBox.current().revision());
+        assertThat(installer.installedCursorVersion())
+                .isEqualTo(snapshotBox.current().cursorVersion());
+    }
+
+    /** 태그 맵도 같은 규율을 따른다 — 리빌드보다 새 패치는 설치 뒤에 다시 얹힌다. */
+    @Test
+    void 태그_패치도_리빌드에_되감기지_않는다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState())
+                .willReturn(source(4L, 2L, place(1L, "밀크티집")))
+                .willReturn(source(5L, 2L, place(1L, "밀크티집")));
+        installer.rebuildAndInstall();
+
+        installer.patchTagViews(6L, Map.of(9L, new TagView(9L, "방금고친태그", true)));
+        installer.rebuildAndInstall();
+
+        assertThat(tagViewHolder.get(9L).name()).isEqualTo("방금고친태그");
+    }
+
+    // === fixtures ===
+
+    /**
+     * 한 시점의 원본 한 벌. 엔트리에는 이름 칸이 없으므로(표시값은 스냅샷 밖이다) 픽스처가
+     * 장소 하나를 엔트리와 표시값 두 조각으로 만든다.
+     */
+    private record Row(long placeId, String name) {
+    }
+
+    private static SnapshotLoader.SourceState source(
+            long revision, long cursorVersion, Row... rows) {
+        List<PlaceEntry> entries = new java.util.ArrayList<>(rows.length);
+        ConcurrentMap<Long, PlaceView> views = new ConcurrentHashMap<>();
+        for (Row row : rows) {
+            entries.add(new PlaceEntry(
+                    row.placeId(), 100L, 0L, 1.0, 1_700_000_000L, 0L, 0L, 0, 37.5, 127.0));
+            views.put(row.placeId(), view(row.placeId(), row.name()));
+        }
+        return new SnapshotLoader.SourceState(
+                new SnapshotMetadata(revision, cursorVersion),
+                entries, views, Map.of(9L, new TagView(9L, "원본태그", true)));
+    }
+
+    private static Row place(long placeId, String name) {
+        return new Row(placeId, name);
+    }
+
+    private static PlaceView view(long placeId, String name) {
+        return new PlaceView(placeId, name, "thumb/" + placeId, 9L);
     }
 }

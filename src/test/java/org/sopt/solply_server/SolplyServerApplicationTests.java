@@ -65,16 +65,16 @@ class SolplyServerApplicationTests extends MySqlContainerSupport {
     }
 
     /**
-     * <b>Redis가 없어도 기동이 스냅샷을 복원한다.</b> 발행물이 없으면 기동이 최초 발행을 짓고
-     * 그것을 설치하므로, 여기까지 왔다는 것은 발행·채택·복원 셋이 모두 돌았다는 뜻이다.
+     * <b>Redis가 없어도 기동이 스냅샷을 짓는다.</b> 기동이 원본을 읽어 자기 스냅샷을 세우므로,
+     * 여기까지 왔다는 것은 읽기·정렬·설치 셋이 모두 돌았다는 뜻이다.
      *
-     * <p>설치 id가 음수로 남아 있으면 인스턴스가 <b>빈 목록</b>을 서빙한다 — 기동이 그것을 막는
-     * 것이 계약이라 값으로 못 박는다.
+     * <p>설치된 시점이 음수로 남아 있으면 인스턴스가 <b>빈 목록</b>을 서빙한다 — 기동이 그것을
+     * 막는 것이 계약이라 값으로 못 박는다.
      */
     @Test
-    void Redis_없이도_기동이_목록_스냅샷을_복원한다() {
-        assertThat(installer.installedPublicationId())
-                .as("기동 복원이 끝났으면 설치된 발행물 id가 있다")
+    void Redis_없이도_기동이_목록_스냅샷을_짓는다() {
+        assertThat(installer.installedRevision())
+                .as("기동 빌드가 끝났으면 설치된 시점이 있다")
                 .isNotNegative();
     }
 }

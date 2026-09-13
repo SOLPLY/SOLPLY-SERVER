@@ -10,12 +10,9 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.sopt.solply_server.domain.place.cache.publication.PublishedSnapshot;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPayload;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPayloadCodec;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -30,18 +27,19 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * 표시값 <b>패치와 전량 재빌드의 등가 게이트</b> — 같은 DB 상태라면 "고치고 패치한 결과"와
- * "고치고 통째로 다시 지은 결과"의 응답이 같아야 한다.
+ * 표시값 <b>즉시 패치와 전량 리빌드의 등가 게이트</b> — 같은 DB 상태라면 "고치고 커밋 직후
+ * 메모리에 얹은 결과"와 "고치고 통째로 다시 지은 결과"의 응답이 같아야 한다.
  *
- * <p>이 게이트가 없으면 패치는 조용히 갈린다. 패치 경로({@code SnapshotLoader#readView})는
- * 전량 재빌드의 규칙 — 첫 MAIN 태그는 {@code place_tag.id} 순, 썸네일은 {@code display_order} 순,
- * 빈 파일 키는 null 그대로 — 을 상관 서브쿼리로 옮긴 것이라 <b>둘이 어긋나도 각자는 그럴듯한
- * 답</b>을 낸다. 그러면 같은 장소가 "패치된 뒤"와 "다음 타이머 회차 뒤"에 다르게 보인다.
+ * <p>이 게이트가 없으면 두 경로는 조용히 갈린다. 즉시 패치는 손댄 장소만 다시 읽어 홀더에 얹는
+ * 것이고({@code SnapshotViewPatcher}), 리빌드는 원본 전량을 읽어 맵을 통째로 짓는다 — 규칙이
+ * 갈려도 <b>각자는 그럴듯한 답</b>을 낸다. 그러면 같은 장소가 "어드민이 고친 직후"와 "다음 리빌드
+ * 뒤"에 다르게 보인다.
  *
  * <p><b>기대값을 손으로 적지 않는 것이 방식이다.</b> 다만 등가만 보면 두 경로가 함께 아무것도 안
- * 해도 그린이므로, 패치가 실제로 값을 옮겼다는 것은 값으로도 못 박는다.
+ * 해도 그린이므로, 패치가 실제로 옮긴 값은 값으로도 못 박는다.
  *
  * <p><b>겨누는 갈림길 넷.</b> 장소 이름 · 썸네일(더 앞선 {@code display_order}로 갈아 끼운다) ·
  * 태그 이름 · 태그 활성. 앞의 둘은 {@code PlaceViewHolder}가 장소 단위로 받고, 뒤의 둘은
@@ -69,25 +67,20 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
 
-    @Autowired private SnapshotLoader loader;
-    @Autowired private SnapshotRefresher refresher;
-    @Autowired private SnapshotPublisher snapshotPublisher;
-    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
-    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private SnapshotInstaller snapshotInstaller;
-    @Autowired private SnapshotRebuildRequestRepository rebuildRequestRepository;
-    /** 발행물의 내용을 그대로 뜯어 보기 위한 것 — 잔존 표시값은 payload에서만 정확히 보인다 */
-    @Autowired private SnapshotPayloadCodec codec;
+    @Autowired private SnapshotMetadataRepository snapshotMetadataRepository;
+    @Autowired private SnapshotMetadataService snapshotMetadataService;
+    @Autowired private SnapshotViewPatcher snapshotViewPatcher;
     @Autowired private PlaceViewHolder placeViewHolder;
 
-    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    /** "번호를 올리고 원본에서 다시 지어 설치하라"를 한 줄로 묶는다 */
     private SnapshotRebuilder snapshotRebuilder;
     @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private ImageUrlProvider imageUrlProvider;
     @Autowired private JdbcTemplate jdbcTemplate;
-    /** DB 직행으로 places·place_images를 고친 픽스처가 어드민 쓰기의 나머지 한 걸음을 대신할 때 쓴다 */
     @Autowired private PlaceStatsRepository placeStatsRepository;
     @Autowired private TransactionTemplate transactionTemplate;
 
@@ -131,26 +124,17 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
-                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+        snapshotRebuilder = new SnapshotRebuilder(
+                snapshotInstaller, snapshotMetadataRepository, transactionManager);
         snapshotRebuilder.rebuildAndInstall();
     }
 
     /**
-     * 어드민 훅이 받는 재빌드 요청 번호를 <b>실제 경로로</b> 매긴다. {@code request()}가
-     * {@code MANDATORY}라 트랜잭션 밖에서는 거절되므로, 여기서 여는 트랜잭션이 운영의 어드민
-     * 쓰기 트랜잭션 자리를 대신한다.
-     */
-    private long newRequestSeq() {
-        return transactionTemplate.execute(status -> rebuildRequestRepository.request());
-    }
-
-    /**
-     * <b>게이트 본체.</b> 표시값 넷을 고쳐 패치로만 반영한 응답과, 같은 DB 상태를 통째로 다시 지은
-     * 응답이 같아야 한다. 다르면 패치 규칙이 재빌드 규칙에서 갈린 것이다.
+     * <b>게이트 본체.</b> 표시값 넷을 고쳐 즉시 패치로만 반영한 응답과, 같은 DB 상태를 통째로 다시
+     * 지은 응답이 같아야 한다. 다르면 패치 규칙이 리빌드 규칙에서 갈린 것이다.
      */
     @Test
-    void 표시값_패치의_결과는_전량_재빌드의_결과와_같다() {
+    void 표시값_즉시_패치의_결과는_전량_리빌드의_결과와_같다() {
         applyDisplayEdits();
 
         List<PlacePreviewDto> afterPatch = previews();
@@ -162,12 +146,12 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     }
 
     /**
-     * 위 등가는 <b>패치가 아무것도 안 해도</b> 성립할 수 있다 — 그러면 재빌드 쪽이 값을 바꿔
+     * 위 등가는 <b>패치가 아무것도 안 해도</b> 성립할 수 있다 — 그러면 리빌드 쪽이 값을 바꿔
      * 어긋나겠지만, 그 실패는 "무엇이 틀렸는지"를 말해 주지 않는다. 그래서 패치가 실제로 옮긴 값을
      * 따로 못 박는다.
      */
     @Test
-    void 패치는_이름_썸네일_태그이름_태그활성을_그_자리에서_옮긴다() {
+    void 즉시_패치가_이름_썸네일_태그이름_태그활성을_한_번에_옮긴다() {
         applyDisplayEdits();
 
         List<PlacePreviewDto> previews = previews();
@@ -184,73 +168,76 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     /**
      * <b>{@code display_order}가 같으면 값이 작은 키를 고른다 — 전량도 단건도.</b>
      * {@code display_order}는 중복도 NULL도 허용하고 MySQL의 filesort는 안정 정렬이 아니라,
-     * 타이브레이커가 없으면 두 경로가 다른 이미지를 골라 "패치된 뒤"와 "다음 회차 뒤"의 썸네일이
+     * 타이브레이커가 없으면 두 경로가 다른 이미지를 골라 "고친 직후"와 "다음 리빌드 뒤"의 썸네일이
      * 갈린다. {@code place_images}에는 대리키가 없어 타이브레이커가 값 자신이다.
      */
     @Test
-    void display_order가_동률이면_전량과_패치가_같은_이미지를_고른다() {
+    void display_order가_동률이면_전량과_단건이_같은_이미지를_고른다() {
         String expected = imageUrlProvider.getImageUrl("패치D_이미지A");
 
         assertThat(previewOf(previews(), placeTiedOrder).thumbnailImageUrl()).isEqualTo(expected);
 
-        refresher.patchPlaceViewAfterCommit(placeTiedOrder, newRequestSeq());
+        markChangedAndPatch(placeTiedOrder);
 
         assertThat(previewOf(previews(), placeTiedOrder).thumbnailImageUrl())
-                .as("패치 경로도 같은 값을 고른다").isEqualTo(expected);
+                .as("단건 패치 경로도 같은 값을 고른다").isEqualTo(expected);
     }
 
     /**
-     * <b>지운 장소는 배열에서도 표시값에서도 사라진다 — 발행물 자체에서.</b>
+     * <b>지운 장소는 그 자리에서 목록에서 사라지고, 다음 리빌드가 배열에서도 뺀다.</b>
      *
-     * <p>패치는 홀더 전량을 복사한 뒤 <b>다시 읽어 온 것만</b> 덮어쓴다. 삭제된 장소는 원본에
-     * 행이 없어 다시 읽히지 않으므로, 손댄 id를 먼저 비우지 않으면 <b>배열에서는 빠졌는데
-     * 표시값만 payload에 남는다.</b> 그리고 그 payload는 모든 인스턴스가 내려받아 홀더를 통째로
-     * 갈아 끼우는 것이라, 잔존값이 이 JVM 하나가 아니라 <b>전 인스턴스에 퍼져</b> 다음 전량
-     * 재빌드까지 따라다닌다 — {@code PlaceViewHolder}가 "삭제된 표시값은 다음 설치가 맵을 통째로
-     * 갈 때 사라진다"고 적어 둔 계약이 그 자리에서 깨진다.
+     * <p>즉시 패치는 손댄 id를 다시 읽는데, 삭제된 장소는 원본에 행이 없어 <b>결과에 없다</b>.
+     * 그것을 "표시값 없음"으로 다뤄 홀더에서 지우는 것이 이 경로의 계약이다 — 지우지 않으면
+     * 배열에는 남고 표시값도 옛것이 붙어, 지워진 장소가 다음 리빌드까지 목록에 계속 나온다.
      *
-     * <p><b>그래서 단언을 payload에 건다.</b> 홀더만 보면 이 인스턴스가 우연히 정리된 경우와
-     * 구분되지 않고, 배열만 보면 잔존한 표시값을 놓친다 — 두 쪽을 함께 본다.
+     * <p>배열 자체에서 빠지는 것은 리빌드의 몫이다. 두 걸음을 함께 본다.
      */
     @Test
-    void 삭제된_장소는_발행물의_배열에서도_표시값에서도_빠진다() {
+    void 지운_장소는_표시값에서_먼저_빠지고_리빌드가_배열에서_뺀다() {
         long doomed = createPlace("패치삭제");
         resyncStats(doomed);
         snapshotRebuilder.rebuildAndInstall();
-        assertThat(entryIdsInPublishedPayload()).contains(doomed);
-        assertThat(viewIdsInPublishedPayload()).contains(doomed);
+        assertThat(entryIds()).contains(doomed);
+        assertThat(placeViewHolder.get(doomed)).isNotNull();
 
         deletePlaceRows(doomed);        // 어드민 삭제가 하는 일 그대로 (물리 삭제)
-        refresher.refreshPlacesAfterCommit(List.of(doomed), newRequestSeq());
+        markChangedAndPatch(doomed);
 
-        assertThat(entryIdsInPublishedPayload()).doesNotContain(doomed);
-        assertThat(viewIdsInPublishedPayload())
-                .as("배열에서 뺐어도 표시값이 남으면 모든 인스턴스가 그것을 내려받는다")
-                .doesNotContain(doomed);
         assertThat(placeViewHolder.get(doomed))
-                .as("설치가 맵을 통째로 갈았으므로 이 인스턴스의 홀더에도 없다").isNull();
+                .as("표시값이 남으면 지워진 장소가 계속 목록에 나온다").isNull();
+        assertThat(previews()).noneMatch(preview -> preview.placeId() == doomed);
+
+        snapshotInstaller.rebuildAndInstall();
+        assertThat(entryIds()).doesNotContain(doomed);
     }
 
     /**
-     * <b>패치는 회차를 쓰지 않는다.</b> 표시값 하나 고치자고 회차를 새로 찍으면 진행 중인 스크롤이
-     * 그 자리에서 만료된다 — 이 분리의 값어치가 곧 이 단언이다.
+     * <b>표시값만 바뀐 수정은 커서 회차를 올리지 않는다.</b> 표시값 하나 고치자고 회차를 올리면
+     * 진행 중인 스크롤이 그 자리에서 만료된다 — 번호를 둘로 가른 값어치가 곧 이 단언이다.
+     *
+     * <p>여기서는 리빌드까지 돌려 본다. revision은 올랐으니 새 배열이 실제로 설치되는데도
+     * cursorVersion은 그대로여야 한다는 것이 요점이다.
      */
     @Test
-    void 표시값_패치는_회차를_새로_찍지_않는다() {
-        long versionBefore = currentVersion();
+    void 표시값만_바뀐_수정은_커서_회차를_올리지_않는다() {
+        long cursorVersionBefore = currentCursorVersion();
+        long revisionBefore = snapshotInstaller.installedRevision();
 
         applyDisplayEdits();
+        snapshotInstaller.rebuildAndInstall();
 
-        assertThat(currentVersion()).isEqualTo(versionBefore);
+        assertThat(currentCursorVersion()).isEqualTo(cursorVersionBefore);
+        assertThat(snapshotInstaller.installedRevision()).isGreaterThan(revisionBefore);
     }
 
     // === helpers ===
 
     /**
-     * 어드민이 낼 법한 표시값 수정 넷 — 커밋된 DB를 고치고 그 자리에서 패치 훅을 부른다.
+     * 어드민이 낼 법한 표시값 수정 넷 — 커밋된 DB를 고치고, 운영과 같은 모양으로 <b>같은
+     * 트랜잭션에서</b> 번호를 올린 뒤 커밋 직후 표시값을 얹는다.
      *
      * <p>이름도 썸네일도 {@code place_stats}의 칸이라(V40) 원본만 고쳐서는 픽스처가 어드민 쓰기를
-     * 흉내내지 못한다 — 패치도 재빌드도 읽는 것이 그 칸이다. 그래서 원본을 고친 뒤
+     * 흉내내지 못한다 — 즉시 패치도 전량 리빌드도 읽는 것이 그 칸이다. 그래서 원본을 고친 뒤
      * {@link #resyncStats}로 <b>운영과 같은 문장</b>을 태운다.
      */
     private void applyDisplayEdits() {
@@ -258,13 +245,33 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         // display_order가 더 앞선 이미지를 끼워 넣는다 — 썸네일 선택 규칙이 갈리면 여기서 드러난다
         insertImage(placeRenamed, "패치A_새이미지", 1);
         resyncStats(placeRenamed);
-        refresher.patchPlaceViewAfterCommit(placeRenamed, newRequestSeq());
+        markChangedAndPatch(placeRenamed);
 
-        // 태그 둘을 고치고 훅은 한 번 — 맵을 통째로 다시 읽으므로 어느 태그가 바뀌었는지 넘기지 않는다
+        // 태그 둘을 고치고 패치는 한 번 — 맵을 통째로 다시 읽으므로 어느 태그가 바뀌었는지 넘기지 않는다
         String renamed = TAG_NAME_PREFIX + "수정";
         jdbcTemplate.update("UPDATE tags SET name = ? WHERE id = ?", renamed, renamedTagId);
         jdbcTemplate.update("UPDATE tags SET active = false WHERE id = ?", disabledTagId);
-        refresher.refreshTagViewsAfterCommit(newRequestSeq());
+        markChangedAndPatchTags();
+    }
+
+    /**
+     * 어드민 쓰기 트랜잭션의 마지막 두 걸음 — 번호를 올리고, 커밋 직후 표시값을 얹는다.
+     *
+     * <p>{@code markChanged}가 {@code MANDATORY}라 트랜잭션 밖에서는 거절되고, 패치는
+     * {@code afterCommit}에 걸리므로 이 트랜잭션이 닫힐 때 돈다 — 운영의 어드민 경로와 같은 모양이다.
+     */
+    private void markChangedAndPatch(long placeId) {
+        transactionTemplate.executeWithoutResult(status -> {
+            snapshotMetadataService.markChanged(SnapshotCursorPolicy.PRESERVE);
+            snapshotViewPatcher.patchPlacesAfterCommit(List.of(placeId));
+        });
+    }
+
+    private void markChangedAndPatchTags() {
+        transactionTemplate.executeWithoutResult(status -> {
+            snapshotMetadataService.markChanged(SnapshotCursorPolicy.PRESERVE);
+            snapshotViewPatcher.patchTagsAfterCommit();
+        });
     }
 
     /**
@@ -279,8 +286,8 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     }
 
     /**
-     * 이 동네의 전체 목록. 페이징을 걸지 않는 이유는 둘이다 — 발급 커서에 회차 버전이 실려 재빌드
-     * 전후 비교가 버전 차이로 갈리고, 이 클래스는 롤백하지 않아 회차마다 픽스처가 쌓인다.
+     * 이 동네의 전체 목록. 페이징을 걸지 않는 이유는 둘이다 — 발급 커서에 회차가 실려 리빌드
+     * 전후 비교가 회차 차이로 갈리고, 이 클래스는 롤백하지 않아 회차마다 픽스처가 쌓인다.
      */
     private List<PlacePreviewDto> previews() {
         return placeService.getPlaces(me, new PlaceFilterGetRequest(
@@ -294,8 +301,14 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
                 .findFirst().orElseThrow();
     }
 
-    private long currentVersion() {
-        return snapshotBox.current().version();
+    private long currentCursorVersion() {
+        return snapshotBox.current().cursorVersion();
+    }
+
+    /** 지금 설치된 스냅샷의 정렬 배열이 담고 있는 장소 id 전량 */
+    private List<Long> entryIds() {
+        return snapshotBox.current().sortedPlaces().entries().stream()
+                .map(PlaceEntry::placeId).toList();
     }
 
     /**
@@ -305,21 +318,6 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
     private void deletePlaceRows(long placeId) {
         jdbcTemplate.update("DELETE FROM place_stats WHERE place_id = ?", placeId);
         jdbcTemplate.update("DELETE FROM places WHERE id = ?", placeId);
-    }
-
-    /** 지금 발행물이 실제로 싣고 있는 것 — 다른 인스턴스가 내려받아 홀더로 삼는 바로 그 내용이다 */
-    private SnapshotPayload publishedPayload() {
-        PublishedSnapshot published = snapshotPublicationRepository.download().orElseThrow();
-        return codec.decode(
-                published.formatVersion(), published.payload(), published.entryCount());
-    }
-
-    private List<Long> entryIdsInPublishedPayload() {
-        return publishedPayload().entries().stream().map(SnapshotPayload.Entry::placeId).toList();
-    }
-
-    private List<Long> viewIdsInPublishedPayload() {
-        return publishedPayload().places().stream().map(SnapshotPayload.Place::placeId).toList();
     }
 
     private static int tagSeq = 0;

@@ -20,7 +20,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
@@ -52,7 +53,7 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class,
-        SnapshotRebuildRequestRepository.class})
+        SnapshotMetadataService.class, SnapshotMetadataRepository.class})
 class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
 
     private static final double BOOKMARK_WEIGHT = 1.0;
@@ -383,6 +384,46 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
     }
 
     /**
+     * <b>안전망 회차는 리뷰 값을 건드리지 않는다.</b> 안전망이 지키는 축은 북마크 하나다 — 델타
+     * 위에 선 축이 그것뿐이기 때문이고, 리뷰 수·평균 평점의 주인은 15분마다 도는 리뷰 회차다.
+     * 안전망의 SET 목록에 리뷰 두 칸이 되돌아오면 <b>하루에 한 번 같은 값을 다시 세는 중복</b>이
+     * 살아나고, 그 문장은 {@code place_reviews} 전량 스캔을 함께 들고 온다.
+     *
+     * <p><b>센티널을 심는 방향이 이 테스트의 요점이다.</b> 리뷰 칸에는 원본과 <em>다른</em> 값을
+     * 넣어 두고(안전망이 리뷰 축을 세면 원본 값으로 덮여 즉시 드러난다), 북마크 칸은 원본과
+     * 어긋나게 해 둔다(되맞춰지는 것이 "안전망이 실제로 돌았다"의 증거다). 북마크 단언이 없으면
+     * 문장을 통째로 들어내도 이 테스트가 그린이다.
+     */
+    @Test
+    void 안전망_회차는_북마크만_되맞추고_리뷰_값은_덮지_않는다() {
+        clearStats();
+        insertBookmark(placeA, 0);
+        insertReview(placeA, 5, 0);
+        batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
+        em.createNativeQuery("""
+                UPDATE place_stats
+                   SET review_count = 777, avg_rating = 2.5, bookmark_count = 99
+                 WHERE place_id = :placeId
+                """)
+                .setParameter("placeId", placeA)
+                .executeUpdate();
+        em.clear();
+
+        batchProcessor.recalculateCountsAndClearOutbox(NEXT_CALCULATED_AT);
+
+        PlaceStats after = statsOf(placeA);
+        assertThat(after.getBookmarkCount())
+                .as("북마크 수는 원본 기준으로 되맞춰진다 — 안전망이 실제로 돌았다는 증거")
+                .isEqualTo(1);
+        assertThat(after.getReviewCount())
+                .as("리뷰 수는 그대로다 — 원본대로 세면 1이 된다")
+                .isEqualTo(777);
+        assertThat(after.getAvgRating())
+                .as("평균 평점도 그대로다 — 원본대로 세면 5.0이 된다")
+                .isEqualByComparingTo(new BigDecimal("2.5"));
+    }
+
+    /**
      * <b>점수 회차는 행을 만들지 않는다.</b> 행의 주인은 어드민 쓰기 트랜잭션 하나이고, 두 배치는
      * 각자의 값 칸만 정한다. 점수 SQL을 INSERT로 바꾸면 여기서 깨진다.
      */
@@ -460,10 +501,14 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 아무것도 안 쓰는 문장"과 구분하기 위해서다.
      */
     /**
-     * <b>회차마다 반드시 쓰이는 한 행 — 재빌드 요청 카운터.</b> 2026-09-12에 통계 트랜잭션이 같은
-     * 트랜잭션에서 {@code place_list_rebuild_requests}의 {@code requested_seq}를 올리게 되면서
-     * 이 카운터가 회차마다 1씩 늘어난다. {@code Innodb_rows_updated}는 테이블을 가리지 않으므로
-     * 그 한 줄을 빼고 나서 place_stats의 쓰기를 본다 — 빼지 않으면 "아무것도 안 썼다"를 말할 수 없다.
+     * <b>회차마다 목록 쪽에 UPDATE 한 행이 섞인다.</b>
+     *
+     * <p>통계 트랜잭션은 자기 마지막 문장으로 {@code place_list_snapshot_metadata}의 번호 둘을
+     * <b>UPDATE</b>로 올린다. {@code Innodb_rows_updated}는 테이블을 가리지 않으므로 그 한 행이
+     * 이 측정에 그대로 섞인다 — 여기서 빼는 몫이 그것이다.
+     *
+     * <p>이 값을 상수로 세워 두는 것은, 목록 쪽 쓰기가 늘거나 줄면 <b>여기가 먼저 빨개져</b>
+     * "회차 하나가 목록에 남기는 쓰기는 정확히 한 행"이라는 사실을 다시 확인하게 하려는 것이다.
      */
     private static final long REQUEST_ROW_WRITES_PER_ROUND = 1L;
 

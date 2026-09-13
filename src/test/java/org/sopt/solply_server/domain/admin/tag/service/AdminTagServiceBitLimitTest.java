@@ -15,8 +15,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.sopt.solply_server.domain.admin.tag.dto.request.AdminTagUpsertRequest;
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
-import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
+import org.sopt.solply_server.domain.place.cache.SnapshotViewPatcher;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -42,8 +42,8 @@ class AdminTagServiceBitLimitTest {
     @Mock private AdminEntityLoader adminEntityLoader;
     @Mock private AdminTagValidator adminTagValidator;
     @Mock private EntityManager entityManager;
-    @Mock private SnapshotRefresher snapshotRefresher;
-    @Mock private SnapshotRebuildRequestRepository rebuildRequestRepository;
+    @Mock private SnapshotMetadataService snapshotMetadataService;
+    @Mock private SnapshotViewPatcher snapshotViewPatcher;
 
     @InjectMocks private AdminTagService adminTagService;
 

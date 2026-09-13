@@ -12,10 +12,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
-import org.sopt.solply_server.domain.place.cache.SnapshotPublisher;
 import org.sopt.solply_server.domain.place.cache.SnapshotRebuilder;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -26,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 목록 요청이 발행하는 SQL <b>문장 수</b>를 값으로 못 박는다.
@@ -70,13 +69,12 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
     @Autowired private PlaceService placeService;
+    @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
-    @Autowired private SnapshotPublisher snapshotPublisher;
-    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
-    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private SnapshotMetadataRepository snapshotMetadataRepository;
     @Autowired private SnapshotInstaller snapshotInstaller;
 
-    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    /** "번호를 올리고 원본에서 다시 지어 설치하라"를 한 줄로 묶는다 */
     private SnapshotRebuilder snapshotRebuilder;
     @Autowired private JdbcTemplate jdbcTemplate;
 
@@ -99,8 +97,8 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
         // 조회가 읽는 것은 스냅샷뿐이라, 픽스처를 다 심은 뒤 한 회차를 찍어야 목록이 이 행들을 본다
-        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
-                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+        snapshotRebuilder = new SnapshotRebuilder(
+                snapshotInstaller, snapshotMetadataRepository, transactionManager);
         snapshotRebuilder.rebuildAndInstall();
     }
 

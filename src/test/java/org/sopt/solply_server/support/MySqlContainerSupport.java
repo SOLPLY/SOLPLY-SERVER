@@ -55,29 +55,29 @@ public abstract class MySqlContainerSupport {
     }
 
     /**
-     * 목록 스냅샷의 <b>발행 폴을 IT에서 사실상 멈추고, 채택 폴은 짧게 남긴다.</b>
+     * 목록 스냅샷의 <b>리빌드 폴을 IT에서 사실상 멈춘다.</b>
      *
-     * <p><b>발행 폴을 멈추는 이유.</b> 기본 5초 {@code fixedDelay}로 돌면 발행자가 테스트의 단언
-     * 사이에 끼어들어 발행물을 하나 더 만들고 밀린 요청을 닫는다 — 그 IT가 <b>무엇을 보고 무엇을
-     * 단언했는지</b>가 시점에 따라 달라진다. 발행은 테스트가 명시적으로 부르는 것만 돌아야 한다.
+     * <p><b>왜 멈추나.</b> 기본 1초 {@code fixedDelay}로 돌면 배경 리빌드가 테스트의 단언 사이에
+     * 끼어들어 스냅샷을 갈아 끼운다 — 그 IT가 <b>무엇을 보고 무엇을 단언했는지</b>가 시점에 따라
+     * 달라진다. 리빌드는 테스트가 명시적으로 부르는 것만 돌아야 한다.
      *
-     * <p><b>채택 폴은 왜 크게 잡지 못하나.</b> {@code SnapshotScheduler#restoreOnStartup}이
-     * 최초 발행을 지은 <em>직후</em> 설치 전에 <b>한 폴 간격만큼 잠든다.</b> 그래서 이 값을 한
-     * 시간으로 잡으면 발행물이 없는 상태로 뜨는 컨텍스트가 기동에서 한 시간 멈춘다(실측:
-     * {@code SnapshotPublicationIT}가 10분 넘게 진행되지 않았다). 기동 한 번의 대기가 이 값이므로
-     * 짧게 둔다. 다만 너무 짧으면 캐시에 살아 있는 컨텍스트 스무 개가 저마다 폴을 돌려 커넥션
-     * 경합이 생기므로, 기동 대기와 배경 부하가 함께 견딜 만한 값으로 잡는다.
+     * <p><b>기동 빌드는 이 값과 무관하다.</b> {@code SnapshotScheduler}는 폴을 기다리지 않고
+     * 자기가 직접 짓는다. 그래서 옛 구조와 달리 이 값을 한 시간으로 잡아도 컨텍스트 기동이
+     * 멈추지 않는다.
      *
-     * <p>채택 폴이 배경에서 도는 것은 해롭지 않다 — 포인터가 그대로면 payload를 읽지도 않고,
-     * 움직였으면 설치하는 것이 맞는 동작이다. 위험한 쪽은 새 발행물을 <em>만드는</em> 발행 폴이다.
+     * <p>다만 {@code fixedDelay}의 <b>첫 발화</b>는 스케줄러가 뜨자마자 한 번 온다. 그때는 기동
+     * 빌드가 이미 같은 번호를 설치한 뒤라 리빌드로 이어지지 않는다(번호 조회 하나로 끝난다).
+     *
+     * <p>최소 리빌드 간격은 1ms로 낮춰 둔다 — 테스트가 연달아 리빌드를 부를 때 그 간격에 걸려
+     * 조용히 건너뛰면 "안 지어졌다"와 "못 지었다"가 구분되지 않는다.
      *
      * <p><b>폴 간격을 되돌리려고 하위 클래스에서 같은 키를 다시 등록하지 말 것.</b>
      * {@code @DynamicPropertySource}는 하위 것이 먼저, 상위 것이 나중에 불려 <b>상위가 하위를
-     * 덮는다.</b> 폴을 실제로 돌려야 하는 검증은 스케줄러를 기다리는 대신 발행자·설치자를 직접
-     * 부르거나, 이 베이스를 쓰지 않고 컨텍스트를 따로 세운다.
+     * 덮는다.</b> 폴을 실제로 돌려야 하는 검증은 스케줄러를 기다리는 대신
+     * {@code SnapshotLoadCoordinator#pollRebuild}를 직접 부른다.
      */
     protected static void quietSnapshotRefresh(DynamicPropertyRegistry registry) {
-        registry.add("solply.place-list-snapshot.publish-poll-interval-ms", () -> "3600000");
-        registry.add("solply.place-list-snapshot.adopt-poll-interval-ms", () -> "1500");
+        registry.add("solply.place-list-snapshot.poll-interval-ms", () -> "3600000");
+        registry.add("solply.place-list-snapshot.min-rebuild-interval-ms", () -> "1");
     }
 }

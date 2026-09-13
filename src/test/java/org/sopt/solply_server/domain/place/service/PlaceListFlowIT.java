@@ -21,10 +21,9 @@ import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.bookmark.service.BookmarkService;
 import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
-import org.sopt.solply_server.domain.place.cache.SnapshotPublisher;
 import org.sopt.solply_server.domain.place.cache.SnapshotRebuilder;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -40,6 +39,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 장소 목록 <b>유일 경로</b>의 사슬 IT — 북마크·리뷰 INSERT → 배치 → 조회 → 정렬 → 커서 왕복까지
@@ -66,13 +66,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>사슬에 한 마디가 늘었다 — 회차다 (#397).</b> 조회가 읽는 곳은 목록 스냅샷 하나뿐이고,
  * DB의 변경은 <b>다음 회차가 스냅샷을 다시 찍을 때</b> 목록에 나타난다. 그래서 이 파일의 DB 직행
  * 픽스처는 "쓰기 → 배치 → <b>{@link #takeSnapshot()}</b> → 조회"로 걷고, 운영에서 그 자리를 채우는
- * 것은 10분 주기 타이머다({@code SnapshotScheduler}). <b>여기서 회차를 생략하면 조회가
- * 픽스처 이전의 스냅샷을 보므로, 회차를 부르지 않은 단언은 곧 "낡은 스냅샷을 본다"는 주장이다.</b>
+ * 것은 1초 폴이다({@code SnapshotLoadCoordinator}). <b>여기서 리빌드를 생략하면 조회가
+ * 픽스처 이전의 스냅샷을 보므로, 리빌드를 부르지 않은 단언은 곧 "낡은 스냅샷을 본다"는 주장이다.</b>
  *
- * <p><b>어드민 경로만은 예외이고, 그 예외가 검증 대상이다.</b> 어드민 쓰기는 자기 커밋 뒤에
- * 스스로 스냅샷을 다시 찍으므로({@code SnapshotRefresher}) 아래 어드민 시나리오들은
- * {@code takeSnapshot()}을 <b>일부러 부르지 않는다</b> — 부르는 순간 "훅이 찍은 것"인지 "손으로
- * 찍은 것"인지 구분되지 않아, 훅을 통째로 떼도 전부 그린이 된다.
+ * <p><b>어드민 시나리오는 다른 손잡이를 쓴다.</b> 어드민 쓰기는 자기 트랜잭션에서 <b>번호를 올리고</b>
+ * 커밋으로 끝나고, 짓는 것은 각 인스턴스의 리빌드다. 그래서 아래 어드민 시나리오들은
+ * {@code takeSnapshot()} 대신 <b>{@link #rebuildIfMarked()}</b>를 부른다.
+ *
+ * <p><b>그래도 단언에 이빨이 남는 이유.</b> {@code rebuildIfMarked()}는 번호를 올리지 않는다 —
+ * 어드민 경로에서 번호 올리기를 떼면 설치자의 단조 가드에 걸려 스냅샷이 그대로 남고 단언이
+ * 곧바로 깨진다. {@code takeSnapshot()}(번호를 올려 무조건 짓는다)으로 대신하면 그 구분이
+ * 사라지므로 <b>어드민 시나리오에서 그것을 쓰지 말 것</b>.
  *
  * <p><b>계약: 단언은 PlaceService 응답 DTO 수준으로만 한다.</b> 내부 표현(네이티브 SQL의 컬럼 순서,
  * 레포지토리 record 모양)이 바뀌는 리팩터링에서 이 파일은 수정 없이 그린이어야 한다.
@@ -103,20 +107,19 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     @Autowired private PlaceService placeService;
+    @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
-    /** 회차를 손으로 돌린다 — 운영에서 이 자리를 채우는 것은 10분 주기 타이머다 */
-    @Autowired private SnapshotPublisher snapshotPublisher;
-    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
-    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    /** 리빌드를 손으로 돌린다 — 운영에서 이 자리를 채우는 것은 1초 폴이다 */
+    @Autowired private SnapshotMetadataRepository snapshotMetadataRepository;
     @Autowired private SnapshotInstaller snapshotInstaller;
 
-    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    /** "번호를 올리고 원본에서 다시 지어 설치하라"를 한 줄로 묶는다 */
     private SnapshotRebuilder snapshotRebuilder;
 
     @BeforeEach
     void wireSnapshotRebuilder() {
-        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
-                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+        snapshotRebuilder = new SnapshotRebuilder(
+                snapshotInstaller, snapshotMetadataRepository, transactionManager);
     }
     @Autowired private JdbcTemplate jdbcTemplate;
     /** 실제 북마크 생성 경로. 리포지토리를 직접 부르면 서비스 층의 계약이 검증에서 빠진다. */
@@ -299,9 +302,10 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10)))).contains(doomed);
         assertThat(statsRowExists(doomed)).isTrue();
 
-        adminPlaceFacade.deletePlace(doomed);
+        adminPlaceFacade.deletePlace(doomed, false);
+        rebuildIfMarked();
 
-        // 행은 그 자리에서 사라지고, 커밋 훅이 찍은 새 스냅샷에도 없다
+        // 행은 그 자리에서 사라지고, 그 삭제가 올린 작업을 삼킨 새 발행물에도 없다
         assertThat(statsRowExists(doomed)).isFalse();
         assertThat(ids(placeService.getPlaces(me, popularRequest(null, 10))))
                 .doesNotContain(doomed);
@@ -384,16 +388,19 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 일"을 보는 것인지 아닌지가 구분되지 않는다.
      */
     @Test
-    void 어드민_쓰기는_커밋_뒤에_목록_스냅샷을_다시_짓는다() {
-        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민커밋훅");
+    void 어드민_쓰기는_소비자_회차를_거쳐_목록_스냅샷에_반영된다() {
+        long adminTownId = createTown(TOWN_NAME_PREFIX + "어드민작업등록");
 
         long created = adminPlaceFacade.createPlace(
-                ADMIN_USER_ID, upsertRequest("db직행어드민커밋훅", adminTownId, SEED_OPTION1_A)).placeId();
+                ADMIN_USER_ID, upsertRequest("db직행어드민작업등록", adminTownId, SEED_OPTION1_A))
+                .placeId();
+        rebuildIfMarked();
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(adminTownId, null, 10))))
                 .containsExactly(created);
 
-        adminPlaceFacade.deletePlace(created);
+        adminPlaceFacade.deletePlace(created, false);
+        rebuildIfMarked();
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(adminTownId, null, 10)))).isEmpty();
     }
@@ -417,6 +424,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         long created = adminPlaceFacade.createPlace(
                 ADMIN_USER_ID, upsertRequest("db직행어드민생성", adminTownId, SEED_OPTION1_A)).placeId();
+        rebuildIfMarked();
 
         assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_A))))
                 .containsExactly(created);
@@ -435,6 +443,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         long created = adminPlaceFacade.createPlace(
                 ADMIN_USER_ID, upsertRequest("db직행어드민생성인기", adminTownId, SEED_OPTION1_A)).placeId();
+        rebuildIfMarked();
 
         assertThat(ids(placeService.getPlaces(me, popularTagRequest(adminTownId, SEED_OPTION1_A))))
                 .containsExactly(created);
@@ -454,6 +463,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         adminPlaceFacade.updatePlace(
                 placeId, upsertRequest("db직행어드민수정", adminTownId, SEED_OPTION1_B));
+        rebuildIfMarked();
 
         assertThat(ids(placeService.getPlaces(me, latestTagRequest(adminTownId, SEED_OPTION1_A))))
                 .isEmpty();
@@ -475,6 +485,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
 
         adminPlaceFacade.updatePlace(
                 placeId, upsertRequest("db직행어드민이동", toTownId, SEED_OPTION1_A));
+        rebuildIfMarked();
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(fromTownId, null, 10)))).isEmpty();
         assertThat(ids(placeService.getPlaces(me, latestRequest(toTownId, null, 10))))
@@ -514,7 +525,9 @@ class PlaceListFlowIT extends MySqlContainerSupport {
                 .isEmpty();
 
         jdbcTemplate.update("UPDATE places SET active = true WHERE id = ?", placeId);
-        adminPlaceService.activatePlacesByTownIds(List.of(revivedTownId));
+        adminPlaceService.activatePlacesByTownIds(
+                List.of(revivedTownId), SnapshotCursorPolicy.PRESERVE);
+        rebuildIfMarked();
 
         assertThat(ids(placeService.getPlaces(me, latestRequest(revivedTownId, null, 10))))
                 .containsExactly(placeId);
@@ -1020,16 +1033,19 @@ class PlaceListFlowIT extends MySqlContainerSupport {
     }
 
     /**
-     * 회차 하나 — 지금 DB의 상태로 스냅샷을 다시 찍는다. 운영에서 이 자리를 채우는 것은 10분 주기
-     * 타이머이고, 여기서 이 호출을 생략한 조회는 <b>이전 회차의 스냅샷</b>을 본다.
+     * 리빌드 한 번 — 운영에서 이 자리를 채우는 것은 1초 폴이다.
      *
-     * <p>회차 버전이 발행물 행의 AUTO_INCREMENT id라(2026-09-12) 연달아 두 번 찍어도 두 회차가
-     * 같은 번호를 갖지 않는다. 그래서 여기서 회차 사이를 시간으로 벌릴 필요가 없다 — 보존 밖
-     * 판정을 세우는 테스트가 그 전제 위에 서 있다.
-     *
-     * <p><b>짓기와 설치가 갈렸다.</b> 예전에는 로더 한 줄이 지어서 그 자리에 꽂았고, 지금은
-     * 발행물을 MySQL에 쓴 뒤 그것을 되읽어 설치한다. 이 IT가 보는 것은 그 뒤의 조회 결과이므로
-     * 둘을 한 손잡이로 묶는다.
+     * <p><b>{@link #takeSnapshot()}과 바꿔 쓰지 말 것.</b> 이쪽은 <b>번호를 올리지 않는다</b> —
+     * 쓰기 경로가 번호를 올려 두지 않았으면 설치자의 단조 가드에 걸려 아무 일도 일어나지 않는다.
+     * 어드민 시나리오에서 저것을 쓰면 어드민 경로의 번호 올리기를 통째로 떼도 그린이 된다.
+     */
+    private void rebuildIfMarked() {
+        snapshotInstaller.rebuildAndInstall();
+    }
+
+    /**
+     * 번호를 올리고 지금 DB의 상태로 스냅샷을 다시 짓는다 — DB를 직접 고친 픽스처가 그 변경을
+     * 목록에 태우는 자리다. 여기서 이 호출을 생략한 조회는 <b>이전 회차의 스냅샷</b>을 본다.
      */
     private void takeSnapshot() {
         snapshotRebuilder.rebuildAndInstall();
@@ -1109,7 +1125,7 @@ class PlaceListFlowIT extends MySqlContainerSupport {
         return new AdminPlaceUpsertRequest(
                 name, "db직행 어드민 경로 검증용 소개", "서울시 어딘가", 37.5, 127.0,
                 town, SEED_MAIN_TAG, List.of(option1TagId), null,
-                List.of(), null, null, null, List.of());
+                List.of(), null, null, null, List.of(), null);
     }
 
     private PlaceFilterGetRequest latestRequest(long town, String cursor, Integer size) {

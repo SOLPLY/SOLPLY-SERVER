@@ -22,12 +22,11 @@ decorator:
 
 solply:
   place-list-snapshot:
-    # 발행 폴은 사실상 멈춘다 — 발행은 테스트가 명시적으로 부르는 것만 돌아야 한다.
-    # 채택 폴은 짧게 둔다: 기동 복원이 최초 발행 직후 이 간격만큼 잠들기 때문에(SnapshotScheduler)
-    # 크게 잡으면 컨텍스트 기동이 그만큼 멈춘다.
-    # 키가 하나(poll-interval-ms)에서 둘로 갈렸고 refresh-notification-enabled는 사라졌다.
-    publish-poll-interval-ms: 3600000
-    adopt-poll-interval-ms: 1500
+    # 리빌드 폴은 사실상 멈춘다 — 리빌드는 테스트가 명시적으로 부르는 것만 돌아야 한다.
+    # 기동 빌드는 폴을 기다리지 않으므로(SnapshotScheduler) 이 값이 커도 기동이 멈추지 않는다.
+    poll-interval-ms: 3600000
+    # 연달아 부르는 리빌드가 최소 간격에 걸려 조용히 건너뛰지 않게 한다.
+    min-rebuild-interval-ms: 1
 
 app:
   env-prefix: test

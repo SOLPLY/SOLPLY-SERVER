@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -14,6 +15,7 @@ import ch.qos.logback.core.read.ListAppender;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -34,8 +36,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.support.CronExpression;
 
 /**
- * 2026-09-12 회차 분리가 실제로 <b>갈렸는지</b>만 본다 — 리뷰 축(:30)과 북마크 델타(:15)가 각자의
- * cron 키·락 이름·재시도 설정을 따르는가, 그리고 각 회차가 소요를 남기고 끝나는가.
+ * 2026-09-12 회차 분리가 실제로 <b>갈렸는지</b>만 본다 — 리뷰 축(:05 격자)과 북마크 델타(정각
+ * 격자)가 각자의 cron 키·락 이름·재시도 설정을 따르는가, 그리고 각 회차가 소요를 남기고 끝나는가.
  *
  * <p><b>{@code PlaceStatsFacadeTest}와 파일을 가른 이유</b>는 검증의 성질이 다르기 때문이다.
  * 저쪽은 "한 회차가 무엇을 부르는가"를 축마다 보고, 여기는 <b>두 회차 사이의 관계</b>만 본다 —
@@ -84,8 +86,8 @@ class PlaceStatsScheduleSplitTest {
 
     @BeforeEach
     void createFacade() {
-        placeStatsFacade = new PlaceStatsFacade(
-                batchProcessor, deltaProcessor, placeStatsProperties);
+        placeStatsFacade =
+                new PlaceStatsFacade(batchProcessor, deltaProcessor, placeStatsProperties);
     }
 
     @BeforeEach
@@ -109,39 +111,39 @@ class PlaceStatsScheduleSplitTest {
      * 죽은 키가 된다. 그 승계가 실제로 유지되는지를 여기서 본다.
      *
      * <p>다음 발화를 두 번 보는 이유는 {@code PlaceStatsFacadeTest}의 cron 테스트들과 같다 —
-     * 한 번만 보면 "매일 00:30"도 통과한다.
+     * 한 번만 보면 "매일 00:05"도 통과한다.
      */
     @Test
-    @DisplayName("리뷰 축 cron은 프로퍼티가 없어도 매시 30분으로 해석된다")
-    void 리뷰_축_cron은_프로퍼티가_없어도_매시_30분이다() throws Exception {
+    @DisplayName("리뷰 축 cron은 프로퍼티가 없어도 매시 :05부터 15분 격자로 해석된다")
+    void 리뷰_축_cron은_프로퍼티가_없어도_15분_격자의_5분_칸이다() throws Exception {
         String resolved = resolvedCron("recalculateReviewCounts");
 
         LocalDateTime first =
                 CronExpression.parse(resolved).next(LocalDateTime.of(2026, 9, 12, 0, 0));
-        assertThat(first).isEqualTo(LocalDateTime.of(2026, 9, 12, 0, 30));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 9, 12, 0, 5));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 9, 12, 1, 30));
+                .isEqualTo(LocalDateTime.of(2026, 9, 12, 0, 20));
 
         assertThat(new PlaceStatsProperties().getCountCron()).isEqualTo(resolved);
     }
 
     /**
      * 북마크 축의 기본값은 <b>신규 키</b>다. yml에 이 키를 넣지 않은 환경(= 저장소를 새로 클론한
-     * 모든 환경)이 :15에 돌아야 하므로 플레이스홀더의 기본값이 유일한 방어선이다.
+     * 모든 환경)이 15분 격자의 정각 칸에 돌아야 하므로 플레이스홀더의 기본값이 유일한 방어선이다.
      *
      * <p>{@code PlaceStatsProperties} 필드와 묶어 보는 것도 리뷰 축과 같은 이유다 — 기본값 리터럴이
      * 두 곳에 있는 것이 구조적으로 강제된 중복이라, 한쪽만 고치면 스케줄과 검증값이 조용히 갈린다.
      */
     @Test
-    @DisplayName("북마크 델타 cron은 프로퍼티가 없어도 매시 15분으로 해석된다")
-    void 북마크_델타_cron은_프로퍼티가_없어도_매시_15분이다() throws Exception {
+    @DisplayName("북마크 델타 cron은 프로퍼티가 없어도 매시 정각부터 15분 격자로 해석된다")
+    void 북마크_델타_cron은_프로퍼티가_없어도_15분_격자의_정각_칸이다() throws Exception {
         String resolved = resolvedCron("consumeBookmarkCountDeltas");
 
         LocalDateTime first =
-                CronExpression.parse(resolved).next(LocalDateTime.of(2026, 9, 12, 0, 0));
+                CronExpression.parse(resolved).next(LocalDateTime.of(2026, 9, 12, 0, 1));
         assertThat(first).isEqualTo(LocalDateTime.of(2026, 9, 12, 0, 15));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 9, 12, 1, 15));
+                .isEqualTo(LocalDateTime.of(2026, 9, 12, 0, 30));
 
         assertThat(new PlaceStatsProperties().getBookmarkDeltaCron()).isEqualTo(resolved);
     }
@@ -164,25 +166,37 @@ class PlaceStatsScheduleSplitTest {
     }
 
     /**
-     * <b>:15를 고른 근거를 그대로 단언으로 옮긴다.</b> 이 회차와 01:45 안전망은 같은 아웃박스
-     * 전표를 {@code FOR UPDATE}로 잡는 짝이라 서로 가장 멀어야 하고, 분리로 그 간격이 15분에서
-     * 30분이 됐다. 리뷰 축과의 15분은 매시 두 축이 같은 스케줄러 스레드를 나눠 쓰기 때문에 필요한
-     * 여유다(격리가 아니라 여유라는 것은 {@code PlaceStatsFacade} javadoc에 적혀 있다).
+     * <b>15분 격자의 칸 배정을 그대로 단언으로 옮긴다.</b> 정각 칸이 델타, +5분이 리뷰, +10분이
+     * 점수다. 세 회차가 같은 스케줄러 스레드를 나눠 쓰므로 이 5분은 격리가 아니라 여유다
+     * ({@code PlaceStatsFacade} javadoc).
      *
-     * <p>한쪽 cron만 옮겨 두 축이 같은 분에 겹치는 회귀가 이 단언의 표적이다.
+     * <p><b>안전망과 델타의 거리가 5분으로 좁아진 것을 여기서 못 박는다.</b> 둘은 같은 아웃박스
+     * 전표를 지나는 짝이라 예전에는 30분 떨어져 있었다(01:15 ↔ 01:45). 15분 격자에서는 그만큼
+     * 벌릴 자리가 없다 — <b>이 5분이 충분한지는 확인하지 않았고</b>, 확인되지 않았다는 사실을
+     * 단언으로 고정해 두는 것이 값을 조용히 더 좁히는 회귀를 막는다.
      */
     @Test
-    void 북마크_축은_리뷰_축과_15분_안전망과_30분_떨어져_있다() throws Exception {
+    void 세_회차는_15분_격자에서_5분씩_엇갈리고_안전망은_델타와_5분_떨어져_있다() throws Exception {
         LocalDateTime base = LocalDateTime.of(2026, 9, 12, 1, 0);
-        LocalDateTime bookmarkFire =
+        LocalDateTime deltaFire =
                 CronExpression.parse(resolvedCron("consumeBookmarkCountDeltas")).next(base);
         LocalDateTime reviewFire =
                 CronExpression.parse(resolvedCron("recalculateReviewCounts")).next(base);
+        LocalDateTime scoreFire =
+                CronExpression.parse(resolvedCron("recalculatePopularScores")).next(base);
         LocalDateTime safetyFire =
                 CronExpression.parse(resolvedCron("recalculatePlaceCountsSafety")).next(base);
 
-        assertThat(Duration.between(bookmarkFire, reviewFire)).isEqualTo(Duration.ofMinutes(15));
-        assertThat(Duration.between(bookmarkFire, safetyFire)).isEqualTo(Duration.ofMinutes(30));
+        assertThat(reviewFire).isEqualTo(LocalDateTime.of(2026, 9, 12, 1, 5));
+        assertThat(scoreFire).isEqualTo(LocalDateTime.of(2026, 9, 12, 1, 10));
+        assertThat(deltaFire).isEqualTo(LocalDateTime.of(2026, 9, 12, 1, 15));
+        assertThat(safetyFire).isEqualTo(LocalDateTime.of(2026, 9, 12, 1, 25));
+
+        LocalDateTime deltaAfterSafety =
+                CronExpression.parse(resolvedCron("consumeBookmarkCountDeltas")).next(safetyFire);
+        assertThat(Duration.between(safetyFire, deltaAfterSafety))
+                .as("안전망과 그 뒤 델타 회차의 거리")
+                .isEqualTo(Duration.ofMinutes(5));
     }
 
     // === 회차마다 다른 락 ===
@@ -299,9 +313,11 @@ class PlaceStatsScheduleSplitTest {
         placeStatsFacade.recalculateReviewCounts();
         placeStatsFacade.consumeBookmarkCountDeltas();
 
+        // 2026-09-13부터 회차 로그의 머리말은 PlaceStatsJobKind#getLabel 하나로 통일됐다
+        // ("… 재계산 실패"/"… 소비 실패" → "<라벨> 실패"). 갈라내는 힘은 그대로 <b>ms 값</b>에 있다
         assertThat(warnMessages())
-                .anyMatch(message -> message.startsWith("인기순 리뷰 카운트 재계산 실패 - 0ms 뒤"))
-                .anyMatch(message -> message.startsWith("북마크 카운트 델타 소비 실패 - 7ms 뒤"));
+                .anyMatch(message -> message.startsWith("인기순 리뷰 카운트 실패 - 0ms 뒤"))
+                .anyMatch(message -> message.startsWith("북마크 카운트 델타 실패 - 7ms 뒤"));
     }
 
     // === 회차 종료 로그 ===
@@ -338,7 +354,7 @@ class PlaceStatsScheduleSplitTest {
         placeStatsFacade.consumeBookmarkCountDeltas();
 
         assertThat(messagesContaining("북마크 카운트 델타 배치 시작")).hasSize(1);
-        assertThat(singleEventContaining("북마크 카운트 델타 소비 완료").getFormattedMessage())
+        assertThat(singleEventContaining("북마크 카운트 델타 완료").getFormattedMessage())
                 // 갱신된 장소 수(3)가 아니라 소비한 전표 수(7)다
                 .contains("affectedRows=7");
         assertThat(singleEventContaining("북마크 카운트 델타 회차 종료").getFormattedMessage())
@@ -387,7 +403,7 @@ class PlaceStatsScheduleSplitTest {
 
         placeStatsFacade.recalculateReviewCounts();
 
-        ILoggingEvent attempt = singleEventContaining("인기순 리뷰 카운트 재계산 완료");
+        ILoggingEvent attempt = singleEventContaining("인기순 리뷰 카운트 완료");
         assertThat(attempt.getFormattedMessage()).contains("시도=2/3");
         ILoggingEvent finished = singleEventContaining("인기순 리뷰 카운트 회차 종료");
         assertThat(finished.getFormattedMessage()).contains("결과=성공");

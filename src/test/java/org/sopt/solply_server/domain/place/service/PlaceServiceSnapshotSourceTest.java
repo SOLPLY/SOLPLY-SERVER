@@ -119,8 +119,8 @@ class PlaceServiceSnapshotSourceTest {
                 .willReturn(new PlaceView(placeId, name, name + "_이미지키", null));
     }
 
-    private static Snapshot snapshot(long version, PlaceEntry... entries) {
-        return new Snapshot(version, SortedPlaces.of(List.of(entries)));
+    private static Snapshot snapshot(long cursorVersion, PlaceEntry... entries) {
+        return new Snapshot(cursorVersion, cursorVersion, SortedPlaces.of(List.of(entries)));
     }
 
     private PlaceFilterGetResponse get(String cursor, Integer size) {

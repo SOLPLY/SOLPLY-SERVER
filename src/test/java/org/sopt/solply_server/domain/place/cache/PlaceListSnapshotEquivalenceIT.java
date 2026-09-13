@@ -32,6 +32,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 통합 스냅샷 경로와 <b>DB 인덱스 정렬 경로</b>의 등가 게이트.
@@ -102,12 +103,10 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
     private static final long SEED_OPTION1_B = 8L;
 
     @Autowired private PlaceService placeService;
+    @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private SnapshotLoader loader;
-    @Autowired private SnapshotPublisher snapshotPublisher;
-    @Autowired private org.sopt.solply_server.domain.place.cache.publication
-            .SnapshotPublicationRepository snapshotPublicationRepository;
-    @Autowired private org.sopt.solply_server.domain.place.cache.publication
-            .SnapshotPublicationService snapshotPublicationService;
+    @Autowired private org.sopt.solply_server.domain.place.cache.metadata
+            .SnapshotMetadataRepository snapshotMetadataRepository;
     @Autowired private SnapshotInstaller snapshotInstaller;
     @Autowired private PlaceListDbQueryRepository dbQueryRepository;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
@@ -189,8 +188,8 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
         // 픽스처를 다 심은 뒤에 스냅샷을 짓는다 — 조회 경로가 보는 것은 이 회차뿐이다
-        new SnapshotRebuilder(snapshotPublisher, snapshotPublicationRepository,
-                snapshotPublicationService, snapshotInstaller).rebuildAndInstall();
+        new SnapshotRebuilder(snapshotInstaller, snapshotMetadataRepository, transactionManager)
+                .rebuildAndInstall();
     }
 
     /**

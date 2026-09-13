@@ -8,14 +8,14 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationRepository;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotPublicationService;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.PlaceService;
@@ -30,6 +30,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 표시값 홀더({@link PlaceViewHolder}·{@link TagViewHolder})가 담는 값이 엔티티 경로가 만드는
@@ -76,12 +77,11 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
 
     @Autowired private SnapshotLoader loader;
-    @Autowired private SnapshotPublisher snapshotPublisher;
-    @Autowired private SnapshotPublicationRepository snapshotPublicationRepository;
-    @Autowired private SnapshotPublicationService snapshotPublicationService;
+    @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private SnapshotMetadataRepository snapshotMetadataRepository;
     @Autowired private SnapshotInstaller snapshotInstaller;
 
-    /** 옛 {@code loader.rebuild()} 한 줄이 셋으로 갈린 자리를 묶는다 */
+    /** "번호를 올리고 원본에서 다시 지어 설치하라"를 한 줄로 묶는다 */
     private SnapshotRebuilder snapshotRebuilder;
     @Autowired private SnapshotBox snapshotBox;
     @Autowired private PlaceViewHolder placeViewHolder;
@@ -159,9 +159,29 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        snapshotRebuilder = new SnapshotRebuilder(snapshotPublisher,
-                snapshotPublicationRepository, snapshotPublicationService, snapshotInstaller);
+        snapshotRebuilder = new SnapshotRebuilder(
+                snapshotInstaller, snapshotMetadataRepository, transactionManager);
         snapshotRebuilder.rebuildAndInstall();
+    }
+
+    /**
+     * <b>회차마다 이 클래스가 쓴 태그 자리를 돌려놓는다.</b>
+     *
+     * <p>태그 id는 곧 {@code tag_bitmask}의 비트 자리이고 상한이 62다({@code TagBitmask}). 이
+     * 클래스는 테스트마다 픽스처를 새로 심으면서 태그를 셋씩 만들고 id는 {@code MAX(id) + 1}로
+     * 오르므로, 뒷정리를 @AfterAll 한 번에 몰면 열 회차가 쌓여 상한을 넘는다 — 그때 나는 오류는
+     * 태그 쪽이 아니라 <b>{@code place_stats} 적재의 {@code Out of range value for column
+     * 'tag_bitmask'}</b>라 원인을 짚기 어렵다(실측).
+     *
+     * <p>{@code place_tag}를 먼저 지우는 것은 FK 때문이고, {@code MAX(id) + 1} 방식이라 지운
+     * 자리는 다음 회차가 그대로 다시 쓴다.
+     */
+    @AfterEach
+    void releaseTagBudget() {
+        jdbcTemplate.update(
+                "DELETE FROM place_tag WHERE tag_id IN (SELECT id FROM tags WHERE name LIKE ?)",
+                TAG_NAME_PREFIX + "%");
+        jdbcTemplate.update("DELETE FROM tags WHERE name LIKE ?", TAG_NAME_PREFIX + "%");
     }
 
     /**
@@ -207,7 +227,7 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
      * 더 크고 활성도 아니므로, 정렬을 태그 id 순으로 바꾸거나 활성 조건을 끼워 넣으면 여기서
      * 드러난다.
      *
-     * <p><b>겨누는 것은 캐시 두 경로(전량·{@code readView})의 일치</b>다. 엔티티 경로는 정본이
+     * <p><b>겨누는 것은 캐시 두 경로(전량·부분)의 일치</b>다. 엔티티 경로는 정본이
      * 아니다 — fetch join에 ORDER BY가 없어 bag 순서가 DB가 고른 인덱스 순이고, 지금 스키마에서는
      * 그것이 태그 id 순이라 여기와 갈린다. MAIN이 둘인 것 자체가 비정상 데이터라 어느 쪽이 옳다고
      * 정할 자리가 아니고, 대신 <b>캐시 안에서는 두 경로가 반드시 같은 답</b>을 내야 한다.
@@ -218,9 +238,9 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     @Test
     void MAIN_태그가_둘이면_place_tag_id가_작은_쪽이_대표다() {
         assertThat(viewOf(placeTwoMainTags).mainTagId()).isEqualTo(firstLinkedMainTagId);
-        assertThat(loader.readView(placeTwoMainTags))
-                .as("패치 경로도 같은 쪽을 뽑는다")
-                .contains(viewOf(placeTwoMainTags));
+        assertThat(patchedViewOf(placeTwoMainTags))
+                .as("즉시 패치 경로도 같은 쪽을 뽑는다")
+                .isEqualTo(viewOf(placeTwoMainTags));
         assertThat(entryCountOf(placeTwoMainTags)).as("행이 둘이어도 엔트리는 하나다").isEqualTo(1);
     }
 
@@ -246,27 +266,52 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>{@code readView} 한 건이 전량 재빌드와 같은 규칙을 낸다.</b> 어드민 패치가 쓰는 경로라
-     * 규칙이 갈리면 같은 장소가 "패치된 뒤"와 "다음 회차 뒤"에 다르게 보인다 — 함정을 심어 둔
-     * 픽스처 전부(비활성 MAIN · MAIN 없음 · display_order 역순 · 빈 파일 키)로 확인한다.
+     * <b>부분 읽기가 전량 재빌드와 같은 표시값을 낸다.</b> 병합 패치가 쓰는 경로라 규칙이 갈리면
+     * 같은 장소가 "패치된 뒤"와 "다음 전량 회차 뒤"에 다르게 보인다 — 함정을 심어 둔 픽스처
+     * 전부(비활성 MAIN · MAIN 없음 · display_order 역순 · 빈 파일 키)로 확인한다.
+     *
+     * <p><b>둘이 같은 SELECT 목록을 공유하므로 갈릴 자리 자체가 없다</b>({@code SOME_VIEWS_SQL}은
+     * 전량 문장에 {@code WHERE}만 붙인 것이다). 이 테스트는 그 공유가 나중에 손으로 풀렸을 때
+     * 빨개지라고 둔다.
      */
     @Test
-    void readView는_전량_재빌드와_같은_표시값을_낸다() {
+    void 표시값_단건_읽기는_전량_리빌드와_같은_값을_낸다() {
         for (long placeId :
                 List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey,
                         placeTwoMainTags)) {
-            assertThat(loader.readView(placeId))
+            assertThat(patchedViewOf(placeId))
                     .as("placeId=%d", placeId)
-                    .contains(viewOf(placeId));
+                    .isEqualTo(viewOf(placeId));
         }
     }
 
-    /** 없는 장소는 빈 값이다 — 호출자가 맵을 건드리지 않는 근거다 */
+    /**
+     * <b>없는 장소는 결과에 끼지 않는다 — 그 부재가 곧 "표시값을 지우라"는 신호다.</b>
+     * ({@code SnapshotInstaller#patchPlaceViews}).
+     */
     @Test
-    void readView는_없는_장소에_빈_값을_낸다() {
+    void 표시값_읽기는_없는_장소를_돌려주지_않는다() {
         long missing = jdbcTemplate.queryForObject("SELECT MAX(id) + 1 FROM places", Long.class);
 
-        assertThat(loader.readView(missing)).isEmpty();
+        assertThat(loader.readViews(List.of(missing)).views()).isEmpty();
+    }
+
+    /**
+     * <b>표시값과 그것을 관측한 번호는 한 쌍으로 나온다.</b> 즉시 패치가 이 번호를 그대로 달고
+     * 가야, 설치자의 비교가 "내 쓰기 번호 대 남의 읽기 번호"가 아니라 관측값끼리가 된다.
+     */
+    @Test
+    void 표시값_읽기는_관측한_번호를_함께_돌려준다() {
+        SnapshotLoader.ViewState state = loader.readViews(List.of(placeFull));
+
+        assertThat(state.metadata().revision())
+                .isEqualTo(snapshotMetadataRepository.read().revision());
+        assertThat(state.views()).containsKey(placeFull);
+    }
+
+    /** 즉시 패치 경로가 읽어 오는 장소 한 건의 표시값 */
+    private PlaceView patchedViewOf(long placeId) {
+        return loader.readViews(List.of(placeId)).views().get(placeId);
     }
 
     /**
@@ -300,9 +345,9 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
      * 아니라 이 캐시의 정의라는 것을 값으로 남긴다.
      *
      * <p>여기서 지연이 보이는 것은 이 픽스처가 <b>어드민 경로를 지나치기</b> 때문이다 — 어드민
-     * 쓰기는 커밋 뒤 스스로 발행하므로({@code SnapshotRefresher}) 그 경로의 변경은 이 창을
-     * 만들지 않고, 배치가 채우는 카운트·점수만 다음 발행자 회차를 기다린다
-     * ({@code SnapshotPublisher}).
+     * 쓰기든 통계 회차든 갱신 작업을 올리고, 그것을 삼킨 소비자가 발행해야 목록에 나타난다
+     * ({@code SnapshotWorkConsumer}). 이 픽스처는 그 작업을 올리지 않으므로 스냅샷이 움직일
+     * 이유가 없다.
      */
     @Test
     void 다시_짓기_전에는_새_장소가_스냅샷에_없다() {
