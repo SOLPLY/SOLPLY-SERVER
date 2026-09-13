@@ -5,8 +5,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 태그 id → {@link TagView}. {@link PlaceViewHolder}와 같은 계약·같은 동기화 규칙을 따르되,
- * <b>항목 단위로 고치는 문이 없다</b> — 태그는 수십 행이라 재빌드도 어드민 훅도 전량을 한 문장으로
- * 읽어 통째로 교체한다({@link SnapshotRefresher#refreshTagViewsAfterCommit}). 그래서 삭제된
+ * <b>항목 단위로 고치는 문이 없다</b> — 태그는 수십 행이라 전량 재빌드도 어드민 태그 작업도
+ * 전량을 한 문장으로 읽어 통째로 교체한다({@link SnapshotLoader#readTagViews()}). 그래서 삭제된
  * 태그가 맵에 남는 경로도 없다.
  *
  * <p>대표 태그 이름은 여기서 완성된다: {@link PlaceView#mainTagId()}가 가리키는 항목이 없거나
@@ -34,7 +34,11 @@ public class TagViewHolder {
         this.views = Map.copyOf(fresh);
     }
 
-    /** 발행 payload를 지을 때 쓰는 전량 읽기. {@link #replaceAll}이 이미 불변으로 만들어 둔다. */
+    /**
+     * 전량 읽기. <b>지금 부르는 곳이 없다</b> — 태그 맵 전량을 자바로 꺼내 쓰던 자리는 스냅샷을
+     * 직렬화해 공유하던 시절의 것이고, 리빌드와 패치가 원본에서 직접 읽는 지금은 남아 있지 않다.
+     * 사본을 뜨지 않아도 되는 것은 {@link #replaceAll}이 이미 불변으로 만들어 두기 때문이다.
+     */
     Map<Long, TagView> all() {
         return views;
     }

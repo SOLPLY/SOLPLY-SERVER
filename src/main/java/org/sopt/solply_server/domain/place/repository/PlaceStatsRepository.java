@@ -22,14 +22,16 @@ import org.springframework.data.repository.query.Param;
 public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
-     * 표시 카운트 셋(북마크 수·리뷰 수·평균 평점)을 원본에서 재계산해 <b>이미 존재하는 행에만</b>
-     * 덮어쓴다. 문장 하나라 원자성을 물을 지점이 없다.
+     * <b>북마크 수를 원본에서 다시 센다</b> — 안전망 회차의 문장. <b>이미 존재하는 행에만</b>
+     * 덮어쓰고, 문장 하나라 원자성을 물을 지점이 없다.
      *
-     * <p><b>매시 회차의 문장이었으나 지금은 새벽 안전망의 것이다.</b> 북마크 축이 아웃박스 델타로
-     * 넘어가면서 매시 자리는 {@link #updateReviewCounts} + 델타 소비가 맡고, 이 전량 재계산은
-     * "버그로 생긴 표류의 상한을 하루로" 잡는 마지막 겹으로 남았다
-     * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4). 세 축을 함께 덮으므로
-     * <b>부르는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은 트랜잭션에서 비워야 한다</b> —
+     * <p><b>리뷰 축은 이 문장의 몫이 아니다.</b> 리뷰 수·평균 평점은 리뷰 회차가 15분마다 전량
+     * 재계산하므로({@link #updateReviewCounts}) 여기서 함께 세면 같은 값을 하루에 한 번 더 세는
+     * 중복일 뿐이다. 안전망이 지키는 축은 <b>북마크 하나</b>다 — 그 축만 아웃박스 델타 위에 서
+     * 있어 발행·소비 규칙의 버그로 조용히 어긋날 수 있고, 이 문장이 그 표류의 상한을 하루로 잡는다
+     * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4).
+     *
+     * <p><b>부르는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은 트랜잭션에서 비워야 한다</b> —
      * 그러지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또 더한다
      * ({@code PlaceStatsBatchProcessor#recalculateCountsAndClearOutbox}).
      *
@@ -48,25 +50,23 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 멱등성이라는 문장의 참/거짓이다 — 같은 기준 시각으로 다시 돌렸을 때 그 사이 들어온 활동이
      * 결과를 바꾼다면 "회차를 재실행해도 안전하다"가 성립하지 않는다.
      *
-     * <p><b>세 값 모두 COALESCE로 0을 채운다 (V37).</b> {@code avg_rating}은 예전에 NULL을 그대로
-     * 흘려보냈지만, 평점순이 리뷰 0건 장소를 0점으로 맨 뒤에 싣게 되면서 컬럼이 NOT NULL로 조여졌다.
-     * <b>저장 시점의 COALESCE는 인덱스와 무관하다</b> — 인덱스가 못 견디는 것은 조회의 정렬식에
-     * COALESCE가 끼는 경우이고, 여기서는 컬럼에 실값이 들어갈 뿐이다. "평점 0점"과 "리뷰 없음"의
-     * 구분은 응답 매핑이 맡는다 ({@code PlacePreviewDto}).
+     * <p><b>COALESCE로 0을 채운다.</b> 북마크가 한 건도 없는 장소는 LEFT JOIN이 NULL을 주는데
+     * {@code bookmark_count}는 NOT NULL이다. <b>저장 시점의 COALESCE는 인덱스와 무관하다</b> —
+     * 인덱스가 못 견디는 것은 조회의 정렬식에 COALESCE가 끼는 경우이고, 여기서는 컬럼에 실값이
+     * 들어갈 뿐이다.
      *
-     * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> 두 소스 테이블을 훑는 성질은
+     * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> 소스 테이블을 훑는 성질은
      * {@link #updateScores}와 같다 — REPEATABLE READ면 스캔 행에 shared next-key 락이 걸려 동시
-     * 북마크·리뷰 INSERT가 {@code ERROR 1205}로 죽는다(벤치 실측 1,063만 건 대 0건).
+     * 북마크 INSERT가 {@code ERROR 1205}로 죽는다(벤치 실측 1,063만 건 대 0건).
      *
-     * <p>인덱스 전제: 북마크 축은 {@code idx_bookmark_target}(V23), 리뷰 축은
-     * {@code idx_place_reviews_place_created_rating}(V22)로 각각 인덱스 전용 스캔이어야 한다.
+     * <p>인덱스 전제: {@code idx_bookmark_target}(V23)으로 인덱스 전용 스캔이어야 한다.
      *
      * <p><b>SET 목록에 회차 시각을 넣지 말 것 (V35).</b> InnoDB는 새 값이 기존 값과 전부 같은 행의
      * 쓰기를 생략하는데, 회차마다 반드시 달라지는 값이 하나라도 끼면 그 판정이 전 행에서 무조건
      * 실패한다 — 한 시간 동안 아무 활동도 없던 장소까지 매시 다시 쓰이고 undo·redo·binlog가
-     * 그만큼 따라온다. 지금 이 문장이 실제로 건드리는 것은 <b>카운트가 달라진 장소뿐</b>이다.
+     * 그만큼 따라온다. 지금 이 문장이 실제로 건드리는 것은 <b>북마크 수가 달라진 장소뿐</b>이다.
      * 배치가 마지막으로 돈 시각이 필요하면 {@code shedlock} 테이블(V27)의
-     * {@code place-stats-count} 행을 볼 것.
+     * {@code place-stats-count-safety} 행을 볼 것.
      *
      * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
      * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
@@ -84,19 +84,9 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
               AND bm.created_at <= :calculatedAt
             GROUP BY bm.target_id
         ) b ON b.place_id = ps.place_id
-        LEFT JOIN (
-            SELECT pr.place_id AS place_id,
-                   COUNT(*) AS cnt,
-                   AVG(pr.rating) AS avg_rating
-            FROM place_reviews pr
-            WHERE pr.created_at <= :calculatedAt
-            GROUP BY pr.place_id
-        ) r ON r.place_id = ps.place_id
-        SET ps.bookmark_count = COALESCE(b.cnt, 0),
-            ps.review_count   = COALESCE(r.cnt, 0),
-            ps.avg_rating     = COALESCE(r.avg_rating, 0)
+        SET ps.bookmark_count = COALESCE(b.cnt, 0)
         """, nativeQuery = true)
-    int updateCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
+    int updateBookmarkCountsFromSource(@Param("calculatedAt") LocalDateTime calculatedAt);
 
     /**
      * 리뷰 축(리뷰 수·평균 평점)만 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다 =
@@ -111,12 +101,18 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 1.9%, 실측 117ms — {@code docs/design/2026-08-15-bookmark-count-supply.md}), 신선도 ≤1h를
      * 지키는 가장 단순한 수단이 매시 재계산이기 때문이다.
      *
-     * <p>나머지 계약은 {@link #updateCounts}를 그대로 상속한다: {@code READ_COMMITTED} 필수,
-     * {@code created_at <= :calculatedAt} 상한(= 멱등성), {@code COALESCE}로 0 채우기, SET 목록에
-     * 회차 시각 금지. 근거는 옮겨 적지 않고 그쪽 javadoc <b>한 곳에만</b> 둔다.
+     * <p>나머지 계약은 {@link #updateBookmarkCountsFromSource}를 그대로 상속한다:
+     * {@code READ_COMMITTED} 필수, {@code created_at <= :calculatedAt} 상한(= 멱등성),
+     * {@code COALESCE}로 0 채우기, SET 목록에 회차 시각 금지. 근거는 옮겨 적지 않고 그쪽 javadoc
+     * <b>한 곳에만</b> 둔다.
+     *
+     * <p><b>두 문장의 SET 목록은 겹치지 않는다</b> — 여기는 리뷰 축, 저기는 북마크 축 하나다.
+     * 그것이 이 인터페이스의 계약이고, 안전망이 북마크 전용으로 좁아진 뒤에는 두 축의 주인이
+     * 회차별로 하나씩 대응된다.
      *
      * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
-     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수 — 근거는 {@link #updateCounts}
+     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수 — 근거는
+     *         {@link #updateBookmarkCountsFromSource}
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
@@ -136,7 +132,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
      * 활성 장소 전량의 행을 원본에서 다시 짓는다 = <b>기동 시 최초 적재와 운영 복구의 문장</b>.
-     * 정기 회차는 이 문장을 쓰지 않는다 ({@link #updateCounts}).
+     * 정기 회차는 이 문장을 쓰지 않는다 ({@link #updateBookmarkCountsFromSource}).
      *
      * <p>필요한 자리가 둘이다. 하나는 V32·V34처럼 {@code place_stats}를 재생성한 배포 직후 —
      * 테이블이 비어 있고 어드민이 다시 저장해 줄 장소가 없다. 다른 하나는 운영자가 DB에 직접
@@ -348,7 +344,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 그 행은 아직 채점 전이지만 <b>인기순에도 즉시</b> 나온다 — 점수 0이 곧 그 장소의 자리이고,
      * 근거는 {@code PlaceListDbQueryRepository#findPopularRows} javadoc에 있다.
      *
-     * <p><b>여기서 지운 행을 정기 회차가 되살리지 않는다.</b> {@link #updateCounts}는 이미 있는
+     * <p><b>여기서 지운 행을 정기 회차가 되살리지 않는다.</b> 정기 회차의 문장들은 이미 있는
      * 행만 갱신하기 때문이다. 되살리는 것은 어드민의 재활성 경로
      * ({@link #upsertRowsForActivePlaces})이거나 기동·복구의 {@link #rebuildRowsFromSource}이고,
      * 둘 다 {@code p.active = 1}을 원본에서 다시 판단한다. 이미 없는 행을 지우면 0을 돌려줄 뿐이다.
@@ -430,7 +426,8 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 리뷰를 한 장소에만 넣으면 {@code C}가 그 장소의 평균과 같아져 기여가 항상 0이 된다.
      *
      * <p><b>⚠️ 이 문장도 {@code READ_COMMITTED}에서 호출할 것.</b> 소스 테이블 스캔의 락 성질은
-     * {@link #updateCounts}와 같다. 다만 여기서는 갱신 대상이 {@code place_stats} 전 행이라
+     * {@link #updateBookmarkCountsFromSource}와 같다. 다만 여기서는 갱신 대상이
+     * {@code place_stats} 전 행이라
      * 그 X 락이 커밋까지 남는다 — 그래서 두 배치가 겹쳐 돌지 않게 시각을 갈라 뒀다
      * ({@code PlaceStatsFacade} 참조).
      *

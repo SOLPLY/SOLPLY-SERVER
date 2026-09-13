@@ -8,10 +8,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * 목록 스냅샷 갱신 폴과 알림 구독의 설정.
+ * 목록 스냅샷 리빌드의 박자.
  *
- * <p>application.yml은 {@code .gitignore}에 걸려 커밋되지 않으므로 아래 기본값이 저장소에 남는
- * 유일한 선언이다 — 사정은 {@link PlaceStatsProperties}와 같다.
+ * <p><b>기본값의 근거는 한 가지 실측과 한 가지 예산이다.</b> 기존 x10 데이터셋 63,200 장소를
+ * 2 vCPU / Xmx1280MiB에서 <b>무부하로</b> 다시 지었을 때 중앙값 185ms였고, 목록 요청이 스냅샷을
+ * 기다릴 수 있는 시간은 3초로 잡혀 있다. 무부하 측정이라 운영 SLA도, 인스턴스 여럿이 동시에
+ * 리빌드할 때의 안전성도 이 숫자로는 말할 수 없다 — 초기값이지 검증된 상한이 아니다.
  */
 @Getter
 @Setter
@@ -21,40 +23,52 @@ import org.springframework.validation.annotation.Validated;
 public class PlaceListSnapshotProperties {
 
     /**
-     * 발행자가 밀린 재빌드 요청을 보러 가는 간격. 통계 커밋이 발행물에 닿기까지 이만큼 밀린다.
-     *
-     * <p>요청이 없으면 그 폴은 발행물 행을 읽지도 않는다.
+     * 번호를 보러 가는 간격. 여기서 실제로 나가는 것은 단일 행 PK 조회 하나뿐이라, 반영 지연을
+     * 줄이는 값을 이쪽에 몰아 둔다. 무거운 쪽(리빌드)의 빈도는 {@link #minRebuildIntervalMs}가
+     * 따로 정한다 — 둘을 한 값으로 묶으면 "자주 보되 드물게 짓는다"를 표현할 수 없다.
      */
     @Positive
-    private long publishPollIntervalMs = 5_000L;
+    private long pollIntervalMs = 1_000L;
 
     /**
-     * 각 인스턴스가 발행 포인터를 보러 가는 간격. <b>인스턴스 사이의 교체 시차가 이 값이다</b> —
-     * 새 발행이 난 뒤 최대 이만큼 인스턴스마다 다른 회차를 서빙한다.
+     * 직전 리빌드가 <b>끝난 뒤</b> 다음 리빌드까지 최소로 쉬는 시간. 185ms짜리 작업이라도 쉼 없이
+     * 이어 돌면 읽기 부하가 계속 깔린다.
      *
-     * <p>포인터가 그대로면 payload를 읽지 않는다.
+     * <p><b>목표 cursorVersion을 기다리는 요청은 이 간격을 우회한다.</b> 그 요청은 "쉬어도 된다"가
+     * 아니라 "지금 그 회차가 없으면 응답할 수 없다"이기 때문이다. 우회가 남용되지 않는 근거는
+     * 대기표가 실제로 있을 때만 우회한다는 것 하나다.
      */
     @Positive
-    private long adoptPollIntervalMs = 5_000L;
+    private long minRebuildIntervalMs = 5_000L;
 
     /**
-     * 아직 아무도 발행하지 않은 상태로 기동했을 때 발행물을 기다리는 상한. 넘기면 기동을 접는다 —
-     * <b>빈 스냅샷으로 트래픽을 받지 않는 것</b>이 그 판단의 근거다.
+     * 목록 요청이 리빌드를 기다리는 최대 시간. 넘기면 {@code PLACE_SNAPSHOT_SYNCING}으로 끊는다 —
+     * 낡은 회차로 조용히 답하지 않는다.
+     */
+    @Positive
+    private long requestWaitTimeoutMs = 3_000L;
+
+    /**
+     * 기동이 첫 스냅샷을 <b>더 시도하지 않기로 하는 기한</b>. 넘기면 컨텍스트 기동이 실패한다 —
+     * 빈 목록을 정상 응답으로 내보내는 인스턴스를 띄우지 않는다.
+     *
+     * <p><b>한 번의 시도를 끊는 상한이 아니다.</b> 기동 리빌드는 부르는 스레드에서 동기로 돌므로,
+     * DB 읽기 하나가 이 값을 넘겨 매달려도 여기서 중단시키지 못한다. 이 값이 정하는 것은
+     * "실패한 시도를 몇 번까지 다시 해 보는가"의 기한뿐이고, 개별 DB 호출의 상한은 커넥션·쿼리
+     * 타임아웃이 정한다.
      */
     @Positive
     private long bootstrapTimeoutMs = 60_000L;
 
-    /**
-     * 커서가 가리키는 회차가 <b>공유 발행물의 지금 회차인데</b> 이 인스턴스만 아직 그것을 설치하지
-     * 못했을 때, 요청 하나가 설치를 기다리는 상한.
-     *
-     * <p>이 값은 <b>요청당</b>이다 — 기다리는 요청이 여럿이어도 적재는 한 번뿐이고
-     * ({@code SnapshotLoadCoordinator}) 각자 자기 시계로 끊는다. 넘기면 {@code PLACE-007}(503)로
-     * 답한다. 만료(400)가 아니므로 클라이언트는 목록을 버리지 않고 같은 커서로 다시 부른다.
-     *
-     * <p>기본값을 {@link #adoptPollIntervalMs}보다 작게 둔 것은 <b>기다림이 폴을 대신하는 것이
-     * 아니라 앞당기는 것</b>이라서다 — 기다리다 못 받아도 다음 폴이 설치하므로 재시도가 성공한다.
-     */
+    /** 리빌드가 실패했을 때 처음 쉬는 시간. 연속 실패마다 두 배로 늘어난다. */
     @Positive
-    private long requestWaitTimeoutMs = 2_000L;
+    private long failureBackoffMs = 5_000L;
+
+    /** 실패 백오프의 상한. */
+    @Positive
+    private long maxFailureBackoffMs = 300_000L;
+
+    /** 연속 실패가 이 횟수에 닿으면 WARN이 아니라 ERROR로 남긴다. */
+    @Positive
+    private int failureAlertThreshold = 5;
 }

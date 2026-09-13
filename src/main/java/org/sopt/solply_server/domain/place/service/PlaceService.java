@@ -151,6 +151,32 @@ public class PlaceService {
    */
   public PlaceFilterGetResponse getPlaces(final Long userId, final PlaceFilterGetRequest request) {
 
+    List<Long> leafTownIds = validateListRequest(userId, request);
+    PlaceSortType sort = request.sortOrDefault();
+
+    if (Boolean.TRUE.equals(request.isBookmarkSearch())) {
+      return bookmarkSearchResponse(userId, leafTownIds, request, sort);
+    }
+    return listPlaces(userId, leafTownIds, request, sort);
+  }
+
+  /**
+   * <b>페이지를 만들지 않고 요청의 유효성만 본다.</b> 인증·동네·태그·커서 형식·정렬/필터 지문까지
+   * 여기서 끝난다.
+   *
+   * <p><b>이 메서드가 따로 있는 이유는 대기 때문이다.</b> 뒤처진 인스턴스의 목록 요청은 리빌드를
+   * 기다렸다가 페이지를 만든다({@code PlaceListRequestOrchestrator}). 검증이 그 대기 뒤에만 있으면
+   * <b>애초에 잘못된 요청이 400 대신 3초를 기다린 뒤 503</b>으로 나간다 — 클라이언트는 고칠 곳을
+   * 잘못 짚고 재시도까지 한다. 그래서 대기에 들어가기 전에 이것을 먼저 부른다.
+   *
+   * <p>{@link #listPlaces}도 같은 검증을 다시 부른다. 조율자를 거치지 않는 직접 호출 경로가 남아
+   * 있고, 검증 규칙의 주인이 둘로 갈리면 한쪽만 고쳐지기 때문이다.
+   *
+   * @return leaf로 확장된 동네 id — 부르는 쪽이 다시 계산하지 않도록 그대로 돌려준다
+   */
+  public List<Long> validateListRequest(
+      final Long userId, final PlaceFilterGetRequest request) {
+
     if (userId == null && Boolean.TRUE.equals(request.isBookmarkSearch())) {
       throw new JwtTokenException(ErrorCode.UNAUTHORIZED_USER);
     }
@@ -164,12 +190,36 @@ public class PlaceService {
           request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
     }
 
-    PlaceSortType sort = request.sortOrDefault();
-
-    if (Boolean.TRUE.equals(request.isBookmarkSearch())) {
-      return bookmarkSearchResponse(userId, leafTownIds, request, sort);
+    // 커서 형식·정렬 축·필터 지문. 북마크 검색은 커서를 발급하지도 받지도 않는다
+    if (!Boolean.TRUE.equals(request.isBookmarkSearch())) {
+      decodeCursorOrThrow(request, request.sortOrDefault());
     }
-    return listPlaces(userId, leafTownIds, request, sort);
+    return leafTownIds;
+  }
+
+  /**
+   * 커서 토큰을 풀고 <b>이 요청에 쓸 수 있는 것인지</b>까지 본다. 커서가 없으면 {@code null}.
+   *
+   * <p>정렬 축이 다르면 정렬 키의 뜻 자체가 다르고(점수 대 epoch 초 대 거리), 필터가 다르면 이
+   * 커서가 가리키는 위치가 이 결과 집합 안에 없다. 둘 다 조용히 진행할 수 없는 상태다.
+   *
+   * <p>여기서 보지 <b>않는</b> 것은 회차다 — 그것은 스냅샷을 잡은 뒤에야 판정할 수 있다
+   * ({@link #requireCursorMatchesSnapshot}).
+   */
+  private static PlaceListCursor decodeCursorOrThrow(
+      PlaceFilterGetRequest request, PlaceSortType sort) {
+
+    if (request.cursor() == null) {
+      return null;
+    }
+    PlaceListCursor cursor = PlaceListCursor.decode(request.cursor());
+    String filterPrint = PlaceListCursor.filterPrintOf(
+        request.townId(), request.mainTagId(),
+        request.subTagAIdList(), request.subTagBIdList());
+    if (cursor.sort() != sort || !filterPrint.equals(cursor.filterPrint())) {
+      throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+    }
+    return cursor;
   }
 
 
@@ -267,12 +317,17 @@ public class PlaceService {
    * <b>완결된</b> 스냅샷만 본다는 것이 이 경로의 계약이다 ({@code SnapshotBox} 계약 2). 잡아 둔
    * 뒤 회차가 교체돼도 이 요청은 옛 회차를 끝까지 온전히 서빙한다.
    *
-   * <p><b>스크롤 세션은 회차가 바뀌지 않는 동안만 이어진다.</b> 잡는 스냅샷은 언제나 최신 회차이고,
-   * 커서가 있으면 그 커서가 <b>바로 그 회차의 것인지</b>만 본다 — 발급하는 다음 커서에 서빙한 버전을
-   * 실어 두는 것이 그 대조의 근거다. 회차가 바뀐 뒤 온 커서는 조용히 최신으로 갈아타 항목을 흘리는
-   * 대신 {@code EXPIRED_PLACE_CURSOR}로 끊는다 ({@link #requireCursorMatchesSnapshot}).
-   * 홀더가 옛 회차를 몇 장 보존해 그 창을 늘리던 장치는 걷어냈다 — 어드민 변경을 곧바로 보여주되
-   * 옛 회차로 스크롤을 이어 주지는 않는다는 정책이고, 근거는 {@code SnapshotBox} 계약 4.
+   * <p><b>스크롤 세션은 {@code cursorVersion}이 바뀌지 않는 동안 이어진다.</b> 잡는 스냅샷은 언제나
+   * 최신이고, 커서가 있으면 그 커서가 <b>바로 그 회차의 것인지</b>만 본다 — 발급하는 다음 커서에
+   * 서빙한 회차를 실어 두는 것이 그 대조의 근거다. 회차가 바뀐 뒤 온 커서는 조용히 최신으로
+   * 갈아타 항목을 흘리는 대신 {@code EXPIRED_PLACE_CURSOR}로 끊는다
+   * ({@link #requireCursorMatchesSnapshot}).
+   *
+   * <p><b>스냅샷이 새로 지어졌다고 커서가 끊기지는 않는다.</b> 다시 짓게 하는 번호(revision)와
+   * 커서가 싣는 번호(cursorVersion)가 다르기 때문이다 — 이름 한 칸 고친 어드민 수정, 또는 어드민이
+   * "스크롤 유지"를 고른 수정은 revision만 올려, 새 배열이 설치돼도 진행 중인 커서는 그대로
+   * 통한다. 끊는 것은 집계 회차와 어드민이 명시로 고른 재시작뿐이다
+   * ({@code SnapshotCursorPolicy}).
    *
    * <p>옛 회차를 서빙하는 동안 요청 시점 값인 것은 둘이다 — {@code isBookmarked}(사용자별이라 스냅샷에
    * 담기지 않는다)와 <b>표시값</b>(이름·썸네일·대표 태그. 홀더가 스냅샷 밖에 한 벌이다). 카운트·평점·
@@ -283,8 +338,8 @@ public class PlaceService {
    * ({@code SnapshotBox} 계약 3). 장소가 실제로 0개면 비어 있는 정렬 배열이 온다.
    *
    * <p><b>표시 카운트·골격은 엔트리가 실어 온 값 그대로다.</b> 스냅샷은 회차 단위라 낡음의 폭이
-   * 회차 간격에 달려 있다. 다만 그 간격은 <b>보장된 상한이 아니라 목표 주기다</b> — 발행이 밀리거나
-   * 설치 폴이 한 번 실패하면 그만큼 길어진다. 요청 시점에 값을 덧대 신선하게 만들려는 시도는 회차의
+   * 회차 간격에 달려 있다. 다만 그 간격은 <b>보장된 상한이 아니라 목표 주기다</b> — 폴이 밀리거나
+   * 리빌드가 한 번 실패하면 그만큼 길어진다. 요청 시점에 값을 덧대 신선하게 만들려는 시도는 회차의
    * 정합성을 깨므로 하지 않는다.
    *
    * <p><b>쿼리 수.</b> 이 메서드도 DB를 친다 — 동네 범위 해석({@code TownHierarchyResolver})이
@@ -292,9 +347,10 @@ public class PlaceService {
    * 사용자별 값이라 매번. 스냅샷이 덜어낸 것은 <b>목록 본문</b>(순서·카운트·표시값)이지 요청
    * 전체가 아니다.
    *
-   * <p>그 위에 컨트롤러 앞의 {@code PlaceListRequestOrchestrator}가 발행물 머리를 한 번 더 읽는다 —
-   * 커서 없는 첫 페이지는 <b>언제나</b>, 커서가 있으면 <b>그 회차가 이 인스턴스의 회차와 어긋났을
-   * 때</b>. 북마크 검색과 회차가 맞는 커서만 그 조회가 없다. payload를 읽지 않는 가벼운 조회다.
+   * <p>그 위에 컨트롤러 앞의 {@code PlaceListRequestOrchestrator}가 <b>메모리 목록을 쓰는 요청마다</b>
+   * 공유 번호를 한 번 더 읽는다 — 첫 페이지든 이어 가는 커서든 예외가 없다. 로컬 회차와 커서가
+   * 맞는다고 그 조회를 건너뛰면, 이 인스턴스가 뒤처져 있을 때 <b>옛 회차를 최신이라 말하며</b>
+   * 서빙하게 된다. 단일 행 PK 조회 하나다.
    *
    * <p><b>커서 v5 — 정렬 키 튜플 (2026-08-16).</b> 정렬이 여섯으로 늘면서 "정렬 키는 컬럼 하나"라는
    * 전제가 깨졌다. 평점순은 (평점, 리뷰 수) 2단으로 seek해야 동점 구간을 흘리지 않고, 거리순은
@@ -321,15 +377,9 @@ public class PlaceService {
         request.townId(), request.mainTagId(),
         request.subTagAIdList(), request.subTagBIdList());
 
-    PlaceListCursor cursor = null;
-    if (request.cursor() != null) {
-      cursor = PlaceListCursor.decode(request.cursor());
-      // 정렬 축이 다르면 정렬 키의 뜻 자체가 다르고(점수 대 epoch 초 대 거리), 필터가 다르면
-      // 이 커서가 가리키는 위치가 이 결과 집합 안에 없다. 둘 다 조용히 진행할 수 없는 상태다.
-      if (cursor.sort() != sort || !filterPrint.equals(cursor.filterPrint())) {
-        throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
-      }
-    }
+    // 조율자가 대기 전에 이미 같은 검증을 했더라도 여기서 한 번 더 한다 — 조율자를 거치지 않는
+    // 직접 호출 경로가 남아 있고, 검증 규칙의 주인이 둘로 갈리면 한쪽만 고쳐진다
+    PlaceListCursor cursor = decodeCursorOrThrow(request, sort);
 
     int fetchSize = paging ? pageSize + 1 : pageSize;
 
@@ -398,7 +448,7 @@ public class PlaceService {
             rows.get(rows.size() - 1).entry().placeId(),
             filterPrint,
             // 서빙한 회차를 그대로 실어 다음 페이지도 같은 스냅샷에서 이어지게 한다
-            snapshot.version()).encode()
+            snapshot.cursorVersion()).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
@@ -434,7 +484,7 @@ public class PlaceService {
    * 있던 요청은 자기가 잡은 참조로 끝까지 간다(계약 2).
    */
   private static void requireCursorMatchesSnapshot(PlaceListCursor cursor, Snapshot snapshot) {
-    if (cursor != null && cursor.version() != snapshot.version()) {
+    if (cursor != null && cursor.version() != snapshot.cursorVersion()) {
       throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
     }
   }

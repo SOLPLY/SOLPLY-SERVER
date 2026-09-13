@@ -11,6 +11,7 @@ import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownListRespon
 import org.sopt.solply_server.domain.admin.town.dto.response.AdminTownUpsertResponse;
 import org.sopt.solply_server.domain.admin.town.repository.AdminTownRepository;
 import org.sopt.solply_server.domain.admin.town.util.AdminTownValidator;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
 import org.sopt.solply_server.domain.town.entity.Town;
 import org.sopt.solply_server.global.util.AdminEntityLoader;
 import org.springframework.stereotype.Service;
@@ -118,7 +119,9 @@ public class AdminTownService {
 		adminTownValidator.validateTownId(townId);
 
 		if (req.active()) {
-			activateTown(townId);
+			activateTown(townId, req.restartsPlaceList()
+				? SnapshotCursorPolicy.ADVANCE
+				: SnapshotCursorPolicy.PRESERVE);
 		} else {
 			deactivateTown(townId);
 		}
@@ -127,7 +130,7 @@ public class AdminTownService {
 		return AdminTownUpsertResponse.of(townId);
 	}
 
-	private void activateTown(Long townId) {
+	private void activateTown(Long townId, SnapshotCursorPolicy cursorPolicy) {
 		Town town = adminEntityLoader.getTown(townId);
 		List<Long> townIds = new ArrayList<>();
 
@@ -136,7 +139,7 @@ public class AdminTownService {
 		}
 		townIds.add(townId);
 
-		adminPlaceService.activatePlacesByTownIds(townIds);
+		adminPlaceService.activatePlacesByTownIds(townIds, cursorPolicy);
 		int cnt = adminTownRepository.updateActiveByTownIds(townIds, true);
 
 		log.info("어드민 지역/동네 활성화된 동네 갯수: {}", cnt);

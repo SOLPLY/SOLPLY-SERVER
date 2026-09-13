@@ -18,8 +18,9 @@ import org.sopt.solply_server.global.util.s3.ImageFileKeyUpdateEvent;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.entity.PlaceTag;
-import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
+import org.sopt.solply_server.domain.place.cache.SnapshotViewPatcher;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -46,8 +47,8 @@ public class AdminPlaceService {
     private final AdminPlaceRepository adminPlaceRepository;
     private final PlaceStatsRepository placeStatsRepository;
     /** 손댄 장소를 <b>커밋 뒤에</b> 목록 캐시로 옮기게 한다 — 시점의 근거는 리프레셔 javadoc */
-    private final SnapshotRefresher snapshotRefresher;
-    private final SnapshotRebuildRequestRepository rebuildRequestRepository;
+    private final SnapshotMetadataService snapshotMetadataService;
+    private final SnapshotViewPatcher snapshotViewPatcher;
     private final EntityManager entityManager;
 
     private final ImageFileKeyValidator imageFileKeyValidator;
@@ -101,7 +102,7 @@ public class AdminPlaceService {
         );
 
         Place saved = adminPlaceRepository.save(place);
-        syncPlaceStats(saved.getId());
+        syncPlaceStats(List.of(saved.getId()), cursorPolicyOf(req));
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
         applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
@@ -118,15 +119,16 @@ public class AdminPlaceService {
      * 이 서비스가 수정 전후의 동네·좌표·태그 집합을 견주어 "배열에 닿는가"를 미리 가리던 일은
      * 이제 없다.
      *
-     * <p><b>판정의 주인이 하나여야 하기 때문이다.</b> 배열에 닿는 값이 무엇인지는 정렬 배열
-     * ({@code SortedPlaces#patch})이 최신 행과 이 회차 엔트리를 견주며 이미 판정한다. 서비스가
-     * 같은 판정을 한 벌 더 들고 있으면 배열이 읽는 값이 하나 늘 때 두 곳을 함께 고쳐야 하고,
-     * 한쪽을 빠뜨리면 <b>결과 집합이 조용히 틀린다</b> — 뗀 태그로 계속 검색되고, 옮긴 동네가
-     * 아니라 이전 동네 목록에 낀다. 반대 방향의 대가도 없다: 표시값만 바뀐 수정은 배열이 스스로
-     * "달라진 것 없음"을 알아보고 회차를 쓰지 않는다.
+     * <p><b>판정의 주인이 하나여야 하기 때문이다.</b> 배열에 무엇이 실리는지는 리빌드가 원본을
+     * 통째로 다시 읽으며 정한다. 서비스가 같은 판정을 한 벌 더 들고 있으면 배열이 읽는 값이 하나
+     * 늘 때 두 곳을 함께 고쳐야 하고, 한쪽을 빠뜨리면 <b>결과 집합이 조용히 틀린다</b> — 뗀
+     * 태그로 계속 검색되고, 옮긴 동네가 아니라 이전 동네 목록에 낀다. 반대 방향의 대가도 없다:
+     * 진행 중인 스크롤을 끊을지는 배열이 아니라 요청이 고른 {@code SnapshotCursorPolicy}가
+     * 정하므로, 표시값만 바꾼 수정이 커서를 끊는 일이 없다.
      *
-     * <p><b>upsert가 훅보다 앞이다.</b> 커밋 뒤 패치가 읽는 원천이 방금 이 문장이 채운 place_stats
-     * 행이라, 순서가 뒤집히면 패치가 옛 값을 싣는다 ({@code SnapshotLoader#readChangedState}).
+     * <p><b>upsert가 번호 갱신·표시값 패치보다 앞이다.</b> 번호를 보고 달려온 리빌드도, 커밋 직후
+     * 그 id를 다시 읽는 표시값 패치도 원천이 방금 이 문장이 채운 place_stats 행이다. 순서가
+     * 뒤집히면 둘 다 <b>고치기 전 값</b>을 읽어 싣는다.
      */
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
@@ -166,7 +168,7 @@ public class AdminPlaceService {
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
 
-        syncPlaceStats(place.getId());
+        syncPlaceStats(List.of(place.getId()), cursorPolicyOf(req));
 
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
@@ -282,18 +284,18 @@ public class AdminPlaceService {
      * CASCADE로 지워져 위에서 밝힌 "CASCADE에 기대지 않는다"는 계약이 무너진다.
      */
     @Transactional
-    public void deletePlace(final Long placeId) {
+    public void deletePlace(final Long placeId, final SnapshotCursorPolicy cursorPolicy) {
         Place place = adminEntityLoader.getPlace(placeId);
         entityManager.lock(place, LockModeType.PESSIMISTIC_WRITE);
 
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
-        // 지운 장소도 손댄 장소로 넘긴다 — 커밋 뒤 패치가 그 id를 다시 읽어 <b>행이 없는 것</b>을
-        // 보고 배열에서 뺀다. "없어졌다"를 여기서 따로 말하지 않는 것이 계약이다
-        snapshotRefresher.refreshPlacesAfterCommit(
-                List.of(placeId), rebuildRequestRepository.request());
+        // 지운 장소도 손댄 장소로 넘긴다 — 패치가 그 id를 다시 읽어 <b>행이 없는 것</b>을 보고
+        // 표시값을 지운다. "없어졌다"를 여기서 따로 말하지 않는 것이 계약이다.
+        // ⚠️ syncPlaceStats를 부르지 말 것 — 그 안의 upsert가 방금 지운 place_stats 행을 되살린다
+        markListChanged(List.of(placeId), cursorPolicy);
 
-        log.info("어드민 장소 삭제 - placeId: {}", placeId);
+        log.info("어드민 장소 삭제 - placeId: {}, 목록 재시작: {}", placeId, cursorPolicy);
     }
 
     /**
@@ -315,14 +317,10 @@ public class AdminPlaceService {
      * 문장도 회차도 장소 수만큼 늘고, 그 사이 진행 중이던 스크롤이 전부 만료된다.
      */
     @Transactional
-    public void activatePlacesByTownIds(final List<Long> townIds) {
+    public void activatePlacesByTownIds(
+            final List<Long> townIds, final SnapshotCursorPolicy cursorPolicy) {
         adminPlaceRepository.updateActiveByTownId(townIds, true);
-        syncPlaceStats(adminPlaceRepository.findIdsByTownIds(townIds));
-    }
-
-    /** 장소 하나. 태그·동네가 이미 flush된 뒤에 부를 것 — 문장이 원본을 다시 읽는다. */
-    private void syncPlaceStats(final Long placeId) {
-        syncPlaceStats(List.of(placeId));
+        syncPlaceStats(adminPlaceRepository.findIdsByTownIds(townIds), cursorPolicy);
     }
 
     /**
@@ -335,19 +333,38 @@ public class AdminPlaceService {
      * 호출부마다 훅을 흩으면 나중에 경로가 하나 늘 때 조용히 빠진다. <b>장소를 쓰는 세 경로(생성 ·
      * 수정 · 재활성)가 전부 이 묶음을 쓴다</b> — 갈래 판정을 걷어낸 뒤로 셋의 모양이 같아졌다.
      *
-     * <p>실제 패치는 커밋 뒤로 미뤄진다 — 커밋 전에 읽으면 로더의 새 커넥션이 <b>옛 데이터</b>를
-     * 읽어 낡은 값으로 덮는다 ({@code SnapshotRefresher} javadoc). 롤백되면 훅은 아예 돌지 않는다.
-     *
-     * <p><b>넘기는 것은 id뿐이고, 값은 하나도 싣지 않는다.</b> 커밋 뒤 패치가 그 id로 place_stats를
-     * 다시 읽으므로, 이 트랜잭션이 들고 있던 값이 늦게 깨어난 훅을 타고 남의 최신 값을 덮는 창이
-     * 없다 — 태그 훅이 값 대신 DB를 다시 읽는 것과 같은 이유다.
+     * <p><b>여기서 하는 일은 번호를 올리는 UPDATE 하나이고, 스냅샷을 짓는 일은 이 요청 스레드에
+     * 없다.</b> 각 인스턴스의 폴이 번호가 달라진 것을 보고 자기 원본을 다시 읽는다. 이 UPDATE가
+     * <b>같은 트랜잭션</b>이라, 롤백되면 번호도 없던 일이 되고 커밋되면 반드시 올라 있다 —
+     * 커밋 뒤 훅이 실패해 수정이 조용히 묻히던 자리가 그렇게 닫힌다.
      */
-    private void syncPlaceStats(final List<Long> placeIds) {
+    private void syncPlaceStats(
+            final List<Long> placeIds, final SnapshotCursorPolicy cursorPolicy) {
         if (placeIds.isEmpty()) {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        snapshotRefresher.refreshPlacesAfterCommit(placeIds, rebuildRequestRepository.request());
+        markListChanged(placeIds, cursorPolicy);
+    }
+
+    /**
+     * "목록이 바뀌었다"를 번호로 알리고, 표시값은 커밋 직후 메모리에도 얹는다.
+     *
+     * <p><b>둘은 서로를 대신하지 않는다.</b> 번호는 모든 인스턴스가 순서·소속까지 다시 읽게 하는
+     * 신호이고(반영까지 폴 간격 + 리빌드 시간), 표시값 패치는 어드민이 방금 고친 이름·썸네일을
+     * 이 인스턴스에서 바로 보이게 하는 것이다. 패치가 실패해도 손실이 아니라 지연인 이유가
+     * 이것이다 — 번호는 이미 올라 있다.
+     */
+    private void markListChanged(
+            final List<Long> placeIds, final SnapshotCursorPolicy cursorPolicy) {
+        snapshotMetadataService.markChanged(cursorPolicy);
+        snapshotViewPatcher.patchPlacesAfterCommit(placeIds);
+    }
+
+    private static SnapshotCursorPolicy cursorPolicyOf(final AdminPlaceUpsertRequest req) {
+        return req.restartsPlaceList()
+                ? SnapshotCursorPolicy.ADVANCE
+                : SnapshotCursorPolicy.PRESERVE;
     }
 
 

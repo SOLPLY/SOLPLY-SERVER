@@ -14,8 +14,9 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsRespo
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
-import org.sopt.solply_server.domain.place.cache.SnapshotRefresher;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
+import org.sopt.solply_server.domain.place.cache.SnapshotViewPatcher;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.global.exception.BusinessException;
@@ -49,8 +50,8 @@ public class AdminTagService {
     private final AdminTagValidator adminTagValidator;
     private final EntityManager entityManager;
     /** 태그 맵을 <b>커밋 뒤에</b> 다시 읽게 한다 — 시점의 근거는 리프레셔 javadoc */
-    private final SnapshotRefresher snapshotRefresher;
-    private final SnapshotRebuildRequestRepository rebuildRequestRepository;
+    private final SnapshotMetadataService snapshotMetadataService;
+    private final SnapshotViewPatcher snapshotViewPatcher;
 
     /**
      * <b>태그 id는 {@code place_stats.tag_bitmask}의 비트 자리다</b> — 62를 넘는 id가 생기면 목록
@@ -96,7 +97,7 @@ public class AdminTagService {
             throw new BusinessException(ErrorCode.TAG_ID_BIT_LIMIT_EXCEEDED);
         }
 
-        snapshotRefresher.refreshTagViewsAfterCommit(rebuildRequestRepository.request());
+        markTagsChanged();
         return tagId;
     }
 
@@ -154,7 +155,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        snapshotRefresher.refreshTagViewsAfterCommit(rebuildRequestRepository.request());
+        markTagsChanged();
         return id;
     }
 
@@ -173,10 +174,23 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
-        snapshotRefresher.refreshTagViewsAfterCommit(rebuildRequestRepository.request());
+        markTagsChanged();
         return AdminTagActivationResponse.of(id, req.active());
     }
 
+
+    /**
+     * 태그가 바뀌었음을 알리고, 태그 표시값은 커밋 직후 메모리에도 얹는다.
+     *
+     * <p><b>여기에는 "새 목록 전환" 선택지가 없다 — 태그 변경은 목록의 순서를 바꾸지 않는다.</b>
+     * 정렬 배열이 들고 있는 것은 장소의 태그 <em>비트마스크</em>이고, 그 비트는 장소–태그 관계가
+     * 바뀔 때(어드민 장소 수정) 달라진다. 태그의 이름·활성 여부는 화면에 찍히는 값일 뿐이라
+     * 커서가 가리키는 자리를 흔들지 않는다. 그래서 언제나 {@code PRESERVE}다.
+     */
+    private void markTagsChanged() {
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.PRESERVE);
+        snapshotViewPatcher.patchTagsAfterCommit();
+    }
 
     public List<Long> collectSubtreeIds(Long rootId) {
         List<Long> ids = new ArrayList<>();

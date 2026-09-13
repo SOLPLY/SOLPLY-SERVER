@@ -7,7 +7,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository.PlaceDelta;
-import org.sopt.solply_server.domain.place.cache.publication.SnapshotRebuildRequestRepository;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsJdbcRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
@@ -15,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 북마크 카운트 아웃박스의 <b>소비 측</b> — 표식을 찍고, DB가 접은 결과를 받고, 더하고, 표식으로
- * 지운다. 매시 :15 회차가 이 클래스 하나다 ({@code PlaceStatsFacade}).
+ * 지운다. 15분마다 도는 델타 소비 회차의 본문이 이 클래스 하나다 ({@code PlaceStatsFacade}).
  *
  * <p><b>존재 이유는 트랜잭션 경계 소유다.</b> {@code PlaceStatsBatchProcessor}와 같은 자리에
  * 나란히 두는 것도 같은 이유이고, 파사드의 {@code try/catch}가 그 경계 <b>바깥</b>에 있어야 한다는
@@ -23,10 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>⚠️ 격리 수준은 이 메서드가 트랜잭션을 <em>새로 시작</em>할 때만 적용된다.</b> 이미 열린
  * 트랜잭션에 참여하면 스프링이 지정을 조용히 무시한다 — 근거는
- * {@link PlaceStatsBatchProcessor} javadoc에 <b>한 곳에만</b> 둔다.
+ * {@link PlaceStatsBatchProcessor} javadoc에 <b>한 곳에만</b> 둔다. 정기 회차는 파사드가
+ * 트랜잭션 없이 부르므로 여기가 직접 RC를 열고, 전표 claim·적용·삭제가 그 한 트랜잭션에 담긴다.
  *
- * <p><b>재빌드 요청은 이 트랜잭션 안에서, 마지막 문장으로 올린다.</b> 롤백되면 표식도 요청도
- * 함께 없던 일이 된다. 전표가 0이라 아무것도 쓰지 않은 회차는 요청도 올리지 않는다.
+ * <p><b>재빌드 작업은 이 트랜잭션 안에서, 마지막 문장으로 올린다.</b> 롤백되면 표식도 작업도
+ * 함께 없던 일이 된다. 전표가 0이라 아무것도 쓰지 않은 회차는 작업도 올리지 않는다.
  */
 @Component
 @RequiredArgsConstructor
@@ -34,7 +36,7 @@ public class BookmarkCountDeltaProcessor {
 
     private final BookmarkCountEventRepository countEventRepository;
     private final PlaceStatsJdbcRepository placeStatsJdbcRepository;
-    private final SnapshotRebuildRequestRepository rebuildRequestRepository;
+    private final SnapshotMetadataService snapshotMetadataService;
 
     /**
      * 아웃박스를 한 번 비우며 {@code bookmark_count}에 반영한다. 표시할 전표가 없으면 아무 일도
@@ -72,8 +74,9 @@ public class BookmarkCountDeltaProcessor {
                 ? 0
                 : placeStatsJdbcRepository.applyBookmarkDeltas(toDeltaByPlace(folded));
         countEventRepository.deleteClaimed(consumptionId);
-        // 삼킨 전표가 있을 때만 알린다 — 빈 회차는 위에서 이미 빠져나갔다
-        rebuildRequestRepository.request();
+        // 삼킨 전표가 있을 때만 알린다 — 빈 회차는 위에서 이미 빠져나갔다.
+        // 북마크 수는 인기순의 정렬 키라 순서가 갈린다 — 그래서 커서 회차까지 올린다
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
         return new DeltaResult(claimed, updatedPlaces);
     }
 
