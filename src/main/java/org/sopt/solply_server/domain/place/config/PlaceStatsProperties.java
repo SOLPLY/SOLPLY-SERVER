@@ -50,19 +50,22 @@ import org.springframework.validation.annotation.Validated;
 public class PlaceStatsProperties {
 
     /**
-     * <b>리뷰 카운트 회차</b>의 cron. 매시 30분 — 근거는 {@code PlaceStatsFacade} javadoc에 있다.
+     * <b>리뷰 카운트 회차</b>의 cron. 매시 :05 :20 :35 :50 — 근거는 {@code PlaceStatsFacade}
+     * javadoc에 있다.
      *
      * <p><b>이 키는 리뷰 축만 움직인다.</b> 북마크 축은 {@link #bookmarkDeltaCron}을 읽으므로,
      * 두 축의 주기를 함께 옮기려면 두 키를 함께 고쳐야 한다. 옛 통합 회차 시절 이 키 하나가
      * 둘의 발화 시각이던 것과 달라진 점이다 — 값을 조정해 온 환경이라면 확인할 것.
      *
-     * <p><b>⚠️ 이 필드의 값은 스케줄에 쓰이지 않는다 — {@code getCountCron()} 호출처가 0건이다.</b>
-     * 스케줄러는 {@code PlaceStatsFacade}의
-     * {@code @Scheduled(cron = "${solply.place-stats.count-cron:0 30 * * * *}")}로 프로퍼티를 직접 읽는다.
-     * {@code @ConfigurationProperties}의 필드 기본값은 플레이스홀더 해석 시점에 보이지 않으므로
-     * <b>기본값 리터럴이 두 곳에 존재하는 것은 구조적으로 강제된 중복</b>이다.
+     * <p><b>⚠️ 발화 시각을 정하는 것은 이 필드가 아니다.</b> 스케줄러는 {@code PlaceStatsFacade}의
+     * {@code @Scheduled(cron = "${solply.place-stats.count-cron:0 5/15 * * * *}")}로 프로퍼티를
+     * 직접 읽는다. {@code @ConfigurationProperties}의 필드 기본값은 플레이스홀더 해석 시점에
+     * 보이지 않으므로 <b>기본값 리터럴이 두 곳에 존재하는 것은 구조적으로 강제된 중복</b>이다.
      * <b>주기를 바꿀 때는 반드시 두 곳을 함께 고칠 것</b> — 이 필드만 고치면 스케줄은 그대로인
      * 방향으로 조용히 갈라진다. {@code PlaceStatsFacadeTest}가 두 리터럴을 묶어 감시한다.
+     *
+     * <p><b>이 필드가 실제로 읽히는 자리는 {@code PlaceStatsJobKind} 한 표뿐이다</b> — 회차별
+     * 설정을 한 곳에 모아 두는 용도이고, 발화를 만들지는 않는다.
      *
      * <p>그럼에도 필드를 남기는 이유는 <b>진단 가능한 실패</b>다. yml에 {@code count-cron: ""}이
      * 들어오면 {@code @NotBlank}가 "비었다"고 명시하며 부팅을 막는다. 이 필드가 없으면 빈 문자열이
@@ -72,41 +75,45 @@ public class PlaceStatsProperties {
      * 부팅이 죽는다 — cron과 아무 상관없어 보이는 메시지라 원인 추적이 훨씬 어렵다.
      */
     @NotBlank
-    private String countCron = "0 30 * * * *";
+    private String countCron = "0 5/15 * * * *";
 
     /**
-     * <b>북마크 카운트 델타 소비 회차</b>의 cron. 매시 15분 (KST).
+     * <b>북마크 카운트 델타 소비 회차</b>의 cron. 매시 :00 :15 :30 :45 (KST).
      *
-     * <p><b>:15인 이유는 같은 자원을 잡는 회차들과 시각을 가르기 위해서다.</b> 이 회차와
-     * 01:45 안전망은 같은 아웃박스 전표에 표식을 찍는 짝이고, 01:00 점수 회차는
-     * {@code place_stats} 전 행에 X 락을 커밋까지 든다. :15면 점수와 15분, 리뷰 축(:30)과 15분,
-     * 안전망과 30분이 떨어진다. 03:00·04:00 임베딩 배치를 피하는 이유로 정각은 쓰지 않는다.
+     * <p><b>15분 격자에서 이 회차가 정각을 쓰는 이유는 같은 자원을 잡는 회차들과 시각을 가르기
+     * 위해서다.</b> 이 회차와 01:25 안전망은 같은 아웃박스 전표에 표식을 찍는 짝이고, 점수 회차(:10)는
+     * {@code place_stats} 전 행을 갱신한다. 리뷰 축(:05 :20 :35 :50)과는 5분씩 엇갈린다.
+     * <b>안전망과의 거리가 5분뿐</b>이라는 한계는 {@code PlaceStatsFacade} javadoc에 있다.
      *
      * <p>필드를 남기는 이유와 <b>기본값 리터럴이 두 곳에 존재하는 것이 강제된 중복</b>이라는 사실은
      * {@link #countCron}과 같다 — 주기를 바꿀 때 {@code @Scheduled}의 리터럴과 함께 고칠 것.
      */
     @NotBlank
-    private String bookmarkDeltaCron = "0 15 * * * *";
+    private String bookmarkDeltaCron = "0 0/15 * * * *";
 
     /**
-     * 카운트 안전망 배치의 cron. 매일 01:45 (KST) — 표시 카운트 셋을 원본에서 다시 세고 아웃박스를
+     * 카운트 안전망 배치의 cron. 매일 01:25 (KST) — 북마크 수를 원본에서 다시 세고 아웃박스를
      * 비우는 회차이고, 시각 선정 근거는 {@code PlaceStatsFacade} javadoc에 있다.
+     *
+     * <p><b>네 회차 중 이것만 하루 1회다.</b> 북마크 전량 재계산이라 빈도를 올리면 델타 설계가
+     * 걷어낸 전량 스캔이 되돌아온다 — 이 키를 15분 격자로 옮기지 말 것.
      *
      * <p>필드를 남기는 이유와 <b>기본값 리터럴이 두 곳에 존재하는 것이 강제된 중복</b>이라는 사실은
      * {@code countCron}과 같다 — 주기를 바꿀 때 두 곳을 함께 고칠 것.
      */
     @NotBlank
-    private String countSafetyCron = "0 45 1 * * *";
+    private String countSafetyCron = "0 25 1 * * *";
 
     /**
-     * 인기 점수 배치의 cron. 매일 01:00 (KST) — 존재 이유와 시각 선정 근거는 위 필드와 마찬가지로
+     * 인기 점수 배치의 cron. 매시 :10 (KST) — 존재 이유와 시각 선정 근거는 위 필드와 마찬가지로
      * {@code PlaceStatsFacade} javadoc에 있다.
      *
      * <p>시간대는 여기에 담지 않는다. {@code @Scheduled(zone = "Asia/Seoul")}이 고정값이고,
-     * 프로퍼티로 빼면 "cron은 바꿨는데 zone은 안 바꿨다"는 갈림이 하나 더 생긴다.
+     * 프로퍼티로 빼면 "cron은 바꿨는데 zone은 안 바꿨다"는 갈림이 하나 더 생긴다 —
+     * 시간대를 옮긴다면 {@code @Scheduled(zone = ...)} 넷을 함께 옮겨야 한다.
      */
     @NotBlank
-    private String scoreCron = "0 0 1 * * *";
+    private String scoreCron = "0 10 * * * *";
 
     /**
      * <b>점수 회차와 안전망 회차</b>의 최대 시도 횟수 (초회 포함). 3이면 실패 시 두 번 더 돌린다.
