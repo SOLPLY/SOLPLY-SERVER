@@ -23,23 +23,14 @@ import org.springframework.validation.annotation.Validated;
 public class PlaceListSnapshotProperties {
 
     /**
-     * 번호를 보러 가는 간격. 여기서 실제로 나가는 것은 단일 행 PK 조회 하나뿐이라, 반영 지연을
-     * 줄이는 값을 이쪽에 몰아 둔다. 무거운 쪽(리빌드)의 빈도는 {@link #minRebuildIntervalMs}가
-     * 따로 정한다 — 둘을 한 값으로 묶으면 "자주 보되 드물게 짓는다"를 표현할 수 없다.
-     */
-    @Positive
-    private long pollIntervalMs = 1_000L;
-
-    /**
-     * 직전 리빌드가 <b>끝난 뒤</b> 다음 리빌드까지 최소로 쉬는 시간. 185ms짜리 작업이라도 쉼 없이
-     * 이어 돌면 읽기 부하가 계속 깔린다.
+     * 번호를 보러 가는 간격. 여기서 실제로 나가는 것은 단일 행 PK 조회 하나뿐이다.
      *
-     * <p><b>목표 cursorVersion을 기다리는 요청은 이 간격을 우회한다.</b> 그 요청은 "쉬어도 된다"가
-     * 아니라 "지금 그 회차가 없으면 응답할 수 없다"이기 때문이다. 우회가 남용되지 않는 근거는
-     * 대기표가 실제로 있을 때만 우회한다는 것 하나다.
+     * <p>이 값이 정하는 것은 <b>커서가 오르지 않는 변경(어드민 표시값 수정)이 다른 인스턴스에
+     * 닿는 상한</b>이다. 커서가 오르는 변경은 그 회차를 필요로 하는 첫 요청이 폴과 무관하게
+     * 리빌드를 띄운다. 리빌드 실패 뒤의 재시도도 이 간격이다(따로 쉬지 않는다).
      */
     @Positive
-    private long minRebuildIntervalMs = 5_000L;
+    private long pollIntervalMs = 60_000L;
 
     /**
      * 목록 요청이 리빌드를 기다리는 최대 시간. 넘기면 {@code PLACE_SNAPSHOT_SYNCING}으로 끊는다 —
@@ -59,16 +50,4 @@ public class PlaceListSnapshotProperties {
      */
     @Positive
     private long bootstrapTimeoutMs = 60_000L;
-
-    /** 리빌드가 실패했을 때 처음 쉬는 시간. 연속 실패마다 두 배로 늘어난다. */
-    @Positive
-    private long failureBackoffMs = 5_000L;
-
-    /** 실패 백오프의 상한. */
-    @Positive
-    private long maxFailureBackoffMs = 300_000L;
-
-    /** 연속 실패가 이 횟수에 닿으면 WARN이 아니라 ERROR로 남긴다. */
-    @Positive
-    private int failureAlertThreshold = 5;
 }

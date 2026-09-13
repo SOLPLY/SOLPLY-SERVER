@@ -43,8 +43,8 @@ import org.springframework.stereotype.Component;
  *       페이지가 리빌드를 기다리게 된다. 반영은 폴이 맡는다.</li>
  *   <li><b>커서의 회차 != 공유 회차</b>, 또는 <b>커서 회차는 맞는데 로컬이 이미 그보다 앞섰다</b>
  *       → {@code EXPIRED_PLACE_CURSOR}. 기다려도 그 회차는 오지 않는다(뒤엣것은 이미 지나갔다).
- *       이 인스턴스가 뒤처져 있다는 사실은 그대로이므로 리빌드는 필요한 회차와 함께 재촉해 두고,
- *       응답은 기다리지 않는다.</li>
+ *       이 인스턴스가 뒤처져 있다는 사실은 그대로이므로 리빌드는 띄워 두고, 응답은 기다리지
+ *       않는다.</li>
  *   <li><b>첫 페이지인데 로컬이 뒤처졌다 / 커서 회차 == 공유 회차인데 로컬이 뒤처졌다</b> →
  *       그 회차가 설치되기를 기다렸다가 재개한다. 예산({@code requestWaitTimeoutMs})을 넘기면
  *       {@code PLACE_SNAPSHOT_SYNCING}.</li>
@@ -154,19 +154,20 @@ public class PlaceListRequestOrchestrator {
 
     /**
      * 만료로 끊되, <b>이 인스턴스가 뒤처진 것이 사실이면 따라잡기는 시작해 둔다.</b> 응답은
-     * 기다리지 않는다 — 그 커서로는 어차피 답할 수 없기 때문이다. 다만 필요한 회차를 함께
-     * 남겨야 지금 도는 낡은 리빌드가 끝난 뒤 이어 간다.
+     * 기다리지 않는다 — 그 커서로는 어차피 답할 수 없기 때문이다.
      */
     private BusinessException expire(long shared, long mine, long wanted) {
         if (mine < shared) {
-            loadCoordinator.requestRebuild(shared);
+            loadCoordinator.requestRebuild();
         }
         log.debug("커서가 만료됐다 - wanted={}, shared={}, mine={}", wanted, shared, mine);
         return new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
     }
 
     /**
-     * 목표 회차가 설치되기를 기다렸다가 요청을 재개한다.
+     * 다음 설치를 기다렸다가 요청을 재개한다. 재개한 요청은 번호를 다시 읽으므로, 그 설치가
+     * 목표에 못 미쳤으면(대기표가 붙은 시점에 돌던 리빌드가 그 전 시점을 읽은 경우) 다시
+     * 기다린다 — 그 되풀이의 상한이 {@link #MAX_CATCH_UPS}다.
      *
      * <p>시계와 재개가 같은 깃발을 놓고 경쟁한다 — 먼저 잡는 쪽이 이긴다. 시계가 잡으면 재개는
      * 큐에서 깨어나도 그냥 돌아가고(DB를 다시 치지 않는다), 재개가 잡으면 시계는 도는 작업을
@@ -206,7 +207,7 @@ public class PlaceListRequestOrchestrator {
             if (requestFuture.isDone()) {
                 return;
             }
-            log.debug("설치가 목표를 넘어 목록 요청을 재개한다 - target={}, installed={}",
+            log.debug("설치가 끝나 목록 요청을 재개한다 - target={}, installed={}",
                     targetCursorVersion, installed);
             submitResume(requestFuture, resumeStarted, resume);
         });

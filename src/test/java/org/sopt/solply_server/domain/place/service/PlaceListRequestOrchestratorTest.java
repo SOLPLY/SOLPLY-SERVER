@@ -175,12 +175,9 @@ class PlaceListRequestOrchestratorTest {
      * <b>만료로 끊되, 이 인스턴스가 뒤처진 것이 사실이면 따라잡기는 시작해 둔다.</b> 응답은
      * 기다리지 않는다 — 그 커서로는 어차피 답할 수 없기 때문이다. 다만 다음 요청까지 뒤처진 채로
      * 두면 그 요청이 또 기다린다.
-     *
-     * <p><b>필요한 회차를 함께 넘긴다.</b> 넘기지 않으면 지금 도는 낡은 리빌드가 끝난 뒤 이어 갈
-     * 근거가 없어, 다음 폴까지 뒤처진 채로 있는다.
      */
     @Test
-    void 만료로_끊어도_뒤처짐은_필요한_회차와_함께_따라잡기를_시작한다() {
+    void 만료로_끊어도_뒤처졌으면_따라잡기를_시작한다() {
         givenShared(43L);
         givenLocal(41L);
 
@@ -188,7 +185,7 @@ class PlaceListRequestOrchestratorTest {
                 .getPlaces(USER_ID, cursorRequest(cursorAtVersion(42L))))
                 .isInstanceOf(BusinessException.class);
 
-        verify(loadCoordinator).requestRebuild(43L);
+        verify(loadCoordinator).requestRebuild();
         verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
     }
 
@@ -202,7 +199,7 @@ class PlaceListRequestOrchestratorTest {
                 .getPlaces(USER_ID, cursorRequest(cursorAtVersion(42L))))
                 .isInstanceOf(BusinessException.class);
 
-        verify(loadCoordinator, never()).requestRebuild(anyLong());
+        verify(loadCoordinator, never()).requestRebuild();
     }
 
     // === 관측한 뒤 로컬이 더 나아간 경우 ===

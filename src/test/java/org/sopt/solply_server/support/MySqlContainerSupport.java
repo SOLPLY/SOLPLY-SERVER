@@ -68,9 +68,6 @@ public abstract class MySqlContainerSupport {
      * <p>다만 {@code fixedDelay}의 <b>첫 발화</b>는 스케줄러가 뜨자마자 한 번 온다. 그때는 기동
      * 빌드가 이미 같은 번호를 설치한 뒤라 리빌드로 이어지지 않는다(번호 조회 하나로 끝난다).
      *
-     * <p>최소 리빌드 간격은 1ms로 낮춰 둔다 — 테스트가 연달아 리빌드를 부를 때 그 간격에 걸려
-     * 조용히 건너뛰면 "안 지어졌다"와 "못 지었다"가 구분되지 않는다.
-     *
      * <p><b>폴 간격을 되돌리려고 하위 클래스에서 같은 키를 다시 등록하지 말 것.</b>
      * {@code @DynamicPropertySource}는 하위 것이 먼저, 상위 것이 나중에 불려 <b>상위가 하위를
      * 덮는다.</b> 폴을 실제로 돌려야 하는 검증은 스케줄러를 기다리는 대신
@@ -78,6 +75,5 @@ public abstract class MySqlContainerSupport {
      */
     protected static void quietSnapshotRefresh(DynamicPropertyRegistry registry) {
         registry.add("solply.place-list-snapshot.poll-interval-ms", () -> "3600000");
-        registry.add("solply.place-list-snapshot.min-rebuild-interval-ms", () -> "1");
     }
 }

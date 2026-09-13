@@ -99,11 +99,6 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         // 이 값에 쫓기지 않을 만큼은 남긴다
         registry.add("solply.place-list-snapshot.request-wait-timeout-ms",
                 () -> String.valueOf(REQUEST_WAIT_TIMEOUT_MS));
-        // ⚠️ 실패 백오프를 사실상 없앤다. 코디네이터는 컨텍스트당 하나라 <b>실패를 일부러 만드는
-        //    테스트가 남긴 백오프가 다음 테스트로 넘어간다</b> — 기본 5초면 뒤이은 정상 경로가
-        //    리빌드를 못 띄워 503으로 끊긴다(실측). 백오프 자체의 계약은
-        //    SnapshotLoadCoordinatorTest가 시계를 손에 쥐고 따로 문다.
-        registry.add("solply.place-list-snapshot.failure-backoff-ms", () -> "1");
     }
 
     private static final long REQUEST_WAIT_TIMEOUT_MS = 1_500L;
@@ -353,7 +348,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
      * 그대로 두고 같은 요청을 다시 보내면 된다. 그것이 만료(400)와 갈라 둔 이유다.
      *
      * <p><b>실패가 요청을 곧바로 끊지는 않는다.</b> 요청의 계약은 "자기 예산 안에서 복구를
-     * 기다린다"이므로, 한 번의 실패는 대기표를 깨우지 않고 백오프 뒤의 재시도에 맡긴다. 그래서
+     * 기다린다"이므로, 한 번의 실패는 대기표를 깨우지 않고 다음 폴이나 요청의 재시도에 맡긴다. 그래서
      * 이 요청은 예산을 다 쓰고 끊긴다 — 끊는 주체가 실패가 아니라 <b>시계</b>라는 것이 요점이다.
      */
     @Test

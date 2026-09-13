@@ -1,7 +1,6 @@
 package org.sopt.solply_server.domain.place.cache;
 
 import jakarta.annotation.PreDestroy;
-import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,39 +8,33 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.LongSupplier;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
-import org.sopt.solply_server.domain.place.config.PlaceListSnapshotProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * <b>이 인스턴스에서 실제로 도는 리빌드는 언제나 하나</b>임을 보장하고, 그 하나를 언제 띄울지
- * 정한다. 리빌드를 부르는 곳은 셋인데(기동·폴·목록 요청) 전부 이 문을 지난다.
+ * <b>이 인스턴스에서 실제로 도는 리빌드는 언제나 하나</b>임을 보장한다. 리빌드를 부르는 곳은
+ * 셋인데(기동·폴·목록 요청) 전부 이 문을 지난다.
  *
  * <p><b>왜 하나인가.</b> 리빌드는 place_stats 전량을 읽고 정렬해 새 배열을 짓는다. 둘이 겹치면
- * 읽기 부하도 힙도 두 배인데 얻는 것은 없다 — 나중에 끝난 쪽만 설치되고 앞선 쪽은 단조 가드에
- * 걸려 버려진다. 그래서 겹치는 요청은 <b>돌고 있는 그 비행에 붙는다.</b>
+ * 읽기 부하도 힙도 두 배인데 얻는 것은 없다. 그래서 겹치는 요청은 <b>돌고 있는 그 비행에 붙는다.</b>
  *
- * <p><b>폴과 최소 간격이 따로인 이유.</b> 폴은 1초마다 번호만 보러 간다(단일 행 PK 조회). 번호가
- * 그대로면 거기서 끝이고, 달라졌을 때만 리빌드를 띄우되 직전 리빌드가 끝난 지
- * {@code minRebuildIntervalMs}가 지나야 띄운다. 그래서 "변경을 1초 안에 알아채되 리빌드는 5초에
- * 한 번을 넘지 않는다"가 된다. 한 값으로 묶으면 둘 중 하나를 포기해야 한다.
+ * <p><b>폴은 번호만 본다.</b> 폴 간격마다 단일 행을 읽어 {@code revision}이 설치된 것보다 크면
+ * 리빌드를 띄운다. 그래서 폴 간격이 곧 <b>커서가 오르지 않는 변경(어드민 표시값 수정)이 다른
+ * 인스턴스에 닿는 상한</b>이다 — 그런 변경은 요청이 리빌드를 부르지 않는다. 커서가 오르는 변경은
+ * 그 회차를 필요로 하는 첫 요청이 바로 띄운다.
  *
- * <p><b>필요한 회차가 있으면 최소 간격을 우회한다.</b> 커서가 가리키는 회차를 아직 못 지은
- * 인스턴스에게 "5초 뒤에 짓겠다"는 답은 곧 그 요청의 실패다. 우회를 부르는 자리는 둘이고, 둘 다
- * <b>필요한 cursorVersion을 들고 온다</b> — 기다리는 요청({@link #awaitCursorVersion})과, 만료로
- * 끊으면서 따라잡기만 시켜 두는 요청({@link #requestRebuild}). 그 값은
- * {@code pendingTargetCursorVersion}에 남아, 지금 도는 비행이 그에 못 미치면 끝나는 즉시 한 번
- * 더 띄우게 한다.
+ * <p><b>실패는 로그만 남긴다.</b> 자리를 비우면 끝이고, 다음 폴이나 다음 요청이 다시 띄운다.
+ * <b>실패했다고 대기표를 깨우지는 않는다</b> — 요청의 계약은 "자기 예산 안에서 복구를 기다린다"이고,
+ * 예산을 넘기는 판정은 요청 쪽 시계의 몫이다.
  *
- * <p><b>실패는 지수 백오프로 쉰다.</b> DB가 흔들릴 때 1초마다 전량 읽기를 재시도하면 회복을
- * 방해한다. <b>실패했다고 대기표를 깨우지는 않는다</b> — 요청의 계약은 "자기 예산(기본 3초) 안에서
- * 복구를 기다린다"이고, 백오프가 끝나면 폴이 필요한 회차를 보고 최소 간격을 우회해 다시 띄운다.
- * 예산을 넘기면 그것은 요청 쪽 시계가 끊는다.
+ * <p><b>설치가 끝나면 대기표를 전부 깨운다.</b> 목표에 닿았는지는 여기서 가리지 않는다 — 깨어난
+ * 요청이 번호를 다시 읽어 판정하고, 아직 뒤처졌으면 다시 기다린다(그때는 새 비행이 뜬다). 대기표가
+ * 붙은 시점에 돌던 비행은 그보다 앞선 시점의 원본을 읽고 있을 수 있는데, 그 경우를 여기서 목표를
+ * 기억해 풀지 않고 요청의 재확인에 맡긴다.
  */
 @Slf4j
 @Component
@@ -49,121 +42,101 @@ public class SnapshotLoadCoordinator {
 
     private static final String LOADER_THREAD_NAME = "place-snapshot-loader";
 
-    /** 아직 아무도 요구하지 않은 상태. 어떤 실제 cursorVersion보다도 작다 */
-    private static final long NO_TARGET = Long.MIN_VALUE;
-
     private final SnapshotInstaller installer;
     private final SnapshotMetadataRepository metadataRepository;
-    private final PlaceListSnapshotProperties properties;
     private final ExecutorService loader;
-    private final LongSupplier nanoTime;
 
     /** 지금 도는 리빌드. {@code null}이면 아무것도 돌지 않는다. 아래 monitor로만 만진다 */
     private CompletableFuture<Long> inFlight;
 
-    private long lastRebuildFinishedNanos;
-
-    private long nextAttemptNanos;
-
-    private int consecutiveFailures;
-
-    /** 누군가 "이 회차가 필요하다"고 말한 값 중 가장 큰 것. monitor로만 만진다 */
-    private long pendingTargetCursorVersion = NO_TARGET;
-
     private final Object monitor = new Object();
 
-    /** 특정 cursorVersion이 설치되기를 기다리는 요청들 */
-    private final Set<Waiter> waiters = ConcurrentHashMap.newKeySet();
-
-    private record Waiter(long targetCursorVersion, CompletableFuture<Long> ticket) {
-    }
+    /** 설치를 기다리는 요청들 */
+    private final Set<CompletableFuture<Long>> waiters = ConcurrentHashMap.newKeySet();
 
     // 생성자가 둘이라 어느 쪽을 쓸지 명시해야 한다 — 없으면 컨텍스트가 no-arg를 찾다 실패한다
     @Autowired
     public SnapshotLoadCoordinator(SnapshotInstaller installer,
-            SnapshotMetadataRepository metadataRepository,
-            PlaceListSnapshotProperties properties) {
-        this(installer, metadataRepository, properties,
+            SnapshotMetadataRepository metadataRepository) {
+        this(installer, metadataRepository,
                 Executors.newSingleThreadExecutor(runnable -> {
                     Thread thread = new Thread(runnable, LOADER_THREAD_NAME);
                     thread.setDaemon(true);     // 리빌드가 JVM 종료를 붙잡지 않는다
                     return thread;
-                }),
-                System::nanoTime);
+                }));
     }
 
-    /** 테스트가 실행 시점과 시계를 잡기 위한 생성자. 운영 경로는 위 생성자만 쓴다. */
+    /** 테스트가 실행 시점을 잡기 위한 생성자. 운영 경로는 위 생성자만 쓴다. */
     SnapshotLoadCoordinator(SnapshotInstaller installer,
             SnapshotMetadataRepository metadataRepository,
-            PlaceListSnapshotProperties properties,
-            ExecutorService loader,
-            LongSupplier nanoTime) {
+            ExecutorService loader) {
         this.installer = installer;
         this.metadataRepository = metadataRepository;
-        this.properties = properties;
         this.loader = loader;
-        this.nanoTime = nanoTime;
-        long now = nanoTime.getAsLong();
-        this.nextAttemptNanos = now;
-        // 첫 리빌드가 최소 간격에 걸리지 않게 "충분히 오래전에 끝났다"에서 시작한다
-        this.lastRebuildFinishedNanos = now - TimeUnit.DAYS.toNanos(1);
     }
 
     /**
-     * 번호가 달라졌는지만 보고, 달라졌으면 리빌드를 띄운다.
+     * 번호가 커졌는지만 보고, 커졌으면 리빌드를 띄운다.
      *
      * <p>여기서 나가는 쿼리는 단일 행 조회 하나다. 같으면 그대로 끝난다 — 리빌드는커녕 원본
-     * 테이블을 건드리지도 않는다.
+     * 테이블을 건드리지도 않는다. 조회가 실패해도 그대로 끝난다 — 다음 폴이 다시 본다.
      *
-     * <p><b>누군가 기다리는 회차가 있으면 최소 간격을 우회한다.</b> 실패 백오프가 끝난 뒤 밀린
-     * 대기를 실제로 풀어 주는 자리가 여기다.
+     * <p><b>이 폴은 전용 실행기에서 돈다</b> ({@code snapshotPollScheduler}, 풀 크기 1). 집계 회차와
+     * 스레드를 나눠 쓰면 폴 간격이 앞 회차의 소요에 묶인다 — 근거는 {@code SchedulingConfig}.
      */
-    @Scheduled(fixedDelayString = "${solply.place-list-snapshot.poll-interval-ms:1000}")
+    @Scheduled(fixedDelayString = "${solply.place-list-snapshot.poll-interval-ms:60000}",
+            scheduler = "snapshotPollScheduler")
     public void pollRebuild() {
         SnapshotMetadata head;
         try {
             head = metadataRepository.read();
         } catch (Exception e) {
-            recordFailure("목록 스냅샷 번호 조회", e);
+            log.warn("목록 스냅샷 번호 조회 실패 - 지금 회차를 그대로 유지하고 다음 폴에 다시 본다", e);
             return;
         }
-        if (head.revision() == installer.installedRevision()) {
+        long installed = installer.installedRevision();
+        if (head.revision() == installed) {
             return;     // 다시 지을 것이 없다
         }
-        start(demandsTarget());
+        if (head.revision() < installed) {
+            // 번호는 오르기만 하므로 정상 운영에서는 오지 않는다. 지어 봐야 설치의 단조 검사에
+            // 걸려 버려지므로 여기서 띄우지 않는다 — 폴마다 전량 읽기만 낭비하는 고리가 된다
+            log.warn("DB 번호가 설치된 것보다 작다 - 리빌드하지 않는다 (db={}, installed={})",
+                    head.revision(), installed);
+            return;
+        }
+        start();
     }
 
     /**
-     * 목표 회차가 설치되기를 기다리는 대기표. 이미 그만큼 새것이면 곧바로 완료된 것을 돌려준다.
+     * 설치를 기다리는 대기표. 이미 목표만큼 새것이면 곧바로 완료된 것을 돌려준다.
      *
      * <p><b>등록을 먼저 하고 다시 확인하는 순서가 경쟁을 닫는다.</b> 확인이 먼저였다면 확인과
      * 등록 사이에 끝난 설치가 이 대기표를 깨우지 않고 지나가, 요청이 예산을 다 쓰고 끊긴다.
+     *
+     * <p>대기표는 <b>다음 설치</b>에 깨어난다. 그 설치가 목표에 닿았는지는 부르는 쪽이 번호를 다시
+     * 읽어 판정한다.
      */
     public CompletableFuture<Long> awaitCursorVersion(long targetCursorVersion) {
         CompletableFuture<Long> ticket = new CompletableFuture<>();
-        Waiter waiter = new Waiter(targetCursorVersion, ticket);
-        waiters.add(waiter);                                        // ①
-        ticket.whenComplete((installed, failure) -> waiters.remove(waiter));
+        waiters.add(ticket);                                        // ①
+        ticket.whenComplete((installed, failure) -> waiters.remove(ticket));
         long installed = installer.installedCursorVersion();          // ②
         if (installed >= targetCursorVersion) {
             ticket.complete(installed);
             return ticket;
         }
-        rememberTarget(targetCursorVersion);
-        start(true);
+        start();
         return ticket;
     }
 
     /**
-     * 기다리지 않고 리빌드만 재촉한다. 커서가 만료된 요청이 쓰는 자리 — 그 응답은 기다려도
+     * 기다리지 않고 리빌드만 띄운다. 커서가 만료된 요청이 쓰는 자리 — 그 응답은 기다려도
      * 달라지지 않지만, 이 인스턴스가 뒤처져 있다는 사실은 그대로이므로 따라잡기는 시작해 둔다.
-     *
-     * <p><b>필요한 회차를 함께 남긴다.</b> 남기지 않으면 지금 도는 낡은 비행이 끝난 뒤 이어 갈
-     * 근거가 없어, 다음 폴(최대 1초 + 최소 간격 5초)까지 뒤처진 채로 있는다.
+     * 이미 도는 비행이 있으면 아무것도 하지 않는다.
      */
-    public void requestRebuild(long neededCursorVersion) {
-        rememberTarget(neededCursorVersion);
-        start(true);
+    public void requestRebuild() {
+        start();
     }
 
     /**
@@ -192,15 +165,11 @@ public class SnapshotLoadCoordinator {
         return joinQuietly(mine);
     }
 
-    private CompletableFuture<Long> start(boolean bypassMinInterval) {
+    private CompletableFuture<Long> start() {
         CompletableFuture<Long> mine = new CompletableFuture<>();
         synchronized (monitor) {
             if (inFlight != null) {
                 return inFlight;        // 도는 비행에 붙는다 — 전량 읽기는 하나뿐이다
-            }
-            if (!mayStartNow(bypassMinInterval)) {
-                // 지금은 띄우지 않는다. 폴이 1초 뒤 다시 보고, 번호가 여전히 다르면 그때 띄운다
-                return CompletableFuture.completedFuture(installer.installedCursorVersion());
             }
             inFlight = mine;
         }
@@ -217,111 +186,35 @@ public class SnapshotLoadCoordinator {
         return mine;
     }
 
-    /** 지금 누군가 필요로 하는 회차가 설치된 것보다 앞서는가 — 그러면 최소 간격을 우회한다 */
-    private boolean demandsTarget() {
-        long installed = installer.installedCursorVersion();
-        synchronized (monitor) {
-            if (pendingTargetCursorVersion > installed) {
-                return true;
-            }
-        }
-        return maxWaiterTarget() > installed;
-    }
-
-    private void rememberTarget(long targetCursorVersion) {
-        synchronized (monitor) {
-            pendingTargetCursorVersion =
-                    Math.max(pendingTargetCursorVersion, targetCursorVersion);
-        }
-    }
-
-    private boolean mayStartNow(boolean bypassMinInterval) {
-        long now = nanoTime.getAsLong();
-        if (now - nextAttemptNanos < 0) {
-            return false;       // 실패 백오프 중이다. 우회 요청도 여기는 못 넘는다
-        }
-        if (bypassMinInterval) {
-            return true;
-        }
-        long restNanos = TimeUnit.MILLISECONDS.toNanos(properties.getMinRebuildIntervalMs());
-        return now - lastRebuildFinishedNanos >= restNanos;
-    }
-
     private void runRebuild(CompletableFuture<Long> mine) {
         Throwable failure = null;
-        boolean installed = false;
         try {
-            installed = installer.rebuildAndInstall();
+            installer.rebuildAndInstall();
         } catch (Throwable t) {
             failure = t;
         }
         long installedCursorVersion = installer.installedCursorVersion();
-        long backoffMs = 0L;
-        synchronized (monitor) {
-            // ★ 자리 비우기와 백오프 설정을 한 블록에서 한다. 갈라 두면 그 사이에 새 비행이 떠
-            //   백오프를 건너뛴다
-            lastRebuildFinishedNanos = nanoTime.getAsLong();
-            if (failure == null) {
-                consecutiveFailures = 0;
-                nextAttemptNanos = lastRebuildFinishedNanos;
-            } else {
-                backoffMs = scheduleBackoff();
-            }
-            inFlight = null;
-        }
+        clearInFlight(mine);
         if (failure != null) {
-            logFailure("목록 스냅샷 리빌드", backoffMs, failure);
+            log.warn("목록 스냅샷 리빌드 실패 - 지금 회차를 그대로 유지한다. 다음 폴이나 요청이 다시 띄운다",
+                    failure);
             mine.completeExceptionally(failure);
-            // 대기표는 그대로 둔다 — 백오프가 끝나면 폴이 필요한 회차를 보고 다시 띄운다
-            return;
+            return;     // 대기표는 그대로 둔다 — 끊는 것은 요청 쪽 시계다
         }
         wakeWaiters(installedCursorVersion);
         mine.complete(installedCursorVersion);
-        if (installed) {
-            followUpIfStillBehind(installedCursorVersion);
-        }
-    }
-
-    /**
-     * 방금 끝난 리빌드가 <b>누군가 필요로 하는 회차에 못 미치면</b> 곧바로 한 번 더 띄운다.
-     *
-     * <p>이 자리가 있는 이유: 대기표가 붙은 시점에 이미 리빌드가 돌고 있었다면, 그 리빌드는
-     * 대기표보다 앞선 시점의 원본을 읽고 있다. 그 결과를 설치해 봐야 목표 회차에 닿지 않으므로
-     * 대기표는 여전히 열려 있고, 여기서 이어 가지 않으면 다음 폴(최대 1초 + 최소 간격 5초)까지
-     * 잠든다 — 요청 예산 안에 못 끝난다.
-     *
-     * <p><b>진전이 있을 때만 이어 간다.</b> 부르는 쪽이 "이번에 실제로 설치했다"일 때만 여기로
-     * 온다 — 아무것도 설치하지 못한 리빌드를 이어 가면 같은 결과를 반복하는 뜨거운 고리가 된다.
-     */
-    private void followUpIfStillBehind(long installedCursorVersion) {
-        if (!demandsTarget()) {
-            return;
-        }
-        log.debug("아직 필요한 회차에 못 미친다 - 리빌드를 이어 간다 (installed={})",
-                installedCursorVersion);
-        start(true);
-    }
-
-    private long maxWaiterTarget() {
-        long max = NO_TARGET;
-        for (Waiter waiter : waiters) {
-            max = Math.max(max, waiter.targetCursorVersion());
-        }
-        return max;
     }
 
     private void wakeWaiters(long installedCursorVersion) {
-        for (Waiter waiter : waiters) {
-            if (waiter.targetCursorVersion() <= installedCursorVersion) {
-                waiter.ticket().complete(installedCursorVersion);
-            }
+        for (CompletableFuture<Long> ticket : waiters) {
+            ticket.complete(installedCursorVersion);
         }
     }
 
     /** 실행기가 작업을 거절한 경우에만 쓴다 — 기다려도 이 인스턴스가 지금은 짓지 못한다 */
     private void failWaiters(Throwable failure) {
-        for (Waiter waiter : waiters) {
-            waiter.ticket().completeExceptionally(failure);
+        for (CompletableFuture<Long> ticket : waiters) {
+            ticket.completeExceptionally(failure);
         }
     }
 
@@ -330,37 +223,6 @@ public class SnapshotLoadCoordinator {
             if (inFlight == mine) {
                 inFlight = null;
             }
-        }
-    }
-
-    /** monitor 안에서만 부른다. 다음 시도 시각을 밀고 이번 백오프 길이를 돌려준다 */
-    private long scheduleBackoff() {
-        consecutiveFailures++;
-        long backoffMs = Math.min(
-                properties.getMaxFailureBackoffMs(),
-                properties.getFailureBackoffMs() << Math.min(consecutiveFailures - 1, 20));
-        nextAttemptNanos = nanoTime.getAsLong() + Duration.ofMillis(backoffMs).toNanos();
-        return backoffMs;
-    }
-
-    private void recordFailure(String what, Throwable e) {
-        long backoffMs;
-        synchronized (monitor) {
-            backoffMs = scheduleBackoff();
-        }
-        logFailure(what, backoffMs, e);
-    }
-
-    private void logFailure(String what, long backoffMs, Throwable e) {
-        int failures;
-        synchronized (monitor) {
-            failures = consecutiveFailures;
-        }
-        String message = "{} 실패 - 지금 회차를 그대로 유지한다(연속 {}회, 다음 시도까지 {}ms)";
-        if (failures >= properties.getFailureAlertThreshold()) {
-            log.error(message, what, failures, backoffMs, e);
-        } else {
-            log.warn(message, what, failures, backoffMs, e);
         }
     }
 
