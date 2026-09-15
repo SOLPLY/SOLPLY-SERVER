@@ -12,6 +12,10 @@
 --    cursor_version = "지금 커서를 계속 써도 되나". 진행 중인 스크롤을 끊어야 할 때만 오른다.
 --    합치면 이름 한 칸 고친 어드민 수정이 스크롤 세션을 전부 끊는다. 반대로 cursor_version만
 --    두면 "스크롤 유지"를 고른 수정이 어느 인스턴스에도 반영되지 않는다.
+--
+-- ⚠️ revision은 cursor_version이 오르는 UPDATE에서 0으로 돌아간다. 그래서 번호 쌍은 "몇 회차의
+--    몇 번째 변경"으로 읽히고, 두 번호의 전순서는 (cursor_version, revision) 사전식이다.
+--    revision 하나만 대소 비교하면 회차가 오른 직후의 스냅샷(revision = 0)이 "낡았다"로 판정된다.
 CREATE TABLE place_list_snapshot_metadata
 (
     id             TINYINT     NOT NULL COMMENT '항상 1',
