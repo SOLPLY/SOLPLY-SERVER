@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.global.cache.CacheService;
 import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,13 +69,13 @@ class SolplyServerApplicationTests extends MySqlContainerSupport {
      * <b>Redis가 없어도 기동이 스냅샷을 짓는다.</b> 기동이 원본을 읽어 자기 스냅샷을 세우므로,
      * 여기까지 왔다는 것은 읽기·정렬·설치 셋이 모두 돌았다는 뜻이다.
      *
-     * <p>설치된 시점이 음수로 남아 있으면 인스턴스가 <b>빈 목록</b>을 서빙한다 — 기동이 그것을
-     * 막는 것이 계약이라 값으로 못 박는다.
+     * <p>설치된 시점이 {@link SnapshotMetadata#NOT_INSTALLED}로 남아 있으면 인스턴스가 <b>빈
+     * 목록</b>을 서빙한다 — 기동이 그것을 막는 것이 계약이라 값으로 못 박는다.
      */
     @Test
     void Redis_없이도_기동이_목록_스냅샷을_짓는다() {
-        assertThat(installer.installedRevision())
+        assertThat(installer.installed())
                 .as("기동 빌드가 끝났으면 설치된 시점이 있다")
-                .isNotNegative();
+                .isNotEqualTo(SnapshotMetadata.NOT_INSTALLED);
     }
 }

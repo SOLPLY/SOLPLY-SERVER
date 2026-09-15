@@ -30,6 +30,7 @@ import org.sopt.solply_server.domain.place.cache.SnapshotBox;
 import org.sopt.solply_server.domain.place.cache.PlaceView;
 import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
 import org.sopt.solply_server.domain.place.cache.TagViewHolder;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -124,7 +125,8 @@ class PlaceServiceStatsWiringTest {
         bookmarkCount, reviewCount, avgRating.movePointRight(2).intValueExact(),
         37.5, 127.0);
     given(snapshotBox.current())
-        .willReturn(new Snapshot(VERSION, VERSION, SortedPlaces.of(List.of(entry))));
+        .willReturn(new Snapshot(new SnapshotMetadata(VERSION, VERSION),
+            SortedPlaces.of(List.of(entry))));
     given(placeViewHolder.get(PLACE_ID))
         .willReturn(new PlaceView(PLACE_ID, "장소1", "key1", null));
   }

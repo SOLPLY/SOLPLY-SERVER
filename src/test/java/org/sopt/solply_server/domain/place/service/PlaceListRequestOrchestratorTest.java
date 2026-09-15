@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
@@ -14,6 +13,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -21,7 +21,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
@@ -50,10 +49,12 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  * 목록 요청이 <b>뒤처짐 하나</b>를 어떻게 판정하는가. 겨누는 것은 응답의 내용이 아니라
  * <b>언제 공유 번호를 보러 가고, 언제 기다리고, 기다림이 끝나면 무엇으로 답하는가</b>다.
  *
- * <p><b>번호는 요청마다 읽는다.</b> 로컬 회차와 커서가 맞으면 그 조회를 건너뛰고 싶어지지만, 그
- * 최적화가 놓치는 것이 정확히 틀린 경우다 — <b>이 인스턴스가 뒤처져 있고 커서도 그만큼 낡은</b>
- * 경우, 둘이 서로 맞으므로 아무 문제 없어 보이는 채로 옛 회차를 최신이라 말한다. 예외는 북마크
- * 검색뿐이고, 그것은 스냅샷을 읽지 않아 맞출 회차가 없기 때문이다.
+ * <p><b>번호는 요청마다 정확히 한 번 읽는다.</b> 로컬 회차와 커서가 맞으면 그 조회를 건너뛰고
+ * 싶어지지만, 그 최적화가 놓치는 것이 정확히 틀린 경우다 — <b>이 인스턴스가 뒤처져 있고 커서도
+ * 그만큼 낡은</b> 경우, 둘이 서로 맞으므로 아무 문제 없어 보이는 채로 옛 회차를 최신이라 말한다.
+ * 반대로 <b>기다렸다 깨어난 뒤에 다시 읽지도 않는다</b> — 대기표가 깨어난 조건 자체가 "목표가
+ * 설치됐다"이므로 다시 읽어 확인할 것이 없다. 예외는 북마크 검색뿐이고, 그것은 스냅샷을 읽지 않아
+ * 맞출 회차가 없기 때문이다.
  *
  * <p><b>나머지 절반은 "못 따라잡았을 때 무엇이라 말하는가"다.</b> 만료(400)와 동기화 중(503)은
  * 클라이언트의 행동이 정반대라 — 목록을 버리느냐 같은 커서로 다시 부르느냐 — 이 둘을 시간이나
@@ -112,7 +113,7 @@ class PlaceListRequestOrchestratorTest {
                 .get(AWAIT_SECONDS, TimeUnit.SECONDS)).isSameAs(firstPageResponse);
 
         verify(metadataRepository, never()).read();
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     /**
@@ -128,8 +129,8 @@ class PlaceListRequestOrchestratorTest {
         orchestrator().getPlaces(USER_ID, cursorRequest(cursorAtVersion(42L)))
                 .get(AWAIT_SECONDS, TimeUnit.SECONDS);
 
-        verify(metadataRepository).read();
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(metadataRepository, times(1)).read();
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     // === 언제 그대로 답하는가 ===
@@ -148,7 +149,7 @@ class PlaceListRequestOrchestratorTest {
         assertThat(orchestrator().getPlaces(USER_ID, firstPageRequest())
                 .get(AWAIT_SECONDS, TimeUnit.SECONDS)).isSameAs(firstPageResponse);
 
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     // === 언제 끊는가 ===
@@ -168,25 +169,28 @@ class PlaceListRequestOrchestratorTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
 
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     /**
      * <b>만료로 끊되, 이 인스턴스가 뒤처진 것이 사실이면 따라잡기는 시작해 둔다.</b> 응답은
      * 기다리지 않는다 — 그 커서로는 어차피 답할 수 없기 때문이다. 다만 다음 요청까지 뒤처진 채로
      * 두면 그 요청이 또 기다린다.
+     *
+     * <p><b>띄우라고 건네는 것은 회차 하나가 아니라 번호 쌍 전부다.</b> 리빌드를 붙일지 새로 띄울지를
+     * 코디네이터가 "이 비행이 그 시점을 담는가"로 가르는데, 회차만으로는 그 판정이 서지 않는다.
      */
     @Test
     void 만료로_끊어도_뒤처졌으면_따라잡기를_시작한다() {
-        givenShared(43L);
+        given(metadataRepository.read()).willReturn(new SnapshotMetadata(7L, 43L));
         givenLocal(41L);
 
         assertThatThrownBy(() -> orchestrator()
                 .getPlaces(USER_ID, cursorRequest(cursorAtVersion(42L))))
                 .isInstanceOf(BusinessException.class);
 
-        verify(loadCoordinator).requestRebuild();
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(loadCoordinator).requestRebuild(new SnapshotMetadata(7L, 43L));
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     /** 로컬이 이미 공유만큼 새것이면 따라잡을 것이 없다 — 재촉도 하지 않는다. */
@@ -199,7 +203,7 @@ class PlaceListRequestOrchestratorTest {
                 .getPlaces(USER_ID, cursorRequest(cursorAtVersion(42L))))
                 .isInstanceOf(BusinessException.class);
 
-        verify(loadCoordinator, never()).requestRebuild();
+        verify(loadCoordinator, never()).requestRebuild(any());
     }
 
     // === 관측한 뒤 로컬이 더 나아간 경우 ===
@@ -218,7 +222,7 @@ class PlaceListRequestOrchestratorTest {
         assertThat(orchestrator().getPlaces(USER_ID, firstPageRequest())
                 .get(AWAIT_SECONDS, TimeUnit.SECONDS)).isSameAs(firstPageResponse);
 
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     /**
@@ -237,7 +241,7 @@ class PlaceListRequestOrchestratorTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
 
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     // === 검증은 대기보다 먼저다 ===
@@ -258,7 +262,7 @@ class PlaceListRequestOrchestratorTest {
                 .isEqualTo(ErrorCode.INVALID_PLACE_CURSOR);
 
         verify(metadataRepository, never()).read();
-        verify(loadCoordinator, never()).awaitCursorVersion(anyLong());
+        verify(loadCoordinator, never()).awaitCursorVersion(any());
     }
 
     /** 공유 번호를 읽지 못하면 <b>로컬 회차를 최신이라 말하지 않는다</b> — 503으로 끊는다. */
@@ -272,21 +276,24 @@ class PlaceListRequestOrchestratorTest {
 
     // === 언제 기다리는가 ===
 
-    /** 첫 페이지가 뒤처졌으면 목표 회차가 설치되기를 기다렸다가 그것으로 답한다. */
+    /**
+     * 첫 페이지가 뒤처졌으면 목표 회차가 설치되기를 기다렸다가 그것으로 답한다.
+     *
+     * <p><b>대기표에 거는 목표도 번호 쌍 전부다.</b> 코디네이터는 이 값으로 두 가지를 정한다 —
+     * 언제 깨울지(회차)와, 띄울 비행이 어느 시점을 담아야 하는지(쌍).
+     */
     @Test
     void 뒤처진_첫_페이지는_설치를_기다렸다_재개한다() throws Exception {
-        givenShared(42L);
-        given(snapshotBox.current())
-                .willReturn(snapshotAt(41L))
-                .willReturn(snapshotAt(42L));
-        given(loadCoordinator.awaitCursorVersion(42L))
+        given(metadataRepository.read()).willReturn(new SnapshotMetadata(7L, 42L));
+        givenLocal(41L);
+        given(loadCoordinator.awaitCursorVersion(any()))
                 .willReturn(CompletableFuture.completedFuture(42L));
         given(placeService.getPlaces(eq(USER_ID), any())).willReturn(resumedResponse);
 
         assertThat(orchestrator().getPlaces(USER_ID, firstPageRequest())
                 .get(AWAIT_SECONDS, TimeUnit.SECONDS)).isSameAs(resumedResponse);
 
-        verify(loadCoordinator).awaitCursorVersion(42L);
+        verify(loadCoordinator).awaitCursorVersion(new SnapshotMetadata(7L, 42L));
     }
 
     /**
@@ -296,43 +303,64 @@ class PlaceListRequestOrchestratorTest {
     @Test
     void 유효한_커서인데_로컬이_뒤처졌으면_기다렸다_재개한다() throws Exception {
         givenShared(42L);
-        given(snapshotBox.current())
-                .willReturn(snapshotAt(41L))
-                .willReturn(snapshotAt(42L));
-        given(loadCoordinator.awaitCursorVersion(42L))
+        givenLocal(41L);
+        given(loadCoordinator.awaitCursorVersion(any()))
                 .willReturn(CompletableFuture.completedFuture(42L));
         given(placeService.getPlaces(eq(USER_ID), any())).willReturn(resumedResponse);
 
         assertThat(orchestrator().getPlaces(USER_ID, cursorRequest(cursorAtVersion(42L)))
                 .get(AWAIT_SECONDS, TimeUnit.SECONDS)).isSameAs(resumedResponse);
 
-        verify(loadCoordinator).awaitCursorVersion(42L);
+        verify(loadCoordinator).awaitCursorVersion(sharedAt(42L));
     }
 
     /**
-     * <b>보장은 번호를 읽은 그 시점까지다.</b> 기다리는 사이 더 새 회차가 설치되면 재개한 요청의
-     * 커서는 그 회차와 어긋나 만료된다 — 옛 회차를 되살려 맞추지 않는다. 커서 좌표를 다른 배열에서
-     * 해석하면 항목이 겹치거나 빠지는데, 200 응답이라 클라이언트가 알 방법이 없기 때문이다.
+     * <b>깨어난 요청은 번호를 다시 읽지 않는다.</b> 대기표가 깨어난 조건 자체가 "목표가 설치됐다"라
+     * 다시 읽어 확인할 것이 없다 — 요청 하나가 내는 단일 행 조회는 기다렸든 아니든 언제나 한 번이다.
+     * 여기가 뚫리면 몰린 요청 수만큼 읽기가 늘고, 그것도 가장 바쁜 순간에 는다.
+     *
+     * <p>재개가 만드는 페이지도 <b>한 번</b>이다. 재판정 루프가 남아 있으면 이 수가 조용히 커진다.
      */
     @Test
-    void 기다리는_사이_더_새_회차가_오면_만료로_끊는다() {
-        AtomicInteger reads = new AtomicInteger();
-        given(metadataRepository.read()).willAnswer(invocation ->
-                new SnapshotMetadata(100L, reads.incrementAndGet() == 1 ? 42L : 43L));
-        given(snapshotBox.current())
-                .willReturn(snapshotAt(41L))
-                .willReturn(snapshotAt(43L));
-        given(loadCoordinator.awaitCursorVersion(42L))
-                .willReturn(CompletableFuture.completedFuture(43L));
+    void 깨어난_요청은_번호를_다시_읽지_않는다() throws Exception {
+        givenShared(42L);
+        givenLocal(41L);
+        given(loadCoordinator.awaitCursorVersion(any()))
+                .willReturn(CompletableFuture.completedFuture(42L));
+        given(placeService.getPlaces(eq(USER_ID), any())).willReturn(resumedResponse);
 
-        Throwable thrown = catchThrowable(() -> orchestrator()
+        assertThat(orchestrator().getPlaces(USER_ID, firstPageRequest())
+                .get(AWAIT_SECONDS, TimeUnit.SECONDS)).isSameAs(resumedResponse);
+
+        verify(metadataRepository, times(1)).read();
+        verify(loadCoordinator, times(1)).awaitCursorVersion(any());
+        verify(placeService, times(1)).getPlaces(eq(USER_ID), any());
+    }
+
+    /**
+     * <b>기다리는 사이 이 인스턴스가 목표를 지나쳤으면 재개한 커서 요청은 만료된다.</b> 대기표는
+     * "목표 이상 설치"에 깨어나므로 지나친 경우에도 깨어나는데, 그때 판정을 다시 하지는 않는다 —
+     * 커서 좌표를 다른 배열에서 해석하면 항목이 겹치거나 빠지고, 200 응답이라 클라이언트가 알
+     * 방법이 없다. 그래서 끊는 자리는 {@code PlaceService}의 커서 대조이고, 오케스트레이터는 그
+     * 예외를 그대로 흘려보낸다.
+     */
+    @Test
+    void 목표를_지나쳐_설치했으면_재개한_커서_요청이_만료된다() {
+        givenShared(42L);
+        givenLocal(41L);
+        given(loadCoordinator.awaitCursorVersion(any()))
+                .willReturn(CompletableFuture.completedFuture(43L));
+        willThrow(new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR))
+                .given(placeService).getPlaces(eq(USER_ID), any());
+
+        Throwable cause = unwrap(catchThrowable(() -> orchestrator()
                 .getPlaces(USER_ID, cursorRequest(cursorAtVersion(42L)))
-                .get(AWAIT_SECONDS, TimeUnit.SECONDS));
-        Throwable cause = thrown instanceof ExecutionException ? thrown.getCause() : thrown;
+                .get(AWAIT_SECONDS, TimeUnit.SECONDS)));
 
         assertThat(cause).isInstanceOf(BusinessException.class);
         assertThat(((BusinessException) cause).getErrorCode())
                 .isEqualTo(ErrorCode.EXPIRED_PLACE_CURSOR);
+        verify(metadataRepository, times(1)).read();
     }
 
     /** 예산 안에 설치가 오지 않으면 <b>낡은 회차로 답하지 않고</b> 503으로 끊는다. */
@@ -340,7 +368,7 @@ class PlaceListRequestOrchestratorTest {
     void 예산_안에_설치가_오지_않으면_동기화_중으로_끊는다() {
         givenShared(42L);
         givenLocal(41L);
-        given(loadCoordinator.awaitCursorVersion(42L)).willReturn(new CompletableFuture<>());
+        given(loadCoordinator.awaitCursorVersion(any())).willReturn(new CompletableFuture<>());
 
         assertSyncing(() -> orchestrator().getPlaces(USER_ID, firstPageRequest()));
     }
@@ -353,7 +381,7 @@ class PlaceListRequestOrchestratorTest {
     void 리빌드가_실패하면_기다리지_않고_끊는다() {
         givenShared(42L);
         givenLocal(41L);
-        given(loadCoordinator.awaitCursorVersion(42L))
+        given(loadCoordinator.awaitCursorVersion(any()))
                 .willReturn(CompletableFuture.failedFuture(new IllegalStateException("리빌드 실패")));
 
         assertSyncing(() -> orchestrator().getPlaces(USER_ID, firstPageRequest()));
@@ -369,7 +397,7 @@ class PlaceListRequestOrchestratorTest {
         givenLocal(41L);
         CompletableFuture<Long> myTicket = new CompletableFuture<>();
         CompletableFuture<Long> someoneElsesTicket = new CompletableFuture<>();
-        given(loadCoordinator.awaitCursorVersion(anyLong())).willReturn(myTicket);
+        given(loadCoordinator.awaitCursorVersion(any())).willReturn(myTicket);
 
         assertSyncing(() -> orchestrator().getPlaces(USER_ID, firstPageRequest()));
 
@@ -380,19 +408,29 @@ class PlaceListRequestOrchestratorTest {
     }
 
     /**
-     * <b>재개가 무한히 이어지지 않는다.</b> 설치와 쓰기가 번갈아 이기면 요청이 "기다렸다 다시
-     * 해 본다"를 끝없이 반복할 수 있다 — 예산이 먼저 끊는 것이 보통이지만, 그 앞에 빗장을 둔다.
+     * <b>시계가 먼저 끊었으면 뒤늦게 큐에서 깨어난 재개는 그냥 돌아간다.</b> 이미 503으로 답한
+     * 요청인데도 페이지를 마저 지으면, 그 일이 <b>응답 없이</b> 스냅샷과 DB를 읽는다 — 부하가
+     * 몰릴수록 그런 헛일이 같이 는다.
+     *
+     * <p>재개를 <b>모아 두기만 하는</b> 실행기로 갈아 끼워 그 창을 만든다. 대기표는 곧바로
+     * 완료되지만 재개는 손에 쥐고 있다가, 예산이 끝난 뒤에 돌린다.
      */
     @Test
-    void 재개는_정해진_횟수를_넘지_않는다() {
-        given(metadataRepository.read()).willReturn(new SnapshotMetadata(100L, 42L));
-        given(snapshotBox.current()).willReturn(snapshotAt(41L));
-        given(loadCoordinator.awaitCursorVersion(42L))
-                .willAnswer(invocation -> CompletableFuture.completedFuture(41L));
+    void 예산이_끝난_뒤_깨어난_재개는_페이지를_만들지_않는다() {
+        List<Runnable> deferred = Collections.synchronizedList(new ArrayList<>());
+        resumeExecutor = deferred::add;
+
+        givenShared(42L);
+        givenLocal(41L);
+        given(loadCoordinator.awaitCursorVersion(any()))
+                .willReturn(CompletableFuture.completedFuture(42L));
+        given(placeService.getPlaces(eq(USER_ID), any())).willReturn(resumedResponse);
 
         assertSyncing(() -> orchestrator().getPlaces(USER_ID, firstPageRequest()));
 
-        verify(loadCoordinator, times(2)).awaitCursorVersion(42L);
+        assertThat(deferred).as("재개는 큐에 올라갔다").hasSize(1);
+        deferred.forEach(Runnable::run);
+        verify(placeService, never()).getPlaces(eq(USER_ID), any());
     }
 
     // === 재개가 도는 자리와 사용자 식별자 ===
@@ -413,10 +451,8 @@ class PlaceListRequestOrchestratorTest {
         resumeExecutor = pool;
 
         givenShared(42L);
-        given(snapshotBox.current())
-                .willReturn(snapshotAt(41L))
-                .willReturn(snapshotAt(42L));
-        given(loadCoordinator.awaitCursorVersion(42L))
+        givenLocal(41L);
+        given(loadCoordinator.awaitCursorVersion(any()))
                 .willReturn(CompletableFuture.completedFuture(42L));
         AtomicReference<String> resumeThread = new AtomicReference<>();
         AtomicReference<Long> resumeUserId = new AtomicReference<>();
@@ -442,8 +478,11 @@ class PlaceListRequestOrchestratorTest {
 
     /** 공유 번호 — revision은 이 파일의 판정에 쓰이지 않으므로 회차와 같이 둔다 */
     private void givenShared(long cursorVersion) {
-        given(metadataRepository.read())
-                .willReturn(new SnapshotMetadata(cursorVersion, cursorVersion));
+        given(metadataRepository.read()).willReturn(sharedAt(cursorVersion));
+    }
+
+    private static SnapshotMetadata sharedAt(long cursorVersion) {
+        return new SnapshotMetadata(cursorVersion, cursorVersion);
     }
 
     private void givenLocal(long cursorVersion) {
@@ -451,7 +490,7 @@ class PlaceListRequestOrchestratorTest {
     }
 
     private static Snapshot snapshotAt(long cursorVersion) {
-        return new Snapshot(cursorVersion, cursorVersion, SortedPlaces.of(List.of()));
+        return new Snapshot(sharedAt(cursorVersion), SortedPlaces.of(List.of()));
     }
 
     /**
@@ -460,12 +499,16 @@ class PlaceListRequestOrchestratorTest {
      * 클라이언트가 받는 응답은 같은 503이므로 단언도 하나여야 한다.
      */
     private static void assertSyncing(Supplier<CompletableFuture<PlaceFilterGetResponse>> call) {
-        Throwable thrown = catchThrowable(() -> call.get().get(AWAIT_SECONDS, TimeUnit.SECONDS));
-        Throwable cause = thrown instanceof ExecutionException ? thrown.getCause() : thrown;
+        Throwable cause = unwrap(
+                catchThrowable(() -> call.get().get(AWAIT_SECONDS, TimeUnit.SECONDS)));
 
         assertThat(cause).isInstanceOf(BusinessException.class);
         assertThat(((BusinessException) cause).getErrorCode())
                 .isEqualTo(ErrorCode.PLACE_SNAPSHOT_SYNCING);
+    }
+
+    private static Throwable unwrap(Throwable thrown) {
+        return thrown instanceof ExecutionException ? thrown.getCause() : thrown;
     }
 
     private static PlaceFilterGetRequest firstPageRequest() {

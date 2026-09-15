@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.place.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 
@@ -22,7 +23,9 @@ import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
  * <p>이 파일이 무는 것은 셋이다.
  * <ol>
  *   <li><b>번호와 데이터가 한 벌로 설치되는가</b> — 읽어 온 revision·cursorVersion이 그대로 실린다.</li>
- *   <li><b>낡은 리빌드가 새것을 덮지 않는가</b> — 단조 가드가 revision을 본다.</li>
+ *   <li><b>낡은 리빌드가 새것을 덮지 않는가</b> — 단조 가드가 번호 <b>쌍</b>을 사전식으로 본다
+ *       ({@link SnapshotMetadata#isNewerThan}). revision 하나만 보면 회차가 오른 직후의
+ *       스냅샷({@code revision = 0})이 낡은 것으로 오인된다.</li>
  *   <li><b>표시값 즉시 패치와 리빌드가 서로를 되감지 않는가</b> — 이 클래스에서 가장 미묘한 부분이고,
  *       틀려도 예외가 나지 않아 화면에서만 보인다.</li>
  * </ol>
@@ -45,57 +48,90 @@ class SnapshotInstallerTest {
                 writeLock);
     }
 
+    /**
+     * 리빌드 한 번. 관측 시점을 알리는 훅은 코디네이터의 비행 합류 판정이 쓰는 것이라 여기서는
+     * 받기만 하고 버린다.
+     */
+    private static boolean rebuild(SnapshotInstaller installer) {
+        return installer.rebuildAndInstall(observed -> {
+        });
+    }
+
     @Test
     void 읽어_온_번호_둘과_데이터를_한_벌로_설치한다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState()).willReturn(source(5L, 3L, place(1L, "밀크티집")));
+        given(loader.readSourceState(any())).willReturn(source(5L, 3L, place(1L, "밀크티집")));
 
-        assertThat(installer.rebuildAndInstall()).isTrue();
+        assertThat(rebuild(installer)).isTrue();
 
-        assertThat(installer.installedRevision()).isEqualTo(5L);
-        assertThat(installer.installedCursorVersion()).isEqualTo(3L);
-        assertThat(snapshotBox.current().revision()).isEqualTo(5L);
-        assertThat(snapshotBox.current().cursorVersion()).isEqualTo(3L);
+        assertThat(installer.installed()).isEqualTo(new SnapshotMetadata(5L, 3L));
+        assertThat(snapshotBox.current().metadata()).isEqualTo(new SnapshotMetadata(5L, 3L));
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(1);
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("밀크티집");
     }
 
     /**
-     * <b>단조 가드가 보는 것은 revision이다.</b> 겹쳐 돈 리빌드 중 늦게 도착한 낡은 쪽이 최신을
-     * 되감으면, 그 뒤로 그 인스턴스는 "이미 최신이다"라고 믿으며 옛 데이터를 서빙한다.
+     * <b>단조 가드가 보는 것은 번호 쌍이다 — 회차가 낡았으면 revision이 아무리 커도 낡은 것이다.</b>
+     *
+     * <p>회차가 오를 때 revision이 0으로 리셋되므로 12회차의 57번째 변경은 13회차보다 낡았다.
+     * 여기서 revision만 비교했다면 늦게 도착한 그 옛 리빌드가 최신을 되감고, 그 뒤로 이 인스턴스는
+     * "이미 최신이다"라고 믿으며 옛 데이터를 서빙한다.
      */
     @Test
     void 읽어_온_시점이_이미_설치한_것보다_낡으면_설치하지_않는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState())
-                .willReturn(source(5L, 3L, place(1L, "새이름")))
-                .willReturn(source(4L, 2L, place(1L, "옛이름")));
+        given(loader.readSourceState(any()))
+                .willReturn(source(0L, 13L, place(1L, "새이름")))
+                .willReturn(source(57L, 12L, place(1L, "옛이름")));
 
-        installer.rebuildAndInstall();
-        assertThat(installer.rebuildAndInstall()).isFalse();
+        rebuild(installer);
+        assertThat(rebuild(installer))
+                .as("revision은 더 크지만 12회차라 낡았다").isFalse();
 
-        assertThat(installer.installedRevision()).isEqualTo(5L);
+        assertThat(installer.installed()).isEqualTo(new SnapshotMetadata(0L, 13L));
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("새이름");
+    }
+
+    /**
+     * <b>회차가 오른 직후의 스냅샷은 revision이 0이어도 새것이다.</b>
+     *
+     * <p>집계 회차는 {@code cursor_version}을 올리면서 revision을 0으로 되돌린다. 가드가 revision을
+     * 직접 비교했다면 회차마다 지은 새 배열이 전부 "낡았다"고 조용히 버려진다 — 예외도 로그도 남지
+     * 않고, 그 인스턴스는 영영 옛 순위를 서빙한다.
+     */
+    @Test
+    void 회차가_올라_revision이_0이_된_리빌드도_설치한다() {
+        SnapshotInstaller installer = installer();
+        given(loader.readSourceState(any()))
+                .willReturn(source(57L, 12L, place(1L, "옛순위")))
+                .willReturn(source(0L, 13L, place(1L, "새순위"), place(2L, "집계가_올린_장소")));
+
+        rebuild(installer);
+        assertThat(rebuild(installer)).isTrue();
+
+        assertThat(installer.installed()).isEqualTo(new SnapshotMetadata(0L, 13L));
+        assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(2);
+        assertThat(placeViewHolder.get(1L).name()).isEqualTo("새순위");
     }
 
     /**
      * <b>어드민이 "스크롤 유지"를 고른 회차의 모양이다 — cursorVersion은 그대로, revision만 오른다.</b>
      *
-     * <p>여기서 가드가 cursorVersion을 봤다면 새 배열이 "이미 들고 있는 회차"로 오인돼 그 수정은
+     * <p>여기서 가드가 cursorVersion만 봤다면 새 배열이 "이미 들고 있는 회차"로 오인돼 그 수정은
      * 영영 반영되지 않는다. 진행 중인 커서가 끊기지 않는 근거는 이 가드가 아니라 <b>커서가
      * cursorVersion을 싣는다</b>는 것이다.
      */
     @Test
-    void 커서_회차가_같아도_시점이_새로우면_설치한다() {
+    void 커서_회차가_같아도_revision이_오르면_설치한다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState())
+        given(loader.readSourceState(any()))
                 .willReturn(source(5L, 3L, place(1L, "옛이름")))
                 .willReturn(source(6L, 3L, place(1L, "새이름")));
 
-        installer.rebuildAndInstall();
-        assertThat(installer.rebuildAndInstall()).isTrue();
+        rebuild(installer);
+        assertThat(rebuild(installer)).isTrue();
 
-        assertThat(snapshotBox.current().cursorVersion()).isEqualTo(3L);
+        assertThat(snapshotBox.current().metadata().cursorVersion()).isEqualTo(3L);
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("새이름");
     }
 
@@ -103,56 +139,60 @@ class SnapshotInstallerTest {
     @Test
     void 읽기가_실패하면_들고_있던_회차가_그대로_남는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState()).willReturn(source(5L, 3L, place(1L, "밀크티집")));
-        installer.rebuildAndInstall();
+        given(loader.readSourceState(any())).willReturn(source(5L, 3L, place(1L, "밀크티집")));
+        rebuild(installer);
 
-        willThrow(new IllegalStateException("DB가 흔들린다")).given(loader).readSourceState();
+        willThrow(new IllegalStateException("DB가 흔들린다"))
+                .given(loader).readSourceState(any());
 
-        assertThatThrownBy(installer::rebuildAndInstall).isInstanceOf(IllegalStateException.class);
-        assertThat(installer.installedRevision()).isEqualTo(5L);
+        assertThatThrownBy(() -> rebuild(installer))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(installer.installed()).isEqualTo(new SnapshotMetadata(5L, 3L));
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(1);
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("밀크티집");
     }
 
     /**
-     * <b>표시값 역행 — 이 파일의 핵심.</b> 리빌드가 revision 5의 원본을 읽고 있는 사이 어드민
-     * 수정이 revision 6으로 커밋돼 이름을 메모리에 얹었다. 그 뒤 도착한 리빌드가 자기 맵을 통째로
+     * <b>표시값 역행 — 이 파일의 핵심.</b> 리빌드가 {@code (5, 2)}의 원본을 읽고 있는 사이 어드민
+     * 수정이 {@code (6, 2)}로 커밋돼 이름을 메모리에 얹었다. 그 뒤 도착한 리빌드가 자기 맵을 통째로
      * 대입하면 방금 얹은 이름이 옛 이름으로 되돌아간다.
      */
     @Test
     void 리빌드보다_새로운_표시값_패치는_설치_뒤에도_살아남는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState())
+        given(loader.readSourceState(any()))
                 .willReturn(source(4L, 2L, place(1L, "처음이름")))
                 .willReturn(source(5L, 2L, place(1L, "옛이름")));
-        installer.rebuildAndInstall();
+        rebuild(installer);
 
-        // 어드민 수정이 revision 6으로 커밋되고 그 표시값을 메모리에 얹었다
-        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
-        // revision 5를 읽고 있던 리빌드가 이제야 도착한다
-        installer.rebuildAndInstall();
+        // 어드민 수정이 (6, 2)로 커밋되고 그 표시값을 메모리에 얹었다
+        installer.patchPlaceViews(
+                new SnapshotMetadata(6L, 2L), List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
+        // (5, 2)를 읽고 있던 리빌드가 이제야 도착한다
+        rebuild(installer);
 
-        assertThat(installer.installedRevision()).isEqualTo(5L);
+        assertThat(installer.installed()).isEqualTo(new SnapshotMetadata(5L, 2L));
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("방금고친이름");
     }
 
     /**
-     * <b>패치는 {@code installedRevision}을 올리지 않는다.</b> 올렸다면 그 번호까지의 리빌드가
-     * 전부 "이미 설치했다"로 막히는데, 그 사이 번호에는 표시값이 아닌 변경 — 집계 회차의 정렬 키 —
-     * 이 섞여 있다. 아래에서 revision 6의 리빌드가 실제로 설치돼야 그 변경이 살아난다.
+     * <b>패치는 설치 시점을 올리지 않는다.</b> 올렸다면 그 시점까지의 리빌드가 전부 "이미
+     * 설치했다"로 막히는데, 그 사이에는 표시값이 아닌 변경 — 집계 회차의 정렬 키 — 이 섞여 있다.
+     * 아래에서 집계 회차 {@code (0, 3)}의 리빌드가 실제로 설치돼야 그 변경이 살아난다.
      */
     @Test
     void 패치가_리빌드를_건너뛰게_만들지_않는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState())
+        given(loader.readSourceState(any()))
                 .willReturn(source(4L, 2L, place(1L, "처음이름")))
-                .willReturn(source(6L, 3L, place(1L, "처음이름"), place(2L, "집계가_넣은_장소")));
-        installer.rebuildAndInstall();
+                .willReturn(source(0L, 3L, place(1L, "처음이름"), place(2L, "집계가_넣은_장소")));
+        rebuild(installer);
 
-        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
-        assertThat(installer.rebuildAndInstall()).isTrue();
+        installer.patchPlaceViews(
+                new SnapshotMetadata(5L, 2L), List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
+        assertThat(rebuild(installer)).isTrue();
 
-        assertThat(installer.installedRevision()).isEqualTo(6L);
+        assertThat(installer.installed()).isEqualTo(new SnapshotMetadata(0L, 3L));
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(2);
     }
 
@@ -163,17 +203,18 @@ class SnapshotInstallerTest {
     @Test
     void 패치를_이미_싣고_온_리빌드는_그_패치를_버린다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState())
+        given(loader.readSourceState(any()))
                 .willReturn(source(4L, 2L, place(1L, "처음이름")))
                 .willReturn(source(6L, 2L, place(1L, "원본이_가진_이름")))
                 .willReturn(source(7L, 2L, place(1L, "그다음이름")));
-        installer.rebuildAndInstall();
+        rebuild(installer);
 
-        installer.patchPlaceViews(5L, List.of(1L), Map.of(1L, view(1L, "잠깐얹은이름")));
-        installer.rebuildAndInstall();      // revision 6 — 패치(5)를 싣고 왔다
+        installer.patchPlaceViews(
+                new SnapshotMetadata(5L, 2L), List.of(1L), Map.of(1L, view(1L, "잠깐얹은이름")));
+        rebuild(installer);                 // (6, 2) — 패치 (5, 2)를 싣고 왔다
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("원본이_가진_이름");
 
-        installer.rebuildAndInstall();      // revision 7 — 버린 패치가 되살아나면 안 된다
+        rebuild(installer);                 // (7, 2) — 버린 패치가 되살아나면 안 된다
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("그다음이름");
     }
 
@@ -184,10 +225,12 @@ class SnapshotInstallerTest {
     @Test
     void 이미_설치한_시점보다_낡은_패치는_얹지_않는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState()).willReturn(source(6L, 2L, place(1L, "리빌드가_실은_이름")));
-        installer.rebuildAndInstall();
+        given(loader.readSourceState(any()))
+                .willReturn(source(6L, 2L, place(1L, "리빌드가_실은_이름")));
+        rebuild(installer);
 
-        installer.patchPlaceViews(5L, List.of(1L), Map.of(1L, view(1L, "낡은패치")));
+        installer.patchPlaceViews(
+                new SnapshotMetadata(5L, 2L), List.of(1L), Map.of(1L, view(1L, "낡은패치")));
 
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("리빌드가_실은_이름");
     }
@@ -199,10 +242,10 @@ class SnapshotInstallerTest {
     @Test
     void 원본에서_사라진_장소는_표시값을_지운다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState()).willReturn(source(4L, 2L, place(1L, "곧지울집")));
-        installer.rebuildAndInstall();
+        given(loader.readSourceState(any())).willReturn(source(4L, 2L, place(1L, "곧지울집")));
+        rebuild(installer);
 
-        installer.patchPlaceViews(5L, List.of(1L), Map.of());
+        installer.patchPlaceViews(new SnapshotMetadata(5L, 2L), List.of(1L), Map.of());
 
         assertThat(placeViewHolder.get(1L)).isNull();
     }
@@ -230,13 +273,14 @@ class SnapshotInstallerTest {
         };
         SnapshotInstaller installer = new SnapshotInstaller(
                 loader, snapshotBox, watching, tagViewHolder, writeLock);
-        given(loader.readSourceState())
+        given(loader.readSourceState(any()))
                 .willReturn(source(4L, 2L, place(1L, "처음이름")))
                 .willReturn(source(5L, 2L, place(1L, "옛이름")));
-        installer.rebuildAndInstall();
+        rebuild(installer);
 
-        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
-        installer.rebuildAndInstall();
+        installer.patchPlaceViews(
+                new SnapshotMetadata(6L, 2L), List.of(1L), Map.of(1L, view(1L, "방금고친이름")));
+        rebuild(installer);
 
         assertThat(namesAtEachSwap)
                 .as("홀더에 걸린 맵에는 옛 이름이 한 번도 실리지 않는다")
@@ -251,11 +295,14 @@ class SnapshotInstallerTest {
     @Test
     void 더_새_패치가_이미_있으면_옛_패치는_얹지_않는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState()).willReturn(source(4L, 2L, place(1L, "처음이름")));
-        installer.rebuildAndInstall();
+        given(loader.readSourceState(any())).willReturn(source(4L, 2L, place(1L, "처음이름")));
+        rebuild(installer);
 
-        installer.patchPlaceViews(7L, List.of(1L), Map.of(1L, view(1L, "새패치")));
-        installer.patchPlaceViews(6L, List.of(1L), Map.of(1L, view(1L, "늦게도착한옛패치")));
+        installer.patchPlaceViews(
+                new SnapshotMetadata(7L, 2L), List.of(1L), Map.of(1L, view(1L, "새패치")));
+        installer.patchPlaceViews(
+                new SnapshotMetadata(6L, 2L), List.of(1L),
+                Map.of(1L, view(1L, "늦게도착한옛패치")));
 
         assertThat(placeViewHolder.get(1L).name()).isEqualTo("새패치");
     }
@@ -264,11 +311,13 @@ class SnapshotInstallerTest {
     @Test
     void 더_새_태그_패치가_이미_있으면_옛_태그_패치는_얹지_않는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState()).willReturn(source(4L, 2L, place(1L, "밀크티집")));
-        installer.rebuildAndInstall();
+        given(loader.readSourceState(any())).willReturn(source(4L, 2L, place(1L, "밀크티집")));
+        rebuild(installer);
 
-        installer.patchTagViews(7L, Map.of(9L, new TagView(9L, "새태그이름", true)));
-        installer.patchTagViews(6L, Map.of(9L, new TagView(9L, "늦게도착한옛이름", true)));
+        installer.patchTagViews(
+                new SnapshotMetadata(7L, 2L), Map.of(9L, new TagView(9L, "새태그이름", true)));
+        installer.patchTagViews(
+                new SnapshotMetadata(6L, 2L), Map.of(9L, new TagView(9L, "늦게도착한옛이름", true)));
 
         assertThat(tagViewHolder.get(9L).name()).isEqualTo("새태그이름");
     }
@@ -280,28 +329,26 @@ class SnapshotInstallerTest {
     @Test
     void 설치한_시점은_언제나_상자의_스냅샷에서_나온다() {
         SnapshotInstaller installer = installer();
-        assertThat(installer.installedRevision()).isEqualTo(SnapshotMetadata.NOT_INSTALLED);
-        assertThat(installer.installedCursorVersion()).isEqualTo(SnapshotMetadata.NOT_INSTALLED);
+        assertThat(installer.installed()).isEqualTo(SnapshotMetadata.NOT_INSTALLED);
 
-        given(loader.readSourceState()).willReturn(source(5L, 3L, place(1L, "밀크티집")));
-        installer.rebuildAndInstall();
+        given(loader.readSourceState(any())).willReturn(source(5L, 3L, place(1L, "밀크티집")));
+        rebuild(installer);
 
-        assertThat(installer.installedRevision()).isEqualTo(snapshotBox.current().revision());
-        assertThat(installer.installedCursorVersion())
-                .isEqualTo(snapshotBox.current().cursorVersion());
+        assertThat(installer.installed()).isSameAs(snapshotBox.current().metadata());
     }
 
     /** 태그 맵도 같은 규율을 따른다 — 리빌드보다 새 패치는 설치 뒤에 다시 얹힌다. */
     @Test
     void 태그_패치도_리빌드에_되감기지_않는다() {
         SnapshotInstaller installer = installer();
-        given(loader.readSourceState())
+        given(loader.readSourceState(any()))
                 .willReturn(source(4L, 2L, place(1L, "밀크티집")))
                 .willReturn(source(5L, 2L, place(1L, "밀크티집")));
-        installer.rebuildAndInstall();
+        rebuild(installer);
 
-        installer.patchTagViews(6L, Map.of(9L, new TagView(9L, "방금고친태그", true)));
-        installer.rebuildAndInstall();
+        installer.patchTagViews(
+                new SnapshotMetadata(6L, 2L), Map.of(9L, new TagView(9L, "방금고친태그", true)));
+        rebuild(installer);
 
         assertThat(tagViewHolder.get(9L).name()).isEqualTo("방금고친태그");
     }

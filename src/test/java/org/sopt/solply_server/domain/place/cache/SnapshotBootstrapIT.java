@@ -93,8 +93,7 @@ class SnapshotBootstrapIT extends MySqlContainerSupport {
      */
     @Test
     void 기동이_끝난_인스턴스는_이미_스냅샷을_들고_있다() {
-        assertThat(installer.installedRevision()).isNotNegative();
-        assertThat(installer.installedCursorVersion()).isNotNegative();
+        assertThat(installer.installed()).isNotEqualTo(SnapshotMetadata.NOT_INSTALLED);
     }
 
     /**
@@ -106,12 +105,10 @@ class SnapshotBootstrapIT extends MySqlContainerSupport {
         rebuilder.rebuildAndInstall();
 
         Node other = newNode();
-        other.installer().rebuildAndInstall();
+        other.installer().rebuildAndInstall(observed -> {
+        });
 
-        assertThat(other.installer().installedRevision())
-                .isEqualTo(installer.installedRevision());
-        assertThat(other.installer().installedCursorVersion())
-                .isEqualTo(installer.installedCursorVersion());
+        assertThat(other.installer().installed()).isEqualTo(installer.installed());
         assertThat(placeIdsOf(other.box())).isEqualTo(placeIdsOf(box()));
     }
 
@@ -122,15 +119,39 @@ class SnapshotBootstrapIT extends MySqlContainerSupport {
     @Test
     void 나중에_뜬_인스턴스는_그_사이의_변경까지_담는다() {
         rebuilder.rebuildAndInstall();
-        long before = installer.installedCursorVersion();
+        SnapshotMetadata before = installer.installed();
 
         rebuilder.bump(SnapshotCursorPolicy.ADVANCE);   // 그 사이 집계 회차가 돌았다
         Node late = newNode();
-        late.installer().rebuildAndInstall();
+        late.installer().rebuildAndInstall(observed -> {
+        });
 
-        assertThat(late.installer().installedCursorVersion()).isGreaterThan(before);
-        assertThat(late.installer().installedCursorVersion())
-                .isEqualTo(metadataRepository.read().cursorVersion());
+        assertThat(late.installer().installed().isNewerThan(before)).isTrue();
+        assertThat(late.installer().installed()).isEqualTo(metadataRepository.read());
+    }
+
+    /**
+     * <b>집계 회차가 리셋한 {@code revision = 0}을 설치 가드가 버리지 않는다.</b> 회차가 오르는
+     * UPDATE는 같은 문장에서 revision을 0으로 되돌리므로, 번호를 {@code revision} 하나로 비교하던
+     * 코드가 한 곳이라도 남아 있으면 <b>집계 회차마다</b> 새 스냅샷이 "낡았다"고 조용히 버려지고
+     * 인스턴스가 옛 정렬을 계속 서빙한다. 그 회귀는 로그 한 줄로만 드러나므로 값으로 못 박는다.
+     */
+    @Test
+    void 집계_회차의_revision_0_스냅샷도_설치된다() {
+        // 표시값만 바뀐 회차를 두 번 태워 revision을 0이 아닌 값으로 올려 둔다
+        rebuilder.rebuildAndInstall(SnapshotCursorPolicy.PRESERVE);
+        rebuilder.rebuildAndInstall(SnapshotCursorPolicy.PRESERVE);
+        SnapshotMetadata before = installer.installed();
+        assertThat(before.revision()).as("리셋을 관찰하려면 앞 회차의 revision이 0이 아니어야 한다")
+                .isPositive();
+
+        rebuilder.bump(SnapshotCursorPolicy.ADVANCE);   // 집계 회차
+        boolean installed = installer.rebuildAndInstall(observed -> {
+        });
+
+        assertThat(installed).as("(n+1, 0)은 (n, r)보다 새것이다").isTrue();
+        assertThat(installer.installed())
+                .isEqualTo(new SnapshotMetadata(0L, before.cursorVersion() + 1));
     }
 
     /**
@@ -143,8 +164,7 @@ class SnapshotBootstrapIT extends MySqlContainerSupport {
         rebuilder.rebuildAndInstall();
         SnapshotMetadata head = metadataRepository.read();
 
-        assertThat(installer.installedRevision()).isEqualTo(head.revision());
-        assertThat(installer.installedCursorVersion()).isEqualTo(head.cursorVersion());
+        assertThat(installer.installed()).isEqualTo(head);
         assertThat(placeIdsOf(box())).isEqualTo(placeIdsInSource());
     }
 

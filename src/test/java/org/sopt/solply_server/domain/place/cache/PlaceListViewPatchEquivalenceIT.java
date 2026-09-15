@@ -11,6 +11,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
@@ -207,7 +208,8 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
                 .as("표시값이 남으면 지워진 장소가 계속 목록에 나온다").isNull();
         assertThat(previews()).noneMatch(preview -> preview.placeId() == doomed);
 
-        snapshotInstaller.rebuildAndInstall();
+        snapshotInstaller.rebuildAndInstall(observed -> {
+        });
         assertThat(entryIds()).doesNotContain(doomed);
     }
 
@@ -220,14 +222,16 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
      */
     @Test
     void 표시값만_바뀐_수정은_커서_회차를_올리지_않는다() {
-        long cursorVersionBefore = currentCursorVersion();
-        long revisionBefore = snapshotInstaller.installedRevision();
+        SnapshotMetadata before = snapshotInstaller.installed();
 
         applyDisplayEdits();
-        snapshotInstaller.rebuildAndInstall();
+        snapshotInstaller.rebuildAndInstall(observed -> {
+        });
+        SnapshotMetadata after = snapshotInstaller.installed();
 
-        assertThat(currentCursorVersion()).isEqualTo(cursorVersionBefore);
-        assertThat(snapshotInstaller.installedRevision()).isGreaterThan(revisionBefore);
+        assertThat(after.cursorVersion()).isEqualTo(before.cursorVersion());
+        assertThat(after.isNewerThan(before))
+                .as("회차는 그대로지만 revision이 올라 새 배열이 설치된다").isTrue();
     }
 
     // === helpers ===
@@ -299,10 +303,6 @@ class PlaceListViewPatchEquivalenceIT extends MySqlContainerSupport {
         return previews.stream()
                 .filter(preview -> preview.placeId() == placeId)
                 .findFirst().orElseThrow();
-    }
-
-    private long currentCursorVersion() {
-        return snapshotBox.current().cursorVersion();
     }
 
     /** 지금 설치된 스냅샷의 정렬 배열이 담고 있는 장소 id 전량 */

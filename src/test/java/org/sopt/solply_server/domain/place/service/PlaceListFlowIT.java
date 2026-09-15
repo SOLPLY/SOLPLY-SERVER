@@ -1040,7 +1040,8 @@ class PlaceListFlowIT extends MySqlContainerSupport {
      * 어드민 시나리오에서 저것을 쓰면 어드민 경로의 번호 올리기를 통째로 떼도 그린이 된다.
      */
     private void rebuildIfMarked() {
-        snapshotInstaller.rebuildAndInstall();
+        snapshotInstaller.rebuildAndInstall(observed -> {
+        });
     }
 
     /**

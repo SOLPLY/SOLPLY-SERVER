@@ -16,6 +16,7 @@ import org.sopt.solply_server.domain.place.cache.SnapshotBox;
 import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
 import org.sopt.solply_server.domain.place.cache.SnapshotRebuilder;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
@@ -156,14 +157,14 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
      */
     @Test
     void 어드민_수정은_요청_스레드에서_스냅샷을_짓지_않는다() {
-        long installedBefore = snapshotInstaller.installedRevision();
+        SnapshotMetadata installedBefore = snapshotInstaller.installed();
 
         adminPlaceService.updatePlace(placeId, request("수정후이름", otherTownId, LATITUDE));
 
-        assertThat(snapshotInstaller.installedRevision())
+        assertThat(snapshotInstaller.installed())
                 .as("설치된 시점은 그대로다 — 지은 사람이 없다").isEqualTo(installedBefore);
-        assertThat(snapshotMetadataRepository.read().revision())
-                .as("대신 번호는 올라 있다 — 폴이 그것을 본다").isGreaterThan(installedBefore);
+        assertThat(snapshotMetadataRepository.read().isNewerThan(installedBefore))
+                .as("대신 번호는 올라 있다 — 폴이 그것을 본다").isTrue();
     }
 
     /**
@@ -276,11 +277,12 @@ class AdminPlaceUpdateSnapshotIT extends MySqlContainerSupport {
      * 걸려 아무 일도 일어나지 않는다 — 그래서 이 호출을 끼운 단언에도 이빨이 남는다.
      */
     private void rebuild() {
-        snapshotInstaller.rebuildAndInstall();
+        snapshotInstaller.rebuildAndInstall(observed -> {
+        });
     }
 
     private long cursorVersion() {
-        return snapshotBox.current().cursorVersion();
+        return snapshotBox.current().metadata().cursorVersion();
     }
 
     /** 픽스처와 모든 값이 같은 수정 요청 — 인자로 받은 칸 하나만 다르다 */

@@ -108,13 +108,16 @@ class PlaceStatsRoundAtomicityIT extends MySqlContainerSupport {
         assertThat(bookmarkCount()).isEqualTo(before + 5);
         assertThat(remainingEvents()).isZero();
         SnapshotMetadata metadataAfter = metadataRepository.read();
-        assertThat(metadataAfter.revision())
-                .as("집계가 값을 고쳤으면 리비전이 오른다")
-                .isGreaterThan(metadataBefore.revision());
+        assertThat(metadataAfter.isNewerThan(metadataBefore))
+                .as("집계가 값을 고쳤으면 번호 쌍이 새것이다")
+                .isTrue();
         assertThat(metadataAfter.cursorVersion())
                 .as("북마크 수는 인기순의 정렬 키라 커서 회차까지 오른다"
                         + " — 15분마다 스크롤이 만료될 수 있는 이유가 이것이다")
                 .isGreaterThan(metadataBefore.cursorVersion());
+        assertThat(metadataAfter.revision())
+                .as("회차가 오르면 revision은 0에서 다시 센다")
+                .isZero();
     }
 
     /**

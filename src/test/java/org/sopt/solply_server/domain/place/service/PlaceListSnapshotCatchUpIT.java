@@ -1,7 +1,9 @@
 package org.sopt.solply_server.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -75,7 +77,7 @@ import org.springframework.transaction.PlatformTransactionManager;
  * 리빌드가 늦은 인스턴스가 처한 상태 그대로다.
  *
  * <p><b>원본 읽기에 문을 달아 그 창을 붙든다.</b> 아무 장치 없이는 리빌드가 워낙 빨라 "뒤처진
- * 상태"가 유지되지 않는다. 그래서 {@link SnapshotLoader#readSourceState()}에 문을 달아 테스트가
+ * 상태"가 유지되지 않는다. 그래서 {@link SnapshotLoader#readSourceState}에 문을 달아 테스트가
  * 열어 줄 때까지 어떤 경로도 리빌드를 끝내지 못하게 한다 — 요청은 그 문 앞에서 <b>실제로
  * 기다린다.</b>
  *
@@ -165,8 +167,9 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         reset(loader, metadataRepository);    // 문도 예외도 걷어낸다
         Awaitility.await().atMost(Duration.ofSeconds(AWAIT_SECONDS))
                 .until(() -> {
-                    installer.rebuildAndInstall();
-                    return installer.installedRevision() == currentRevisionOnOwnConnection();
+                    installer.rebuildAndInstall(observed -> {
+                    });
+                    return installer.installed().revision() == currentRevisionOnOwnConnection();
                 });
     }
 
@@ -188,7 +191,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         assertThat(bookmarkedFlagOf(data, bookmarkedPlaceId)).isTrue();
         assertThat(bookmarkedFlagOf(data, plainPlaceId)).isFalse();
         verify(metadataRepository, times(1)).read();
-        verify(loader, never()).readSourceState();
+        verify(loader, never()).readSourceState(any());
     }
 
     /** 북마크 검색은 회차와 무관하다 — 번호를 보러 가는 쿼리 자체가 나가지 않는다 */
@@ -199,7 +202,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
 
         assertThat(idsOf(data)).containsExactly(bookmarkedPlaceId);
         verify(metadataRepository, never()).read();
-        verify(loader, never()).readSourceState();
+        verify(loader, never()).readSourceState(any());
     }
 
     /**
@@ -217,7 +220,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
 
         assertThat(idsOf(page2)).isNotEmpty().doesNotContainAnyElementsOf(idsOf(page1));
         verify(metadataRepository, times(1)).read();
-        verify(loader, never()).readSourceState();
+        verify(loader, never()).readSourceState(any());
     }
 
     // === 뒤처진 인스턴스 ===
@@ -229,20 +232,26 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
      *
      * <p>문이 닫혀 있어 폴도 리빌드를 끝내지 못한다 — 응답에 새 장소가 실렸다면 그것은 <b>이 요청이
      * 기다려서 지은 것</b>이다.
+     *
+     * <p><b>기다렸는데도 번호 조회는 한 번이다.</b> 대기표가 깨어난 조건 자체가 "목표가 설치됐다"라
+     * 다시 읽어 확인할 것이 없다. 여기가 둘이 되면 몰린 요청 수만큼 단일 행 조회가 늘고, 그것도
+     * 인스턴스가 뒤처진 — 즉 이미 바쁜 — 순간에 는다.
      */
     @Test
     void 뒤처진_첫_페이지는_리빌드를_기다린_뒤에_답한다() throws Exception {
         long newPlaceId = createPlace(townId, "회차대기신규", PLACE_CREATED_AT.plusMinutes(2));
         rebuilder.bump(SnapshotCursorPolicy.ADVANCE);
         long sharedCursorVersion = rebuilder.current().cursorVersion();
-        assertThat(installer.installedCursorVersion()).isLessThan(sharedCursorVersion);
+        assertThat(installer.installed().cursorVersion()).isLessThan(sharedCursorVersion);
+        clearInvocations(metadataRepository);
 
         MvcResult started = startAsync(firstPageRequest());
         openDownloads();
         JsonNode data = successData(dispatch(started));
 
         assertThat(idsOf(data)).contains(newPlaceId);
-        assertThat(installer.installedCursorVersion()).isEqualTo(sharedCursorVersion);
+        assertThat(installer.installed().cursorVersion()).isEqualTo(sharedCursorVersion);
+        verify(metadataRepository, times(1)).read();
     }
 
     /**
@@ -254,7 +263,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
      */
     @Test
     void 표시값만_바뀐_변경은_첫_페이지를_기다리게_하지_않는다() throws Exception {
-        long cursorVersionBefore = snapshotBox.current().cursorVersion();
+        long cursorVersionBefore = snapshotBox.current().metadata().cursorVersion();
         String renamed = "회차대기개명" + nextSeq();
         jdbcTemplate.update("UPDATE places SET name = ? WHERE id = ?", renamed, plainPlaceId);
         jdbcTemplate.update("UPDATE place_stats SET name = ? WHERE place_id = ?",
@@ -265,10 +274,10 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         JsonNode data = successData(call(firstPageRequest()));
 
         assertThat(idsOf(data)).contains(plainPlaceId);
-        assertThat(snapshotBox.current().cursorVersion())
+        assertThat(snapshotBox.current().metadata().cursorVersion())
                 .as("표시값만 바뀐 변경은 커서 회차를 올리지 않는다")
                 .isEqualTo(cursorVersionBefore);
-        verify(loader, never()).readSourceState();
+        verify(loader, never()).readSourceState(any());
     }
 
     /**
@@ -293,7 +302,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         JsonNode page2 = successData(dispatch(started));
 
         assertThat(idsOf(page2)).isNotEmpty().doesNotContainAnyElementsOf(firstIds);
-        assertThat(installer.installedCursorVersion()).isEqualTo(sharedCursorVersion);
+        assertThat(installer.installed().cursorVersion()).isEqualTo(sharedCursorVersion);
     }
 
     /**
@@ -317,7 +326,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
     void 망가진_커서_토큰은_400이고_리빌드를_유발하지_않는다() throws Exception {
         assertError(call(pageRequest(10, "이건커서가아니다")), 400, "PLACE-003");
 
-        verify(loader, never()).readSourceState();
+        verify(loader, never()).readSourceState(any());
     }
 
     /**
@@ -338,7 +347,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
                 .getResponse().getStatus();
 
         assertThat(status).isBetween(400, 499);
-        verify(loader, never()).readSourceState();
+        verify(loader, never()).readSourceState(any());
     }
 
     // === 따라잡지 못했을 때 ===
@@ -364,7 +373,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         assertThat(elapsedMs)
                 .as("실패는 대기표를 깨우지 않는다 — 끊는 것은 요청 쪽 예산이다")
                 .isGreaterThanOrEqualTo(REQUEST_WAIT_TIMEOUT_MS);
-        verify(loader, org.mockito.Mockito.atLeastOnce()).readSourceState();
+        verify(loader, atLeastOnce()).readSourceState(any());
     }
 
     /**
@@ -426,8 +435,8 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
             assertThat(placeIdsOf(response.get(AWAIT_SECONDS, TimeUnit.SECONDS)))
                     .contains(newPlaceId);
         }
-        assertThat(installer.installedCursorVersion()).isEqualTo(sharedCursorVersion);
-        verify(loader, times(1)).readSourceState();
+        assertThat(installer.installed().cursorVersion()).isEqualTo(sharedCursorVersion);
+        verify(loader, times(1)).readSourceState(any());
     }
 
     // === 문 ===
@@ -441,7 +450,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
                 throw new IllegalStateException("원본 읽기 문이 열리지 않았다 - 테스트가 멈춰 있다");
             }
             return invocation.callRealMethod();
-        }).given(loader).readSourceState();
+        }).given(loader).readSourceState(any());
     }
 
     private void openDownloads() {
@@ -459,8 +468,9 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         openDownloads();
         Awaitility.await().atMost(Duration.ofSeconds(AWAIT_SECONDS))
                 .until(() -> {
-                    installer.rebuildAndInstall();
-                    return installer.installedRevision() == currentRevisionOnOwnConnection();
+                    installer.rebuildAndInstall(observed -> {
+                    });
+                    return installer.installed().revision() == currentRevisionOnOwnConnection();
                 });
     }
 
@@ -469,7 +479,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         openDownloads();
         willAnswer(invocation -> {
             throw new IllegalStateException("원본 읽기 실패");
-        }).given(loader).readSourceState();
+        }).given(loader).readSourceState(any());
     }
 
     // === MVC 왕복 ===

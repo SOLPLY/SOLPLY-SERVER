@@ -9,7 +9,7 @@ import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.verify;
 
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -41,9 +41,11 @@ class SnapshotSchedulerTest {
 
     @Test
     void 한_번에_지으면_그대로_끝난다() {
-        AtomicLong installed = new AtomicLong(SnapshotMetadata.NOT_INSTALLED);
-        given(installer.installedRevision()).willAnswer(i -> installed.get());
-        willAnswer(invocation -> installed.compareAndSet(SnapshotMetadata.NOT_INSTALLED, 3L))
+        AtomicReference<SnapshotMetadata> installed =
+                new AtomicReference<>(SnapshotMetadata.NOT_INSTALLED);
+        given(installer.installed()).willAnswer(i -> installed.get());
+        willAnswer(invocation -> installed.compareAndSet(
+                SnapshotMetadata.NOT_INSTALLED, new SnapshotMetadata(3L, 3L)))
                 .given(coordinator).rebuildOnCallerThread();
 
         assertThatCode(() -> scheduler().buildOnStartup()).doesNotThrowAnyException();
@@ -59,11 +61,12 @@ class SnapshotSchedulerTest {
     void 처음_실패해도_시간_안에_지으면_뜬다() {
         properties.setPollIntervalMs(1L);
         AtomicInteger attempts = new AtomicInteger();
-        AtomicLong installed = new AtomicLong(SnapshotMetadata.NOT_INSTALLED);
-        given(installer.installedRevision()).willAnswer(i -> installed.get());
+        AtomicReference<SnapshotMetadata> installed =
+                new AtomicReference<>(SnapshotMetadata.NOT_INSTALLED);
+        given(installer.installed()).willAnswer(i -> installed.get());
         willAnswer(invocation -> {
             if (attempts.incrementAndGet() >= 3) {
-                installed.set(9L);
+                installed.set(new SnapshotMetadata(9L, 9L));
             }
             return true;
         }).given(coordinator).rebuildOnCallerThread();
@@ -81,7 +84,7 @@ class SnapshotSchedulerTest {
     void 시간_안에_못_지으면_기동을_실패시킨다() {
         properties.setPollIntervalMs(1L);
         properties.setBootstrapTimeoutMs(1L);
-        given(installer.installedRevision()).willReturn(SnapshotMetadata.NOT_INSTALLED);
+        given(installer.installed()).willReturn(SnapshotMetadata.NOT_INSTALLED);
 
         assertThatThrownBy(() -> scheduler().buildOnStartup())
                 .isInstanceOf(IllegalStateException.class)

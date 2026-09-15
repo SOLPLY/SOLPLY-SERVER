@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 
 /**
  * 홀더의 계약 — <b>최신 한 장만 든다</b>, <b>최신은 도착 순서가 아니라 버전이 정한다</b>, 그리고
@@ -46,10 +47,12 @@ class SnapshotBoxTest {
      * 리빌드가 하는 일 — 정렬 배열을 짓고, 읽어 온 번호 둘을 붙여 홀더에 넘긴다.
      *
      * <p>커서 회차는 revision을 그대로 쓴다. 둘이 갈리는 경우는
-     * {@link #커서_회차가_같아도_시점이_새로우면_채택한다}가 따로 세운다.
+     * {@link #커서_회차가_같아도_revision이_오르면_채택한다}와
+     * {@link #회차가_오른_revision_0_스냅샷은_직전_회차를_밀어낸다}가 따로 세운다.
      */
     private static long adopt(SnapshotBox snapshotBox, long revision, int placeCount) {
-        snapshotBox.adopt(new Snapshot(revision, revision, sortedPlacesOfSize(placeCount)));
+        snapshotBox.adopt(new Snapshot(
+                new SnapshotMetadata(revision, revision), sortedPlacesOfSize(placeCount)));
         return revision;
     }
 
@@ -65,7 +68,7 @@ class SnapshotBoxTest {
         adopt(snapshotBox, 100L, 1);
         long second = adopt(snapshotBox, 200L, 2);
 
-        assertThat(snapshotBox.current().revision()).isEqualTo(second);
+        assertThat(snapshotBox.current().metadata().revision()).isEqualTo(second);
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(2);
     }
 
@@ -87,7 +90,7 @@ class SnapshotBoxTest {
         adopt(snapshotBox, 100L, 1);
 
         assertThat(snapshotBox.current()).as("참조까지 그대로다").isSameAs(held);
-        assertThat(snapshotBox.current().revision()).isEqualTo(fresh);
+        assertThat(snapshotBox.current().metadata().revision()).isEqualTo(fresh);
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(2);
     }
 
@@ -128,28 +131,46 @@ class SnapshotBoxTest {
 
         adopt(snapshotBox, 200L, 5);
 
-        assertThat(held.revision()).isEqualTo(100L);
+        assertThat(held.metadata().revision()).isEqualTo(100L);
         assertThat(held.sortedPlaces().placeCount()).as("잡아 둔 회차의 내용").isEqualTo(1);
         assertThat(snapshotBox.current()).as("홀더는 이미 새 회차다").isNotSameAs(held);
     }
 
     /**
-     * <b>가드가 보는 것은 revision이지 cursorVersion이 아니다.</b>
+     * <b>가드가 보는 것은 번호 하나가 아니라 쌍이다 — 회차가 같을 때는 revision이 가른다.</b>
      *
      * <p>어드민이 "스크롤 유지"를 고른 수정은 cursorVersion을 그대로 두고 revision만 올린다. 여기서
-     * cursorVersion으로 비교했다면 새로 지은 배열이 "이미 들고 있는 회차"로 오인돼 그 수정이 영영
+     * cursorVersion만으로 비교했다면 새로 지은 배열이 "이미 들고 있는 회차"로 오인돼 그 수정이 영영
      * 반영되지 않는다 — 그 사고는 예외도 로그도 남기지 않고 화면에서만 보인다.
      */
     @Test
-    void 커서_회차가_같아도_시점이_새로우면_채택한다() {
+    void 커서_회차가_같아도_revision이_오르면_채택한다() {
         SnapshotBox snapshotBox = new SnapshotBox();
-        snapshotBox.adopt(new Snapshot(100L, 7L, sortedPlacesOfSize(1)));
+        snapshotBox.adopt(new Snapshot(new SnapshotMetadata(100L, 7L), sortedPlacesOfSize(1)));
 
-        snapshotBox.adopt(new Snapshot(101L, 7L, sortedPlacesOfSize(3)));
+        snapshotBox.adopt(new Snapshot(new SnapshotMetadata(101L, 7L), sortedPlacesOfSize(3)));
 
-        assertThat(snapshotBox.current().revision()).isEqualTo(101L);
-        assertThat(snapshotBox.current().cursorVersion())
+        assertThat(snapshotBox.current().metadata().revision()).isEqualTo(101L);
+        assertThat(snapshotBox.current().metadata().cursorVersion())
                 .as("커서가 싣는 번호는 그대로라 진행 중인 스크롤이 끊기지 않는다").isEqualTo(7L);
         assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(3);
+    }
+
+    /**
+     * <b>회차가 오르면 revision은 0으로 리셋되고, 그 스냅샷은 새것이다.</b>
+     *
+     * <p>가드가 revision만 봤다면 집계 회차마다 지은 스냅샷({@code revision = 0})이 직전 회차의 큰
+     * revision에 밀려 조용히 버려진다 — 그 인스턴스는 회차가 올라도 옛 배열을 계속 서빙한다.
+     */
+    @Test
+    void 회차가_오른_revision_0_스냅샷은_직전_회차를_밀어낸다() {
+        SnapshotBox snapshotBox = new SnapshotBox();
+        snapshotBox.adopt(new Snapshot(new SnapshotMetadata(57L, 12L), sortedPlacesOfSize(1)));
+
+        snapshotBox.adopt(new Snapshot(new SnapshotMetadata(0L, 13L), sortedPlacesOfSize(4)));
+
+        assertThat(snapshotBox.current().metadata())
+                .isEqualTo(new SnapshotMetadata(0L, 13L));
+        assertThat(snapshotBox.current().sortedPlaces().placeCount()).isEqualTo(4);
     }
 }
