@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>맵을 고치는 경로는 둘이고, 도착 시점이 다르다.</b>
  * <ul>
- *   <li><b>리빌드 설치</b>({@link SnapshotInstaller#rebuildAndInstall()}) — 원본을 한 시점으로
+ *   <li><b>리빌드 설치</b>({@code SnapshotInstaller#rebuildAndInstall}) — 원본을 한 시점으로
  *       읽어 지은 새 맵으로 {@link #replaceAll}이 참조를 통째로 간다.</li>
  *   <li><b>커밋 직후 표시값 패치</b>({@link SnapshotViewPatcher}) — 어드민이 손댄 장소만
  *       {@link #put}·{@link #remove}로 지금 맵에서 갈아 끼운다. 리빌드를 기다리지 않는 경로다.</li>

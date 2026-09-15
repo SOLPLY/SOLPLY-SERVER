@@ -448,7 +448,7 @@ public class PlaceService {
             rows.get(rows.size() - 1).entry().placeId(),
             filterPrint,
             // 서빙한 회차를 그대로 실어 다음 페이지도 같은 스냅샷에서 이어지게 한다
-            snapshot.cursorVersion()).encode()
+            snapshot.metadata().cursorVersion()).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
   }
@@ -484,7 +484,7 @@ public class PlaceService {
    * 있던 요청은 자기가 잡은 참조로 끝까지 간다(계약 2).
    */
   private static void requireCursorMatchesSnapshot(PlaceListCursor cursor, Snapshot snapshot) {
-    if (cursor != null && cursor.version() != snapshot.cursorVersion()) {
+    if (cursor != null && cursor.version() != snapshot.metadata().cursorVersion()) {
       throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
     }
   }

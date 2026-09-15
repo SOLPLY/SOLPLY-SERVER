@@ -16,10 +16,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 정렬 배열을 부분 수정해야 하고, 그 순간 "스냅샷은 어느 한 시점의 완결된 것"이라는 계약이
  * 깨진다. 순서에 영향을 주는 변경은 리빌드가 통째로 다시 읽어 반영한다.
  *
- * <p><b>번호는 읽은 쪽이 정한다.</b> 부르는 쪽의 쓰기 revision을 달고 가지 않는다 — 값을 다시
+ * <p><b>번호는 읽은 쪽이 정한다.</b> 부르는 쪽의 쓰기 번호를 달고 가지 않는다 — 값을 다시
  * 읽는 것은 커밋 <em>뒤</em>라, 그 사이 남의 커밋이 끼면 <b>번호는 내 것인데 데이터는 그 뒤의
  * 것</b>인 어긋난 쌍이 된다. 대신 {@link SnapshotLoader}가 값과 같은 트랜잭션에서 관측한
- * revision을 함께 돌려주고, 그 값이 그대로 패치의 번호가 된다. 설치자의 비교가 모두 관측값끼리
+ * 번호를 함께 돌려주고, 그 값이 그대로 패치의 번호가 된다. 설치자의 비교가 모두 관측값끼리
  * 이뤄지는 근거가 이것이다.
  *
  * <p><b>왜 afterCommit인가.</b> 커밋 전에 얹으면 롤백된 수정이 화면에 남는다. 커밋된 뒤라야
@@ -44,7 +44,7 @@ public class SnapshotViewPatcher {
         List<Long> targets = List.copyOf(placeIds);
         afterCommit(() -> {
             SnapshotLoader.ViewState state = loader.readViews(targets);
-            installer.patchPlaceViews(state.metadata().revision(), targets, state.views());
+            installer.patchPlaceViews(state.metadata(), targets, state.views());
         });
     }
 
@@ -52,7 +52,7 @@ public class SnapshotViewPatcher {
     public void patchTagsAfterCommit() {
         afterCommit(() -> {
             SnapshotLoader.TagViewState state = loader.readTagViews();
-            installer.patchTagViews(state.metadata().revision(), state.tagViews());
+            installer.patchTagViews(state.metadata(), state.tagViews());
         });
     }
 

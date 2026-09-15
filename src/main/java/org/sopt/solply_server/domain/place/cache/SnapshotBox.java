@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.place.cache;
 
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,12 +32,13 @@ import org.springframework.stereotype.Component;
  * 스냅샷을 잡은 요청은 그 참조로 끝까지 간다(계약 2). 만료 판정은 홀더가 아니라 스냅샷을 잡은
  * 조회 경로의 몫이다({@code PlaceService}).
  *
- * <p><b>계약 5 — 최신은 {@code revision}이 가장 큰 스냅샷이다.</b> 늦게 도착한 낡은 스냅샷이
- * 최신을 밀어내지 못한다. <b>비교 대상이 {@code cursorVersion}이 아니라 {@code revision}인 것이
- * 요점이다</b> — 어드민이 "스크롤 유지"를 골랐거나 표시값만 바뀐 회차는 cursorVersion이 그대로라,
- * 그 값으로 비교하면 새로 지은 배열이 "이미 들고 있는 회차"로 오인돼 변경이 영영 반영되지 않는다.
- * 그런 회차에서 커서가 끊기지 않는 근거는 이 가드가 아니라 <b>커서가 cursorVersion을 싣는다</b>는
- * 것이다.
+ * <p><b>계약 5 — 최신은 번호 쌍이 가장 새것인 스냅샷이다</b>({@link SnapshotMetadata#isNewerThan}).
+ * 늦게 도착한 낡은 스냅샷이 최신을 밀어내지 못한다. <b>비교가 {@code cursorVersion} 하나가 아니라
+ * 쌍인 것이 요점이다</b> — 어드민이 "스크롤 유지"를 골랐거나 표시값만 바뀐 회차는 cursorVersion이
+ * 그대로라, 그 값만으로 비교하면 새로 지은 배열이 "이미 들고 있는 회차"로 오인돼 변경이 영영
+ * 반영되지 않는다. 반대로 revision 하나만 보면 회차가 오른 직후의 스냅샷({@code revision = 0})이
+ * 낡은 것으로 오인된다. 그런 회차에서 커서가 끊기지 않는 근거는 이 가드가 아니라 <b>커서가
+ * cursorVersion을 싣는다</b>는 것이다.
  *
  * <p>{@code volatile}이 하는 일은 하나다 — 교체한 새 스냅샷을 요청 스레드가 반드시 보게 한다.
  * 스냅샷도 정렬 배열도 불변이라 조회 쪽에 그 뒤의 동기화는 필요 없다.
@@ -65,10 +67,10 @@ public class SnapshotBox {
      * <b>완성된</b> 스냅샷 하나를 받아들인다. 스냅샷이 들어오는 유일한 문이고, 부분 갱신 진입점은
      * 의도적으로 없다.
      *
-     * <p>규칙은 하나다 — <b>지금 들고 있는 것보다 새 {@code revision}일 때만 채택한다.</b> 같은
-     * revision이 두 번 와도 먼저 든 것을 지킨다. revision은 DB가 한 번만 발급하므로 같은 값은
-     * 정의상 같은 시점의 원본이고, 그 전제가 깨져 <b>같은 번호에 다른 내용</b>이 들어오는 사고가
-     * 나더라도 여기서 막히면 목록에 닿지 않는다.
+     * <p>규칙은 하나다 — <b>지금 들고 있는 것보다 새 번호 쌍일 때만 채택한다.</b> 같은 쌍이 두 번
+     * 와도 먼저 든 것을 지킨다. 번호 쌍은 DB가 한 번만 발급하므로 같은 값은 정의상 같은 시점의
+     * 원본이고, 그 전제가 깨져 <b>같은 번호에 다른 내용</b>이 들어오는 사고가 나더라도 여기서
+     * 막히면 목록에 닿지 않는다.
      *
      * <p>{@code synchronized}는 "읽고-비교하고-쓰기"를 직렬화한다. 실제 호출은
      * {@link SnapshotInstaller}가 {@link CacheWriteLock} 안에서만 하므로 경합이 쌓일 자리가
@@ -76,7 +78,7 @@ public class SnapshotBox {
      */
     synchronized void adopt(Snapshot snapshot) {
         Snapshot held = current;
-        if (held != null && snapshot.revision() <= held.revision()) {
+        if (held != null && !snapshot.metadata().isNewerThan(held.metadata())) {
             return;     // 낡았거나 이미 들고 있는 시점이다 — 최신을 건드리지 않는다
         }
         this.current = snapshot;

@@ -16,11 +16,32 @@ package org.sopt.solply_server.domain.place.cache.metadata;
  * 모든 스크롤 세션을 끊고, cursorVersion만 두면 "스크롤을 유지한다"를 고른 수정이 어느
  * 인스턴스에도 반영되지 않는다.
  *
- * <p>둘 다 단조 증가하고, 올리는 문장은 언제나 데이터를 고친 <b>그 트랜잭션</b> 안에 있다
+ * <p><b>{@code revision}은 회차가 오를 때 0으로 리셋된다.</b> {@code cursorVersion}을 올리는 UPDATE가
+ * 같은 문장에서 revision을 0으로 되돌리므로, {@code (13, 3)}은 "13회차의 3번째 변경"으로 읽힌다.
+ * 그래서 <b>revision 하나만으로는 새것인지 알 수 없다</b> — 전순서는 언제나
+ * {@code (cursorVersion, revision)} 사전식이고, 그 비교는 {@link #isNewerThan} 하나에 모여 있다.
+ * 어딘가에서 revision을 직접 대소 비교하면 회차가 오른 직후의 스냅샷({@code revision = 0})이
+ * "낡았다"고 조용히 버려진다.
+ *
+ * <p>올리는 문장은 언제나 데이터를 고친 <b>그 트랜잭션</b> 안에 있다
  * ({@link SnapshotMetadataService}). 그래서 "데이터는 바뀌었는데 번호는 그대로"인 상태가 없다.
  */
 public record SnapshotMetadata(long revision, long cursorVersion) {
 
-    /** 아직 아무것도 설치하지 않은 인스턴스의 자리. 어떤 실제 revision보다도 작다. */
-    public static final long NOT_INSTALLED = -1L;
+    /** 아직 아무것도 설치하지 않은 인스턴스의 자리. 어떤 실제 번호 쌍보다도 낡았다. */
+    public static final SnapshotMetadata NOT_INSTALLED = new SnapshotMetadata(-1L, -1L);
+
+    /**
+     * 이 번호 쌍이 {@code other}보다 새것인가. <b>번호를 비교하는 유일한 자리다.</b>
+     *
+     * <p>회차가 다르면 회차로 갈린다 — revision은 회차가 오를 때 0으로 리셋되므로 회차를 건너
+     * 비교하면 뜻이 없다. 회차가 같을 때만 그 안의 몇 번째 변경인지를 본다. 같은 쌍이면
+     * {@code false}다(이미 들고 있는 시점이다).
+     */
+    public boolean isNewerThan(SnapshotMetadata other) {
+        if (cursorVersion != other.cursorVersion) {
+            return cursorVersion > other.cursorVersion;
+        }
+        return revision > other.revision;
+    }
 }

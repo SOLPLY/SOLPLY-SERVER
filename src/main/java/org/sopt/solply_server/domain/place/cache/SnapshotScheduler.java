@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.config.PlaceListSnapshotProperties;
 import org.springframework.stereotype.Component;
 
@@ -35,9 +36,9 @@ public class SnapshotScheduler {
     @PostConstruct
     public void buildOnStartup() {
         Instant deadline = Instant.now().plusMillis(properties.getBootstrapTimeoutMs());
-        while (installer.installedRevision() < 0) {
+        while (notInstalled()) {
             coordinator.rebuildOnCallerThread();
-            if (installer.installedRevision() >= 0) {
+            if (!notInstalled()) {
                 break;
             }
             if (Instant.now().isAfter(deadline)) {
@@ -47,8 +48,11 @@ public class SnapshotScheduler {
             }
             sleepOnePoll();
         }
-        log.info("기동 목록 스냅샷 완료 - revision={}, cursorVersion={}",
-                installer.installedRevision(), installer.installedCursorVersion());
+        log.info("기동 목록 스냅샷 완료 - installed={}", installer.installed());
+    }
+
+    private boolean notInstalled() {
+        return SnapshotMetadata.NOT_INSTALLED.equals(installer.installed());
     }
 
     private void sleepOnePoll() {

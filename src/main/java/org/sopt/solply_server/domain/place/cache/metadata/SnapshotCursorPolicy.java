@@ -4,8 +4,9 @@ package org.sopt.solply_server.domain.place.cache.metadata;
  * 이 변경이 <b>진행 중인 스크롤을 끊는가</b>. 목록에 영향을 주는 쓰기 경로는 모두 이것을 골라야
  * 하고, 고르지 않아도 되는 기본값은 없다 — 부르는 자리에서 눈에 보이게 하는 것이 요점이다.
  *
- * <p>이 선택이 정하는 것은 {@code cursor_version}을 올릴지 하나뿐이다. {@code revision}은 어느
- * 쪽을 골라도 오르므로, "유지"를 골랐다고 해서 변경이 반영되지 않는 것은 아니다.
+ * <p>이 선택이 정하는 것은 {@code cursor_version}을 올릴지 하나뿐이다. 어느 쪽을 골라도 번호 쌍은
+ * 새것이 되므로("유지"면 {@code revision}이 오르고, "새로 시작"이면 회차가 오르며 revision은 0으로
+ * 돌아간다), "유지"를 골랐다고 해서 변경이 반영되지 않는 것은 아니다.
  */
 public enum SnapshotCursorPolicy {
 
@@ -26,7 +27,10 @@ public enum SnapshotCursorPolicy {
      */
     ADVANCE;
 
-    /** {@code cursor_version}에 더할 값. 문장 하나로 두 칸을 올리는 UPDATE가 이것을 받는다. */
+    /**
+     * {@code cursor_version}에 더할 값. 두 칸을 함께 고치는 UPDATE가 이것을 두 번 받는다 —
+     * 더할 값이면서, {@code revision}을 0으로 되돌릴지 가르는 스위치이기도 하다.
+     */
     int cursorIncrement() {
         return this == ADVANCE ? 1 : 0;
     }

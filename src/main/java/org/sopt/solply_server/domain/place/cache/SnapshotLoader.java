@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
@@ -120,12 +121,21 @@ public class SnapshotLoader {
      *
      * <p>부분 읽기(바뀐 장소만 다시 읽어 배열에 얹기)는 두지 않는다. 그 경로는 "얹을 기준 배열"이
      * 어느 시점의 것인지를 따로 관리해야 하고, 그 관리가 곧 이 구조에서 없앤 기준 경쟁이다.
+     *
+     * @param onObserved 이 읽기가 <b>어느 시점을 보게 됐는지</b>를 원본을 읽기 전에 알린다. 뒤에 온
+     *                   쪽이 "이 비행에 붙어도 내가 본 최신이 담기나"를 판정하는 근거라, 반드시
+     *                   read view가 열린 뒤(= 번호를 읽은 직후)에 불려야 한다
      */
-    public SourceState readSourceState() {
+    public SourceState readSourceState(Consumer<SnapshotMetadata> onObserved) {
         long startNanos = System.nanoTime();
         // ★ 트랜잭션 안에서는 행만 받는다. 객체·맵 구성은 아래 execute 밖에서 한다
-        RawSource raw = readTransaction.execute(status -> new RawSource(
-                metadataRepository.readInCurrentTransaction(), readListSource(), readTagSource()));
+        RawSource raw = readTransaction.execute(status -> {
+            SnapshotMetadata observed = metadataRepository.readInCurrentTransaction();
+            // ★ 원본을 읽기 "전"에 알린다. 전량 읽기가 끝난 뒤면 이 비행에 붙을지 판정할 쪽이
+            //   그동안 읽은 번호가 비어 있는 것으로 보고 지나간다
+            onObserved.accept(observed);
+            return new RawSource(observed, readListSource(), readTagSource());
+        });
         long readNanos = System.nanoTime() - startNanos;
 
         Source source = toSource(raw.listRows());

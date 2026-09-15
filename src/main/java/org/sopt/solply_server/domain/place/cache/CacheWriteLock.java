@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
  * 목록 캐시의 <b>쓰기를 한 줄로 세우는</b> 락. 여기 들어오는 것은 둘뿐이다.
  *
  * <ul>
- *   <li><b>리빌드 설치</b> — {@link SnapshotInstaller#rebuildAndInstall()}이 지은 맵·정렬 배열을
+ *   <li><b>리빌드 설치</b> — {@code SnapshotInstaller#rebuildAndInstall}이 지은 맵·정렬 배열을
  *       홀더에 걸고, 그 직전에 "이미 더 새것을 싣고 있나"를 확인하는 구간.</li>
  *   <li><b>커밋 직후 표시값 패치</b> — {@link SnapshotViewPatcher}가 손댄 장소의 이름·썸네일을
  *       지금 맵에 얹는 구간.</li>

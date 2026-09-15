@@ -9,11 +9,15 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 번호 둘을 읽고 올리는 자리. 문장은 셋뿐이다.
  *
- * <p><b>올리는 문장이 하나인 것이 계약이다.</b> {@code SET revision = revision + 1,
- * cursor_version = cursor_version + ?} 는 DB가 현재 값을 읽어 더한다 — 읽어서 자바로 가져오고
- * 더해서 다시 쓰는 read-modify-write가 아니다. 그 방식이었다면 두 트랜잭션이 같은 값을 읽어
- * 같은 값을 쓰고, 변경 하나가 번호 없이 사라진다. 엔티티를 만들지 않고 JDBC로 두는 것도
- * 같은 이유다 — ORM에 올려 두면 누군가 반드시 {@code metadata.setRevision(...)}을 쓴다.
+ * <p><b>올리는 문장이 하나인 것이 계약이다.</b> UPDATE 한 문장 안에서 DB가 현재 값을 읽어 더한다 —
+ * 읽어서 자바로 가져오고 더해서 다시 쓰는 read-modify-write가 아니다. 그 방식이었다면 두
+ * 트랜잭션이 같은 값을 읽어 같은 값을 쓰고, 변경 하나가 번호 없이 사라진다. 엔티티를 만들지 않고
+ * JDBC로 두는 것도 같은 이유다 — ORM에 올려 두면 누군가 반드시 {@code metadata.setRevision(...)}을
+ * 쓴다.
+ *
+ * <p><b>회차가 오르면 revision은 0으로 리셋된다.</b> 그래서 번호 쌍은 "몇 회차의 몇 번째 변경"으로
+ * 읽히고, 두 값의 전순서는 사전식이다({@link SnapshotMetadata#isNewerThan}). 리셋과 회차 증가가
+ * 같은 UPDATE 안에 있어야 둘이 어긋난 쌍이 DB에 보이는 창이 없다.
  */
 @Repository
 @RequiredArgsConstructor
@@ -22,9 +26,10 @@ public class SnapshotMetadataRepository {
     private static final String READ_SQL =
             "SELECT revision, cursor_version FROM place_list_snapshot_metadata WHERE id = 1";
 
+    // 파라미터 둘 다 cursorIncrement다 — 회차를 올리는 회차에서만 revision이 0으로 돌아간다
     private static final String BUMP_SQL = """
             UPDATE place_list_snapshot_metadata
-               SET revision = revision + 1,
+               SET revision = IF(? = 1, 0, revision + 1),
                    cursor_version = cursor_version + ?
              WHERE id = 1
             """;
@@ -69,7 +74,8 @@ public class SnapshotMetadataRepository {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void bump(SnapshotCursorPolicy policy) {
-        if (jdbcTemplate.update(BUMP_SQL, policy.cursorIncrement()) != 1) {
+        if (jdbcTemplate.update(BUMP_SQL,
+                policy.cursorIncrement(), policy.cursorIncrement()) != 1) {
             throw new IllegalStateException(
                     "목록 스냅샷 메타데이터 행이 없다 - V46 마이그레이션을 확인할 것");
         }
