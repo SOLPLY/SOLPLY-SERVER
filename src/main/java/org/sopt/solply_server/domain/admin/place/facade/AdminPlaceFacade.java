@@ -6,6 +6,7 @@ import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceDetailsG
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceListResponse;
 import org.sopt.solply_server.domain.admin.place.dto.response.AdminPlaceUpsertResponse;
 import org.sopt.solply_server.domain.admin.place.service.AdminPlaceService;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
 import org.sopt.solply_server.domain.place.service.PlaceSearchDocumentService;
 import org.sopt.solply_server.domain.place.service.facade.PlaceEmbeddingFacade;
 import org.springframework.stereotype.Component;
@@ -42,8 +43,10 @@ public class AdminPlaceFacade {
         return adminPlaceService.getPlacesByTown(townId);
     }
 
-    public void deletePlace(Long placeId) {
-        adminPlaceService.deletePlace(placeId);
+    public void deletePlace(Long placeId, boolean restartPlaceList) {
+        adminPlaceService.deletePlace(placeId, restartPlaceList
+                ? SnapshotCursorPolicy.ADVANCE
+                : SnapshotCursorPolicy.PRESERVE);
     }
 
     public void initializePendingEmbeddings() {

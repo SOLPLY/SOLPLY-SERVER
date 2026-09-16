@@ -1,78 +1,66 @@
 package org.sopt.solply_server.domain.place.cache;
 
 import jakarta.annotation.PostConstruct;
-import java.util.concurrent.TimeUnit;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
+import org.sopt.solply_server.domain.place.config.PlaceListSnapshotProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link SnapshotLoader#rebuild()}를 부르는 <b>유일한</b> 곳 — 기동 한 번과 10분 주기다. 어드민
- * 커밋 훅({@link SnapshotRefresher})은 전량이 아니라 손댄 장소만 갈아 끼운다
- * ({@link SnapshotLoader#patch}).
+ * 기동 시 첫 스냅샷을 짓는다. <b>포트가 열리기 전에</b> 끝나야 하므로 싱글턴 초기화 구간에서
+ * 동기로 돈다.
  *
- * <p><b>이 타이머가 맡은 것은 둘이다.</b> 하나는 통계의 신선도 — 카운트·점수는 배치가
- * {@code place_stats}에 채우고 그 값이 화면에 닿는 것은 다음 회차다. 다른 하나는 <b>정합</b>이다:
- * 부분 패치는 손댄 장소만 보므로 그것이 실패하면 스냅샷이 {@code place_stats}와 어긋난 채 남는데,
- * 이 회차가 그 테이블을 통째로 다시 읽어 되돌린다. 되돌리는 범위도 딱 거기까지다 — 원본
- * (places · place_tag)에서 {@code place_stats}를 다시 짓는 것은 어드민 쓰기와 배치의 몫이지
- * 이 회차의 몫이 아니다.
+ * <p><b>못 지으면 뜨지 않는다.</b> 빈 목록은 "장소가 없다"와 구분되지 않는 정상 응답이라,
+ * 데이터가 있는데 못 읽은 인스턴스가 그것을 내보내면 클라이언트는 오류인 줄도 모른다. 그래서
+ * 정해진 시간 안에 짓지 못하면 예외를 던져 컨텍스트 기동을 실패시킨다 — 그 인스턴스는 트래픽을
+ * 한 건도 받지 않는다({@code SnapshotBox} 계약 3).
  *
- * <p>어드민이 바꾼 콘텐츠(장소의 생성·수정·삭제·재활성)는 이 타이머를 기다리지 않는다 — 그 쓰기
- * 트랜잭션이 커밋 직후 손댄 장소만 다시 읽어 갈아 끼운다. 그래서 반영 시점이 둘로 갈린다:
- * <b>어드민 변경은 커밋 직후, 카운트·점수는 다음 성공한 회차.</b> 비활성화한 장소가 목록에 남는
- * 창은 정상 경로에는 없고 <b>어드민 훅의 패치가 실패했을 때만</b> 다음 성공한 회차까지 열린다.
+ * <p><b>남을 기다리지 않는다.</b> 스냅샷은 각 인스턴스가 자기 원본에서 짓는 것이라, 여기서
+ * 기다릴 대상은 DB가 응답하는 것뿐이다. 재시도 사이의 쉼도 폴 간격 하나면 된다.
  *
- * <p><b>기동 빌드는 동기이고 실패하면 기동을 막는다.</b> 싱글턴 빈 초기화는 서블릿 컨테이너가
- * 포트를 열기 <em>전</em>에 끝나므로, 여기서 성공하면 트래픽이 빈 스냅샷을 보는 창이 아예 없다.
- * 반대로 여기서 예외를 삼키면 스냅샷 없는 인스턴스가 트래픽을 받게 되는데, 목록 응답이 곧 이
- * 스냅샷이라 그것은 느려지는 것이 아니라 <b>목록이 통째로 비는 오답</b>이다. 그래서 예외를 그대로
- * 흘려 컨텍스트 기동을 실패시킨다 — 뜨지 않는 인스턴스는 로드밸런서가 알아서 뺀다.
- *
- * <p><b>주기 발화는 반대로 예외를 삼킨다.</b> 이미 서빙 중인 인스턴스가 한 회차 실패로 죽으면
- * 안 되고, 실패해도 <b>직전 회차의 스냅샷이 그대로 남아</b> 응답은 여전히 정합적이다. 낡음의 상한이
- * 10분에서 "다음 성공까지"로 늘어날 뿐이며, 그 사실은 아래 {@code log.error}가 남긴다.
- *
- * <p><b>ShedLock을 걸지 않는다.</b> 이 회차가 고치는 것은 공유 DB가 아니라 <b>인스턴스 자신의 힙</b>
- * 이라, 인스턴스마다 각자 돌아야 한다. 리더 하나만 돌면 나머지는 영원히 기동 시점의 스냅샷을 서빙한다.
- *
- * <p>{@code @Scheduled} 기본 실행기는 단일 스레드다. 이 회차는 10분에 한 번 수백 ms를 쓰므로
- * 다른 배치를 눈에 띄게 밀지 않지만, <b>주기를 크게 당길 때는 그 경합부터 확인할 것</b>
- * ({@code PlaceStatsFacade}가 정각을 피해 30분에 도는 것과 같은 이유).
+ * <p><b>{@code bootstrapTimeoutMs}는 "다시 시도하지 않기로 하는 기한"이다.</b> 리빌드가 이
+ * 스레드에서 동기로 돌므로, DB 읽기 하나가 그 시간을 넘겨 매달려도 여기서 끊지 못한다 — 기한은
+ * 시도와 시도 사이에서만 확인된다. 개별 DB 호출의 상한은 커넥션·쿼리 타임아웃의 몫이다.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SnapshotScheduler {
 
-    private static final long INTERVAL_MINUTES = 10L;
+    private final SnapshotInstaller installer;
+    private final SnapshotLoadCoordinator coordinator;
+    private final PlaceListSnapshotProperties properties;
 
-    private final SnapshotLoader loader;
-
-    /**
-     * 기동 빌드. <b>예외를 잡지 않는다</b> — 실패는 곧 컨텍스트 기동 실패다(클래스 javadoc 참조).
-     */
     @PostConstruct
     public void buildOnStartup() {
-        loader.rebuild();
+        Instant deadline = Instant.now().plusMillis(properties.getBootstrapTimeoutMs());
+        while (notInstalled()) {
+            coordinator.rebuildOnCallerThread();
+            if (!notInstalled()) {
+                break;
+            }
+            if (Instant.now().isAfter(deadline)) {
+                throw new IllegalStateException(
+                        "기동 목록 스냅샷을 짓지 못한 채 시간이 다 됐다 - 빈 스냅샷으로 뜨지 않는다"
+                                + " (timeoutMs=" + properties.getBootstrapTimeoutMs() + ")");
+            }
+            sleepOnePoll();
+        }
+        log.info("기동 목록 스냅샷 완료 - installed={}", installer.installed());
     }
 
-    /**
-     * 주기 빌드. 첫 발화가 기동 10분 뒤인 것은 {@link #buildOnStartup()}이
-     * 방금 지은 스냅샷을 곧바로 다시 짓지 않기 위해서다.
-     *
-     * <p>{@code fixedDelay}라 <b>직전 회차가 끝난 시점부터</b> 간격을 센다. 회차가 길어져도 다음
-     * 회차가 겹쳐 들어오지 않는다.
-     */
-    @Scheduled(initialDelay = INTERVAL_MINUTES, fixedDelay = INTERVAL_MINUTES,
-            timeUnit = TimeUnit.MINUTES)
-    public void rebuildPeriodically() {
+    private boolean notInstalled() {
+        return SnapshotMetadata.NOT_INSTALLED.equals(installer.installed());
+    }
+
+    private void sleepOnePoll() {
         try {
-            loader.rebuild();
-        } catch (Exception e) {
-            log.error("장소 목록 스냅샷 주기 갱신 실패 - 직전 회차 스냅샷을 유지한다"
-                    + "(다음 성공까지 낡은 값이 나간다)", e);
+            Thread.sleep(properties.getPollIntervalMs());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("기동 목록 스냅샷 빌드가 중단됐다", e);
         }
     }
 }

@@ -32,6 +32,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 통합 스냅샷 경로와 <b>DB 인덱스 정렬 경로</b>의 등가 게이트.
@@ -76,8 +77,11 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
     static void equivalenceProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        // 매시 회차가 둘로 갈렸다(2026-09-12) — 새 키를 빠뜨리면 :15에 델타 소비가 깨어난다
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
     }
 
     /** 뒷정리가 픽스처를 역추적하는 유일한 기준점. 다른 IT의 접두사와 겹치면 안 된다 */
@@ -99,7 +103,11 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
     private static final long SEED_OPTION1_B = 8L;
 
     @Autowired private PlaceService placeService;
+    @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private SnapshotLoader loader;
+    @Autowired private org.sopt.solply_server.domain.place.cache.metadata
+            .SnapshotMetadataRepository snapshotMetadataRepository;
+    @Autowired private SnapshotInstaller snapshotInstaller;
     @Autowired private PlaceListDbQueryRepository dbQueryRepository;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private TownHierarchyResolver townHierarchyResolver;
@@ -180,7 +188,8 @@ class PlaceListSnapshotEquivalenceIT extends MySqlContainerSupport {
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
         // 픽스처를 다 심은 뒤에 스냅샷을 짓는다 — 조회 경로가 보는 것은 이 회차뿐이다
-        loader.rebuild();
+        new SnapshotRebuilder(snapshotInstaller, snapshotMetadataRepository, transactionManager)
+                .rebuildAndInstall();
     }
 
     /**

@@ -25,6 +25,7 @@ import org.sopt.solply_server.domain.place.cache.PlaceView;
 import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
 import org.sopt.solply_server.domain.place.cache.TagView;
 import org.sopt.solply_server.domain.place.cache.TagViewHolder;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -119,8 +120,9 @@ class PlaceServiceSnapshotSourceTest {
                 .willReturn(new PlaceView(placeId, name, name + "_이미지키", null));
     }
 
-    private static Snapshot snapshot(long version, PlaceEntry... entries) {
-        return new Snapshot(version, SortedPlaces.of(List.of(entries)));
+    private static Snapshot snapshot(long cursorVersion, PlaceEntry... entries) {
+        return new Snapshot(new SnapshotMetadata(cursorVersion, cursorVersion),
+                SortedPlaces.of(List.of(entries)));
     }
 
     private PlaceFilterGetResponse get(String cursor, Integer size) {

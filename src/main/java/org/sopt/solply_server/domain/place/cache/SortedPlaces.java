@@ -177,6 +177,23 @@ public final class SortedPlaces {
         return withTownsPatched(byTown, created, deleted);
     }
 
+    /**
+     * 지금 배열이 담고 있는 엔트리 전량. 운영 경로에서 이것을 부르는 곳은 없다 — 스냅샷을
+     * 직렬화해 공유하던 시절의 입구이고, 지금은 "이 스냅샷에 어떤 장소가 실렸나"를 확인하는
+     * 검증이 쓴다.
+     *
+     * <p>축 하나({@code MEMBERSHIP_SOURCE})만 훑는다. 다섯 축은 같은 원소 집합을 다르게 정렬한
+     * 것이라 어느 하나로 충분하고, 다시 세우는 쪽의 {@link #of}가 어차피 다시 정렬한다 — 그래서
+     * <b>여기서 나가는 순서에는 뜻이 없다.</b>
+     */
+    public List<PlaceEntry> entries() {
+        List<PlaceEntry> all = new ArrayList<>(placeCount);
+        for (PlaceEntry[] town : orders.get(MEMBERSHIP_SOURCE).values()) {
+            all.addAll(Arrays.asList(town));
+        }
+        return all;
+    }
+
     public int placeCount() {
         return placeCount;
     }

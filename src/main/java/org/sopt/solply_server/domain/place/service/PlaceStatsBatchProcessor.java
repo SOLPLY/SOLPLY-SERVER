@@ -1,11 +1,13 @@
 package org.sopt.solply_server.domain.place.service;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.OptionalInt;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.springframework.stereotype.Component;
@@ -22,11 +24,24 @@ import org.springframework.transaction.annotation.Transactional;
  * <b>매시 회차의 북마크 축은 여기 없다</b> — 아웃박스 델타 소비는
  * {@link BookmarkCountDeltaProcessor}가 자기 트랜잭션으로 가진다.
  *
- * <p><b>원본에서 카운트를 다시 짓는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은
+ * <p><b>원본에서 카운트를 다시 짓는 트랜잭션은 자기가 잡은 시점까지의 아웃박스를 같은
  * 트랜잭션에서 비운다.</b> 안전망·기동 백필·운영 복구 셋 다 같은 규칙을 진다 — 원본을 통째로
  * 센 값이 이미 들어간 토글을 다음 델타 회차가 또 더하면 안 되기 때문이다
  * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-2 함정 2). 카운트를 다시 짓는
  * 진입점을 새로 만든다면 이 규칙을 함께 가져갈 것.
+ *
+ * <p><b>그 "잡는" 수단이 2026-09-12에 갈렸다 — 전량 {@code FOR UPDATE} 읽기에서 표식 claim으로.</b>
+ * 이제 {@link #claimOutbox()}가 전표에 이번 회차의 표식을 찍고, 삭제는 그 표식 하나로 한다.
+ * 전표도 id 목록도 JVM에 올라오지 않는다. 순서 계약(claim → 재계산 → 삭제)과 그 근거는 그대로다
+ * ({@code docs/design/2026-09-12-stats-commit-snapshot-and-db-delta.md}).
+ *
+ * <p><b>쓰기를 한 회차는 스냅샷 번호 둘을 함께 올린다</b>
+ * ({@code SnapshotMetadataService}). 각 인스턴스의 폴이 그것을 보고 자기 원본을 다시 읽는다.
+ *
+ * <p><b>집계 회차는 {@code cursor_version}까지 올린다 — 어드민 쓰기와 다른 점이 이것이다.</b>
+ * 회차 하나가 인기 점수·북마크 수·리뷰 수를 전 장소에 걸쳐 다시 쓰므로 정렬 순서가 통째로
+ * 갈린다. 그 위에서 옛 커서로 이어 가면 좌표가 다른 배열에서 해석돼 항목이 겹치거나 빠지는데,
+ * 그것은 200 응답이라 클라이언트가 알 방법이 없다. 그래서 명시 만료로 끊는다.
  *
  * <p><b>정기 회차는 행을 만들지도 지우지도 않는다.</b> 행의 존재와 파생 세 칸
  * ({@code town_id}·{@code created_at}·{@code tag_bitmask})의 주인은 어드민 쓰기 트랜잭션이고
@@ -47,10 +62,23 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>⚠️ 격리 수준은 이 메서드들이 트랜잭션을 <em>새로 시작</em>할 때만 적용된다.</b> 이미 열린
  * 트랜잭션에 참여하면 스프링이 지정을 무시한다({@code validateExistingTransaction} 기본 false) —
  * 이 프로세서를 다른 {@code @Transactional} 서비스 안에서 호출하면 RC 보장이 조용히 사라진다.
- * 운영 경로({@code PlaceStatsFacade})는 트랜잭션 없이 호출하므로 실제로 RC가 적용되고,
- * {@code PlaceStatsBatchProcessorIT}가 그것을 서버에 직접 물어 검증한다.
+ * {@code PlaceStatsBatchProcessorIT}가 실제 격리 수준을 서버에 직접 물어 검증한다.
  *
- * <p><b>Facade와 분리해 둔 이유:</b> {@code try/catch}가 트랜잭션 경계 <b>바깥</b>에 있어야 한다.
+ * <p><b>그래서 유일한 호출자인 {@code PlaceStatsFacade}는 트랜잭션을 열지 않는다.</b> 정기 회차도
+ * 기동 백필도 여기를 <b>트랜잭션 밖에서</b> 부르므로, 아래 메서드들이 각자 자기 트랜잭션을 열고
+ * 그때 이 {@code isolation} 지정이 실제로 적용된다. <b>파사드에 {@code @Transactional}을 붙이면
+ * 이 클래스의 모든 RC 근거가 조용히 무너진다</b> — 그것이 파사드 javadoc의 금지 조항이 지키는
+ * 것이다.
+ *
+ * <p><b>Facade와 분리해 둔 이유:</b> {@code try/catch}가 트랜잭션 경계 <b>바깥</b>에 있어야
+ * 한다.
+ *
+ * <p><b>번호는 통계 트랜잭션 안에서, 그 트랜잭션의 마지막 문장으로 올린다.</b> 커밋 뒤 훅이
+ * 아니라 같은 트랜잭션이라, 롤백된 회차가 인스턴스들을 깨우는 일이 없고 커밋된 회차는 반드시
+ * 남는다. 마지막에 두는 것은 이 트랜잭션이 메타데이터 행을 잡고 있는 구간을 커밋까지의 짧은
+ * 꼬리로 줄이기 위해서다 — 그 행은 모든 쓰기 경로가 마주치는 자리다.
+ *
+ * <p>가드에 걸려 아무것도 쓰지 않은 회차는 번호도 올리지 않는다.
  */
 @Slf4j
 @Component
@@ -59,6 +87,7 @@ public class PlaceStatsBatchProcessor {
 
     private final PlaceStatsRepository placeStatsRepository;
     private final BookmarkCountEventRepository countEventRepository;
+    private final SnapshotMetadataService snapshotMetadataService;
     private final PlaceStatsProperties properties;
 
     /**
@@ -71,42 +100,55 @@ public class PlaceStatsBatchProcessor {
      *
      * @param calculatedAt 이 회차의 기준 시각. 호출자가 정해 넘기므로 같은 값이면 결과가 같다
      * @return 조건에 걸린 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
-     *         아니다 — 근거는 {@link PlaceStatsRepository#updateCounts}
+     *         아니다 — 근거는 {@link PlaceStatsRepository#updateBookmarkCountsFromSource}
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public int recalculateReviewCounts(LocalDateTime calculatedAt) {
-        return placeStatsRepository.updateReviewCounts(calculatedAt);
+        int affected = placeStatsRepository.updateReviewCounts(calculatedAt);
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        return affected;
     }
 
     /**
-     * 표시 카운트 셋 전량 재계산. <b>문장 하나</b>라 원자성을 물을 지점이 없다.
+     * 표시 카운트 셋(북마크 수·리뷰 수·평균 평점) 전량 재계산 — <b>두 축의 문장을 잇달아 부른다</b>.
      *
-     * <p><b>이 메서드를 스케줄에서 직접 부르지 말 것 — 아웃박스를 비우지 않는다.</b> 정기 진입점은
-     * {@link #recalculateCountsAndClearOutbox}이고, 여기가 따로 남아 있는 이유는 "재계산만"을
-     * 그 자체로 검증·재사용할 자리가 있기 때문이다.
+     * <p><b>정기 회차는 이 메서드를 쓰지 않는다.</b> 두 축의 주인이 회차별로 갈렸기 때문이다 —
+     * 북마크 축은 안전망({@link #recalculateCountsAndClearOutbox})과 델타 소비, 리뷰 축은 리뷰
+     * 회차({@link #recalculateReviewCounts})다. 여기가 남아 있는 이유는 <b>세 값을 한 번에 세워야
+     * 하는 자리</b>가 따로 있기 때문이고, 실제 호출처는 어드민 경로를 지나치는 테스트 픽스처다.
      *
-     * <p>예전에는 "활성 장소 전량 적재 + 잔행 삭제" 두 문장이었다. 적재가 원본에서 행을 다시
-     * 지으면서 어드민 소유의 파생 칸까지 덮었고, 잔행 삭제는 그 적재가 회차마다 전 행에 찍던
-     * 표식({@code count_calculated_at})을 기준으로 삼는 짝이었다. 행의 주인이 어드민 트랜잭션
-     * 하나로 정리되면서 둘 다 필요가 없어졌고, 표식도 함께 걷어냈다 (V35).
+     * <p><b>스케줄에서 부르지 말 것 — 아웃박스를 비우지 않는다.</b> 북마크 수를 원본에서 다시 세고도
+     * 전표를 남기면 이미 셈에 들어간 토글을 다음 델타 회차가 또 더한다.
+     *
+     * <p><b>문장이 둘이라 두 축의 기준 시각이 같아야 한다</b> — 같은 {@code calculatedAt}을 넘기므로
+     * 둘 다 그 시점의 원본을 보고, 순서를 바꿔도 결과가 같다. 대입 목록이 겹치지 않는 것이 그
+     * 근거다 ({@link PlaceStatsRepository#updateReviewCounts}).
      *
      * @param calculatedAt 이 회차의 기준 시각. 호출자가 정해 넘기므로 같은 값이면 결과가 같다
      * @return 조건에 걸린 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
-     *         아니다 — 근거는 {@link PlaceStatsRepository#updateCounts}
+     *         아니다 — 근거는 {@link PlaceStatsRepository#updateBookmarkCountsFromSource}.
+     *         두 문장이 같은 행 집합에 걸리므로 둘 중 하나의 수치를 돌려준다
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public int recalculateCounts(LocalDateTime calculatedAt) {
-        return placeStatsRepository.updateCounts(calculatedAt);
+        int affected = placeStatsRepository.updateBookmarkCountsFromSource(calculatedAt);
+        placeStatsRepository.updateReviewCounts(calculatedAt);
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        return affected;
     }
 
     /**
-     * 카운트 안전망 회차 — <b>전량 재계산과 아웃박스 비우기를 한 트랜잭션으로</b> 묶는다.
-     * 매시 회차가 델타로 쌓은 표류의 상한을 하루로 잡는 마지막 겹이다.
+     * 카운트 안전망 회차 — <b>북마크 수 전량 재계산과 아웃박스 비우기를 한 트랜잭션으로</b> 묶는다.
+     * 델타 소비가 쌓은 표류의 상한을 하루로 잡는 마지막 겹이다.
      *
-     * <p>순서가 계약이다: ① 전표를 잠그고 읽는다 → ② 원본에서 카운트 셋을 다시 센다 →
-     * ③ ①에서 읽은 전표만 지운다. 비우지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또
+     * <p><b>이 회차가 세는 축은 북마크 하나다.</b> 리뷰 수·평균 평점은 리뷰 회차가 15분마다 전량
+     * 재계산하므로 여기서 함께 셀 이유가 없다 — 근거는
+     * {@link PlaceStatsRepository#updateBookmarkCountsFromSource}.
+     *
+     * <p>순서가 계약이다: ① 전표에 이번 회차의 표식을 찍는다 → ② 원본에서 북마크 수를 다시 센다 →
+     * ③ ①이 표시한 전표만 지운다. 비우지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또
      * 더하고, ①을 ② 뒤로 옮기면 반대로 <b>재계산에 안 들어간 전표를 지우는 유실</b>이 된다 —
-     * ②가 보는 스냅샷 이후에 커밋된 토글까지 삭제 목록에 들어가기 때문이다.
+     * ②가 보는 스냅샷 이후에 커밋된 토글까지 표식에 걸리기 때문이다.
      *
      * <p><b>그럼에도 남는 창이 있다 — 없앨 수 없어 수용한 한계다.</b> ①과 ② 사이에 커밋된 토글은
      * 재계산에는 이미 반영됐는데 전표가 남아 다음 델타 회차에 또 더해진다(이중 반영). 반대 방향도
@@ -117,13 +159,15 @@ public class PlaceStatsBatchProcessor {
      * 자기부정이다.
      *
      * @param calculatedAt 이 회차의 기준 시각이자 집계 대상의 상한
-     * @return 재계산 문장에 걸린 행 수 — 근거는 {@link PlaceStatsRepository#updateCounts}
+     * @return 재계산 문장에 걸린 행 수 — 근거는
+     *         {@link PlaceStatsRepository#updateBookmarkCountsFromSource}
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public int recalculateCountsAndClearOutbox(LocalDateTime calculatedAt) {
-        List<Long> consumed = lockOutboxIds();
-        int affected = placeStatsRepository.updateCounts(calculatedAt);
-        clearOutbox(consumed);
+        String consumptionId = claimOutbox();
+        int affected = placeStatsRepository.updateBookmarkCountsFromSource(calculatedAt);
+        clearOutbox(consumptionId);
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
         return affected;
     }
 
@@ -140,31 +184,36 @@ public class PlaceStatsBatchProcessor {
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public int rebuildRowsFromSource(LocalDateTime calculatedAt) {
-        List<Long> consumed = lockOutboxIds();
+        String consumptionId = claimOutbox();
         int affected = placeStatsRepository.rebuildRowsFromSource(calculatedAt);
-        clearOutbox(consumed);
+        clearOutbox(consumptionId);
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
         return affected;
     }
 
     /**
-     * 아웃박스 전표를 잠그고 그 id를 확보한다 = 원본 재계산 트랜잭션의 <b>1단계</b>.
+     * 아웃박스 전표에 이번 회차의 표식을 찍는다 = 원본 재계산 트랜잭션의 <b>1단계</b>.
      *
-     * <p>id만 들고 나오는 것은 이 자리에서 쓸 것이 삭제 대상 목록뿐이기 때문이다 — 델타를 접는
-     * 쪽({@link BookmarkCountDeltaProcessor})과 달리 여기서는 전표의 내용을 보지 않는다.
-     * 원본을 다시 세는 것이 곧 모든 전표를 반영하는 것이라 종류를 가릴 이유도 없다.
+     * <p>전표의 내용을 보지 않는 것은 예전과 같다 — 원본을 다시 세는 것이 곧 모든 전표를
+     * 반영하는 것이라 종류도 값도 가릴 이유가 없다. 델타를 접는 쪽
+     * ({@link BookmarkCountDeltaProcessor})만 집계 문장을 하나 더 쓴다.
+     *
+     * <p><b>표식이 곧 배타다.</b> 델타 회차와 이 회차가 겹치면 뒤에 온 쪽이 앞의 커밋을 기다렸다가
+     * 0행을 표시하고 지나간다 — 옛 {@code FOR UPDATE}가 하던 직렬화를 이 UPDATE가 넘겨받았다
+     * ({@link BookmarkCountEventRepository#claimAll}).
+     *
+     * @return 이번 회차의 표식. 표시된 전표가 없어도 그대로 3단계에 넘긴다 — 0행을 지우는 문장은
+     *         비용이 없고, 분기를 하나 없애는 편이 순서 계약을 읽기 쉽다
      */
-    private List<Long> lockOutboxIds() {
-        return countEventRepository.findAllForConsume().stream()
-                .map(BookmarkCountEventRepository.ConsumableEvent::getId)
-                .toList();
+    private String claimOutbox() {
+        String consumptionId = UUID.randomUUID().toString();
+        countEventRepository.claimAll(consumptionId);
+        return consumptionId;
     }
 
-    /** 1단계에서 읽은 전표만 지운다 — 범위 삭제가 왜 유실인지는 {@code findAllForConsume} javadoc. */
-    private void clearOutbox(List<Long> consumedIds) {
-        if (consumedIds.isEmpty()) {
-            return;
-        }
-        countEventRepository.deleteAllByIdInBatch(consumedIds);
+    /** 1단계가 표시한 전표만 지운다 — id 범위 삭제가 왜 유실인지는 {@code V38} 주석. */
+    private void clearOutbox(String consumptionId) {
+        countEventRepository.deleteClaimed(consumptionId);
     }
 
     /**
@@ -213,9 +262,10 @@ public class PlaceStatsBatchProcessor {
             log.info("인기순 카운트 최초 적재 생략 - 기존 place_stats 행 수={}", existingRows);
             return OptionalInt.empty();
         }
-        List<Long> consumed = lockOutboxIds();
+        String consumptionId = claimOutbox();
         int affected = placeStatsRepository.rebuildRowsFromSource(calculatedAt);
-        clearOutbox(consumed);
+        clearOutbox(consumptionId);
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
         return OptionalInt.of(affected);
     }
 
@@ -242,12 +292,15 @@ public class PlaceStatsBatchProcessor {
         return OptionalInt.of(updateScores(calculatedAt));
     }
 
+    /** 가드에 걸려 채점하지 않은 회차는 여기까지 오지 않으므로 알림도 나가지 않는다 */
     private int updateScores(LocalDateTime calculatedAt) {
-        return placeStatsRepository.updateScores(
+        int affected = placeStatsRepository.updateScores(
                 calculatedAt,
                 properties.getBookmarkWeight(),
                 properties.getReviewWeight(),
                 properties.getHalfLifeDays(),
                 properties.getMinReviewCount());
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        return affected;
     }
 }

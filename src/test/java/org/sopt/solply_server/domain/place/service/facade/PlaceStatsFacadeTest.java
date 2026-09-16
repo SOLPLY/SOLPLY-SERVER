@@ -16,7 +16,11 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +42,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 @ExtendWith(MockitoExtension.class)
 class PlaceStatsFacadeTest {
+
+    /**
+     * {@code @Scheduled}가 걸린 회차 전부. <b>순서는 발화 시각 순이 아니라 선언 순서다</b> —
+     * 아래 단언들이 목록을 그대로 돌므로 누락이 곧 빠진 회차다.
+     * 회차를 늘리면 여기에 더하는 것이 시간대·락 이름·발화 충돌 검사에 자동으로 들어간다.
+     */
+    private static final List<String> SCHEDULED_METHODS = List.of(
+            "recalculateReviewCounts",
+            "consumeBookmarkCountDeltas",
+            "recalculatePlaceCountsSafety",
+            "recalculatePopularScores");
 
     @Mock
     private PlaceStatsBatchProcessor batchProcessor;
@@ -61,13 +76,17 @@ class PlaceStatsFacadeTest {
     void createFacade() {
         // 시도 횟수는 기본값(3)을 그대로 쓰고 대기만 지운다. 대기를 남기면 실패 경로를 거치는
         // 테스트마다 (시도 횟수 - 1) × 5초를 잠든다.
+        // 2026-09-12부터 매시 두 축이 자기 대기 키를 갖는다 — 공통 키만 0으로 두면 그 둘은
+        // 여전히 5초씩 잔다. 회차마다 따로 꺼야 한다는 사실 자체가 분리의 관측 가능한 형태다.
         placeStatsProperties.setBatchRetryDelay(Duration.ZERO);
+        placeStatsProperties.setReviewCountRetryDelay(Duration.ZERO);
+        placeStatsProperties.setBookmarkDeltaRetryDelay(Duration.ZERO);
         // 델타 소비의 기본 응답은 "빈 아웃박스"다. 목의 기본값(null)을 그대로 두면 파사드가
         // 결과에서 전표 수를 꺼내다 NPE로 죽어, 회차마다 실패 로그가 하나씩 덤으로 붙는다.
         // lenient인 것은 점수 회차만 보는 테스트들이 이 스텁을 쓰지 않기 때문이다.
         lenient().when(deltaProcessor.consumeAndApply()).thenReturn(new DeltaResult(0, 0));
-        placeStatsFacade = new PlaceStatsFacade(
-                batchProcessor, deltaProcessor, placeStatsProperties);
+        placeStatsFacade =
+                new PlaceStatsFacade(batchProcessor, deltaProcessor, placeStatsProperties);
     }
 
     /**
@@ -90,14 +109,14 @@ class PlaceStatsFacadeTest {
         facadeLogger.detachAppender(logAppender);
     }
 
-    // === 카운트 회차 ===
+    // === 매시 두 회차 ===
 
     @Test
-    @DisplayName("카운트 배치는 하나의 기준 시각으로 리뷰 축 프로세서를 1회 호출한다")
-    void runsCountBatchOnceWithSingleTimestamp() {
+    @DisplayName("리뷰 카운트 회차는 하나의 기준 시각으로 리뷰 축 프로세서를 1회 호출한다")
+    void runsReviewCountBatchOnceWithSingleTimestamp() {
         given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
         ArgumentCaptor<LocalDateTime> captor = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(batchProcessor).recalculateReviewCounts(captor.capture());
@@ -105,17 +124,25 @@ class PlaceStatsFacadeTest {
     }
 
     /**
-     * <b>매시 회차는 축 둘로 이루어진다 — 리뷰 축 재계산과 북마크 축 델타 소비.</b>
-     * 한쪽이 빠지면 그 축의 값이 영영 낡는데, 값 단언이 없는 이 층에서는 호출로만 드러난다.
+     * <b>2026-09-12 분리로 이 계약이 뒤집혔다.</b> 예전에는 한 진입점이 두 축을 차례로 돌리는 것이
+     * 계약이었고, 그때의 단언은 "둘 다 불렀는가"였다. 지금은 회차가 갈렸으므로
+     * <b>각 진입점이 자기 축만 부르는가</b>가 그 자리를 대신한다 — 한쪽이 다른 쪽까지 부르면
+     * 락 이름을 나눠 둔 의미가 사라지고 :15와 :30에 같은 일이 두 번 돈다.
      */
     @Test
-    void 카운트_배치는_리뷰_축과_북마크_델타를_모두_돌린다() {
+    void 두_매시_회차는_서로의_축을_부르지_않는다() {
         given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
         verify(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+        verify(deltaProcessor, never()).consumeAndApply();
+
+        placeStatsFacade.consumeBookmarkCountDeltas();
+
         verify(deltaProcessor).consumeAndApply();
+        // 리뷰 축 호출은 여전히 첫 회차의 1회뿐이다
+        verify(batchProcessor, times(1)).recalculateReviewCounts(any(LocalDateTime.class));
     }
 
     /**
@@ -124,10 +151,11 @@ class PlaceStatsFacadeTest {
      * 게다가 그 문장은 아웃박스를 비우는 짝과 함께여야 해서, 여기로 돌아오면 이중 반영도 따라온다.
      */
     @Test
-    void 매시_회차는_전량_재계산을_부르지_않는다() {
+    void 매시_두_회차_어느_쪽도_전량_재계산을_부르지_않는다() {
         given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
+        placeStatsFacade.consumeBookmarkCountDeltas();
 
         verify(batchProcessor, never()).recalculateCounts(any(LocalDateTime.class));
         verify(batchProcessor, never()).recalculateCountsAndClearOutbox(any(LocalDateTime.class));
@@ -139,36 +167,40 @@ class PlaceStatsFacadeTest {
      * {@code place_stats} 전 행 X 락을 두고 서로를 기다린다.
      */
     @Test
-    void 카운트_배치는_점수를_건드리지_않는다() {
+    void 매시_두_회차는_점수를_건드리지_않는다() {
         given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
+        placeStatsFacade.consumeBookmarkCountDeltas();
 
         verify(batchProcessor, never()).recalculateScores(any(LocalDateTime.class));
     }
 
     @Test
-    @DisplayName("카운트 프로세서가 실패해도 스케줄러 스레드로 예외를 던지지 않는다")
-    void swallowsCountProcessorFailure() {
+    @DisplayName("리뷰 축 프로세서가 실패해도 스케줄러 스레드로 예외를 던지지 않는다")
+    void swallowsReviewCountProcessorFailure() {
         willThrow(new RuntimeException("boom"))
                 .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
-        verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
+        verify(batchProcessor, times(placeStatsProperties.getReviewCountMaxAttempts()))
                 .recalculateReviewCounts(any(LocalDateTime.class));
     }
 
     /**
-     * <b>한 축이 죽어도 다른 축은 돈다.</b> 두 축은 서로 다른 트랜잭션이고 값 칸도 갈려 있어,
-     * 리뷰 축 실패가 델타 소비까지 삼키면 아무 이유 없이 북마크 수가 회차만큼 낡는다.
+     * <b>한 축이 죽어도 다른 축은 돈다.</b> 근거가 2026-09-12에 바뀌었다 — 예전에는 "같은 메서드
+     * 안에서 순차로 부르되 앞의 실패를 삼킨다"였고, 지금은 <b>애초에 다른 회차·다른 락·다른 시각</b>이다.
+     * 분리가 이 보장을 약화시키지 않고 오히려 구조로 굳혔다는 것을 여기서 고정한다 —
+     * 리뷰 축이 최대 시도까지 모두 실패한 뒤에도 델타 소비는 자기 회차에서 온전히 돈다.
      */
     @Test
-    void 리뷰_축이_실패해도_델타_소비는_돌린다() {
+    void 리뷰_축이_모두_실패해도_델타_소비_회차는_온전히_돈다() {
         willThrow(new RuntimeException("boom"))
                 .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
+        placeStatsFacade.consumeBookmarkCountDeltas();
 
         verify(deltaProcessor, times(1)).consumeAndApply();
     }
@@ -178,13 +210,35 @@ class PlaceStatsFacadeTest {
      * 적용과 삭제가 한 트랜잭션이라 실패한 시도는 전표를 그대로 남기고 롤백된다.
      */
     @Test
-    void 델타_소비가_실패하면_재시도한다() {
-        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
+    void 델타_소비가_실패하면_자기_키의_최대_시도까지_재시도한다() {
         willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.consumeBookmarkCountDeltas();
 
-        verify(deltaProcessor, times(placeStatsProperties.getBatchMaxAttempts())).consumeAndApply();
+        verify(deltaProcessor, times(placeStatsProperties.getBookmarkDeltaMaxAttempts()))
+                .consumeAndApply();
+    }
+
+    /**
+     * <b>두 축이 서로 다른 재시도 키를 따른다.</b> 이것이 분리가 실제로 산 것 중 하나다 —
+     * 한쪽의 시도 횟수를 올려도 다른 쪽의 회차 길이가 따라 늘지 않는다.
+     * 공통 키({@code batch-*})로 되돌아가는 회귀는 기능 단언을 전부 통과하므로 여기서만 잡힌다.
+     */
+    @Test
+    void 두_축은_서로_다른_재시도_설정을_따른다() {
+        placeStatsProperties.setReviewCountMaxAttempts(1);
+        placeStatsProperties.setBookmarkDeltaMaxAttempts(2);
+        // 공통 키는 일부러 둘 중 어느 값과도 다르게 둔다 — 어느 쪽이든 이 값을 읽으면 드러난다
+        placeStatsProperties.setBatchMaxAttempts(5);
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+        willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
+
+        placeStatsFacade.recalculateReviewCounts();
+        placeStatsFacade.consumeBookmarkCountDeltas();
+
+        verify(batchProcessor, times(1)).recalculateReviewCounts(any(LocalDateTime.class));
+        verify(deltaProcessor, times(2)).consumeAndApply();
     }
 
     // === 회차 내 재시도 ===
@@ -202,10 +256,10 @@ class PlaceStatsFacadeTest {
         willThrow(new RuntimeException("boom"))
                 .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
         ArgumentCaptor<LocalDateTime> captor = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(batchProcessor, times(placeStatsProperties.getBatchMaxAttempts()))
+        verify(batchProcessor, times(placeStatsProperties.getReviewCountMaxAttempts()))
                 .recalculateReviewCounts(captor.capture());
         assertThat(captor.getAllValues()).containsOnly(captor.getAllValues().getFirst());
     }
@@ -220,7 +274,7 @@ class PlaceStatsFacadeTest {
                 .willThrow(new RuntimeException("boom"))
                 .willReturn(10);
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
         verify(batchProcessor, times(2)).recalculateReviewCounts(any(LocalDateTime.class));
         assertThat(logAppender.list)
@@ -248,16 +302,16 @@ class PlaceStatsFacadeTest {
     }
 
     /**
-     * {@code batch-max-attempts: 1}은 재시도를 끄는 유효한 설정이다. 루프가 그 값을 무시하고
+     * {@code review-count-max-attempts: 1}은 재시도를 끄는 유효한 설정이다. 루프가 그 값을 무시하고
      * 최소 한 번은 더 도는 형태로 쓰이면 끌 방법이 없어진다.
      */
     @Test
     void 최대_시도_1이면_재시도하지_않는다() {
-        placeStatsProperties.setBatchMaxAttempts(1);
+        placeStatsProperties.setReviewCountMaxAttempts(1);
         willThrow(new RuntimeException("boom"))
                 .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
         verify(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
         assertThat(logAppender.list)
@@ -313,98 +367,155 @@ class PlaceStatsFacadeTest {
      * 아래 단언들이 그 중복을 묶는다 — 주기를 바꾸려면 <b>세 곳</b>(두 리터럴 + 이 기대값)을
      * 함께 고쳐야 하고, 그러지 않으면 여기서 멈춘다.
      *
-     * <p>다음 실행 시각을 <b>두 번</b> 보는 이유: 정시 하나만 보면 "매일 00:30"도 통과한다.
-     * 연속 두 회가 1시간 간격임을 함께 봐야 매시라는 것이 고정된다.
+     * <p>다음 실행 시각을 <b>두 번</b> 보는 이유: 정시 하나만 보면 "매일 00:05"도 통과한다.
+     * 연속 두 회가 15분 간격임을 함께 봐야 격자가 고정된다.
      */
     @Test
-    @DisplayName("카운트 cron 플레이스홀더는 프로퍼티가 없어도 매시 30분으로 해석된다")
-    void countCronPlaceholderFallsBackToHourlyHalfPast() throws Exception {
-        String resolved = resolvedCron("recalculatePlaceCounts");
+    @DisplayName("리뷰 카운트 cron 플레이스홀더는 프로퍼티가 없어도 매시 :05부터 15분 격자로 해석된다")
+    void reviewCountCronPlaceholderFallsBackToQuarterHourlyAtFive() throws Exception {
+        String resolved = resolvedCron("recalculateReviewCounts");
 
         LocalDateTime first =
                 CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 30));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 5));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 30));
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 20));
 
         assertThat(new PlaceStatsProperties().getCountCron()).isEqualTo(resolved);
     }
 
     /**
-     * 안전망 회차도 <b>하루 1회</b>이고, 점수 회차와 같은 이유로 시각이 못 박혀 있다.
-     * 특히 매시 회차(01:30)와 겹치면 아웃박스 전표를 두고 서로를 기다린다.
+     * 델타 소비는 15분 격자에서 <b>정각 칸</b>을 쓴다 — 리뷰(:05)와 5분, 점수(:10)와 10분 엇갈린다.
+     * 같은 아웃박스 전표를 다투는 안전망(01:25)과는 <b>5분</b>뿐이라는 것이 이 값의 알려진 한계이고,
+     * 근거는 {@code PlaceStatsFacade} javadoc에 있다.
      */
     @Test
-    @DisplayName("안전망 cron 플레이스홀더는 프로퍼티가 없어도 매일 01:45로 해석된다")
-    void countSafetyCronPlaceholderFallsBackToDailyOneFortyFive() throws Exception {
+    @DisplayName("북마크 델타 cron 플레이스홀더는 프로퍼티가 없어도 매시 정각부터 15분 격자로 해석된다")
+    void bookmarkDeltaCronPlaceholderFallsBackToQuarterHourlyOnTheHour() throws Exception {
+        String resolved = resolvedCron("consumeBookmarkCountDeltas");
+
+        LocalDateTime first =
+                CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 1));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 15));
+        assertThat(CronExpression.parse(resolved).next(first))
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 30));
+
+        assertThat(new PlaceStatsProperties().getBookmarkDeltaCron()).isEqualTo(resolved);
+    }
+
+    /**
+     * 안전망 회차는 <b>넷 중 유일하게 하루 1회</b>다. 북마크 전량 재계산이라 15분 격자로 옮기면
+     * 델타 설계가 걷어낸 전량 스캔이 되돌아온다 — 그 회귀를 여기서 잡는다.
+     */
+    @Test
+    @DisplayName("안전망 cron 플레이스홀더는 프로퍼티가 없어도 매일 01:25로 해석된다")
+    void countSafetyCronPlaceholderFallsBackToDailyOneTwentyFive() throws Exception {
         String resolved = resolvedCron("recalculatePlaceCountsSafety");
 
         LocalDateTime first =
                 CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 45));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 25));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 7, 31, 1, 45));
+                .isEqualTo(LocalDateTime.of(2026, 7, 31, 1, 25));
 
+        assertThat(new PlaceStatsProperties().getScoreCron()).isNotEqualTo(resolved);
         assertThat(new PlaceStatsProperties().getCountSafetyCron()).isEqualTo(resolved);
     }
 
     /**
-     * 점수 회차는 <b>하루 1회</b>여야 한다. 다음 실행을 두 번 보는 이유가 카운트 쪽과 정반대다 —
-     * 여기서는 두 회가 24시간 간격임을 봐야 "매시 01분"류의 회귀가 걸린다.
+     * 점수 회차는 <b>매시 1회</b>다. 다음 실행을 두 번 보는 이유가 안전망 쪽과 정반대다 —
+     * 여기서는 두 회가 1시간 간격임을 봐야 "매일 01:10"류의 회귀가 걸린다.
      */
     @Test
-    @DisplayName("점수 cron 플레이스홀더는 프로퍼티가 없어도 매일 01:00으로 해석된다")
-    void scoreCronPlaceholderFallsBackToDailyOneAm() throws Exception {
+    @DisplayName("점수 cron 플레이스홀더는 프로퍼티가 없어도 매시 :10으로 해석된다")
+    void scoreCronPlaceholderFallsBackToHourlyAtTen() throws Exception {
         String resolved = resolvedCron("recalculatePopularScores");
 
         LocalDateTime first =
                 CronExpression.parse(resolved).next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 0));
+        assertThat(first).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 10));
         assertThat(CronExpression.parse(resolved).next(first))
-                .isEqualTo(LocalDateTime.of(2026, 7, 31, 1, 0));
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 1, 10));
 
         assertThat(new PlaceStatsProperties().getScoreCron()).isEqualTo(resolved);
     }
 
     /**
-     * <b>두 회차의 시간대는 KST 하나로 통일돼 있다.</b> 점수 배치의 01:00을 그렇게 고른 근거가
-     * "국내 트래픽 최저 시각"이라 서버 시간대와 무관하게 매여 있어야 하고, 카운트 배치도 같은 값을
-     * 달아야 아래 30분 간격이 <em>같은 시계 위에서</em> 성립한다.
+     * <b>네 회차의 시간대는 KST 하나로 통일돼 있다.</b> 안전망의 01:25를 그렇게 고른 근거가
+     * "국내 트래픽 최저 시각"이라 서버 시간대와 무관하게 매여 있어야 하고, 나머지 셋도 같은 값을
+     * 달아야 아래 5분 간격이 <em>같은 시계 위에서</em> 성립한다.
      *
      * <p>{@code TimezoneConfig}가 JVM 기본을 이미 KST로 고정하지만, 그 설정이 사라져도 이 두 배치는
      * 흔들리지 않아야 한다. <b>한쪽만 비어 있는 상태를 특히 겨눈다</b> — 그러면 있지도 않은
      * 비대칭("카운트는 서버 시간대, 점수는 KST")이 코드에 남는다.
      */
     @Test
-    void 세_배치의_시간대는_모두_KST로_고정돼_있다() throws Exception {
-        assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCounts")
-                .getAnnotation(Scheduled.class).zone()).isEqualTo("Asia/Seoul");
-        assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCountsSafety")
-                .getAnnotation(Scheduled.class).zone()).isEqualTo("Asia/Seoul");
-        assertThat(PlaceStatsFacade.class.getMethod("recalculatePopularScores")
-                .getAnnotation(Scheduled.class).zone()).isEqualTo("Asia/Seoul");
+    void 네_배치의_시간대는_모두_KST로_고정돼_있다() throws Exception {
+        for (String method : SCHEDULED_METHODS) {
+            assertThat(PlaceStatsFacade.class.getMethod(method)
+                    .getAnnotation(Scheduled.class).zone())
+                    .as("%s의 zone", method)
+                    .isEqualTo("Asia/Seoul");
+        }
     }
 
     /**
-     * <b>세 회차가 같은 시각에 겹치지 않는다.</b> 점수 문장은 {@code place_stats} 전 행에 X 락을
-     * 커밋까지 들고, 안전망과 매시 회차는 같은 아웃박스 전표를 {@code FOR UPDATE}로 잡는다 —
-     * 겹치면 서로를 기다린다. 01:00(점수) · 01:30(매시) · 01:45(안전망)가 그 간격을 만들고,
-     * 한쪽 cron만 고쳐 같은 분으로 옮기는 회귀를 여기서 잡는다.
+     * 회차마다 락 이름이 갈려 있어야 한다. 같은 이름을 공유하면 정시에 겹친 회차 중 하나가
+     * <b>통째로 건너뛰어진다</b> — 실제 동작은 {@code PlaceStatsSchedulerLockIT}가 물고,
+     * 여기서는 이름이 네 개로 갈려 있다는 사실 자체를 고정한다.
      */
     @Test
-    void 세_배치의_발화_시각은_겹치지_않는다() throws Exception {
-        CronExpression count = CronExpression.parse(resolvedCron("recalculatePlaceCounts"));
-        CronExpression safety = CronExpression.parse(resolvedCron("recalculatePlaceCountsSafety"));
-        CronExpression score = CronExpression.parse(resolvedCron("recalculatePopularScores"));
+    void 네_배치의_락_이름은_서로_다르다() throws Exception {
+        List<String> lockNames = new ArrayList<>();
+        for (String method : SCHEDULED_METHODS) {
+            lockNames.add(PlaceStatsFacade.class.getMethod(method)
+                    .getAnnotation(SchedulerLock.class).name());
+        }
 
-        LocalDateTime scoreFire = score.next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        LocalDateTime safetyFire = safety.next(LocalDateTime.of(2026, 7, 30, 0, 0));
-        // 다른 회차 직전의 카운트 발화와 직후의 카운트 발화 어느 쪽도 같은 분에 걸리지 않는다
-        assertThat(count.next(scoreFire)).isNotEqualTo(scoreFire);
-        assertThat(count.next(scoreFire.minusSeconds(1))).isNotEqualTo(scoreFire);
-        assertThat(count.next(safetyFire)).isNotEqualTo(safetyFire);
-        assertThat(count.next(safetyFire.minusSeconds(1))).isNotEqualTo(safetyFire);
-        assertThat(safetyFire).isNotEqualTo(scoreFire);
+        assertThat(lockNames).doesNotHaveDuplicates();
+        assertThat(lockNames).containsExactly(
+                "place-stats-count", "place-stats-bookmark-delta",
+                "place-stats-count-safety", "place-stats-score");
+    }
+
+    /**
+     * <b>네 회차가 같은 시각에 겹치지 않는다.</b> 점수 문장은 {@code place_stats} 전 행을 갱신하고,
+     * 안전망과 델타 소비는 같은 아웃박스 전표에 표식을 찍는다 — 겹치면 서로를 기다린다.
+     * :00(델타) · :05(리뷰) · :10(점수) · 01:25(안전망)가 최소 5분 간격을 만들고, 한쪽 cron만 고쳐
+     * 같은 분으로 옮기는 회귀를 여기서 잡는다.
+     *
+     * <p><b>15분 격자가 된 뒤로 이 검사의 값이 커졌다.</b> 셋이 매시 격자를 나눠 쓰므로 한 회차의
+     * 분만 옮겨도 다른 회차와 겹칠 자리가 예전보다 많다.
+     *
+     * <p><b>이 검사는 "같은 분에 시작하지 않는다"까지만 본다.</b> 앞 회차가 그 간격보다 오래 돌면
+     * 뒤 회차와 실제로 겹치는데, 그것은 cron으로 막을 수 있는 성질이 아니다.
+     */
+    @Test
+    void 네_배치의_발화_시각은_한_쌍도_겹치지_않는다() throws Exception {
+        LocalDateTime from = LocalDateTime.of(2026, 7, 30, 0, 0);
+        List<CronExpression> crons = new ArrayList<>();
+        for (String method : SCHEDULED_METHODS) {
+            crons.add(CronExpression.parse(resolvedCron(method)));
+        }
+
+        for (int i = 0; i < crons.size(); i++) {
+            for (int j = 0; j < crons.size(); j++) {
+                if (i == j) {
+                    continue;
+                }
+                // j 회차가 발화하는 어느 시각에도 i 회차가 같이 발화하지 않는다.
+                // 하루치를 다 훑는 이유: 매시 회차는 발화가 24번이라 한 시각만 보면 못 잡는다.
+                LocalDateTime fire = crons.get(j).next(from);
+                while (fire != null && fire.isBefore(from.plusDays(1))) {
+                    LocalDateTime other = crons.get(i).next(fire.minusSeconds(1));
+                    assertThat(other)
+                            .as("%s와 %s가 %s에 함께 발화한다",
+                                    SCHEDULED_METHODS.get(i), SCHEDULED_METHODS.get(j), fire)
+                            .isNotEqualTo(fire);
+                    fire = crons.get(j).next(fire);
+                }
+            }
+        }
     }
 
     /** 락 이름이 갈려 있어야 두 회차가 서로의 락을 잡아먹지 않는다 — 실제 동작은 SchedulerLockIT가 문다 */
@@ -507,12 +618,12 @@ class PlaceStatsFacadeTest {
     @Test
     void 파사드에는_트랜잭션_어노테이션이_붙어_있지_않다() throws Exception {
         assertThat(PlaceStatsFacade.class.getAnnotation(Transactional.class)).isNull();
-        assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCounts")
-                .getAnnotation(Transactional.class)).isNull();
-        assertThat(PlaceStatsFacade.class.getMethod("recalculatePlaceCountsSafety")
-                .getAnnotation(Transactional.class)).isNull();
-        assertThat(PlaceStatsFacade.class.getMethod("recalculatePopularScores")
-                .getAnnotation(Transactional.class)).isNull();
+        for (String method : SCHEDULED_METHODS) {
+            assertThat(PlaceStatsFacade.class.getMethod(method)
+                    .getAnnotation(Transactional.class))
+                    .as("%s의 @Transactional", method)
+                    .isNull();
+        }
         assertThat(PlaceStatsFacade.class.getMethod("backfillPlaceStatsOnStartup")
                 .getAnnotation(Transactional.class)).isNull();
     }
@@ -523,7 +634,7 @@ class PlaceStatsFacadeTest {
         RuntimeException cause = new RuntimeException("boom");
         willThrow(cause).given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
         assertThat(logAppender.list)
                 .filteredOn(event -> event.getLevel() == Level.ERROR)
@@ -541,22 +652,102 @@ class PlaceStatsFacadeTest {
      * 블록된다(최대 {@code innodb_lock_wait_timeout} 50초). 시작 로그가 없거나 호출 <em>뒤에</em>
      * 있으면 "배치가 매달려 있다"와 "스케줄이 애초에 안 돌았다"가 로그로 구분되지 않는다.
      *
-     * <p>두 축이 모두 즉시 던지게 만들어 두면, 시작 로그가 남아 있다는 사실 자체가
+     * <p>축이 즉시 던지게 만들어 두면, 시작 로그가 남아 있다는 사실 자체가
      * "호출 전에 찍혔다"의 증거가 된다.
+     *
+     * <p><b>2026-09-12부터 매시 회차의 INFO는 두 줄이다</b> — 시작 줄과 회차 종료 줄. 그래서
+     * {@code singleElement()}가 아니라 <b>첫 INFO가 시작 줄</b>인지를 본다(순서가 곧 "호출 전"이다).
      */
     @Test
     @DisplayName("배치 실패 시에도 시작 로그가 먼저 남아 있다")
     void logsStartBeforeInvokingProcessor() {
         willThrow(new RuntimeException("boom"))
                 .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
-        willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
 
-        placeStatsFacade.recalculatePlaceCounts();
+        placeStatsFacade.recalculateReviewCounts();
 
         assertThat(logAppender.list)
                 .filteredOn(event -> event.getLevel() == Level.INFO)
-                .singleElement()
+                .first()
                 .satisfies(event -> assertThat(event.getFormattedMessage()).contains("시작"));
+    }
+
+    // === 회차 종료 로그 ===
+
+    /**
+     * <b>회차 종료 줄은 시도별 완료 줄과 재는 구간이 다르다</b> — 저쪽은 성공한 시도 하나의 소요라
+     * 앞선 실패와 재시도 대기가 어디에도 남지 않았다. 종료 줄의 {@code elapsed}가
+     * {@code lockAtMostFor}·회차 간격과 비교할 수 있는 유일한 수치다.
+     *
+     * <p>성공한 회차에서 시작 줄과 종료 줄이 <b>짝</b>을 이루는지 본다 — 짝 없는 시작 줄은
+     * "회차가 끝나지 않았다"는 신호이므로, 짝이 성립해야 그 신호가 뜻을 갖는다.
+     */
+    @Test
+    void 매시_두_회차는_성공하면_결과_성공의_종료_로그를_남긴다() {
+        given(batchProcessor.recalculateReviewCounts(any(LocalDateTime.class))).willReturn(10);
+
+        placeStatsFacade.recalculateReviewCounts();
+        placeStatsFacade.consumeBookmarkCountDeltas();
+
+        assertThat(infoMessages())
+                .anyMatch(m -> m.contains("인기순 리뷰 카운트 회차 종료") && m.contains("결과=성공"))
+                .anyMatch(m -> m.contains("북마크 카운트 델타 회차 종료") && m.contains("결과=성공"));
+        assertThat(infoMessages()).filteredOn(m -> m.contains("시작")).hasSize(2);
+        assertThat(infoMessages()).filteredOn(m -> m.contains("회차 종료")).hasSize(2);
+    }
+
+    /**
+     * <b>실패한 회차에도 종료 줄이 남는다.</b> 남지 않으면 "끝내 실패한 회차"와 "아직 도는 회차"가
+     * 로그에서 같아 보인다. 레벨이 {@code info}인 것도 계약이다 — 원인과 스택은 {@code runWithRetry}가
+     * 이미 {@code error}로 냈고, 여기서 한 번 더 올리면 회차 하나가 알림을 두 번 울린다.
+     */
+    @Test
+    void 매시_두_회차는_실패해도_결과_실패의_종료_로그를_info로_남긴다() {
+        willThrow(new RuntimeException("boom"))
+                .given(batchProcessor).recalculateReviewCounts(any(LocalDateTime.class));
+        willThrow(new RuntimeException("boom")).given(deltaProcessor).consumeAndApply();
+
+        placeStatsFacade.recalculateReviewCounts();
+        placeStatsFacade.consumeBookmarkCountDeltas();
+
+        assertThat(infoMessages())
+                .anyMatch(m -> m.contains("인기순 리뷰 카운트 회차 종료") && m.contains("결과=실패"))
+                .anyMatch(m -> m.contains("북마크 카운트 델타 회차 종료") && m.contains("결과=실패"));
+        // 실패는 error로만 울린다 — 종료 줄이 두 번째 경보가 되지 않는다
+        assertThat(logAppender.list)
+                .filteredOn(event -> event.getLevel() == Level.ERROR)
+                .hasSize(2);
+    }
+
+    /**
+     * <b>2026-09-13에 새벽 두 회차도 종료 줄을 갖게 됐다.</b> 예전 단언은 "새벽 회차에는 종료 줄이
+     * 없다"였고 그 자리에 "나중에 붙인다면 그것은 결정이지 사고가 아니어야 한다"고 적혀 있었다 —
+     * 네 회차가 {@code runRound} 하나로 합쳐지면서 그 결정이 내려졌으므로 단언을 뒤집는다.
+     *
+     * <p><b>뒤집되 약하게 두지 않는다.</b> "없다"를 지우고 끝내면 새벽 회차의 로그가 통째로
+     * 사라져도 그린이다. 그래서 매시 회차와 <b>같은 짝</b>(시작 1 + 종료 1, 결과=성공)을 요구한다.
+     */
+    @Test
+    void 새벽_두_회차도_시작_종료_한_쌍을_남긴다() {
+        given(batchProcessor.recalculateCountsAndClearOutbox(any(LocalDateTime.class)))
+                .willReturn(10);
+        given(batchProcessor.recalculateScores(any(LocalDateTime.class))).willReturn(10);
+
+        placeStatsFacade.recalculatePlaceCountsSafety();
+        placeStatsFacade.recalculatePopularScores();
+
+        assertThat(infoMessages())
+                .anyMatch(m -> m.contains("인기순 카운트 안전망 회차 종료") && m.contains("결과=성공"))
+                .anyMatch(m -> m.contains("인기점수 회차 종료") && m.contains("결과=성공"));
+        assertThat(infoMessages()).filteredOn(m -> m.contains("배치 시작")).hasSize(2);
+        assertThat(infoMessages()).filteredOn(m -> m.contains("회차 종료")).hasSize(2);
+    }
+
+    private java.util.List<String> infoMessages() {
+        return logAppender.list.stream()
+                .filter(event -> event.getLevel() == Level.INFO)
+                .map(ILoggingEvent::getFormattedMessage)
+                .toList();
     }
 
     // === 카운트 안전망 회차 ===

@@ -20,7 +20,14 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * 인증 주체 로딩의 두 계약을 문다 — <b>소프트 삭제 필터</b>와 <b>무트랜잭션</b>.
+ * {@code UserDetailsService} 구현의 두 계약을 문다 — <b>소프트 삭제 필터</b>와 <b>무트랜잭션</b>.
+ *
+ * <p><b>⚠️ 이 클래스는 2026-09-12부터 인증 경로가 아니다.</b> role 클레임이 없는 옛 토큰을 위한
+ * 폴백이 유일한 호출처였는데 그 분기가 제거됐다 — 새 필수 클레임이 없는 토큰은 파싱에서 거절되므로
+ * 폴백이 받아 줄 대상 자체가 없어졌다. 남아 있는 이유는 스프링 시큐리티가 요구하는 인터페이스이기
+ * 때문이고, 아래 단언들은 <b>그 구현이 여전히 옳다</b>는 것이지 요청마다 이 길을 지난다는 뜻이
+ * 아니다. 요청 경로가 저장소를 읽지 않는다는 것은 {@code JwtAuthenticationFilterIT}가 문다.
+ * <b>여기에 새 호출을 붙이면 그쪽 단언이 깨진다.</b>
  *
  * <p><b>왜 통합이어야 하는가.</b> 이 변경(2026-08-03)은 {@code findById} 대신
  * {@code findForAuthentication}을 쓰면서 트랜잭션 전파를 {@code SUPPORTS}로 낮춘 것인데,
@@ -52,8 +59,11 @@ class PrincipalDetailsServiceIT extends MySqlContainerSupport {
     static void authProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        // 매시 회차가 둘로 갈렸다(2026-09-12) — 새 키를 빠뜨리면 :15에 델타 소비가 깨어난다
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
         registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
                 SqlStatementProbe.class::getName);
     }
