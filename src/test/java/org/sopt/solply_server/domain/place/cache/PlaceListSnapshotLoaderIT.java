@@ -8,12 +8,14 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.dto.PlacePreviewDto;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceRepository;
 import org.sopt.solply_server.domain.place.service.PlaceService;
@@ -28,9 +30,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * 스냅샷 엔트리가 담는 <b>표시값</b>이 엔티티 경로가 만드는 값과 같은지를 실제 DB 위에서 문다.
+ * 표시값 홀더({@link PlaceViewHolder}·{@link TagViewHolder})가 담는 값이 엔티티 경로가 만드는
+ * 값과 같은지를 실제 DB 위에서 문다.
  *
  * <p>이 캐시의 계약은 하나뿐이다 — <b>응답이 바뀌면 안 된다</b>. 순서·필터의 등가는
  * {@code PlaceListSnapshotEquivalenceIT}가 DB 정렬 경로와 나란히 돌려 지키고, 여기가 지키는 것은
@@ -47,7 +51,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 장소가 통째로 사라진다), display_order 역순 삽입(정렬을 빼면 삽입 순서가 그대로 나온다),
  * 빈 파일 키(값이 null인 항목을 "없음"으로 취급하면 다음 이미지가 대신 뽑힌다).
  *
- * <p><b>비활성 장소가 사진에 남는 것은 의도다 (통합 스냅샷 전환).</b> 옛 골격 스냅샷은 활성만
+ * <p><b>비활성 장소가 스냅샷에 남는 것은 의도다 (통합 스냅샷 전환).</b> 옛 골격 스냅샷은 활성만
  * 담았고 그 구멍을 요청 시점 미스 경로가 메웠는데, 지금은 행의 존재를 정하는 주체가
  * {@code place_stats} 하나뿐이라 미스라는 상태 자체가 없다 — 아래가 그 전환을 값으로 남긴다.
  */
@@ -59,8 +63,11 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     static void snapshotLoaderProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        // 매시 회차가 둘로 갈렸다(2026-09-12) — 새 키를 빠뜨리면 :15에 델타 소비가 깨어난다
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
     }
 
     private static final String TOWN_NAME_PREFIX = "엔트리IT동네";
@@ -69,8 +76,16 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
     private static final LocalDateTime PLACE_CREATED_AT = CALCULATED_AT.minusDays(1);
 
-    @Autowired private PlaceListSnapshotLoader loader;
-    @Autowired private PlaceListSnapshot snapshot;
+    @Autowired private SnapshotLoader loader;
+    @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private SnapshotMetadataRepository snapshotMetadataRepository;
+    @Autowired private SnapshotInstaller snapshotInstaller;
+
+    /** "번호를 올리고 원본에서 다시 지어 설치하라"를 한 줄로 묶는다 */
+    private SnapshotRebuilder snapshotRebuilder;
+    @Autowired private SnapshotBox snapshotBox;
+    @Autowired private PlaceViewHolder placeViewHolder;
+    @Autowired private TagViewHolder tagViewHolder;
     @Autowired private PlaceService placeService;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
     @Autowired private PlaceRepository placeRepository;
@@ -87,12 +102,20 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private long placeBare;
     /** MAIN 태그가 비활성 — 이름이 있는데도 null이어야 한다 */
     private long placeInactiveTag;
-    /** OPTION1 태그만 있다 — MAIN이 없으므로 null이되, 장소 자체는 사진에 있어야 한다 */
+    /** OPTION1 태그만 있다 — MAIN이 없으므로 null이되, 장소 자체는 스냅샷에 있어야 한다 */
     private long placeOptionTagOnly;
     /** 첫 이미지의 파일 키가 비어 있다 — 썸네일은 null이고 <b>둘째 이미지로 넘어가지 않는다</b> */
     private long placeBlankKey;
+    /**
+     * MAIN 태그가 둘인 비정상 데이터 — 뽑히는 것은 <b>{@code place_tag.id}가 작은 쪽</b>이다.
+     * 먼저 붙인 쪽이 태그 id는 더 크고 활성도 아니라, 규칙이 태그 id 순으로 갈리거나 쿼리에
+     * {@code t.active = 1}이 끼면 여기서 드러난다.
+     */
+    private long placeTwoMainTags;
 
     private String mainTagName;
+    /** {@link #placeTwoMainTags}에 먼저 붙인 태그 = 뽑혀야 하는 쪽 */
+    private long firstLinkedMainTagId;
 
     @BeforeEach
     void setUp() {
@@ -111,7 +134,8 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
 
         placeInactiveTag = createPlace("엔트리C", true);
         insertImage(placeInactiveTag, "엔트리C_이미지", 1);
-        linkTag(placeInactiveTag, createTag("MAIN", false));
+        long inactiveMainTag = createTag("MAIN", false);
+        linkTag(placeInactiveTag, inactiveMainTag);
 
         placeOptionTagOnly = createPlace("엔트리D", true);
         insertImage(placeOptionTagOnly, "엔트리D_이미지", 1);
@@ -121,20 +145,54 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
         insertImage(placeBlankKey, "", 1);
         insertImage(placeBlankKey, "엔트리E_2번이미지", 2);
 
+        // 태그 id가 큰 쪽(= 나중에 만든 비활성 MAIN)을 먼저 붙인다. 새 태그를 만들지 않고 이미
+        // 있는 둘을 재활용하는 것은 <b>비트마스크 상한(id 62) 예산</b> 때문이다 — 이 클래스는
+        // 테스트마다 픽스처를 새로 심고 tag id는 MAX(id)+1로 올라가므로, 태그를 늘리면 회차가
+        // 쌓여 상한에 닿는다.
+        placeTwoMainTags = createPlace("엔트리F", true);
+        linkTag(placeTwoMainTags, inactiveMainTag);
+        linkTag(placeTwoMainTags, activeMainTag);
+        firstLinkedMainTagId = inactiveMainTag;
+
         // 행을 짓는 것은 운영에서 어드민 쓰기 트랜잭션의 몫이고 배치는 값 칸만 정한다 —
         // 어드민 경로를 거치지 않는 이 픽스처는 원본 재구축 문장으로 그 자리를 채운다.
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        loader.rebuild();
+        snapshotRebuilder = new SnapshotRebuilder(
+                snapshotInstaller, snapshotMetadataRepository, transactionManager);
+        snapshotRebuilder.rebuildAndInstall();
     }
 
     /**
-     * <b>엔트리의 표시값 = 엔티티 경로.</b> 네 필드 전부를 실제 엔티티 경로와 비교한다.
+     * <b>회차마다 이 클래스가 쓴 태그 자리를 돌려놓는다.</b>
+     *
+     * <p>태그 id는 곧 {@code tag_bitmask}의 비트 자리이고 상한이 62다({@code TagBitmask}). 이
+     * 클래스는 테스트마다 픽스처를 새로 심으면서 태그를 셋씩 만들고 id는 {@code MAX(id) + 1}로
+     * 오르므로, 뒷정리를 @AfterAll 한 번에 몰면 열 회차가 쌓여 상한을 넘는다 — 그때 나는 오류는
+     * 태그 쪽이 아니라 <b>{@code place_stats} 적재의 {@code Out of range value for column
+     * 'tag_bitmask'}</b>라 원인을 짚기 어렵다(실측).
+     *
+     * <p>{@code place_tag}를 먼저 지우는 것은 FK 때문이고, {@code MAX(id) + 1} 방식이라 지운
+     * 자리는 다음 회차가 그대로 다시 쓴다.
+     */
+    @AfterEach
+    void releaseTagBudget() {
+        jdbcTemplate.update(
+                "DELETE FROM place_tag WHERE tag_id IN (SELECT id FROM tags WHERE name LIKE ?)",
+                TAG_NAME_PREFIX + "%");
+        jdbcTemplate.update("DELETE FROM tags WHERE name LIKE ?", TAG_NAME_PREFIX + "%");
+    }
+
+    /**
+     * <b>홀더의 표시값 = 엔티티 경로.</b> 네 필드 전부를 실제 엔티티 경로와 비교한다.
      * 기대값을 코드가 아니라 <em>같은 DB의 다른 경로</em>에서 얻는 것이 이 단언의 값어치다.
      */
     @Test
-    void 엔트리의_표시값은_엔티티_경로가_만드는_값과_같다() {
+    void 홀더의_표시값은_엔티티_경로가_만드는_값과_같다() {
+        // placeTwoMainTags는 빠진다 — 엔티티 경로의 bag 순서는 fetch join에 ORDER BY가 없어
+        // DB가 고른 인덱스 순(= tag id 순)이고, 캐시는 place_tag.id 순이다. MAIN이 둘인 비정상
+        // 데이터에서만 갈리는 차이라 여기서는 겨누지 않는다(캐시 두 경로의 일치는 아래에서 문다).
         for (long placeId :
                 List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey)) {
             assertThat(displayOf(placeId))
@@ -150,47 +208,124 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
      */
     @Test
     void 대표_태그는_활성_MAIN_태그일_때만_이름을_싣는다() {
-        assertThat(entryOf(placeFull).mainTagName()).isEqualTo(mainTagName);
-        assertThat(entryOf(placeBare).mainTagName()).isNull();
-        assertThat(entryOf(placeInactiveTag).mainTagName()).isNull();
-        assertThat(entryOf(placeOptionTagOnly).mainTagName()).isNull();
-        // MAIN이 아닌 태그만 가진 장소가 사진에서 사라지면 안 된다
+        assertThat(mainTagNameOf(placeFull)).isEqualTo(mainTagName);
+        assertThat(mainTagNameOf(placeBare)).isNull();
+        assertThat(mainTagNameOf(placeInactiveTag)).isNull();
+        assertThat(mainTagNameOf(placeOptionTagOnly)).isNull();
+
+        // 비활성이어도 <b>id는 담긴다</b> — 여기서 걸러내면 다음 MAIN 태그가 뽑혀 엔티티 경로와
+        // 갈린다. 이름을 비우는 판정은 조회 시점 태그 맵의 active가 한다.
+        assertThat(viewOf(placeInactiveTag).mainTagId()).isNotNull();
+        assertThat(tagViewHolder.get(viewOf(placeInactiveTag).mainTagId()).active()).isFalse();
+        // MAIN이 아닌 태그만 가진 장소가 스냅샷에서 사라지면 안 된다
         // (태그 조건을 파생 테이블이 아니라 바깥 WHERE로 올리면 여기가 깨진다)
         assertThat(entryOf(placeOptionTagOnly)).isNotNull();
     }
 
-    /** 썸네일은 {@code display_order}가 가장 앞선 이미지다 — 삽입 순서가 아니다 */
-    @Test
-    void 썸네일은_display_order가_가장_앞선_이미지의_URL이다() {
-        assertThat(entryOf(placeFull).imageUrl())
-                .isEqualTo(imageUrlProvider.getImageUrl("엔트리A_1번이미지"));
-        assertThat(entryOf(placeBare).imageUrl()).isNull();
-    }
-
     /**
-     * <b>빈 파일 키의 답은 null이지 "다음 이미지"가 아니다.</b> 로더가 장소별 첫 행을
-     * {@code putIfAbsent}·{@code computeIfAbsent}로 담으면 null을 "아직 없음"으로 취급해 둘째
-     * 이미지를 대신 집어 든다 — 엔티티 경로는 그 경우 null 그대로라 두 경로가 갈린다.
+     * <b>MAIN 태그가 둘이면 {@code place_tag.id}가 작은 쪽이 뽑힌다.</b> 먼저 붙인 쪽은 태그 id가
+     * 더 크고 활성도 아니므로, 정렬을 태그 id 순으로 바꾸거나 활성 조건을 끼워 넣으면 여기서
+     * 드러난다.
+     *
+     * <p><b>겨누는 것은 캐시 두 경로(전량·부분)의 일치</b>다. 엔티티 경로는 정본이
+     * 아니다 — fetch join에 ORDER BY가 없어 bag 순서가 DB가 고른 인덱스 순이고, 지금 스키마에서는
+     * 그것이 태그 id 순이라 여기와 갈린다. MAIN이 둘인 것 자체가 비정상 데이터라 어느 쪽이 옳다고
+     * 정할 자리가 아니고, 대신 <b>캐시 안에서는 두 경로가 반드시 같은 답</b>을 내야 한다.
+     *
+     * <p>장소 하나가 행 둘을 내는 자리이기도 하다 — 로더가 직전 id 비교로 접지 않으면 같은 장소가
+     * 정렬 배열에 두 번 선다.
      */
     @Test
-    void 첫_이미지의_키가_비어_있으면_썸네일은_null이고_다음_이미지로_넘어가지_않는다() {
-        assertThat(entryOf(placeBlankKey).imageUrl()).isNull();
-        assertThat(entryOf(placeBlankKey).imageUrl())
-                .isNotEqualTo(imageUrlProvider.getImageUrl("엔트리E_2번이미지"));
+    void MAIN_태그가_둘이면_place_tag_id가_작은_쪽이_대표다() {
+        assertThat(viewOf(placeTwoMainTags).mainTagId()).isEqualTo(firstLinkedMainTagId);
+        assertThat(patchedViewOf(placeTwoMainTags))
+                .as("즉시 패치 경로도 같은 쪽을 뽑는다")
+                .isEqualTo(viewOf(placeTwoMainTags));
+        assertThat(entryCountOf(placeTwoMainTags)).as("행이 둘이어도 엔트리는 하나다").isEqualTo(1);
+    }
+
+    /** 썸네일은 {@code display_order}가 가장 앞선 이미지다 — 삽입 순서가 아니다 */
+    @Test
+    void 썸네일은_display_order가_가장_앞선_이미지의_파일_키다() {
+        assertThat(viewOf(placeFull).thumbnailFileKey()).isEqualTo("엔트리A_1번이미지");
+        assertThat(viewOf(placeBare).thumbnailFileKey()).isNull();
     }
 
     /**
-     * <b>비활성 장소도 행이 있는 한 사진에 남고, 표시값도 온전하다.</b>
+     * <b>빈 파일 키의 답은 "썸네일 없음"이지 "다음 이미지"가 아니다.</b> 로더가 장소별 첫 행을
+     * {@code putIfAbsent}·{@code computeIfAbsent}로 담으면 빈 값이 "아직 없음"으로 접혀 둘째
+     * 이미지를 대신 집어 든다 — 엔티티 경로는 그 경우 썸네일이 없는 것이라 두 경로가 갈린다.
+     *
+     * <p>뷰에는 빈 키가 그대로 남고, 응답의 URL이 {@code null}이 되는 것은 조회 경로에서
+     * {@code getImageUrl}이 blank에 null을 내기 때문이다.
+     */
+    @Test
+    void 첫_이미지의_키가_비어_있으면_썸네일은_없고_다음_이미지로_넘어가지_않는다() {
+        assertThat(viewOf(placeBlankKey).thumbnailFileKey()).isNotEqualTo("엔트리E_2번이미지");
+        assertThat(imageUrlProvider.getImageUrl(viewOf(placeBlankKey).thumbnailFileKey())).isNull();
+    }
+
+    /**
+     * <b>부분 읽기가 전량 재빌드와 같은 표시값을 낸다.</b> 병합 패치가 쓰는 경로라 규칙이 갈리면
+     * 같은 장소가 "패치된 뒤"와 "다음 전량 회차 뒤"에 다르게 보인다 — 함정을 심어 둔 픽스처
+     * 전부(비활성 MAIN · MAIN 없음 · display_order 역순 · 빈 파일 키)로 확인한다.
+     *
+     * <p><b>둘이 같은 SELECT 목록을 공유하므로 갈릴 자리 자체가 없다</b>({@code SOME_VIEWS_SQL}은
+     * 전량 문장에 {@code WHERE}만 붙인 것이다). 이 테스트는 그 공유가 나중에 손으로 풀렸을 때
+     * 빨개지라고 둔다.
+     */
+    @Test
+    void 표시값_단건_읽기는_전량_리빌드와_같은_값을_낸다() {
+        for (long placeId :
+                List.of(placeFull, placeBare, placeInactiveTag, placeOptionTagOnly, placeBlankKey,
+                        placeTwoMainTags)) {
+            assertThat(patchedViewOf(placeId))
+                    .as("placeId=%d", placeId)
+                    .isEqualTo(viewOf(placeId));
+        }
+    }
+
+    /**
+     * <b>없는 장소는 결과에 끼지 않는다 — 그 부재가 곧 "표시값을 지우라"는 신호다.</b>
+     * ({@code SnapshotInstaller#patchPlaceViews}).
+     */
+    @Test
+    void 표시값_읽기는_없는_장소를_돌려주지_않는다() {
+        long missing = jdbcTemplate.queryForObject("SELECT MAX(id) + 1 FROM places", Long.class);
+
+        assertThat(loader.readViews(List.of(missing)).views()).isEmpty();
+    }
+
+    /**
+     * <b>표시값과 그것을 관측한 번호는 한 쌍으로 나온다.</b> 즉시 패치가 이 번호를 그대로 달고
+     * 가야, 설치자의 비교가 "내 쓰기 번호 대 남의 읽기 번호"가 아니라 관측값끼리가 된다.
+     */
+    @Test
+    void 표시값_읽기는_관측한_번호를_함께_돌려준다() {
+        SnapshotLoader.ViewState state = loader.readViews(List.of(placeFull));
+
+        assertThat(state.metadata().revision())
+                .isEqualTo(snapshotMetadataRepository.read().revision());
+        assertThat(state.views()).containsKey(placeFull);
+    }
+
+    /** 즉시 패치 경로가 읽어 오는 장소 한 건의 표시값 */
+    private PlaceView patchedViewOf(long placeId) {
+        return loader.readViews(List.of(placeId)).views().get(placeId);
+    }
+
+    /**
+     * <b>비활성 장소도 행이 있는 한 스냅샷에 남고, 표시값도 온전하다.</b>
      *
      * <p>옛 골격 스냅샷은 활성만 담아 이 자리에 "미스 경로가 메운다"는 절반이 필요했다. 지금은
      * 행의 존재를 정하는 주체가 {@code place_stats} 하나뿐이고 배치는 행을 지우지 않으므로,
-     * 내려간 장소가 목록에 남아 있는 창에서도 사진이 그 값을 그대로 들고 있다 — 요청 시점에
+     * 내려간 장소가 목록에 남아 있는 창에서도 스냅샷이 그 값을 그대로 들고 있다 — 요청 시점에
      * 메울 것이 없다는 뜻이다. 로더 쿼리에 {@code p.active} 조건이 붙으면 여기가 빨개진다.
      */
     @Test
-    void 비활성_장소도_행이_있으면_사진에_남고_목록_표시값이_온전하다() {
+    void 비활성_장소도_행이_있으면_스냅샷에_남고_목록_표시값이_온전하다() {
         jdbcTemplate.update("UPDATE places SET active = false WHERE id = ?", placeFull);
-        loader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
 
         assertThat(entryOf(placeFull)).isNotNull();
 
@@ -206,22 +341,22 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>사진은 한 회차의 것이고, 다시 짓기 전에는 새 장소를 보지 않는다.</b> 그 지연이 버그가
+     * <b>스냅샷은 한 회차의 것이고, 다시 짓기 전에는 새 장소를 보지 않는다.</b> 그 지연이 버그가
      * 아니라 이 캐시의 정의라는 것을 값으로 남긴다.
      *
      * <p>여기서 지연이 보이는 것은 이 픽스처가 <b>어드민 경로를 지나치기</b> 때문이다 — 어드민
-     * 쓰기는 커밋 뒤 스스로 사진을 다시 찍으므로({@code PlaceListSnapshotRefresher}) 그 경로의
-     * 변경은 이 창을 만들지 않고, 배치가 채우는 카운트·점수만 다음 타이머 회차를 기다린다
-     * ({@code PlaceListSnapshotScheduler}).
+     * 쓰기든 통계 회차든 갱신 작업을 올리고, 그것을 삼킨 소비자가 발행해야 목록에 나타난다
+     * ({@code SnapshotWorkConsumer}). 이 픽스처는 그 작업을 올리지 않으므로 스냅샷이 움직일
+     * 이유가 없다.
      */
     @Test
-    void 다시_짓기_전에는_새_장소가_사진에_없다() {
+    void 다시_짓기_전에는_새_장소가_스냅샷에_없다() {
         long added = createPlace("엔트리신규", true);
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT.plusHours(1));
 
-        assertThat(entryOf(added)).as("아직 이 회차의 사진에는 없다").isNull();
+        assertThat(entryOf(added)).as("아직 이 회차의 스냅샷에는 없다").isNull();
 
-        loader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
 
         assertThat(entryOf(added)).as("다음 회차부터 보인다").isNotNull();
     }
@@ -232,11 +367,11 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
     private record Display(String name, String imageUrl, String mainTagName, long townId) {}
 
     /**
-     * 최신 회차의 사진에서 이 장소의 엔트리를 찾는다. 인덱스에 id 조회구가 없는 것은 의도이므로
+     * 최신 회차의 스냅샷에서 이 장소의 엔트리를 찾는다. 정렬 배열에 id 조회구가 없는 것은 의도이므로
      * (조회 경로가 쓰지 않는다) 정렬 없는 축으로 전량을 훑어 고른다.
      */
-    private PlaceListEntry entryOf(long placeId) {
-        return snapshot.current().index()
+    private PlaceEntry entryOf(long placeId) {
+        return snapshotBox.current().sortedPlaces()
                 .page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
                         null, Integer.MAX_VALUE - 1)
                 .stream()
@@ -244,9 +379,37 @@ class PlaceListSnapshotLoaderIT extends MySqlContainerSupport {
                 .findFirst().orElse(null);
     }
 
+    /** 같은 장소의 엔트리가 몇 개인지 — MAIN 태그가 둘인 장소가 두 번 서면 안 된다 */
+    private long entryCountOf(long placeId) {
+        return snapshotBox.current().sortedPlaces()
+                .page(PlaceSortType.LATEST, List.of(townId), TagMasks.of(null, null, null),
+                        null, Integer.MAX_VALUE - 1)
+                .stream()
+                .filter(entry -> entry.placeId() == placeId)
+                .count();
+    }
+
+    /** 표시값은 스냅샷이 아니라 홀더에 있다 — 조회 경로가 조립하는 자리와 같은 곳에서 읽는다 */
+    private PlaceView viewOf(long placeId) {
+        return placeViewHolder.get(placeId);
+    }
+
+    /** {@code PlaceService}가 응답을 조립할 때 하는 판정과 같아야 한다 */
+    private String mainTagNameOf(long placeId) {
+        PlaceView view = viewOf(placeId);
+        if (view == null || view.mainTagId() == null) {
+            return null;
+        }
+        TagView tag = tagViewHolder.get(view.mainTagId());
+        return tag != null && tag.active() ? tag.name() : null;
+    }
+
     private Display displayOf(long placeId) {
-        PlaceListEntry entry = entryOf(placeId);
-        return new Display(entry.name(), entry.imageUrl(), entry.mainTagName(), entry.townId());
+        PlaceView view = viewOf(placeId);
+        // 뷰는 파일 키만 들고 URL 결합은 조회 경로가 한다 — 엔티티 경로와 맞댈 값은 URL이므로
+        // 여기서 조회 경로와 같은 결합을 거쳐 비교한다
+        return new Display(view.name(), imageUrlProvider.getImageUrl(view.thumbnailFileKey()),
+                mainTagNameOf(placeId), entryOf(placeId).townId());
     }
 
     /**

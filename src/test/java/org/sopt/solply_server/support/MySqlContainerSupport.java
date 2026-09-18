@@ -40,6 +40,9 @@ public abstract class MySqlContainerSupport {
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
+        // 컨텍스트마다 풀이 하나씩 살아 남는다 — 기본값 10이면 IT 클래스가 늘 때
+        // 컨테이너의 max_connections(151)를 넘어 엉뚱한 IT가 "Too many connections"로 죽는다
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("spring.flyway.locations", () -> "classpath:db/migration");
         registry.add("spring.flyway.baseline-on-migrate", () -> "true");
@@ -48,5 +51,29 @@ public abstract class MySqlContainerSupport {
         registry.add("spring.jpa.properties.hibernate.dialect",
                 () -> "org.hibernate.dialect.MySQLDialect");
         registry.add("decorator.datasource.enabled", () -> "false");
+        quietSnapshotRefresh(registry);
+    }
+
+    /**
+     * 목록 스냅샷의 <b>리빌드 폴을 IT에서 사실상 멈춘다.</b>
+     *
+     * <p><b>왜 멈추나.</b> 기본 1초 {@code fixedDelay}로 돌면 배경 리빌드가 테스트의 단언 사이에
+     * 끼어들어 스냅샷을 갈아 끼운다 — 그 IT가 <b>무엇을 보고 무엇을 단언했는지</b>가 시점에 따라
+     * 달라진다. 리빌드는 테스트가 명시적으로 부르는 것만 돌아야 한다.
+     *
+     * <p><b>기동 빌드는 이 값과 무관하다.</b> {@code SnapshotScheduler}는 폴을 기다리지 않고
+     * 자기가 직접 짓는다. 그래서 옛 구조와 달리 이 값을 한 시간으로 잡아도 컨텍스트 기동이
+     * 멈추지 않는다.
+     *
+     * <p>다만 {@code fixedDelay}의 <b>첫 발화</b>는 스케줄러가 뜨자마자 한 번 온다. 그때는 기동
+     * 빌드가 이미 같은 번호를 설치한 뒤라 리빌드로 이어지지 않는다(번호 조회 하나로 끝난다).
+     *
+     * <p><b>폴 간격을 되돌리려고 하위 클래스에서 같은 키를 다시 등록하지 말 것.</b>
+     * {@code @DynamicPropertySource}는 하위 것이 먼저, 상위 것이 나중에 불려 <b>상위가 하위를
+     * 덮는다.</b> 폴을 실제로 돌려야 하는 검증은 스케줄러를 기다리는 대신
+     * {@code SnapshotLoadCoordinator#pollRebuild}를 직접 부른다.
+     */
+    protected static void quietSnapshotRefresh(DynamicPropertyRegistry registry) {
+        registry.add("solply.place-list-snapshot.poll-interval-ms", () -> "3600000");
     }
 }

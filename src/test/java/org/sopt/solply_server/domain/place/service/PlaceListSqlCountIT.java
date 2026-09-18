@@ -11,7 +11,9 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.sopt.solply_server.domain.place.cache.PlaceListSnapshotLoader;
+import org.sopt.solply_server.domain.place.cache.SnapshotInstaller;
+import org.sopt.solply_server.domain.place.cache.SnapshotRebuilder;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
 import org.sopt.solply_server.domain.place.dto.response.PlaceFilterGetResponse;
@@ -22,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 목록 요청이 발행하는 SQL <b>문장 수</b>를 값으로 못 박는다.
@@ -48,8 +51,11 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     static void sqlCountProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
         registry.add("solply.place-stats.count-cron", () -> "-");
+        // 매시 회차가 둘로 갈렸다(2026-09-12) — 새 키를 빠뜨리면 :15에 델타 소비가 깨어난다
+        registry.add("solply.place-stats.bookmark-delta-cron", () -> "-");
         registry.add("solply.place-stats.count-safety-cron", () -> "-");
         registry.add("solply.place-stats.score-cron", () -> "-");
+        registry.add("solply.auth.cleanup-cron", () -> "-");
         registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
                 SqlStatementProbe.class::getName);
     }
@@ -63,8 +69,13 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 7, 30, 2, 0, 0);
 
     @Autowired private PlaceService placeService;
+    @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private PlaceStatsBatchProcessor batchProcessor;
-    @Autowired private PlaceListSnapshotLoader snapshotLoader;
+    @Autowired private SnapshotMetadataRepository snapshotMetadataRepository;
+    @Autowired private SnapshotInstaller snapshotInstaller;
+
+    /** "번호를 올리고 원본에서 다시 지어 설치하라"를 한 줄로 묶는다 */
+    private SnapshotRebuilder snapshotRebuilder;
     @Autowired private JdbcTemplate jdbcTemplate;
 
     private long townId;
@@ -85,8 +96,10 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
         // 검증하려던 "점수 경계"를 실제로는 밟지 않게 된다.
         batchProcessor.recalculateCounts(CALCULATED_AT);
         batchProcessor.recalculateScores(CALCULATED_AT);
-        // 조회가 읽는 것은 사진뿐이라, 픽스처를 다 심은 뒤 한 회차를 찍어야 목록이 이 행들을 본다
-        snapshotLoader.rebuild();
+        // 조회가 읽는 것은 스냅샷뿐이라, 픽스처를 다 심은 뒤 한 회차를 찍어야 목록이 이 행들을 본다
+        snapshotRebuilder = new SnapshotRebuilder(
+                snapshotInstaller, snapshotMetadataRepository, transactionManager);
+        snapshotRebuilder.rebuildAndInstall();
     }
 
     /**
@@ -111,7 +124,7 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
     }
 
     /**
-     * <b>목록 요청은 place_stats를 한 문장도 읽지 않는다.</b> 순서도 표시값도 이미 사진 안에 있다 —
+     * <b>목록 요청은 place_stats를 한 문장도 읽지 않는다.</b> 순서도 표시값도 이미 스냅샷 안에 있다 —
      * 여기서 문장이 하나라도 나가면 회차 배치로 옮긴 일을 요청마다 다시 하는 셈이다.
      *
      * <p><b>마지막 단언이 이 0을 뜻 있게 만든다.</b> 프로브가 죽어 있어도 위 두 단언은 그대로
@@ -129,7 +142,7 @@ class PlaceListSqlCountIT extends MySqlContainerSupport {
         assertThat(statementsReadingPlaceStats()).isEmpty();
 
         SqlStatementProbe.clear();
-        snapshotLoader.rebuild();
+        snapshotRebuilder.rebuildAndInstall();
         assertThat(statementsReadingPlaceStats()).isNotEmpty();
     }
 

@@ -22,22 +22,25 @@ import org.springframework.data.repository.query.Param;
 public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
-     * 표시 카운트 셋(북마크 수·리뷰 수·평균 평점)을 원본에서 재계산해 <b>이미 존재하는 행에만</b>
-     * 덮어쓴다. 문장 하나라 원자성을 물을 지점이 없다.
+     * <b>북마크 수를 원본에서 다시 센다</b> — 안전망 회차의 문장. <b>이미 존재하는 행에만</b>
+     * 덮어쓰고, 문장 하나라 원자성을 물을 지점이 없다.
      *
-     * <p><b>매시 회차의 문장이었으나 지금은 새벽 안전망의 것이다.</b> 북마크 축이 아웃박스 델타로
-     * 넘어가면서 매시 자리는 {@link #updateReviewCounts} + 델타 소비가 맡고, 이 전량 재계산은
-     * "버그로 생긴 표류의 상한을 하루로" 잡는 마지막 겹으로 남았다
-     * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4). 세 축을 함께 덮으므로
-     * <b>부르는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은 트랜잭션에서 비워야 한다</b> —
+     * <p><b>리뷰 축은 이 문장의 몫이 아니다.</b> 리뷰 수·평균 평점은 리뷰 회차가 15분마다 전량
+     * 재계산하므로({@link #updateReviewCounts}) 여기서 함께 세면 같은 값을 하루에 한 번 더 세는
+     * 중복일 뿐이다. 안전망이 지키는 축은 <b>북마크 하나</b>다 — 그 축만 아웃박스 델타 위에 서
+     * 있어 발행·소비 규칙의 버그로 조용히 어긋날 수 있고, 이 문장이 그 표류의 상한을 하루로 잡는다
+     * ({@code docs/design/2026-08-17-bookmark-outbox-delta.md} 4-4).
+     *
+     * <p><b>부르는 트랜잭션은 자기가 읽은 시점까지의 아웃박스를 같은 트랜잭션에서 비워야 한다</b> —
      * 그러지 않으면 이미 셈에 들어간 토글을 다음 델타 회차가 또 더한다
      * ({@code PlaceStatsBatchProcessor#recalculateCountsAndClearOutbox}).
      *
-     * <p><b>UPDATE이지 UPSERT가 아닌 것이 이 문장의 요점이다.</b> 행의 존재와 파생 세 칸
-     * ({@code town_id}·{@code created_at}·{@code tag_bitmask})의 주인은 어드민 쓰기 트랜잭션
-     * 하나이고({@code AdminPlaceService}), 배치는 거기에 손대지 않는다. 예전에는 이 회차가 활성
-     * 장소 전량을 원본에서 다시 지어 그 세 칸까지 덮었는데, 그것은 안전망이 아니라 <b>어드민이
-     * 방금 커밋한 값을 배치가 읽은 낡은 스냅샷으로 되돌릴 수 있는 경로</b>였다.
+     * <p><b>UPDATE이지 UPSERT가 아닌 것이 이 문장의 요점이다.</b> 행의 존재와 어드민 소유 칸
+     * ({@code town_id}·{@code created_at}·{@code tag_bitmask}·{@code name}·좌표 둘·
+     * {@code main_tag_id}·{@code thumbnail_file_key})의 주인은 어드민 쓰기 트랜잭션 하나이고
+     * ({@code AdminPlaceService}), 배치는 거기에 손대지 않는다. 예전에는 이 회차가 활성 장소 전량을 원본에서 다시 지어 그 칸들까지
+     * 덮었는데, 그것은 안전망이 아니라 <b>어드민이 방금 커밋한 값을 배치가 읽은 낡은 스냅샷으로
+     * 되돌릴 수 있는 경로</b>였다.
      *
      * <p>그래서 {@code places}·{@code place_tag}가 이 문장에 없다. 딸려 사라진 것이 둘이다 —
      * FK 부모 검사가 {@code places}에 남기던 S 락(어드민의 동네 일괄 작업을 배치 시간만큼 세우던
@@ -47,25 +50,23 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 멱등성이라는 문장의 참/거짓이다 — 같은 기준 시각으로 다시 돌렸을 때 그 사이 들어온 활동이
      * 결과를 바꾼다면 "회차를 재실행해도 안전하다"가 성립하지 않는다.
      *
-     * <p><b>세 값 모두 COALESCE로 0을 채운다 (V37).</b> {@code avg_rating}은 예전에 NULL을 그대로
-     * 흘려보냈지만, 평점순이 리뷰 0건 장소를 0점으로 맨 뒤에 싣게 되면서 컬럼이 NOT NULL로 조여졌다.
-     * <b>저장 시점의 COALESCE는 인덱스와 무관하다</b> — 인덱스가 못 견디는 것은 조회의 정렬식에
-     * COALESCE가 끼는 경우이고, 여기서는 컬럼에 실값이 들어갈 뿐이다. "평점 0점"과 "리뷰 없음"의
-     * 구분은 응답 매핑이 맡는다 ({@code PlacePreviewDto}).
+     * <p><b>COALESCE로 0을 채운다.</b> 북마크가 한 건도 없는 장소는 LEFT JOIN이 NULL을 주는데
+     * {@code bookmark_count}는 NOT NULL이다. <b>저장 시점의 COALESCE는 인덱스와 무관하다</b> —
+     * 인덱스가 못 견디는 것은 조회의 정렬식에 COALESCE가 끼는 경우이고, 여기서는 컬럼에 실값이
+     * 들어갈 뿐이다.
      *
-     * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> 두 소스 테이블을 훑는 성질은
+     * <p><b>⚠️ 반드시 {@code READ_COMMITTED}에서 호출할 것.</b> 소스 테이블을 훑는 성질은
      * {@link #updateScores}와 같다 — REPEATABLE READ면 스캔 행에 shared next-key 락이 걸려 동시
-     * 북마크·리뷰 INSERT가 {@code ERROR 1205}로 죽는다(벤치 실측 1,063만 건 대 0건).
+     * 북마크 INSERT가 {@code ERROR 1205}로 죽는다(벤치 실측 1,063만 건 대 0건).
      *
-     * <p>인덱스 전제: 북마크 축은 {@code idx_bookmark_target}(V23), 리뷰 축은
-     * {@code idx_place_reviews_place_created_rating}(V22)로 각각 인덱스 전용 스캔이어야 한다.
+     * <p>인덱스 전제: {@code idx_bookmark_target}(V23)으로 인덱스 전용 스캔이어야 한다.
      *
      * <p><b>SET 목록에 회차 시각을 넣지 말 것 (V35).</b> InnoDB는 새 값이 기존 값과 전부 같은 행의
      * 쓰기를 생략하는데, 회차마다 반드시 달라지는 값이 하나라도 끼면 그 판정이 전 행에서 무조건
      * 실패한다 — 한 시간 동안 아무 활동도 없던 장소까지 매시 다시 쓰이고 undo·redo·binlog가
-     * 그만큼 따라온다. 지금 이 문장이 실제로 건드리는 것은 <b>카운트가 달라진 장소뿐</b>이다.
+     * 그만큼 따라온다. 지금 이 문장이 실제로 건드리는 것은 <b>북마크 수가 달라진 장소뿐</b>이다.
      * 배치가 마지막으로 돈 시각이 필요하면 {@code shedlock} 테이블(V27)의
-     * {@code place-stats-count} 행을 볼 것.
+     * {@code place-stats-count-safety} 행을 볼 것.
      *
      * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
      * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수. 실제로 값이 바뀐 행 수가
@@ -83,19 +84,9 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
               AND bm.created_at <= :calculatedAt
             GROUP BY bm.target_id
         ) b ON b.place_id = ps.place_id
-        LEFT JOIN (
-            SELECT pr.place_id AS place_id,
-                   COUNT(*) AS cnt,
-                   AVG(pr.rating) AS avg_rating
-            FROM place_reviews pr
-            WHERE pr.created_at <= :calculatedAt
-            GROUP BY pr.place_id
-        ) r ON r.place_id = ps.place_id
-        SET ps.bookmark_count = COALESCE(b.cnt, 0),
-            ps.review_count   = COALESCE(r.cnt, 0),
-            ps.avg_rating     = COALESCE(r.avg_rating, 0)
+        SET ps.bookmark_count = COALESCE(b.cnt, 0)
         """, nativeQuery = true)
-    int updateCounts(@Param("calculatedAt") LocalDateTime calculatedAt);
+    int updateBookmarkCountsFromSource(@Param("calculatedAt") LocalDateTime calculatedAt);
 
     /**
      * 리뷰 축(리뷰 수·평균 평점)만 원본에서 재계산해 <b>이미 존재하는 행에만</b> 덮어쓴다 =
@@ -110,12 +101,18 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 1.9%, 실측 117ms — {@code docs/design/2026-08-15-bookmark-count-supply.md}), 신선도 ≤1h를
      * 지키는 가장 단순한 수단이 매시 재계산이기 때문이다.
      *
-     * <p>나머지 계약은 {@link #updateCounts}를 그대로 상속한다: {@code READ_COMMITTED} 필수,
-     * {@code created_at <= :calculatedAt} 상한(= 멱등성), {@code COALESCE}로 0 채우기, SET 목록에
-     * 회차 시각 금지. 근거는 옮겨 적지 않고 그쪽 javadoc <b>한 곳에만</b> 둔다.
+     * <p>나머지 계약은 {@link #updateBookmarkCountsFromSource}를 그대로 상속한다:
+     * {@code READ_COMMITTED} 필수, {@code created_at <= :calculatedAt} 상한(= 멱등성),
+     * {@code COALESCE}로 0 채우기, SET 목록에 회차 시각 금지. 근거는 옮겨 적지 않고 그쪽 javadoc
+     * <b>한 곳에만</b> 둔다.
+     *
+     * <p><b>두 문장의 SET 목록은 겹치지 않는다</b> — 여기는 리뷰 축, 저기는 북마크 축 하나다.
+     * 그것이 이 인터페이스의 계약이고, 안전망이 북마크 전용으로 좁아진 뒤에는 두 축의 주인이
+     * 회차별로 하나씩 대응된다.
      *
      * @param calculatedAt 이번 회차의 기준 시각이자 <b>집계 대상의 상한</b>
-     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수 — 근거는 {@link #updateCounts}
+     * @return <b>조건에 걸린</b> 행 수 = 그 시점의 목록 노출 대상 장소 수 — 근거는
+     *         {@link #updateBookmarkCountsFromSource}
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
@@ -135,7 +132,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
 
     /**
      * 활성 장소 전량의 행을 원본에서 다시 짓는다 = <b>기동 시 최초 적재와 운영 복구의 문장</b>.
-     * 정기 회차는 이 문장을 쓰지 않는다 ({@link #updateCounts}).
+     * 정기 회차는 이 문장을 쓰지 않는다 ({@link #updateBookmarkCountsFromSource}).
      *
      * <p>필요한 자리가 둘이다. 하나는 V32·V34처럼 {@code place_stats}를 재생성한 배포 직후 —
      * 테이블이 비어 있고 어드민이 다시 저장해 줄 장소가 없다. 다른 하나는 운영자가 DB에 직접
@@ -162,6 +159,12 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 전용인 지금은 그 대기가 정기적으로 일어나지 않는다.
      * 전제: {@code binlog_format = ROW}. STATEMENT/MIXED면 이 문장 자체가 {@code ERROR 1665}로 거부된다.
      *
+     * <p><b>썸네일을 상관 서브쿼리로 고르는 이유.</b> 이 문장은 기동·복구의 전량이거나 어드민 쓰기
+     * 한 건({@link #upsertRowsForActivePlaces}의 PK IN 소수 행)이라, 장소마다 서브쿼리를 한 번씩
+     * 도는 비용을 받아들인다. {@code docs/design/2026-09-09-rebuild-streaming.md} §4-3이 측정으로
+     * 기각한 것은 <b>재빌드마다</b> 도는 같은 서브쿼리다 — 회차마다 × 전 장소에서는 그 비용이
+     * 문장 하나를 더 도는 것보다 비쌌지만, 여기서는 어드민 빈도의 일회성 비용이다.
+     *
      * <p>{@code VALUES(col)}은 deprecated라 실행마다 {@code Warning 1287}이 참조 수만큼 뜬다.
      * {@code INSERT ... SELECT}에서는 행 별칭 문법이 {@code ERROR 1054}로 깨져 쓸 수 없고,
      * 대안은 SELECT 전체를 파생 테이블로 감싸는 형태뿐이다 — MySQL 8.4 이상으로 올려 함수가
@@ -174,11 +177,21 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
+            name, latitude, longitude, main_tag_id, thumbnail_file_key,
             bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
+               p.name,
+               p.latitude,
+               p.longitude,
+               mpt.tag_id,
+               (SELECT pi.image_file_key
+                  FROM place_images pi
+                 WHERE pi.place_id = p.id
+                 ORDER BY pi.display_order, pi.image_file_key
+                 LIMIT 1),
                COALESCE(b.cnt, 0),
                COALESCE(r.cnt, 0),
                COALESCE(r.avg_rating, 0)
@@ -189,6 +202,15 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             FROM place_tag pt
             GROUP BY pt.place_id
         ) t ON t.place_id = p.id
+        LEFT JOIN (
+            SELECT pt.place_id AS place_id,
+                   MIN(pt.id) AS pt_id
+            FROM place_tag pt
+            JOIN tags tg ON tg.id = pt.tag_id
+            WHERE tg.type = 'MAIN'
+            GROUP BY pt.place_id
+        ) mm ON mm.place_id = p.id
+        LEFT JOIN place_tag mpt ON mpt.id = mm.pt_id
         LEFT JOIN (
             SELECT bm.target_id AS place_id,
                    COUNT(*) AS cnt
@@ -207,12 +229,17 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
         ) r ON r.place_id = p.id
         WHERE p.active = 1
         ON DUPLICATE KEY UPDATE
-            town_id        = VALUES(town_id),
-            created_at     = VALUES(created_at),
-            tag_bitmask    = VALUES(tag_bitmask),
-            bookmark_count = VALUES(bookmark_count),
-            review_count   = VALUES(review_count),
-            avg_rating     = VALUES(avg_rating)
+            town_id            = VALUES(town_id),
+            created_at         = VALUES(created_at),
+            tag_bitmask        = VALUES(tag_bitmask),
+            name               = VALUES(name),
+            latitude           = VALUES(latitude),
+            longitude          = VALUES(longitude),
+            main_tag_id        = VALUES(main_tag_id),
+            thumbnail_file_key = VALUES(thumbnail_file_key),
+            bookmark_count     = VALUES(bookmark_count),
+            review_count       = VALUES(review_count),
+            avg_rating         = VALUES(avg_rating)
         """, nativeQuery = true)
     int rebuildRowsFromSource(@Param("calculatedAt") LocalDateTime calculatedAt);
 
@@ -224,14 +251,27 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 내려간 장소를 수정해도 행이 되살아나지 않는다 — "행이 있는 장소 = 목록에 나와도 되는 장소"가
      * 이 문장 하나로 유지된다. 그래서 세 경로가 분기 없이 같은 문장을 부를 수 있다.
      *
-     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 파생 세 칸뿐이다.</b> 표시 카운트 셋과
-     * 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
+     * <p><b>{@code ON DUPLICATE KEY UPDATE}가 건드리는 것은 어드민 소유 여덟 칸뿐이다.</b> 표시 카운트
+     * 셋과 점수 배치 소유의 두 칸은 그대로 둔다 — 태그를 고쳤다고 북마크 수가 0으로 돌아가면 안 된다.
      * 반대로 <b>신규 행</b>은 카운트
      * 0·평점 0·점수 0으로 들어가고, 두 정렬 모두 그 자리에서 장소를 보여준다 — 인기순은 점수 0
      * 자리에, 최신순은 맨 앞에 (근거는 {@code PlaceListDbQueryRepository#findPopularRows}).
      *
      * <p><b>{@code BIT_OR(1 << pt.tag_id)}는 tag id ≤ 62를 전제한다</b> — 근거와 가드는
      * {@link #rebuildRowsFromSource} javadoc과 같다.
+     *
+     * <p><b>어드민 소유 칸이 다섯 늘면서(V40 — {@code name}·좌표 둘·{@code main_tag_id}·
+     * {@code thumbnail_file_key}) 표시값만 고친 수정도 이 문장을 부른다.</b> 이름이
+     * {@code place_stats}의 칸이 된 순간 "소속 열쇠가 같으면 파생 컬럼도 그대로"라는 전제가 깨졌기
+     * 때문이다. {@code main_tag_id}는 {@code place_tag.id} 오름차순 첫 MAIN 태그이고 <b>태그의 활성
+     * 여부로 거르지 않는다</b> — 거르면 다음 MAIN 태그가 뽑혀 엔티티 경로와 값이 갈린다.
+     *
+     * <p><b>비동기 이미지 이동 후처리도 이 문장을 부른다</b> ({@code PlaceImageFieldUpdater}).
+     * 어드민 커밋 뒤에 {@code place_images}의 키가 스테이징에서 최종으로 바뀌므로, 그 자리에서
+     * {@code thumbnail_file_key}를 다시 짓지 않으면 표시값 패치가 죽은 키를 읽는다.
+     *
+     * <p>썸네일을 상관 서브쿼리로 고르는 근거는 {@link #rebuildRowsFromSource} javadoc에 있다 —
+     * 여기는 PK IN 소수 행이라 장소마다 한 번 도는 비용이 문제가 되지 않는다.
      *
      * @param placeIds 비어 있으면 호출하지 말 것 — {@code IN ()}은 문법 오류다
      * @return 영향 행 수 (MySQL은 INSERT를 1, UPDATE를 2로 센다)
@@ -240,11 +280,21 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
     @Query(value = """
         INSERT INTO place_stats (
             place_id, town_id, created_at, tag_bitmask,
+            name, latitude, longitude, main_tag_id, thumbnail_file_key,
             bookmark_count, review_count, avg_rating)
         SELECT p.id,
                p.town_id,
                p.created_at,
                COALESCE(t.mask, 0),
+               p.name,
+               p.latitude,
+               p.longitude,
+               mpt.tag_id,
+               (SELECT pi.image_file_key
+                  FROM place_images pi
+                 WHERE pi.place_id = p.id
+                 ORDER BY pi.display_order, pi.image_file_key
+                 LIMIT 1),
                0,
                0,
                0
@@ -256,12 +306,27 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
             WHERE pt.place_id IN (:placeIds)
             GROUP BY pt.place_id
         ) t ON t.place_id = p.id
+        LEFT JOIN (
+            SELECT pt.place_id AS place_id,
+                   MIN(pt.id) AS pt_id
+            FROM place_tag pt
+            JOIN tags tg ON tg.id = pt.tag_id
+            WHERE tg.type = 'MAIN'
+              AND pt.place_id IN (:placeIds)
+            GROUP BY pt.place_id
+        ) mm ON mm.place_id = p.id
+        LEFT JOIN place_tag mpt ON mpt.id = mm.pt_id
         WHERE p.id IN (:placeIds)
           AND p.active = 1
         ON DUPLICATE KEY UPDATE
-            town_id     = VALUES(town_id),
-            created_at  = VALUES(created_at),
-            tag_bitmask = VALUES(tag_bitmask)
+            town_id            = VALUES(town_id),
+            created_at         = VALUES(created_at),
+            tag_bitmask        = VALUES(tag_bitmask),
+            name               = VALUES(name),
+            latitude           = VALUES(latitude),
+            longitude          = VALUES(longitude),
+            main_tag_id        = VALUES(main_tag_id),
+            thumbnail_file_key = VALUES(thumbnail_file_key)
         """, nativeQuery = true)
     int upsertRowsForActivePlaces(@Param("placeIds") List<Long> placeIds);
 
@@ -279,7 +344,7 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 그 행은 아직 채점 전이지만 <b>인기순에도 즉시</b> 나온다 — 점수 0이 곧 그 장소의 자리이고,
      * 근거는 {@code PlaceListDbQueryRepository#findPopularRows} javadoc에 있다.
      *
-     * <p><b>여기서 지운 행을 정기 회차가 되살리지 않는다.</b> {@link #updateCounts}는 이미 있는
+     * <p><b>여기서 지운 행을 정기 회차가 되살리지 않는다.</b> 정기 회차의 문장들은 이미 있는
      * 행만 갱신하기 때문이다. 되살리는 것은 어드민의 재활성 경로
      * ({@link #upsertRowsForActivePlaces})이거나 기동·복구의 {@link #rebuildRowsFromSource}이고,
      * 둘 다 {@code p.active = 1}을 원본에서 다시 판단한다. 이미 없는 행을 지우면 0을 돌려줄 뿐이다.
@@ -361,7 +426,8 @@ public interface PlaceStatsRepository extends JpaRepository<PlaceStats, Long> {
      * 리뷰를 한 장소에만 넣으면 {@code C}가 그 장소의 평균과 같아져 기여가 항상 0이 된다.
      *
      * <p><b>⚠️ 이 문장도 {@code READ_COMMITTED}에서 호출할 것.</b> 소스 테이블 스캔의 락 성질은
-     * {@link #updateCounts}와 같다. 다만 여기서는 갱신 대상이 {@code place_stats} 전 행이라
+     * {@link #updateBookmarkCountsFromSource}와 같다. 다만 여기서는 갱신 대상이
+     * {@code place_stats} 전 행이라
      * 그 X 락이 커밋까지 남는다 — 그래서 두 배치가 겹쳐 돌지 않게 시각을 갈라 뒀다
      * ({@code PlaceStatsFacade} 참조).
      *

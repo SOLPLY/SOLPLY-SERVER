@@ -50,15 +50,22 @@ import org.springframework.validation.annotation.Validated;
 public class PlaceStatsProperties {
 
     /**
-     * 표시 카운트 배치의 cron. 매시 30분 — 근거는 {@code PlaceStatsFacade} javadoc에 있다.
+     * <b>리뷰 카운트 회차</b>의 cron. 매시 :05 :20 :35 :50 — 근거는 {@code PlaceStatsFacade}
+     * javadoc에 있다.
      *
-     * <p><b>⚠️ 이 필드의 값은 스케줄에 쓰이지 않는다 — {@code getCountCron()} 호출처가 0건이다.</b>
-     * 스케줄러는 {@code PlaceStatsFacade}의
-     * {@code @Scheduled(cron = "${solply.place-stats.count-cron:0 30 * * * *}")}로 프로퍼티를 직접 읽는다.
-     * {@code @ConfigurationProperties}의 필드 기본값은 플레이스홀더 해석 시점에 보이지 않으므로
-     * <b>기본값 리터럴이 두 곳에 존재하는 것은 구조적으로 강제된 중복</b>이다.
+     * <p><b>이 키는 리뷰 축만 움직인다.</b> 북마크 축은 {@link #bookmarkDeltaCron}을 읽으므로,
+     * 두 축의 주기를 함께 옮기려면 두 키를 함께 고쳐야 한다. 옛 통합 회차 시절 이 키 하나가
+     * 둘의 발화 시각이던 것과 달라진 점이다 — 값을 조정해 온 환경이라면 확인할 것.
+     *
+     * <p><b>⚠️ 발화 시각을 정하는 것은 이 필드가 아니다.</b> 스케줄러는 {@code PlaceStatsFacade}의
+     * {@code @Scheduled(cron = "${solply.place-stats.count-cron:0 5/15 * * * *}")}로 프로퍼티를
+     * 직접 읽는다. {@code @ConfigurationProperties}의 필드 기본값은 플레이스홀더 해석 시점에
+     * 보이지 않으므로 <b>기본값 리터럴이 두 곳에 존재하는 것은 구조적으로 강제된 중복</b>이다.
      * <b>주기를 바꿀 때는 반드시 두 곳을 함께 고칠 것</b> — 이 필드만 고치면 스케줄은 그대로인
      * 방향으로 조용히 갈라진다. {@code PlaceStatsFacadeTest}가 두 리터럴을 묶어 감시한다.
+     *
+     * <p><b>이 필드가 실제로 읽히는 자리는 {@code PlaceStatsJobKind} 한 표뿐이다</b> — 회차별
+     * 설정을 한 곳에 모아 두는 용도이고, 발화를 만들지는 않는다.
      *
      * <p>그럼에도 필드를 남기는 이유는 <b>진단 가능한 실패</b>다. yml에 {@code count-cron: ""}이
      * 들어오면 {@code @NotBlank}가 "비었다"고 명시하며 부팅을 막는다. 이 필드가 없으면 빈 문자열이
@@ -68,30 +75,54 @@ public class PlaceStatsProperties {
      * 부팅이 죽는다 — cron과 아무 상관없어 보이는 메시지라 원인 추적이 훨씬 어렵다.
      */
     @NotBlank
-    private String countCron = "0 30 * * * *";
+    private String countCron = "0 5/15 * * * *";
 
     /**
-     * 카운트 안전망 배치의 cron. 매일 01:45 (KST) — 표시 카운트 셋을 원본에서 다시 세고 아웃박스를
+     * <b>북마크 카운트 델타 소비 회차</b>의 cron. 매시 :00 :15 :30 :45 (KST).
+     *
+     * <p><b>15분 격자에서 이 회차가 정각을 쓰는 이유는 같은 자원을 잡는 회차들과 시각을 가르기
+     * 위해서다.</b> 이 회차와 01:25 안전망은 같은 아웃박스 전표에 표식을 찍는 짝이고, 점수 회차(:10)는
+     * {@code place_stats} 전 행을 갱신한다. 리뷰 축(:05 :20 :35 :50)과는 5분씩 엇갈린다.
+     * <b>안전망과의 거리가 5분뿐</b>이라는 한계는 {@code PlaceStatsFacade} javadoc에 있다.
+     *
+     * <p>필드를 남기는 이유와 <b>기본값 리터럴이 두 곳에 존재하는 것이 강제된 중복</b>이라는 사실은
+     * {@link #countCron}과 같다 — 주기를 바꿀 때 {@code @Scheduled}의 리터럴과 함께 고칠 것.
+     */
+    @NotBlank
+    private String bookmarkDeltaCron = "0 0/15 * * * *";
+
+    /**
+     * 카운트 안전망 배치의 cron. 매일 01:25 (KST) — 북마크 수를 원본에서 다시 세고 아웃박스를
      * 비우는 회차이고, 시각 선정 근거는 {@code PlaceStatsFacade} javadoc에 있다.
+     *
+     * <p><b>네 회차 중 이것만 하루 1회다.</b> 북마크 전량 재계산이라 빈도를 올리면 델타 설계가
+     * 걷어낸 전량 스캔이 되돌아온다 — 이 키를 15분 격자로 옮기지 말 것.
      *
      * <p>필드를 남기는 이유와 <b>기본값 리터럴이 두 곳에 존재하는 것이 강제된 중복</b>이라는 사실은
      * {@code countCron}과 같다 — 주기를 바꿀 때 두 곳을 함께 고칠 것.
      */
     @NotBlank
-    private String countSafetyCron = "0 45 1 * * *";
+    private String countSafetyCron = "0 25 1 * * *";
 
     /**
-     * 인기 점수 배치의 cron. 매일 01:00 (KST) — 존재 이유와 시각 선정 근거는 위 필드와 마찬가지로
+     * 인기 점수 배치의 cron. 매시 :10 (KST) — 존재 이유와 시각 선정 근거는 위 필드와 마찬가지로
      * {@code PlaceStatsFacade} javadoc에 있다.
      *
      * <p>시간대는 여기에 담지 않는다. {@code @Scheduled(zone = "Asia/Seoul")}이 고정값이고,
-     * 프로퍼티로 빼면 "cron은 바꿨는데 zone은 안 바꿨다"는 갈림이 하나 더 생긴다.
+     * 프로퍼티로 빼면 "cron은 바꿨는데 zone은 안 바꿨다"는 갈림이 하나 더 생긴다 —
+     * 시간대를 옮긴다면 {@code @Scheduled(zone = ...)} 넷을 함께 옮겨야 한다.
      */
     @NotBlank
-    private String scoreCron = "0 0 1 * * *";
+    private String scoreCron = "0 10 * * * *";
 
     /**
-     * 한 회차의 최대 시도 횟수 (초회 포함). 3이면 실패 시 두 번 더 돌린다.
+     * <b>점수 회차와 안전망 회차</b>의 최대 시도 횟수 (초회 포함). 3이면 실패 시 두 번 더 돌린다.
+     *
+     * <p><b>매시 두 축은 이 키를 읽지 않는다</b> — 각자
+     * {@link #reviewCountMaxAttempts}·{@link #bookmarkDeltaMaxAttempts}를 읽는다. 셋의 기본값이
+     * 모두 3이라 아무것도 설정하지 않은 환경은 차이가 없지만, <b>이 키를 조정해 온 환경이라면
+     * 새 키 둘에 같은 값을 함께 적어야 한다.</b>
+     * 아래 재시도 설계의 근거는 네 회차 전부에 적용되므로 새 필드들은 여기를 가리킨다.
      *
      * <p><b>재시도가 값어치 있는 이유는 회차 간격이 실패의 대가이기 때문이다.</b> 카운트 회차가
      * 한 번 죽으면 다음 회차까지 1시간, 점수 회차는 24시간 낡은 값이 남는다. 재시도가 없던
@@ -111,15 +142,18 @@ public class PlaceStatsProperties {
      * 값을 모든 시도에 넘기는 이유다.
      *
      * <p>3을 넘겨 잡지 말 것. 실패가 일시적이지 않다면(스키마 불일치·데이터 오류) 몇 번을 돌려도
-     * 같고, 시도 사이 대기가 {@code @Scheduled} 단일 스레드를 그만큼 붙잡는다.
+     * 같고, 시도 사이 대기가 배치 풀의 스레드 하나를 그만큼 붙잡는다.
      * {@code lockAtMostFor}(카운트 10분)도 최대 시도 시간을 담을 수 있어야 한다.
      */
     @Positive
     private int batchMaxAttempts = 3;
 
     /**
-     * 시도 사이 대기. 있는 이유는 실패 직후 같은 자원을 곧바로 다시 치지 않기 위해서다 —
-     * 락 경합이나 순간 장애가 가라앉을 틈을 준다.
+     * <b>점수 회차와 안전망 회차</b>의 시도 사이 대기. 있는 이유는 실패 직후 같은 자원을 곧바로
+     * 다시 치지 않기 위해서다 — 락 경합이나 순간 장애가 가라앉을 틈을 준다.
+     *
+     * <p>범위가 좁아진 사정은 {@link #batchMaxAttempts}와 같다. 매시 두 축은
+     * {@link #reviewCountRetryDelay}·{@link #bookmarkDeltaRetryDelay}를 읽는다.
      *
      * <p>정확한 값이 중요한 자리는 아니다. 회차 간격이 1시간·24시간인데 몇 초를 조정해서 달라지는
      * 것이 없다. 그럼에도 프로퍼티인 이유는 <b>0을 넣을 수 있어야 하기 때문이다</b> — 대기가 상수면
@@ -130,6 +164,48 @@ public class PlaceStatsProperties {
      */
     @NotNull
     private Duration batchRetryDelay = Duration.ofSeconds(5);
+
+    /**
+     * 리뷰 카운트 회차의 최대 시도 횟수. 재시도의 존재 이유·멱등성 근거·3을 넘기지 말라는 경고는
+     * {@link #batchMaxAttempts}에 있고 여기에도 그대로 적용된다.
+     *
+     * <p><b>두 축이 설정을 나눠 갖는 이유는 실패가 남기는 것이 다르기 때문이다.</b> 리뷰 축의
+     * 실패는 낡은 값을 남기고 다음 회차가 그 위에 덮어쓴다. 북마크 축은 실패한 시도가 전표를
+     * 소비하지 않고 롤백하므로 <b>일감이 다음 회차로 쌓인다</b>. 그래서 한쪽의 재시도를 늘리거나
+     * 줄일 때 다른 쪽을 함께 움직여야 할 이유가 없다.
+     *
+     * <p>이 값을 올리면 실패한 회차가 그만큼 길어진다. {@code lockAtMostFor}(매시 두 축 모두
+     * 10분)와 회차 간격을 함께 볼 것 — <b>시도 횟수 × 대기는 대기의 합일 뿐 회차 소요의 상한이
+     * 아니다.</b> 실제 소요는 회차 종료 로그의 {@code elapsed}에 남는다.
+     */
+    @Positive
+    private int reviewCountMaxAttempts = 3;
+
+    /**
+     * 리뷰 카운트 회차의 시도 사이 대기. 0을 넣을 수 있어야 하는 이유는
+     * {@link #batchRetryDelay}와 같다 — 실패 경로 테스트가 시도 횟수만큼 잠들지 않게.
+     */
+    @NotNull
+    private Duration reviewCountRetryDelay = Duration.ofSeconds(5);
+
+    /**
+     * 북마크 델타 소비 회차의 최대 시도 횟수.
+     *
+     * <p><b>이 축의 재시도가 안전한 근거는 멱등성이 아니다.</b> 적용(카운트 갱신)과 삭제(전표 소비)가
+     * 한 트랜잭션이라 실패한 시도는 전표를 그대로 남기고 통째로 롤백된다
+     * ({@code BookmarkCountDeltaProcessor#consumeAndApply}). 그러므로 {@code calculatedAt}을 고정하는
+     * 것은 여기서 로그 표식일 뿐이고, 재시도는 "같은 결과를 다시 계산"이 아니라 "남은 일감을 다시 시도"다.
+     *
+     * <p>{@code lockAtMostFor}와의 관계는 {@link #reviewCountMaxAttempts}와 같다.
+     */
+    @Positive
+    private int bookmarkDeltaMaxAttempts = 3;
+
+    /**
+     * 북마크 델타 소비 회차의 시도 사이 대기. 존재 이유는 {@link #batchRetryDelay}와 같다.
+     */
+    @NotNull
+    private Duration bookmarkDeltaRetryDelay = Duration.ofSeconds(5);
 
     /**
      * 감쇠 반감기(일). 90일이면 30일 경과 시 79%, 1년 경과 시 6%가 남는다.

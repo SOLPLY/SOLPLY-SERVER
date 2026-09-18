@@ -40,11 +40,17 @@ public class PlaceStatsJdbcRepository {
      * 장소의 델타는 적용될 곳 없이 버려진다. 되살아나는 경로는 어드민 재활성이고, 그쪽은
      * 카운트를 0에서 다시 시작한다.
      *
+     * <p><b>델타가 {@code long}인 것은 접는 자리가 DB로 내려갔기 때문이다</b> (2026-09-12).
+     * {@code SUM(delta)}의 결과를 그대로 받으므로 전표 쪽 폭({@code TINYINT})이 아니라 합의 폭을
+     * 따른다. 실제로 더해지는 {@code bookmark_count}는 {@code INT}라 한 회차의 합이 그 범위를
+     * 넘기면 문장이 죽는데, 그러려면 한 회차에 21억 번의 토글이 필요하다 — 막는 장치를 두지 않고
+     * 사실만 적어 둔다. 아래 {@code GREATEST(0, …)}가 막는 것은 그쪽이 아니라 표류가 만든 음수다.
+     *
      * @param deltaByPlace 장소별로 접은 합. 0인 항목은 넣지 말 것 — 쓸 것이 없는데 행을 잠근다
      * @return 문장이 걸린 행 수의 합 = 행이 실재한 장소 수
      */
-    public int applyBookmarkDeltas(Map<Long, Integer> deltaByPlace) {
-        List<Map.Entry<Long, Integer>> entries = new ArrayList<>(deltaByPlace.entrySet());
+    public int applyBookmarkDeltas(Map<Long, Long> deltaByPlace) {
+        List<Map.Entry<Long, Long>> entries = new ArrayList<>(deltaByPlace.entrySet());
         int updated = 0;
         for (int from = 0; from < entries.size(); from += CHUNK_SIZE) {
             updated += applyChunk(entries.subList(from, Math.min(from + CHUNK_SIZE, entries.size())));
@@ -52,7 +58,7 @@ public class PlaceStatsJdbcRepository {
         return updated;
     }
 
-    private int applyChunk(List<Map.Entry<Long, Integer>> chunk) {
+    private int applyChunk(List<Map.Entry<Long, Long>> chunk) {
         StringBuilder sql = new StringBuilder("UPDATE place_stats ps JOIN (");
         Object[] params = new Object[chunk.size() * 2];
         for (int i = 0; i < chunk.size(); i++) {

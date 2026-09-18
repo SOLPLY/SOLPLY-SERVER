@@ -15,16 +15,20 @@ import lombok.NoArgsConstructor;
  * 장소 목록 조회 <b>두 정렬 모두</b>의 읽기 모델. <b>장소당 행 하나</b>다 (V32·V34).
  *
  * <p>담는 것이 세 가지다 — 정렬 축({@code popular_score}, {@code created_at}), 필터 축
- * ({@code town_id}, {@code tag_bitmask}), 표시값(카운트 셋). 목록 조회가 이 테이블 하나로 끝나는 것,
- * 즉 <b>조인이 없다</b>는 것이 V34의 요점이다.
+ * ({@code town_id}, {@code tag_bitmask}), 표시값(카운트 셋 + {@code name}·좌표·{@code main_tag_id}·
+ * {@code thumbnail_file_key}).
+ * 목록 조회가 이 테이블 하나로 끝나는 것, 즉 <b>조인이 없다</b>는 것이 V34의 요점이고,
+ * 스냅샷 재빌드의 전량 문장까지 그 하나로 좁힌 것이 V40이다.
  *
  * <p><b>컬럼마다 주인이 정해져 있고, 서로의 칸을 건드리지 않는 것이 계약이다.</b>
  * <table>
  *   <caption>컬럼별 소유 주체</caption>
  *   <tr><th>주체</th><th>주기</th><th>소유 컬럼</th></tr>
  *   <tr><td>어드민 쓰기 트랜잭션</td><td>즉시(같은 트랜잭션)</td>
- *       <td><b>행의 존재 자체</b>, {@code town_id}, {@code created_at}, {@code tag_bitmask}
- *           ({@code AdminPlaceService})</td></tr>
+ *       <td><b>행의 존재 자체</b>, {@code town_id}, {@code created_at}, {@code tag_bitmask},
+ *           {@code name}, {@code latitude}, {@code longitude}, {@code main_tag_id},
+ *           {@code thumbnail_file_key}
+ *           ({@code AdminPlaceService} · 이미지 이동 후처리 {@code PlaceImageFieldUpdater})</td></tr>
  *   <tr><td>카운트 배치 — 리뷰 축 전량 재계산</td><td>매시 30분</td>
  *       <td>{@code review_count}, {@code avg_rating}</td></tr>
  *   <tr><td>카운트 배치 — 북마크 아웃박스 델타 소비</td><td>매시 30분</td>
@@ -123,6 +127,51 @@ public class PlaceStats {
      */
     @Column(name = "tag_bitmask", nullable = false)
     private long tagBitmask;
+
+    /**
+     * 장소 이름. {@code places.name}의 사본이다 (V40).
+     *
+     * <p><b>이름만 고친 수정도 어드민 쓰기 경로의 upsert를 부른다</b> — 이름이 이 테이블의 칸이 된
+     * 순간 "표시값만 바뀐 수정은 파생 컬럼이 그대로"라는 전제가 깨졌다.
+     */
+    @Column(name = "name", nullable = false)
+    private String name;
+
+    /** 위도. {@code places.latitude}의 사본이다 (V40). 좌표가 없는 장소가 있어 NULL을 허용한다. */
+    @Column(name = "latitude")
+    private Double latitude;
+
+    /** 경도. {@code places.longitude}의 사본이다 (V40). 좌표가 없는 장소가 있어 NULL을 허용한다. */
+    @Column(name = "longitude")
+    private Double longitude;
+
+    /**
+     * 대표 태그 id (V40). 규칙은 <b>{@code place_tag.id} 오름차순 첫 MAIN 태그, 태그의 활성 무관</b>이고,
+     * MAIN 태그가 하나도 없으면 NULL이다. 활성 여부로 여기서 거르면 그 다음 MAIN 태그가 뽑혀
+     * 엔티티 경로({@code Place#getMainTag})와 값이 갈린다 — 이름을 실을지 정하는 활성 판정은
+     * 응답 조립의 몫이다.
+     *
+     * <p>FK를 걸지 않는다. {@code tag_bitmask}와 같은 파생·표시 값이라 태그 삭제 경로가 없어 고아가
+     * 생길 길이 없고, FK를 걸면 어드민 태그 쓰기와 upsert 사이에 잠금 관계가 새로 생긴다.
+     */
+    @Column(name = "main_tag_id")
+    private Long mainTagId;
+
+    /**
+     * 썸네일 파일 키 (V40). 규칙은 그 장소의 {@code place_images}를 <b>{@code display_order},
+     * {@code image_file_key} 순으로 정렬한 첫 행의 {@code image_file_key} 원값</b>이다.
+     * 값이 아니라 키를 담는다 — URL 결합은 응답 조립의 몫이다 ({@code PlaceView}).
+     *
+     * <p><b>이미지가 없으면 NULL, 첫 이미지의 키가 비어 있으면 빈 키 그대로다.</b> 빈 키를 "없음"으로
+     * 접어 다음 이미지로 넘어가면 엔티티 경로({@code Place#getThumbnailFileKey})와 값이 갈린다 —
+     * 빈 키에 null URL을 내는 판정은 {@code ImageUrlProvider}가 한다.
+     *
+     * <p>{@code image_file_key}가 타이브레이커인 것은 {@code place_images}에 대리키가 없고
+     * {@code display_order}가 중복도 NULL도 허용하기 때문이다. 값으로 갈라야 전량 재빌드와 단건
+     * 패치가 같은 이미지를 고른다.
+     */
+    @Column(name = "thumbnail_file_key", columnDefinition = "TEXT")
+    private String thumbnailFileKey;
 
     /**
      * 인기점수 배치가 이 행의 {@code popularScore}를 마지막으로 정한 시각.

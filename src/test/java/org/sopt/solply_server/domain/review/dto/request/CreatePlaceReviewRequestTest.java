@@ -36,9 +36,10 @@ class CreatePlaceReviewRequestTest {
         .collect(Collectors.toUnmodifiableSet());
   }
 
+  // 한시 조치: 앱이 평점을 보내기 시작하면 다시 필수로 돌린다.
   @Test
-  void 평점이_없으면_검증에_실패한다() {
-    assertThat(violatedFields(requestWithRating(null))).contains("rating");
+  void 평점이_없어도_검증을_통과한다() {
+    assertThat(violatedFields(requestWithRating(null))).isEmpty();
   }
 
   @Test

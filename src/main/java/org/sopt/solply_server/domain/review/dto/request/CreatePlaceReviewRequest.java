@@ -28,7 +28,8 @@ public record CreatePlaceReviewRequest(
 
     List<String> imageKeys,
 
-    @NotNull(message = "평점은 필수입니다.")
+    // 한시 조치: 앱이 평점을 아직 보내지 않아 선택값으로 둔다. 값이 없으면 서비스가 중립값 3으로
+    // 채워 저장한다. 앱이 평점을 보내기 시작하면 @NotNull과 서비스의 null 처리를 함께 되살린다.
     @Min(value = 1, message = "평점은 1점 이상이어야 합니다.")
     @Max(value = 5, message = "평점은 5점 이하여야 합니다.")
     Integer rating

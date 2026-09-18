@@ -1,5 +1,6 @@
 package org.sopt.solply_server.domain.review.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +39,7 @@ import org.springframework.context.ApplicationEventPublisher;
  * <p>
  * @Valid를 거치지 않는 호출자가 생겨도 서비스가 스스로 잘못된 평점을 막아
  * DB CHECK 제약 위반(500)이 아니라 BusinessException(400)이 되는지 확인한다.
+ * 평점이 아예 없는 요청은 한시적으로 허용하고 중립값 3으로 채운다.
  */
 @ExtendWith(MockitoExtension.class)
 class PlaceReviewServiceImplRatingValidationTest {
@@ -74,14 +77,18 @@ class PlaceReviewServiceImplRatingValidationTest {
     given(placeRepository.findActiveById(anyLong())).willReturn(Optional.of(mock(Place.class)));
   }
 
+  // 한시 조치: 앱이 평점을 보내기 시작하면 다시 필수로 돌린다.
   @Test
-  void 평점이_없으면_BusinessException을_던진다() {
+  void 평점이_없으면_중립값_3으로_저장한다() {
     유저와_장소는_존재한다();
+    given(placeReviewRepository.save(any(PlaceReview.class)))
+        .willAnswer(invocation -> invocation.getArgument(0));
 
-    assertThatThrownBy(() -> placeReviewService.createReview(1L, requestWithRating(null)))
-        .isInstanceOf(BusinessValidationException.class)
-        .extracting(exception -> ((BusinessException) exception).getErrorCode())
-        .isEqualTo(ErrorCode.INVALID_PLACE_REVIEW_RATING);
+    placeReviewService.createReview(1L, requestWithRating(null));
+
+    ArgumentCaptor<PlaceReview> saved = ArgumentCaptor.forClass(PlaceReview.class);
+    verify(placeReviewRepository).save(saved.capture());
+    assertThat(saved.getValue().getRating()).isEqualTo(3);
   }
 
   @ParameterizedTest

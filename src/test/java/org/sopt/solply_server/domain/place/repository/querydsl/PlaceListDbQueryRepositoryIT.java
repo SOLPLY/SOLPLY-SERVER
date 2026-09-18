@@ -1356,7 +1356,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
             long placeId, long townId, double score, long bookmarkCount,
             long reviewCount, double avgRating, LocalDateTime scoreCalculatedAt) {
         em.createNativeQuery("""
-                INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask,
+                INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask, name,
                                          popular_score, bookmark_count,
                                          review_count, avg_rating,
                                          score_calculated_at)
@@ -1365,6 +1365,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                        p.created_at,
                        COALESCE((SELECT BIT_OR(1 << pt.tag_id)
                                  FROM place_tag pt WHERE pt.place_id = p.id), 0),
+                       p.name,
                        :score, :cnt, :reviewCount, :avgRating, :scoreAt
                 FROM places p
                 WHERE p.id = :placeId
