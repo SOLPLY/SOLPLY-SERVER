@@ -9,6 +9,7 @@ import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepos
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository.PlaceDelta;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionService;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsJdbcRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
@@ -37,6 +38,7 @@ public class BookmarkCountDeltaProcessor {
     private final BookmarkCountEventRepository countEventRepository;
     private final PlaceStatsJdbcRepository placeStatsJdbcRepository;
     private final SnapshotMetadataService snapshotMetadataService;
+    private final TownVersionService townVersionService;
 
     /**
      * 아웃박스를 한 번 비우며 {@code bookmark_count}에 반영한다. 표시할 전표가 없으면 아무 일도
@@ -70,12 +72,16 @@ public class BookmarkCountDeltaProcessor {
         }
 
         List<PlaceDelta> folded = countEventRepository.sumPlaceDeltas(consumptionId);
+        Map<Long, Long> deltaByPlace = toDeltaByPlace(folded);
         int updatedPlaces = folded.isEmpty()
                 ? 0
-                : placeStatsJdbcRepository.applyBookmarkDeltas(toDeltaByPlace(folded));
+                : placeStatsJdbcRepository.applyBookmarkDeltas(deltaByPlace);
         countEventRepository.deleteClaimed(consumptionId);
         // 삼킨 전표가 있을 때만 알린다 — 빈 회차는 위에서 이미 빠져나갔다.
-        // 북마크 수는 인기순의 정렬 키라 순서가 갈린다 — 그래서 커서 회차까지 올린다
+        // 북마크 수는 인기순·북마크순의 정렬 키라 순서가 갈린다 — 그래서 번호를 올린다.
+        // 동네·태그 지문은 그대로이므로 지문 비교로는 잡히지 않는 유일한 쓰기이고, 그래서
+        // 전용 입구를 쓴다. 여기서 장소가 동네를 옮기는 일은 없다.
+        townVersionService.markSortKeysChanged(deltaByPlace.keySet());
         snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
         return new DeltaResult(claimed, updatedPlaces);
     }

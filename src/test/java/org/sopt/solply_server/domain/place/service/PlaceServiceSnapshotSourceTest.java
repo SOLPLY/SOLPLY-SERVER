@@ -240,7 +240,8 @@ class PlaceServiceSnapshotSourceTest {
         PlaceFilterGetResponse page1 = get(null, 1);
 
         assertThat(page1.nextCursor()).isNotNull();
-        assertThat(PlaceListCursor.decode(page1.nextCursor()).version()).isEqualTo(CURRENT_VERSION);
+        assertThat(PlaceListCursor.decode(page1.nextCursor()).globalVersionOrElse(-1L))
+                .isEqualTo(CURRENT_VERSION);
     }
 
     /**
@@ -281,7 +282,7 @@ class PlaceServiceSnapshotSourceTest {
         PlaceFilterGetResponse page2 = get(cursorAfter(3L, CURRENT_VERSION), 1);
 
         assertThat(page2.nextCursor()).isNotNull();
-        assertThat(PlaceListCursor.decode(page2.nextCursor()).version())
+        assertThat(PlaceListCursor.decode(page2.nextCursor()).globalVersionOrElse(-1L))
                 .isEqualTo(CURRENT_VERSION);
     }
 
@@ -333,6 +334,6 @@ class PlaceServiceSnapshotSourceTest {
                 List.of((double) (1_767_225_600L + placeId)),
                 placeId,
                 PlaceListCursor.filterPrintOf(TOWN_ID, null, null, null),
-                version).encode();
+                PlaceListCursor.globalScope(version)).encode();
     }
 }

@@ -15,8 +15,8 @@ class PlaceListCursorTest {
     /** 필터 지문이 검증 대상이 아닌 테스트가 쓰는 값. 네 축이 전부 채워진 형태다. */
     private static final String FILTER_PRINT = "10|20|1,2|3";
 
-    /** 회차 버전이 검증 대상이 아닌 테스트가 쓰는 값. 발급 번호라 자릿수에 의미는 없다 */
-    private static final long VERSION = 1_767_225_600_000L;
+    /** 범위 표현이 검증 대상이 아닌 테스트가 쓰는 값. 동네 경로의 표현 형태다 */
+    private static final String VERSION = "T10@7";
 
     private static PlaceListCursor cursor(double sortKey, long placeId) {
         return new PlaceListCursor(
@@ -41,7 +41,7 @@ class PlaceListCursorTest {
         assertThat(decoded.key(0)).isEqualTo(9.5);
         assertThat(decoded.placeId()).isEqualTo(3L);
         assertThat(decoded.filterPrint()).isEqualTo(FILTER_PRINT);
-        assertThat(decoded.version()).isEqualTo(VERSION);
+        assertThat(decoded.scope()).isEqualTo(VERSION);
     }
 
     /**
@@ -54,13 +54,94 @@ class PlaceListCursorTest {
     @Test
     void 회차_버전만_다른_커서는_다른_토큰이고_각각_그_회차로_왕복한다() {
         PlaceListCursor first = new PlaceListCursor(
-                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, 100L);
+                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, "T10@100");
         PlaceListCursor second = new PlaceListCursor(
-                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, 200L);
+                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, "T10@200");
 
         assertThat(first.encode()).isNotEqualTo(second.encode());
-        assertThat(PlaceListCursor.decode(first.encode()).version()).isEqualTo(100L);
-        assertThat(PlaceListCursor.decode(second.encode()).version()).isEqualTo(200L);
+        assertThat(PlaceListCursor.decode(first.encode()).scope()).isEqualTo("T10@100");
+        assertThat(PlaceListCursor.decode(second.encode()).scope()).isEqualTo("T10@200");
+    }
+
+    /**
+     * <b>범위가 달라도 다른 토큰이다.</b> 번호만 실었다면 "동네 10 하나"와 "동네 10·11"이 같은
+     * 문자열이 되어, 어드민이 하위 동네를 켠 뒤에도 옛 커서가 통과했을 것이다 — 탐색 대상이
+     * 조용히 넓어지는데 응답은 200이라 클라이언트가 알 방법이 없다.
+     */
+    @Test
+    void 번호가_같아도_동네_집합이_다르면_다른_토큰이다() {
+        PlaceListCursor narrow = new PlaceListCursor(
+                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, "T10@7");
+        PlaceListCursor wide = new PlaceListCursor(
+                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, "T10@7,11@7");
+
+        assertThat(narrow.encode()).isNotEqualTo(wide.encode());
+    }
+
+    /**
+     * 거리순·전역 경로의 표현과 동네 경로의 표현은 <b>우연히 같아질 수 없다</b> — 머리글자가
+     * 다르다. 같아지면 서로의 커서가 만료 판정을 통과해 다른 좌표계에서 해석된다.
+     */
+    @Test
+    void 전역_표현과_동네_표현은_섞이지_않는다() {
+        PlaceListCursor global = new PlaceListCursor(
+                PlaceSortType.DISTANCE, List.of(37.5, 127.0, 10.0), 3L, FILTER_PRINT,
+                PlaceListCursor.globalScope(41L));
+
+        assertThat(global.scope()).isEqualTo("G41");
+        assertThat(global.globalVersionOrElse(-1L)).isEqualTo(41L);
+        assertThat(new PlaceListCursor(
+                PlaceSortType.POPULAR, List.of(9.5), 3L, FILTER_PRINT, "T41@1")
+                .globalVersionOrElse(-1L)).isEqualTo(-1L);
+    }
+
+    /** 범위 표현이 빈 토큰은 만료 판정의 근거가 없다 — 잘못된 커서로 끊는다. */
+    @Test
+    void 범위_표현이_비면_잘못된_커서다() {
+        String raw = "v8:POPULAR:9.5:3:" + FILTER_PRINT + ":";
+        String token = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> PlaceListCursor.decode(token))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    /**
+     * <b>v7 토큰은 계속 통한다.</b> 동네 경로에 새 포맷이 필요해졌다는 이유로 진행 중인 거리순
+     * 스크롤을 일괄 만료시키지 않는다 — 거리순은 이번 변경의 범위 밖이다.
+     *
+     * <p>전역 경로가 발급하는 토큰이 <b>바이트 단위로</b> 옛 것과 같다는 것까지 함께 못 박는다.
+     * 왕복만 보면 포맷을 v8로 올려 놓고도 그린이 되는데, 그러면 배포 순간 옛 토큰이 전부 끊긴다.
+     */
+    @Test
+    void v7_전역_토큰은_그대로_통한다() {
+        String raw = "v7:POPULAR:9.5:3:" + FILTER_PRINT + ":41";
+        String token = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        PlaceListCursor decoded = PlaceListCursor.decode(token);
+
+        assertThat(decoded.globalVersionOrElse(-1L)).isEqualTo(41L);
+        assertThat(decoded.encode()).isEqualTo(token);
+    }
+
+    /** 동네 표현을 v7 칸에 실은 토큰은 해석할 규칙이 없다 — 형식 단계에서 끊는다. */
+    @Test
+    void 포맷과_범위_표현이_어긋나면_거부한다() {
+        assertThatThrownBy(() -> PlaceListCursor.decode(
+                token("v7:POPULAR:9.5:3:" + FILTER_PRINT + ":T10@5")))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> PlaceListCursor.decode(
+                token("v8:POPULAR:9.5:3:" + FILTER_PRINT + ":41")))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> PlaceListCursor.decode(
+                token("v9:POPULAR:9.5:3:" + FILTER_PRINT + ":T10@5")))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    private static String token(String raw) {
+        return java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     @Test

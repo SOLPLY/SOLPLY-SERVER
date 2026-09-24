@@ -32,6 +32,7 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.support.TestMeters;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -585,7 +586,7 @@ class SnapshotLoadCoordinatorTest {
     }
 
     private SnapshotLoadCoordinator coordinator(ExecutorService loader) {
-        return new SnapshotLoadCoordinator(installer, metadataRepository, loader);
+        return new SnapshotLoadCoordinator(installer, metadataRepository, TestMeters.noop(), loader);
     }
 
     /** 로더가 첫 SELECT 직후 "이 비행이 보게 된 시점"을 알리는 훅을 흉내 낸다 */

@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.admin.place.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.admin.place.dto.AdminPlaceSummaryDto;
@@ -21,6 +22,8 @@ import org.sopt.solply_server.domain.place.entity.PlaceTag;
 import org.sopt.solply_server.domain.place.cache.SnapshotViewPatcher;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionRepository;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionService;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.domain.tag.entity.TagType;
@@ -48,6 +51,8 @@ public class AdminPlaceService {
     private final PlaceStatsRepository placeStatsRepository;
     /** 손댄 장소를 <b>커밋 뒤에</b> 목록 캐시로 옮기게 한다 — 시점의 근거는 리프레셔 javadoc */
     private final SnapshotMetadataService snapshotMetadataService;
+    /** 동네 번호를 올리는 자리. 어느 동네인지는 쓰기 전후의 place_stats가 말한다 */
+    private final TownVersionService townVersionService;
     private final SnapshotViewPatcher snapshotViewPatcher;
     private final EntityManager entityManager;
 
@@ -102,7 +107,8 @@ public class AdminPlaceService {
         );
 
         Place saved = adminPlaceRepository.save(place);
-        syncPlaceStats(List.of(saved.getId()), cursorPolicyOf(req));
+        // 신규라 "쓰기 전 지문"이 없다 — 없음 → 있음이 곧 생성이고, 도착지가 올라간다
+        syncPlaceStats(List.of(saved.getId()), Map.of(), cursorPolicyOf(req));
 
         publishImageMoveEvent(admin.getId(), saved.getId(), imageKeys);
         applicationEventPublisher.publishEvent(new PlaceCreatedEvent(saved.getId()));
@@ -129,11 +135,28 @@ public class AdminPlaceService {
      * <p><b>upsert가 번호 갱신·표시값 패치보다 앞이다.</b> 번호를 보고 달려온 리빌드도, 커밋 직후
      * 그 id를 다시 읽는 표시값 패치도 원천이 방금 이 문장이 채운 place_stats 행이다. 순서가
      * 뒤집히면 둘 다 <b>고치기 전 값</b>을 읽어 싣는다.
+     *
+     * <p><b>동네 번호는 이야기가 다르다 (2026-09-21).</b> 위의 "갈래가 없다"는 전역 회차의 이야기다.
+     * 동네별 번호는 <b>탐색의 대상·필터를 실제로 바꾼 수정에만</b> 오른다 — 이름 한 칸 고친 수정이
+     * 그 동네의 스크롤을 전부 끊으면 안 되기 때문이다. 판정의 주인이 둘로 갈리지 않도록, 그 판단은
+     * 이 서비스가 필드를 견주는 것이 아니라 <b>쓰기 전후의 place_stats 지문</b>이 한다
+     * ({@code TownVersionService#markChangedIfSearchAffecting}). 배열이 읽는 값이 하나 늘면
+     * 지문 SQL 한 곳만 고치면 된다.
+     *
+     * <p><b>그래서 잠금이 필요하다.</b> 지문의 "쓰기 전"이 정말로 쓰기 직전의 상태여야 한다 —
+     * 아래 {@code PESSIMISTIC_WRITE}가 같은 장소를 겨눈 writer들을 줄 세운다.
      */
     @Transactional
     public AdminPlaceUpsertResponse updatePlace(final Long placeId, final AdminPlaceUpsertRequest req) {
         Place place = adminEntityLoader.getPlaceWithTown(placeId);
         Town updatedTown = adminEntityLoader.getTown(req.townId());
+
+        // ⚠️ 잠금이 먼저다. A→B와 A→C가 동시에 A를 읽고 순서대로 커밋하면, 뒤에 커밋한 쪽은
+        //    실제로 B→C인데 자기가 읽어 둔 A를 출발지로 삼아 B를 빠뜨린다. 여기서 writer를
+        //    직렬화해야 아래 지문이 "정말로 지금 이 장소가 있는 곳"을 말한다.
+        entityManager.lock(place, LockModeType.PESSIMISTIC_WRITE);
+        Map<Long, TownVersionRepository.PlaceFingerprint> before =
+                townVersionService.fingerprintOf(List.of(placeId));
 
         // 태그 검증(타입 + 관계)
         adminTagValidator.validatePlaceTagConditions(req.mainTagId(), req.option1TagIds(), req.option2TagIds());
@@ -168,7 +191,7 @@ public class AdminPlaceService {
 
         publishImageMoveEvent(place.getCreatedBy().getId(), place.getId(), imageKeys);
 
-        syncPlaceStats(List.of(place.getId()), cursorPolicyOf(req));
+        syncPlaceStats(List.of(place.getId()), before, cursorPolicyOf(req));
 
         log.info("어드민 장소 수정 - placeId: {}", placeId);
 
@@ -288,12 +311,17 @@ public class AdminPlaceService {
         Place place = adminEntityLoader.getPlace(placeId);
         entityManager.lock(place, LockModeType.PESSIMISTIC_WRITE);
 
+        // ⚠️ 삭제는 place_stats 행이 사라져 "쓰기 뒤"에 동네가 잡히지 않는다 — 잠금 아래에서
+        //    지우기 전에 읽어 둔 이 지문이 그 동네의 번호를 올릴 유일한 근거다
+        Map<Long, TownVersionRepository.PlaceFingerprint> before =
+                townVersionService.fingerprintOf(List.of(placeId));
+
         placeStatsRepository.deleteByPlaceIds(List.of(placeId));
         adminPlaceRepository.delete(place);
         // 지운 장소도 손댄 장소로 넘긴다 — 패치가 그 id를 다시 읽어 <b>행이 없는 것</b>을 보고
         // 표시값을 지운다. "없어졌다"를 여기서 따로 말하지 않는 것이 계약이다.
         // ⚠️ syncPlaceStats를 부르지 말 것 — 그 안의 upsert가 방금 지운 place_stats 행을 되살린다
-        markListChanged(List.of(placeId), cursorPolicy);
+        markListChanged(List.of(placeId), before, cursorPolicy);
 
         log.info("어드민 장소 삭제 - placeId: {}, 목록 재시작: {}", placeId, cursorPolicy);
     }
@@ -319,8 +347,16 @@ public class AdminPlaceService {
     @Transactional
     public void activatePlacesByTownIds(
             final List<Long> townIds, final SnapshotCursorPolicy cursorPolicy) {
+        List<Long> placeIds = adminPlaceRepository.findIdsByTownIds(townIds);
+        // ⚠️ places를 먼저 쓰고 place_stats 지문을 뒤에 잠근다 — 잠금 순서를 어드민 수정·삭제와
+        //    같게 유지해야 두 요청이 서로를 마주 보지 않는다(deletePlace의 순서 주석 참조).
+        //    이 문장은 place_stats를 건드리지 않으므로 아래 지문은 여전히 "쓰기 전"이다.
         adminPlaceRepository.updateActiveByTownId(townIds, true);
-        syncPlaceStats(adminPlaceRepository.findIdsByTownIds(townIds), cursorPolicy);
+        // 비활성 장소에는 place_stats 행이 없다 — 지문이 "없음"에서 "있음"으로 바뀌어 도착 동네가
+        // 올라간다. 장소가 하나도 없는 동네는 올릴 것도 없다(탐색 결과가 그대로다).
+        Map<Long, TownVersionRepository.PlaceFingerprint> before =
+                townVersionService.fingerprintOf(placeIds);
+        syncPlaceStats(placeIds, before, cursorPolicy);
     }
 
     /**
@@ -338,13 +374,14 @@ public class AdminPlaceService {
      * <b>같은 트랜잭션</b>이라, 롤백되면 번호도 없던 일이 되고 커밋되면 반드시 올라 있다 —
      * 커밋 뒤 훅이 실패해 수정이 조용히 묻히던 자리가 그렇게 닫힌다.
      */
-    private void syncPlaceStats(
-            final List<Long> placeIds, final SnapshotCursorPolicy cursorPolicy) {
+    private void syncPlaceStats(final List<Long> placeIds,
+            final Map<Long, TownVersionRepository.PlaceFingerprint> before,
+            final SnapshotCursorPolicy cursorPolicy) {
         if (placeIds.isEmpty()) {
             return;
         }
         placeStatsRepository.upsertRowsForActivePlaces(placeIds);
-        markListChanged(placeIds, cursorPolicy);
+        markListChanged(placeIds, before, cursorPolicy);
     }
 
     /**
@@ -355,8 +392,14 @@ public class AdminPlaceService {
      * 이 인스턴스에서 바로 보이게 하는 것이다. 패치가 실패해도 손실이 아니라 지연인 이유가
      * 이것이다 — 번호는 이미 올라 있다.
      */
-    private void markListChanged(
-            final List<Long> placeIds, final SnapshotCursorPolicy cursorPolicy) {
+    private void markListChanged(final List<Long> placeIds,
+            final Map<Long, TownVersionRepository.PlaceFingerprint> before,
+            final SnapshotCursorPolicy cursorPolicy) {
+        // ⚠️ 동네 번호는 어드민의 "목록 재시작" 체크와 무관하고, <b>무조건</b> 오르지도 않는다.
+        //    생성·삭제·이동·태그 재지정은 탐색의 대상·필터를 바꾸므로 올리고, 이름·썸네일만 고친
+        //    수정은 올리지 않는다 — 그 판단을 지문 비교가 한다. cursorPolicy가 가리키는 것은
+        //    거리순이 서 있는 전역 회차뿐이다.
+        townVersionService.markChangedIfSearchAffecting(before, placeIds);
         snapshotMetadataService.markChanged(cursorPolicy);
         snapshotViewPatcher.patchPlacesAfterCommit(placeIds);
     }

@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
+import org.sopt.solply_server.domain.place.metrics.PlaceListMeters;
 import org.springframework.stereotype.Component;
 
 /**
@@ -54,6 +55,7 @@ public class SnapshotInstaller {
     private final PlaceViewHolder placeViewHolder;
     private final TagViewHolder tagViewHolder;
     private final CacheWriteLock writeLock;
+    private final PlaceListMeters meters;
 
     /**
      * 설치를 기다리는 표시값 패치. 키는 장소 id, 값은 그 패치가 <b>관측한</b> 번호와 얹을
@@ -98,6 +100,14 @@ public class SnapshotInstaller {
         //   그 구간에 조회 경로도 다른 쓰기도 막히지 않는다
         SortedPlaces sorted = SortedPlaces.of(source.entries());
         boolean installed = install(source, sorted);
+        // ⚠️ <b>설치 여부와 무관하게</b> 센다. 여기까지 왔다는 것은 전량 읽기와 정렬이 실제로
+        //    끝났다는 뜻이고, 준비 비용은 그 몫이다 — 설치는 마지막 참조 대입 하나뿐이다.
+        //    번호가 그대로라 단조 가드가 대입을 건너뛴 경우(H2의 준비 재실행이 그렇다) 이것을
+        //    성공 뒤에만 세면 그 구성의 준비 비용이 통째로 0으로 빠진다.
+        //
+        //    전역 스냅샷 비용은 <b>모든 구성</b>에서 실제 발생한 대로 센다. 거리순이 이번 범위
+        //    밖이라 동네 구성에서도, 캐시를 안 쓰는 DB 구성에서도 이 빌드는 남는다.
+        meters.globalBuilt(System.nanoTime() - startNanos);
         if (!installed) {
             log.info("리빌드 결과가 이미 설치한 것보다 낡아 버린다 - read={}, installed={}",
                     source.metadata(), installed());

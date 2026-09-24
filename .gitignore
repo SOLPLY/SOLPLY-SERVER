@@ -39,6 +39,8 @@ application-prod.yml
 !CD.yml
 !.coderabbit.yml
 !application-test.yml
+# 테스트 classpath 덧붙임 설정 — 민감값 없음. 새 체크아웃에서도 동네 공유 사본(Redis)을 끈 채 테스트가 돌게 한다
+!src/test/resources/config/application.yml
 !prometheus.dev.yml
 !prometheus.prod.yml
 !.github/ISSUE_TEMPLATE/*.yml

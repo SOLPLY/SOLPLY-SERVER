@@ -88,10 +88,13 @@ import org.sopt.solply_server.global.exception.ErrorCode;
  *
  * @param sortKeys    정렬 축의 값들. 길이는 반드시 {@link PlaceSortType#keyArity()}와 같다
  * @param filterPrint 요청 필터의 정규형. {@link #filterPrintOf}가 만든 것이어야 한다
- * @param version     이 커서가 시작한 목록 회차. 캐시가 든 회차와 다르면 만료다
+ * @param scope       이 탐색이 선 <b>범위와 그 번호들</b>. 다음 요청에서 다시 만든 표현과 글자
+ *                    하나라도 다르면 만료다. 동네 경로는 {@code T12@5,13@7}처럼 동네마다의 번호를,
+ *                    거리순·전역 경로는 {@code G41}처럼 전역 회차 하나를 싣는다
  */
 public record PlaceListCursor(
-        PlaceSortType sort, List<Double> sortKeys, long placeId, String filterPrint, long version) {
+        PlaceSortType sort, List<Double> sortKeys, long placeId, String filterPrint,
+        String scope) {
 
     /** 토큰 <b>포맷</b>의 버전. 필드 {@code version}(목록 회차)과는 다른 것이다 */
     /**
@@ -110,12 +113,45 @@ public record PlaceListCursor(
      * <p><b>다음 배포부터는</b> 커서가 이어진다 — 번호가 DB에 있고 기동이 그것을 그대로 읽기
      * 때문이다.
      */
-    private static final String FORMAT_VERSION = "v7";
+    /**
+     * 전역 회차 하나를 싣는 토큰의 포맷 번호. 거리순과 전역 구조가 쓴다.
+     *
+     * <p><b>동네 경로가 생겼다고 이 번호를 올리지 않았다 (2026-09-21).</b> 올렸다면 진행 중이던
+     * 거리순 스크롤이 이번 변경과 아무 상관 없이 전부 끊겼을 것이다. 거리순은 이번 작업의 범위
+     * 밖이고, 범위 밖의 경로를 만료로 흔드는 것은 이 변경이 살 자리가 아니다.
+     */
+    private static final String GLOBAL_FORMAT_VERSION = "v7";
+
+    /**
+     * 동네별 번호 목록을 싣는 토큰의 포맷 번호 (2026-09-21).
+     *
+     * <p>정합성의 단위가 "전역 한 번호"에서 "동네마다 한 번호"로 좁아지면서, 마지막 필드가 숫자
+     * 하나가 아니라 <b>범위와 번호들</b>을 담는 문자열이 됐다. 그 필드가 <b>범위</b>까지 담는 것이
+     * 핵심이다 — 같은 {@code townId} 파라미터라도 어드민이 하위 동네를 켜고 끄면 풀어 낸 leaf
+     * 집합이 달라지는데, 번호만 비교하면 탐색 대상이 조용히 바뀐 채로 통과한다.
+     *
+     * <p>포맷을 갈라 두면 두 좌표계의 토큰이 서로를 통과시킬 수 없다 — 마지막 칸의 뜻이 번호마다
+     * 고정이라 "우연히 같은 문자열"이 성립하지 않는다.
+     */
+    private static final String TOWN_FORMAT_VERSION = "v8";
 
     /** 토큰의 필드 수. 버전·정렬·정렬키 튜플·id·지문·회차 */
     private static final int FIELD_COUNT = 6;
 
     private static final String FIELD_DELIMITER = ":";
+
+    /**
+     * 거리순·전역 경로의 범위 표현 머리글자. 동네 경로는 {@code "T"}로 시작한다
+     * ({@code TownVersions}). 두 경로의 번호 체계가 달라 <b>우연히 같은 문자열</b>이 되면 서로의
+     * 커서가 만료 판정을 통과해 다른 좌표계에서 해석된다 — 머리글자가 그 우연을 막는다.
+     */
+    private static final String GLOBAL_PREFIX = "G";
+
+    /**
+     * 동네 경로의 범위 표현 머리글자. 표현을 만드는 것은 {@code TownVersions}지만, <b>두 좌표계를
+     * 가르는 규칙의 주인은 커서</b>라 상수를 여기 둔다 — 갈라 두면 한쪽만 고쳐진다.
+     */
+    public static final String TOWN_PREFIX = "T";
 
     /** 정렬 키 튜플 안에서 키를 가르는 구분자 */
     private static final String KEY_DELIMITER = ",";
@@ -174,14 +210,22 @@ public record PlaceListCursor(
                 sortedIds(subTagBIds));
     }
 
+    /**
+     * 범위 표현의 좌표계가 <b>토큰의 포맷 번호를 고른다.</b>
+     *
+     * <p>전역 경로({@code G41})는 예전 그대로 {@code v7}로 나간다 — 마지막 칸이 숫자 하나인
+     * 옛 토큰과 <b>바이트 단위로 같다.</b> 동네 경로에 필요해서 포맷을 늘렸다는 이유로 진행 중인
+     * 거리순 스크롤을 일괄 만료시키지 않는다. 동네 경로({@code T10@5})만 {@code v8}이다.
+     */
     public String encode() {
+        boolean town = scope.startsWith(TOWN_PREFIX);
         String raw = String.join(FIELD_DELIMITER,
-                FORMAT_VERSION,
+                town ? TOWN_FORMAT_VERSION : GLOBAL_FORMAT_VERSION,
                 sort.name(),
                 sortKeys.stream().map(String::valueOf).collect(Collectors.joining(KEY_DELIMITER)),
                 Long.toString(placeId),
                 filterPrint,
-                Long.toString(version));
+                town ? scope : scope.substring(GLOBAL_PREFIX.length()));
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
@@ -191,7 +235,7 @@ public record PlaceListCursor(
             String raw = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
             // -1: 지문이 비어도 조각 수가 줄지 않게 고정한다("1|||", "")
             String[] parts = raw.split(FIELD_DELIMITER, -1);
-            if (parts.length != FIELD_COUNT || !FORMAT_VERSION.equals(parts[0])) {
+            if (parts.length != FIELD_COUNT) {
                 throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
             }
             // 키 개수가 정렬과 어긋나면 생성자가 IllegalArgumentException을 던지고 아래가 받는다.
@@ -201,10 +245,57 @@ public record PlaceListCursor(
                     parseKeys(parts[2]),
                     Long.parseLong(parts[3]),
                     parts[4],
-                    Long.parseLong(parts[5])
+                    scopeOf(parts[0], parts[5])
             );
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+        }
+    }
+
+    /**
+     * 포맷 번호가 마지막 칸의 뜻을 정한다 — {@code v7}은 전역 회차 숫자, {@code v8}은 동네별
+     * 범위 표현이다. 그 밖의 번호는 해석할 규칙이 없으므로 잘못된 커서다.
+     */
+    private static String scopeOf(String formatVersion, String field) {
+        if (GLOBAL_FORMAT_VERSION.equals(formatVersion)) {
+            return globalScope(Long.parseLong(field));   // 숫자가 아니면 아래가 받는다
+        }
+        if (TOWN_FORMAT_VERSION.equals(formatVersion) && field.startsWith(TOWN_PREFIX)) {
+            return requireScope(field);
+        }
+        throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+    }
+
+    /**
+     * 범위 표현이 비어 있으면 만료 판정의 근거가 없다 — 어떤 번호와도 다르지 않다고 말하게 된다.
+     * 그래서 빈 값은 잘못된 커서로 끊는다.
+     */
+    private static String requireScope(String field) {
+        if (field.isEmpty()) {
+            throw new IllegalArgumentException("커서에 범위 표현이 없다");
+        }
+        return field;
+    }
+
+    /** 거리순·전역 경로가 싣는 표현. 동네 경로의 {@code T...}와 섞이지 않는다. */
+    public static String globalScope(long cursorVersion) {
+        return GLOBAL_PREFIX + cursorVersion;
+    }
+
+    /**
+     * 전역 경로의 회차. <b>다른 좌표계의 표현이면 {@code fallback}을 돌려준다</b> — 전역 경로가
+     * 동네 경로의 커서를 받았을 때의 정답은 "잘못된 커서"가 아니라 <b>만료</b>다. 클라이언트가
+     * 할 일이 처음부터 다시 조회하는 것으로 같고, 구조를 바꿔 띄운 서버가 옛 좌표계의 커서를
+     * 조용히 통과시키지 않는다.
+     */
+    public long globalVersionOrElse(long fallback) {
+        if (!scope.startsWith(GLOBAL_PREFIX)) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(scope.substring(GLOBAL_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            return fallback;
         }
     }
 

@@ -10,6 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.support.TestMeters;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
@@ -177,7 +178,7 @@ class SnapshotBootstrapIT extends MySqlContainerSupport {
     private Node newNode() {
         SnapshotBox box = new SnapshotBox();
         SnapshotInstaller other = new SnapshotInstaller(
-                loader, box, new PlaceViewHolder(), new TagViewHolder(), new CacheWriteLock());
+                loader, box, new PlaceViewHolder(), new TagViewHolder(), new CacheWriteLock(), TestMeters.noop());
         return new Node(other, box);
     }
 

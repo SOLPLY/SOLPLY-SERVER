@@ -64,6 +64,11 @@ class PlaceImageFieldUpdater implements ImageFieldUpdater {
         // ⚠️ 이 메서드는 REQUIRES_NEW다 — 어드민 트랜잭션이 이미 커밋된 뒤에 돌므로 그쪽이 올린
         //    번호로는 이 변경이 덮이지 않는다. 여기서 번호를 다시 올리지 않으면 최종 키가 어느
         //    인스턴스에도 반영되지 않고 목록이 죽은 URL을 낸다
+        // ⚠️ 동네 번호({@code TownVersionService})는 여기서 올리지 않는다. 바뀐 것이 표시값뿐일
+        //    때 동네 번호를 올리면 이미지 한 장 때문에 그 동네의 스크롤이 전부 끊긴다. 동네 캐시의
+        //    목록의 썸네일은 다음 성공한 정기 전체 배치가 이 동네의 번호를 올린 <b>뒤 그 동네가
+        //    다시 적재될 때</b> 갈린다 — 배치까지가 상한이 아니라 그 뒤의 적재까지다. 그동안의
+        //    지연은 계약이 허용한다(상세 화면은 언제나 정확한 값을 낸다).
         snapshotMetadataService.markChanged(SnapshotCursorPolicy.PRESERVE);
         snapshotViewPatcher.patchPlacesAfterCommit(List.of(placeId));
     }

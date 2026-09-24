@@ -163,7 +163,7 @@ public class PlaceListDbQueryRepository {
         boolean useCursor = cursorScore != null && cursorPlaceId != null;
 
         StringBuilder predicates = new StringBuilder();
-        appendTagFilters(predicates, masks);
+        appendTagFilters(predicates, masks, mainTagId);
         if (useCursor) {
             predicates.append("""
                       AND (ps.popular_score < :cursorScore
@@ -177,7 +177,7 @@ public class PlaceListDbQueryRepository {
                         "popular_score DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
         bindTownIds(query, townIds);
-        bindTagFilters(query, masks);
+        bindTagFilters(query, masks, mainTagId);
         if (useCursor) {
             query.setParameter("cursorScore", cursorScore);
             query.setParameter("cursorPlaceId", cursorPlaceId);
@@ -240,7 +240,7 @@ public class PlaceListDbQueryRepository {
         boolean useCursor = cursorEpochSecond != null && cursorPlaceId != null;
 
         StringBuilder predicates = new StringBuilder();
-        appendTagFilters(predicates, masks);
+        appendTagFilters(predicates, masks, mainTagId);
         if (useCursor) {
             predicates.append("""
                       AND (ps.created_at < :cursorCreatedAt
@@ -254,7 +254,7 @@ public class PlaceListDbQueryRepository {
                         "created_at DESC, place_id DESC"))
                 .setParameter("limitSize", limit);
         bindTownIds(query, townIds);
-        bindTagFilters(query, masks);
+        bindTagFilters(query, masks, mainTagId);
         if (useCursor) {
             query.setParameter("cursorCreatedAt",
                     LocalDateTime.ofEpochSecond(cursorEpochSecond, 0, ZoneOffset.UTC));
@@ -320,7 +320,7 @@ public class PlaceListDbQueryRepository {
                 cursorRating != null && cursorReviewCount != null && cursorPlaceId != null;
 
         StringBuilder predicates = new StringBuilder();
-        appendTagFilters(predicates, masks);
+        appendTagFilters(predicates, masks, mainTagId);
         if (useCursor) {
             predicates.append("""
                       AND (ps.avg_rating < :cursorRating
@@ -332,12 +332,13 @@ public class PlaceListDbQueryRepository {
         }
 
         Query query = em.createNativeQuery(townBranchedSql(
-                        townIds.size(), RATING_SELECT, IDX_RATING, predicates.toString(),
+                        townIds.size(), RATING_SELECT, mainTagIndex(IDX_RATING, mainTagId),
+                        predicates.toString(),
                         "ps.avg_rating DESC, ps.review_count DESC, ps.place_id ASC",
                         "avg_rating DESC, review_count DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
         bindTownIds(query, townIds);
-        bindTagFilters(query, masks);
+        bindTagFilters(query, masks, mainTagId);
         if (useCursor) {
             query.setParameter("cursorRating", cursorRating);
             query.setParameter("cursorReviewCount", cursorReviewCount);
@@ -404,7 +405,7 @@ public class PlaceListDbQueryRepository {
         boolean useCursor = cursorCount != null && cursorPlaceId != null;
 
         StringBuilder predicates = new StringBuilder();
-        appendTagFilters(predicates, masks);
+        appendTagFilters(predicates, masks, mainTagId);
         if (useCursor) {
             predicates.append("  AND (ps.").append(countColumn).append(" < :cursorCount\n")
                     .append("       OR (ps.").append(countColumn)
@@ -412,12 +413,13 @@ public class PlaceListDbQueryRepository {
         }
 
         Query query = em.createNativeQuery(townBranchedSql(
-                        townIds.size(), COUNT_SELECT, intendedIndex, predicates.toString(),
+                        townIds.size(), COUNT_SELECT, mainTagIndex(intendedIndex, mainTagId),
+                        predicates.toString(),
                         "ps." + countColumn + " DESC, ps.place_id ASC",
                         countColumn + " DESC, place_id ASC"))
                 .setParameter("limitSize", limit);
         bindTownIds(query, townIds);
-        bindTagFilters(query, masks);
+        bindTagFilters(query, masks, mainTagId);
         if (useCursor) {
             query.setParameter("cursorCount", cursorCount);
             query.setParameter("cursorPlaceId", cursorPlaceId);
@@ -466,11 +468,11 @@ public class PlaceListDbQueryRepository {
                   AND p.latitude IS NOT NULL
                   AND p.longitude IS NOT NULL
                 """);
-        appendTagFilters(sql, masks);
+        appendTagFilters(sql, masks, mainTagId);
 
         Query query = em.createNativeQuery(sql.toString())
                 .setParameter("townIds", townIds);
-        bindTagFilters(query, masks);
+        bindTagFilters(query, masks, mainTagId);
 
         List<Object[]> rows = query.getResultList();
         List<DistanceCandidateRow> result = new ArrayList<>(rows.size());
@@ -547,8 +549,9 @@ public class PlaceListDbQueryRepository {
     }
 
     /**
-     * 태그 술어. 두 정렬이 같은 문자열을 <b>공유</b>해야 "정렬 축만 다르고 필터 의미론은 같다"가
-     * 구조적으로 보장된다 — 복사해 두면 한쪽만 고치는 실수가 조용히 통과한다.
+     * 태그 술어는 모든 DB 정렬 경로에서 공유한다. 메인 태그는 V49의
+     * (town_id, main_tag_id, 정렬 키) 인덱스를 위한 등호 조건이고, 추가 그룹은 비트 연산이다.
+     * 마스크에 메인 비트도 유지하지만 DB 필터에서는 main_tag_id를 사용한다.
      *
      * <p>마스크가 0인 그룹은 술어를 붙이지 않는다. 태그 조건이 아예 없는 요청의 SQL이 태그 도입
      * 전과 <b>바이트째 같아지는</b> 것이 그 결과이고, 그것이 최다 트래픽 경로다.
@@ -566,9 +569,9 @@ public class PlaceListDbQueryRepository {
      * <b>타입이 어긋나거나 비활성인 태그 id</b>가 오면 북마크 검색은 0건, 목록은 매칭이 되어 두 경로가
      * 갈린다. 그 갈림은 <b>상위 검증이 통과시키지 않는 입력에서만</b> 관측된다.
      */
-    private void appendTagFilters(StringBuilder sql, TagMasks masks) {
-        if (masks.main() != 0L) {
-            sql.append("  AND (ps.tag_bitmask & :mainMask) != 0\n");
+    private void appendTagFilters(StringBuilder sql, TagMasks masks, Long mainTagId) {
+        if (mainTagId != null) {
+            sql.append("  AND ps.main_tag_id = :mainTagId\n");
         }
         if (masks.subA() != 0L) {
             sql.append("  AND (ps.tag_bitmask & :subAMask) != 0\n");
@@ -608,9 +611,15 @@ public class PlaceListDbQueryRepository {
         sql.append("\n");
     }
 
-    private void bindTagFilters(Query query, TagMasks masks) {
-        if (masks.main() != 0L) {
-            query.setParameter("mainMask", masks.main());
+    /** 메인 태그 선택 시 같은 정렬 순서의 town + main 인덱스를 지목한다. */
+    private String mainTagIndex(String townIndex, Long mainTagId) {
+        return mainTagId == null ? townIndex
+                : townIndex.replace("idx_place_stats_town_", "idx_place_stats_town_main_");
+    }
+
+    private void bindTagFilters(Query query, TagMasks masks, Long mainTagId) {
+        if (mainTagId != null) {
+            query.setParameter("mainTagId", mainTagId);
         }
         if (masks.subA() != 0L) {
             query.setParameter("subAMask", masks.subA());

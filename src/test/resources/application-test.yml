@@ -25,6 +25,10 @@ solply:
     # 리빌드 폴은 사실상 멈춘다 — 리빌드는 테스트가 명시적으로 부르는 것만 돌아야 한다.
     # 기동 빌드는 폴을 기다리지 않으므로(SnapshotScheduler) 이 값이 커도 기동이 멈추지 않는다.
     poll-interval-ms: 3600000
+  place-list-town-cache:
+    redis:
+      # 이 프로필은 Redis 자동 구성을 뺀다 — 동네 공유 사본도 명시적으로 끈다
+      enabled: false
 
 app:
   env-prefix: test
