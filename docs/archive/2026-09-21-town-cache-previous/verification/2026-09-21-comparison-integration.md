@@ -3,7 +3,7 @@
 # 검증 기록: 4구조 비교를 위한 HTTP 연결과 최소 계측
 
 작성일: 2026-09-21. 작업 트리: `feat-place-list-town-cache`.
-정본 지시: [비교 연결 작업 지시](../handoff/2026-09-21-comparison-integration.md).
+정본 지시: 비교 연결 작업 지시 (작업용 문서 정리로 삭제).
 요구 계약: 원본 캠페인의 `docs/bench-interface.md`(H1·H2·H3·H4).
 선행 계약 검증: [동네 버전·캐시](2026-09-21-town-cache-contract.md).
 

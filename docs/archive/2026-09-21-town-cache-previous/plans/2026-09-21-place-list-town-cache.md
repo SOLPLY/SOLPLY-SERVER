@@ -3,7 +3,7 @@
 # 구현 계획: 장소 목록 동네 버전·동네 캐시
 
 기준 형상: `develop@64a97e08274303199b33244ba579adde22e4437d`.
-정본 요구사항: [설계](../design/2026-09-21-place-list-town-cache.md), [인계](../handoff/2026-09-21-place-list-orchestration.md), [사전 조사](../handoff/2026-09-21-place-list-preflight.md).
+정본 요구사항: [설계](../design/2026-09-21-place-list-town-cache.md), 인계 (작업용 문서 정리로 삭제), 사전 조사 (작업용 문서 정리로 삭제).
 
 이 문서는 **무엇을 어디에 짓고 무엇으로 확인하는지**만 적는다. 성능 우승 판정과 부하 실험은 이번 범위가 아니다.
 

@@ -4,7 +4,6 @@
 현재 기준은 [블로그 진행 문서](../../blog/2026-09-21-place-list-design-evidence.md), 작업 지시는 [실행 계획](../../superpowers/plans/2026-09-21-place-list-version-retention.md)을 따른다.
 
 - `design/2026-09-21-place-list-town-cache.md`: 버전 변경 즉시 만료·최신 한 벌 보관·요청마다 정렬을 선택했던 이전 설계.
-- `handoff/`: 그 설계의 조사·비교·구현·완료·검토 이력.
 - `verification/`: 이전 형상에 대한 검증 기록. 현재 구현의 통과 결과가 아니다.
 - `plans/`: 이전 설계의 실행 계획. 현재 작업 지시로 사용하지 않는다.
 - `design/2026-09-21-place-list-version-retention.md`: 이번 작업의 별도 기준서였으나 블로그와 중복되어 통합한 보관본.

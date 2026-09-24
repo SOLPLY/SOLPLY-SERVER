@@ -4,7 +4,7 @@
 
 작성일: 2026-09-21. 대상 형상: `develop@64a97e08274303199b33244ba579adde22e4437d` 위의 작업 트리
 (`/Users/mkyu/orca/workspaces/solply-server/feat-place-list-town-cache`).
-지시 정본: [최종 정리 지시](../handoff/2026-09-21-finalization-review.md),
+지시 정본: 최종 정리 지시 (작업용 문서 정리로 삭제),
 요구사항 정본: [설계](../design/2026-09-21-place-list-town-cache.md).
 
 **이 문서는 코드 형상 확정의 기록이다.** 새 성능 수치는 없다. 여기서 부하를 걸지 않았고,

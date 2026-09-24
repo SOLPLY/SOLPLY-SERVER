@@ -4,7 +4,7 @@
 
 작성일: 2026-09-21. 대상 형상: `develop@64a97e08274303199b33244ba579adde22e4437d` 위의 작업 트리.
 정본 요구사항: [설계](../design/2026-09-21-place-list-town-cache.md),
-[메인 계약 검토](../handoff/2026-09-21-main-contract-review.md).
+메인 계약 검토 (작업용 문서 정리로 삭제).
 구현 계획: `docs/superpowers/plans/2026-09-21-place-list-town-cache.md` (리포지토리 ignored).
 
 **이 문서는 기능 계약의 검증 기록이다.** 성능 우승 판정, 부하 측정, 캐시 예산 확정은 여기 없다.
