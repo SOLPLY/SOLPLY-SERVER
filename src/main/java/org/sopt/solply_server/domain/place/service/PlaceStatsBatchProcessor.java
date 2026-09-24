@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.bookmark.repository.BookmarkCountEventRepository;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionService;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.springframework.stereotype.Component;
@@ -88,7 +89,30 @@ public class PlaceStatsBatchProcessor {
     private final PlaceStatsRepository placeStatsRepository;
     private final BookmarkCountEventRepository countEventRepository;
     private final SnapshotMetadataService snapshotMetadataService;
+    private final TownVersionService townVersionService;
     private final PlaceStatsProperties properties;
+
+    /**
+     * 정기 전체 배치 한 회차가 끝났음을 알린다 — <b>처리 대상이 된 모든 동네</b>의 번호를 올린다.
+     *
+     * <p><b>실제 값이 바뀐 동네만 고르지 않는 것이 계약이다.</b> 이름·썸네일만 바뀐 동네는 쓰기
+     * 시점에 번호를 올리지 않았고, 그래서 그 동네의 캐시에는 옛 표시값이 남아 있다. 여기서 값
+     * 변화 여부로 거르면 그 동네는 <b>영구히</b> 갱신 대상에서 빠져 이름이 영영 바뀌지 않는다.
+     * 그 <b>영구히</b>를 닫는 장치가 이 한 줄이다.
+     *
+     * <p><b>다만 이것이 고정된 최신성 상한을 약속하지는 않는다.</b> 번호가 올랐다는 것은 그
+     * 동네의 캐시가 낡았다는 표시일 뿐, 모든 동네가 즉시 다시 적재된다는 뜻이 아니다. 표시값이
+     * 실제로 갈리는 시점은 <b>이 배치가 성공한 뒤 그 동네가 다시 적재될 때</b>이고, 그것은 그
+     * 동네에 조회가 언제 오느냐에 달렸다. 배치 실패와 적재 실패가 겹치면 더 길어진다 — 그래서
+     * "몇 초 안에 반영된다" 같은 상한을 약속하지 않는다.
+     *
+     * <p><b>배치 트랜잭션 안에서 돈다.</b> 배치가 롤백되면 이 bump도 함께 사라져, 바뀌지도 않은
+     * 데이터 때문에 전 동네의 탐색이 끊기는 일이 없다.
+     */
+    private void markBatchRoundChanged() {
+        townVersionService.markAllTownsChanged();
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+    }
 
     /**
      * 매시 카운트 회차의 리뷰 축 = 리뷰 수·평균 평점의 재계산. <b>문장 하나</b>라 원자성을 물을
@@ -105,7 +129,7 @@ public class PlaceStatsBatchProcessor {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public int recalculateReviewCounts(LocalDateTime calculatedAt) {
         int affected = placeStatsRepository.updateReviewCounts(calculatedAt);
-        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        markBatchRoundChanged();
         return affected;
     }
 
@@ -133,7 +157,7 @@ public class PlaceStatsBatchProcessor {
     public int recalculateCounts(LocalDateTime calculatedAt) {
         int affected = placeStatsRepository.updateBookmarkCountsFromSource(calculatedAt);
         placeStatsRepository.updateReviewCounts(calculatedAt);
-        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        markBatchRoundChanged();
         return affected;
     }
 
@@ -167,7 +191,7 @@ public class PlaceStatsBatchProcessor {
         String consumptionId = claimOutbox();
         int affected = placeStatsRepository.updateBookmarkCountsFromSource(calculatedAt);
         clearOutbox(consumptionId);
-        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        markBatchRoundChanged();
         return affected;
     }
 
@@ -187,7 +211,7 @@ public class PlaceStatsBatchProcessor {
         String consumptionId = claimOutbox();
         int affected = placeStatsRepository.rebuildRowsFromSource(calculatedAt);
         clearOutbox(consumptionId);
-        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        markBatchRoundChanged();
         return affected;
     }
 
@@ -265,7 +289,7 @@ public class PlaceStatsBatchProcessor {
         String consumptionId = claimOutbox();
         int affected = placeStatsRepository.rebuildRowsFromSource(calculatedAt);
         clearOutbox(consumptionId);
-        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        markBatchRoundChanged();
         return OptionalInt.of(affected);
     }
 
@@ -300,7 +324,7 @@ public class PlaceStatsBatchProcessor {
                 properties.getReviewWeight(),
                 properties.getHalfLifeDays(),
                 properties.getMinReviewCount());
-        snapshotMetadataService.markChanged(SnapshotCursorPolicy.ADVANCE);
+        markBatchRoundChanged();
         return affected;
     }
 }

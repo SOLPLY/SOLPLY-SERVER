@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.bookmark.entity.BookmarkTargetType;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
+import org.sopt.solply_server.domain.place.cache.town.TownCommitPublisher;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionRepository;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionService;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsJdbcRepository;
@@ -20,6 +23,7 @@ import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -40,7 +44,9 @@ import org.springframework.test.context.DynamicPropertySource;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({QueryDslConfig.class, BookmarkCountDeltaProcessor.class, PlaceStatsBatchProcessor.class,
         PlaceStatsProperties.class, PlaceStatsJdbcRepository.class,
-        SnapshotMetadataService.class, SnapshotMetadataRepository.class})
+        SnapshotMetadataService.class, SnapshotMetadataRepository.class,
+        // 델타가 닿은 동네의 번호를 같은 트랜잭션에서 올린다
+        TownVersionService.class, TownVersionRepository.class})
 class BookmarkCountDeltaProcessorIT extends MySqlContainerSupport {
 
     /** 안전망 회차의 기준 시각. 픽스처 북마크의 created_at을 이 시각보다 앞에 둔다. */
@@ -50,6 +56,9 @@ class BookmarkCountDeltaProcessorIT extends MySqlContainerSupport {
     static void deltaProps(DynamicPropertyRegistry registry) {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
+
+    /** 커밋 뒤 공유 사본 발행은 이 슬라이스의 관심 밖이다 — 검증은 TownRedisIntegrationIT가 한다. */
+    @MockBean TownCommitPublisher townCommitPublisher;
 
     @Autowired BookmarkCountDeltaProcessor deltaProcessor;
     @Autowired PlaceStatsBatchProcessor batchProcessor;

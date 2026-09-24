@@ -101,6 +101,10 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
         // 이 값에 쫓기지 않을 만큼은 남긴다
         registry.add("solply.place-list-snapshot.request-wait-timeout-ms",
                 () -> String.valueOf(REQUEST_WAIT_TIMEOUT_MS));
+        // 이 파일이 재는 것은 <b>전역 회차 catch-up</b>이다. 동네 캐시 경로에는 그 대기가 없으므로
+        // 구조를 명시적으로 고정한다 — 기본값이 바뀌었다고 이 검증이 조용히 다른 경로를 돌면
+        // "무엇을 통과시켰는지"가 사라진다. 동네 경로의 대기·만료는 TownCacheListFlowIT가 맡는다.
+        registry.add("solply.place-list.list-source", () -> "GLOBAL_SNAPSHOT");
     }
 
     private static final long REQUEST_WAIT_TIMEOUT_MS = 1_500L;
@@ -606,7 +610,7 @@ class PlaceListSnapshotCatchUpIT extends MySqlContainerSupport {
     private static String reversioned(String token, long version) {
         PlaceListCursor issued = PlaceListCursor.decode(token);
         return new PlaceListCursor(issued.sort(), issued.sortKeys(), issued.placeId(),
-                issued.filterPrint(), version).encode();
+                issued.filterPrint(), PlaceListCursor.globalScope(version)).encode();
     }
 
     // === 픽스처 ===

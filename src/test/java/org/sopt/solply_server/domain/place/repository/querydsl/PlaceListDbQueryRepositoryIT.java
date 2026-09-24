@@ -116,6 +116,40 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
         placeListProperties.setForceSortIndex(false);
     }
 
+    @Test
+    void mainTagUsesEqualityAndKeepsSubTagMask() {
+        TagFixture f = givenTwoTownTagFixture();
+        String sql = captureListSql(() -> repository.findPopularRows(
+                f.townIds(), f.mainTagId(), List.of(f.subA()), null, null, null, 11));
+        assertThat(sql).contains("ps.main_tag_id = ?")
+                .contains("ps.tag_bitmask & ?");
+        assertSameAsExists(f, f.mainTagId(), List.of(f.subA()), List.of(f.subB()));
+        assertHintOnlyInFrom("idx_place_stats_town_main_rating",
+                () -> repository.findRatingRows(f.townIds(), f.mainTagId(), null, null,
+                        null, null, null, 11));
+        assertHintOnlyInFrom("idx_place_stats_town_main_reviews",
+                () -> repository.findReviewCountRows(f.townIds(), f.mainTagId(), null, null,
+                        null, null, 11));
+        assertHintOnlyInFrom("idx_place_stats_town_main_bookmarks",
+                () -> repository.findBookmarkCountRows(f.townIds(), f.mainTagId(), null, null,
+                        null, null, 11));
+    }
+
+    @Test
+    void mainTagIndexesMatchSortOrder() {
+        for (String suffix : List.of("score", "created", "rating", "reviews", "bookmarks")) {
+            String name = "idx_place_stats_town_main_" + suffix;
+            @SuppressWarnings("unchecked")
+            List<String> columns = em.createNativeQuery("""
+                    SELECT column_name FROM information_schema.statistics
+                    WHERE table_schema = DATABASE() AND table_name = 'place_stats'
+                      AND index_name = :indexName ORDER BY seq_in_index
+                    """).setParameter("indexName", name).getResultList();
+            assertThat(columns).as(name).startsWith("town_id", "main_tag_id")
+                    .contains("place_id", "tag_bitmask");
+        }
+    }
+
     // === POPULAR ===
 
     @Test
@@ -1356,7 +1390,7 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
             long placeId, long townId, double score, long bookmarkCount,
             long reviewCount, double avgRating, LocalDateTime scoreCalculatedAt) {
         em.createNativeQuery("""
-                INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask, name,
+                INSERT INTO place_stats (place_id, town_id, created_at, tag_bitmask, main_tag_id, name,
                                          popular_score, bookmark_count,
                                          review_count, avg_rating,
                                          score_calculated_at)
@@ -1365,6 +1399,9 @@ class PlaceListDbQueryRepositoryIT extends MySqlContainerSupport {
                        p.created_at,
                        COALESCE((SELECT BIT_OR(1 << pt.tag_id)
                                  FROM place_tag pt WHERE pt.place_id = p.id), 0),
+                       (SELECT pt.tag_id FROM place_tag pt JOIN tags t ON t.id = pt.tag_id
+                        WHERE pt.place_id = p.id AND t.type = 'MAIN'
+                        ORDER BY pt.id LIMIT 1),
                        p.name,
                        :score, :cnt, :reviewCount, :avgRating, :scoreAt
                 FROM places p

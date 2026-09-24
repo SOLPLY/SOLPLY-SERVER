@@ -186,6 +186,11 @@ public class AdminTagService {
      * 정렬 배열이 들고 있는 것은 장소의 태그 <em>비트마스크</em>이고, 그 비트는 장소–태그 관계가
      * 바뀔 때(어드민 장소 수정) 달라진다. 태그의 이름·활성 여부는 화면에 찍히는 값일 뿐이라
      * 커서가 가리키는 자리를 흔들지 않는다. 그래서 언제나 {@code PRESERVE}다.
+     *
+     * <p>같은 이유로 <b>동네 번호도 올리지 않는다</b>({@code TownVersionService}). 태그 이름 한
+     * 칸을 고쳤다고 전 동네의 탐색을 끊을 이유가 없다. 동네 캐시가 들고 있는 대표 태그 이름은
+     * 다음 성공한 정기 전체 배치가 그 동네의 번호를 올린 <b>뒤 그 동네가 다시 적재될 때</b>
+     * 갈린다 — 배치까지가 상한이 아니라 그 뒤의 적재까지다.
      */
     private void markTagsChanged() {
         snapshotMetadataService.markChanged(SnapshotCursorPolicy.PRESERVE);

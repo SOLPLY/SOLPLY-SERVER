@@ -1,14 +1,20 @@
 package org.sopt.solply_server.domain.admin.place.service;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.sopt.solply_server.domain.admin.place.dto.request.AdminPlaceUpsertRequest;
@@ -17,6 +23,7 @@ import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
 import org.sopt.solply_server.domain.place.cache.SnapshotViewPatcher;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionService;
 import org.sopt.solply_server.domain.place.entity.Place;
 import org.sopt.solply_server.domain.place.repository.PlaceStatsRepository;
 import org.sopt.solply_server.domain.tag.entity.Tag;
@@ -46,6 +53,13 @@ import org.springframework.context.ApplicationEventPublisher;
  *
  * <p><b>커서 정책은 갈린다.</b> 번호 둘 중 revision은 언제나 오르고, cursorVersion은 요청이
  * {@code restartPlaceList}로 명시했을 때만 오른다.
+ *
+ * <p><b>동네 번호는 또 다른 이야기다 (2026-09-21).</b> 전역 회차는 위 그대로 갈래 없이 오르지만,
+ * 동네별 번호는 <b>탐색의 대상·필터를 실제로 바꾼 수정에만</b> 오른다. 다만 그 판정을 이 서비스가
+ * 하지 않는다 — 쓰기 전후의 {@code place_stats} 지문이 한다. 그래서 여기서 무는 것은 "판단에
+ * 재료를 넘기는가"와 "그 재료를 잠금 아래에서 읽는가"까지이고, 어느 경우에 실제로 번호가
+ * 오르는지는 {@code TownVersionBumpIT}가 실제 DB에서 문다. 판정을 다시 이 파일로 끌어오면
+ * 주인이 둘이 되어 한쪽만 고쳐지는 자리가 생긴다.
  */
 @ExtendWith(MockitoExtension.class)
 class AdminPlaceServiceUpdateRoutingTest {
@@ -53,6 +67,7 @@ class AdminPlaceServiceUpdateRoutingTest {
     @Mock private AdminPlaceRepository adminPlaceRepository;
     @Mock private PlaceStatsRepository placeStatsRepository;
     @Mock private SnapshotMetadataService snapshotMetadataService;
+    @Mock private TownVersionService townVersionService;
     @Mock private SnapshotViewPatcher snapshotViewPatcher;
     @Mock private EntityManager entityManager;
     @Mock private ImageFileKeyValidator imageFileKeyValidator;
@@ -84,7 +99,7 @@ class AdminPlaceServiceUpdateRoutingTest {
      * 갈라지면 배열은 바뀐 이름을 모른 채 남는다.
      */
     @Test
-    void 이름만_바꿔도_번호를_올리고_표시값을_얹는다() {
+    void 이름만_바꿔도_같은_길로_간다() {
         updateWith(withName(UNCHANGED, "바뀐이름"));
 
         assertMarksListChanged();
@@ -156,6 +171,24 @@ class AdminPlaceServiceUpdateRoutingTest {
     private void assertMarksListChanged() {
         verify(placeStatsRepository).upsertRowsForActivePlaces(List.of(PLACE_ID));
         verify(snapshotViewPatcher).patchPlacesAfterCommit(List.of(PLACE_ID));
+        // 동네 번호를 올릴지는 여기서 정하지 않는다 — 쓰기 전후 지문이 정한다. 이 단위 테스트가
+        // 무는 것은 "그 판단에 재료를 넘긴다"까지이고, 어느 경우에 실제로 오르는지는
+        // TownVersionBumpIT가 실제 DB에서 문다.
+        verify(townVersionService).markChangedIfSearchAffecting(anyMap(), eq(List.of(PLACE_ID)));
+    }
+
+    /**
+     * <b>지문은 쓰기 전에, 그리고 잠금을 잡은 뒤에 읽는다.</b> A→B와 A→C가 동시에 A를 읽고
+     * 순서대로 커밋하면, 뒤에 커밋한 쪽은 실제로 B→C인데 자기가 읽어 둔 A를 출발지로 삼아 B를
+     * 빠뜨린다. 잠금이 그 순서를 세운다 — 실제 경쟁은 {@code TownVersionBumpIT}가 두 연결로 건다.
+     */
+    @Test
+    void 지문을_읽기_전에_대상_행을_잠근다() {
+        updateWith(withTown(UNCHANGED, OTHER_TOWN_ID));
+
+        InOrder inOrder = inOrder(entityManager, townVersionService);
+        inOrder.verify(entityManager).lock(any(Place.class), eq(LockModeType.PESSIMISTIC_WRITE));
+        inOrder.verify(townVersionService).fingerprintOf(List.of(PLACE_ID));
     }
 
     private static AdminPlaceUpsertRequest withName(AdminPlaceUpsertRequest req, String name) {

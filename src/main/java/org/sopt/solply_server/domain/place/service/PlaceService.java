@@ -17,6 +17,13 @@ import org.sopt.solply_server.domain.place.cache.PlaceView;
 import org.sopt.solply_server.domain.place.cache.PlaceViewHolder;
 import org.sopt.solply_server.domain.place.cache.TagView;
 import org.sopt.solply_server.domain.place.cache.TagViewHolder;
+import org.sopt.solply_server.domain.place.cache.town.TownListReader;
+import org.sopt.solply_server.domain.place.cache.town.TownPlaceListService;
+import org.sopt.solply_server.domain.place.cache.town.TownDbDirectReader;
+import org.sopt.solply_server.domain.place.cache.town.TownPlaces;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties.ListSource;
+import org.sopt.solply_server.domain.place.metrics.PlaceListMeters;
 import org.sopt.solply_server.domain.place.dto.PlaceFolderPreviewDto;
 import org.sopt.solply_server.domain.place.dto.PlaceImageInfoDto;
 import org.sopt.solply_server.domain.place.dto.PlaceLatestReviewDto;
@@ -77,6 +84,12 @@ public class PlaceService {
   private final PlaceViewHolder placeViewHolder;
   /** 대표 태그의 이름·활성 판정 — {@code TagViewUtils.getActiveNameOrNull}과 같은 규칙이다 */
   private final TagViewHolder tagViewHolder;
+  /** 정적 5축을 어느 구조로 답할지 고르는 비교 경계 */
+  private final PlaceListProperties placeListProperties;
+  /** DB 직접 조회 구조가 쓰는 리더. 다른 구조에서는 불리지 않는다 */
+  private final TownDbDirectReader dbDirectReader;
+  /** 배열 생성·사용 계측의 입구 */
+  private final PlaceListMeters meters;
 
   /**
    * 목록 페이지 크기 기본값·상한. 캐시 시절 페이지네이터가 들고 있던 상수를
@@ -392,19 +405,142 @@ public class PlaceService {
         ? distanceRows(snapshot.sortedPlaces(), leafTownIds, request, cursor, fetchSize)
         : staticRows(snapshot.sortedPlaces(), leafTownIds, request, sort, cursor, fetchSize);
 
+    return respond(userId, rows, paging, pageSize, sort, filterPrint,
+        PlaceListCursor.globalScope(snapshot.metadata().cursorVersion()),
+        placeId -> placeViewHolder.get(placeId), true);
+  }
+
+  /**
+   * 정적 5축의 <b>동네 캐시 경로</b>. 확보한 동네 객체만 읽는다 — 전역 스냅샷도 전역 표시 홀더도
+   * 보지 않는다.
+   *
+   * <p><b>표시값이 없어서 행이 빠지는 경로가 여기에는 없다.</b> 동네 객체가 정렬 값과 표시값을 같은
+   * read view에서 함께 읽어 한 몸으로 들고 있기 때문이다. 동네마다 적재 시점이 갈리는 구조에서
+   * 전역 홀더를 그대로 봤다면, 어느 동네를 막 적재하는 동안 다른 동네의 행이 조용히 사라졌을
+   * 것이다.
+   *
+   * <p>다음 커서에는 <b>실제로 확보한 번호들</b>을 싣는다. 요청이 앞서 관측한 번호가 아니다.
+   */
+  public PlaceFilterGetResponse listPlacesFromTowns(
+      final Long userId, final PlaceFilterGetRequest request,
+      final TownPlaceListService.Gathered gathered) {
+
+    PlaceSortType sort = request.sortOrDefault();
+    boolean paging = request.cursor() != null || request.size() != null;
+    int pageSize = !paging ? Integer.MAX_VALUE - 1
+        : (request.size() == null ? DEFAULT_PAGE_SIZE
+            : Math.min(request.size(), MAX_PAGE_SIZE));
+
+    String filterPrint = PlaceListCursor.filterPrintOf(
+        request.townId(), request.mainTagId(),
+        request.subTagAIdList(), request.subTagBIdList());
+    PlaceListCursor cursor = decodeCursorOrThrow(request, sort);
+
+    TagMasks masks = TagMasks.of(
+        request.mainTagId(), request.subTagAIdList(), request.subTagBIdList());
+    int fetchSize = paging ? pageSize + 1 : pageSize;
+
+    // 기본 경로(TOWN_LAZY_SORT)와 사전 정렬 비교 경로가 같은 입구를 쓴다 — 둘의 차이는 그 축의
+    // 배열이 <b>언제</b> 서는가뿐이고, 없으면 page()가 이 자리에서 한 벌 만들어 붙인다.
+    // 요청 정렬 비교 경로만 배열을 남기지 않고 요청마다 합집합을 한 번 정렬한다.
+    List<PlaceEntry> entries = placeListProperties.getListSource() == ListSource.TOWN_REQUEST_SORT
+        ? TownListReader.pageBySortingNow(gathered.towns(), sort, masks, cursor, fetchSize, meters)
+        : TownListReader.page(gathered.towns(), sort, masks, cursor, fetchSize, meters);
+
+    List<ListRow> rows = entries.stream()
+        .map(entry -> new ListRow(entry, sortKeys(sort, entry)))
+        .toList();
+
+    Map<Long, TownPlaces> byTown = gathered.towns().stream()
+        .collect(Collectors.toMap(TownPlaces::townId, Function.identity()));
+
+    return respond(userId, rows, paging, pageSize, sort, filterPrint,
+        gathered.versions().scope(),
+        placeId -> null, false, byTown);
+  }
+
+  /**
+   * 정적 5축의 <b>DB 직접 조회 경로</b>. 캐시를 쓰지 않고 정렬·페이지를 DB가 맡는다.
+   *
+   * <p><b>계약은 동네 캐시 경로와 같다.</b> 검증·필터 지문·커서 형식·응답 필드·사용자 북마크
+   * 조립이 전부 같은 코드를 지난다 — 여기서 갈리면 0단계 등가성이 "구조 차이"가 아니라 "구현
+   * 차이"를 재게 된다.
+   *
+   * <p><b>표시값은 리더가 같은 read view에서 실어 온 것만 쓴다.</b> 전역 표시 홀더를 보지 않으므로
+   * 홀더가 비어 있어도 행이 빠지지 않고, 못 찾으면 조용히 빠지는 대신 드러난다.
+   *
+   * <p>예산은 호출부가 <b>요청 진입 시각부터</b> 걸어 둔 그것이다. 이 경로에 캐시 적재가 없다고
+   * 예산이 없는 것이 아니다 — DB 실행과 커넥션 대기가 예산을 넘길 수 있다.
+   */
+  public PlaceFilterGetResponse listPlacesFromDb(
+      final Long userId, final List<Long> leafTownIds, final PlaceFilterGetRequest request) {
+
+    PlaceSortType sort = request.sortOrDefault();
+    boolean paging = request.cursor() != null || request.size() != null;
+    int pageSize = !paging ? Integer.MAX_VALUE - 1
+        : (request.size() == null ? DEFAULT_PAGE_SIZE
+            : Math.min(request.size(), MAX_PAGE_SIZE));
+
+    String filterPrint = PlaceListCursor.filterPrintOf(
+        request.townId(), request.mainTagId(),
+        request.subTagAIdList(), request.subTagBIdList());
+    PlaceListCursor cursor = decodeCursorOrThrow(request, sort);
+    int fetchSize = paging ? pageSize + 1 : pageSize;
+
+    // 번호 관측·페이지 조회·표시값이 전부 리더의 한 read view 안이다. 커서 범위가 지금 번호와
+    // 다르면 리더가 거기서 만료로 끊는다 — 동네 캐시 경로와 같은 판정이다.
+    TownDbDirectReader.Page page = dbDirectReader.read(
+        leafTownIds, sort, request.mainTagId(),
+        request.subTagAIdList(), request.subTagBIdList(), cursor, fetchSize);
+
+    List<ListRow> rows = page.entries().stream()
+        .map(entry -> new ListRow(entry, sortKeys(sort, entry)))
+        .toList();
+
+    return respond(userId, rows, paging, pageSize, sort, filterPrint,
+        page.versions().scope(),
+        placeId -> page.displays().get(placeId), false, Map.of());
+  }
+
+  /**
+   * 행 목록을 응답으로 옮긴다. 두 경로(거리순의 전역 스냅샷, 정적 5축의 동네 캐시)가 <b>같은
+   * 표현 규칙</b>을 쓰도록 여기 한 곳에 둔다 — 갈라 두면 한쪽만 고쳐진다.
+   *
+   * @param dropMissingDisplays 표시값을 못 찾은 행을 결과에서 뺄지. <b>전역 경로만 참이다</b> —
+   *                            동네 경로는 표시값을 같은 객체가 들고 있어 "못 찾음"이 없다
+   */
+  private PlaceFilterGetResponse respond(
+      Long userId, List<ListRow> rows, boolean paging, int pageSize, PlaceSortType sort,
+      String filterPrint, String scope,
+      java.util.function.LongFunction<PlaceView> globalDisplay, boolean dropMissingDisplays) {
+    return respond(userId, rows, paging, pageSize, sort, filterPrint, scope,
+        globalDisplay, dropMissingDisplays, Map.of());
+  }
+
+  private PlaceFilterGetResponse respond(
+      Long userId, List<ListRow> rows, boolean paging, int pageSize, PlaceSortType sort,
+      String filterPrint, String scope,
+      java.util.function.LongFunction<PlaceView> globalDisplay, boolean dropMissingDisplays,
+      Map<Long, TownPlaces> byTown) {
+
     boolean hasNext = paging && rows.size() > pageSize;
     if (hasNext) {
       rows = rows.subList(0, pageSize);
     }
 
-    // 표시값은 스냅샷 밖 홀더에서 지금 값을 꺼내 붙인다. 없는 행 = 그 사이 삭제된 장소이므로
-    // 건너뛴다 — 아래 커서는 그래도 "소비한 마지막 엔트리" 기준이라 그 행을 다시 보지 않는다.
     List<DisplayedRow> displayed = new ArrayList<>(rows.size());
     for (ListRow row : rows) {
-      PlaceView view = placeViewHolder.get(row.entry().placeId());
+      PlaceView view = displayOf(row.entry(), globalDisplay, byTown);
       if (view != null) {
         displayed.add(new DisplayedRow(row.entry(), view));
+        continue;
       }
+      if (!dropMissingDisplays) {
+        throw new IllegalStateException(
+            "동네 객체가 자기 장소의 표시값을 들고 있지 않다 - placeId=" + row.entry().placeId());
+      }
+      // 전역 경로에서만 일어난다 — 그 사이 삭제된 장소다. 커서는 "소비한 마지막 엔트리" 기준이라
+      // 그 행을 다시 보지 않는다.
     }
 
     List<Long> pageIds = displayed.stream().map(row -> row.entry().placeId()).toList();
@@ -447,10 +583,19 @@ public class PlaceService {
             rows.get(rows.size() - 1).sortKeys(),
             rows.get(rows.size() - 1).entry().placeId(),
             filterPrint,
-            // 서빙한 회차를 그대로 실어 다음 페이지도 같은 스냅샷에서 이어지게 한다
-            snapshot.metadata().cursorVersion()).encode()
+            // 실제로 서빙한 범위와 번호를 그대로 싣는다 — 다음 페이지가 같은 자리에서 이어진다
+            scope).encode()
         : null;
     return PlaceFilterGetResponse.of(previews, nextCursor);
+  }
+
+  /**
+   * 이 행의 표시값. 동네 경로는 그 장소가 속한 동네 객체가 들고 있고, 전역 경로는 홀더가 든다.
+   */
+  private static PlaceView displayOf(PlaceEntry entry,
+      java.util.function.LongFunction<PlaceView> globalDisplay, Map<Long, TownPlaces> byTown) {
+    TownPlaces town = byTown.get(entry.townId());
+    return town != null ? town.display(entry.placeId()) : globalDisplay.apply(entry.placeId());
   }
 
   /**
@@ -484,7 +629,8 @@ public class PlaceService {
    * 있던 요청은 자기가 잡은 참조로 끝까지 간다(계약 2).
    */
   private static void requireCursorMatchesSnapshot(PlaceListCursor cursor, Snapshot snapshot) {
-    if (cursor != null && cursor.version() != snapshot.metadata().cursorVersion()) {
+    if (cursor != null && !PlaceListCursor.globalScope(snapshot.metadata().cursorVersion())
+        .equals(cursor.scope())) {
       throw new BusinessException(ErrorCode.EXPIRED_PLACE_CURSOR);
     }
   }

@@ -26,6 +26,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.support.TestMeters;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +38,7 @@ import org.sopt.solply_server.domain.place.cache.SnapshotLoadCoordinator;
 import org.sopt.solply_server.domain.place.cache.SortedPlaces;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
+import org.sopt.solply_server.domain.place.config.PlaceListProperties;
 import org.sopt.solply_server.domain.place.config.PlaceListSnapshotProperties;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
@@ -471,9 +473,17 @@ class PlaceListRequestOrchestratorTest {
 
     // === 픽스처 ===
 
+    /**
+     * 이 파일이 검증하는 것은 <b>전역 회차 catch-up</b>이다. 동네 캐시 경로에는 그 대기가 없으므로
+     * 구조를 명시적으로 전역으로 고정한다 — 기본값이 바뀌었다고 이 검증이 조용히 다른 경로를
+     * 돌게 두지 않는다.
+     */
     private PlaceListRequestOrchestrator orchestrator() {
+        PlaceListProperties listProperties = new PlaceListProperties();
+        listProperties.setListSource(PlaceListProperties.ListSource.GLOBAL_SNAPSHOT);
         return new PlaceListRequestOrchestrator(placeService, snapshotBox,
-                loadCoordinator, metadataRepository, properties, resumeExecutor);
+                loadCoordinator, metadataRepository, properties, listProperties,
+                null, TestMeters.noop(), resumeExecutor);
     }
 
     /** 공유 번호 — revision은 이 파일의 판정에 쓰이지 않으므로 회차와 같이 둔다 */
@@ -529,6 +539,7 @@ class PlaceListRequestOrchestratorTest {
     /** 진짜 토큰이다 — 회차 판정이 {@code PlaceListCursor.decode}를 실제로 지난다 */
     private static String cursorAtVersion(long version) {
         return new PlaceListCursor(PlaceSortType.POPULAR, List.of(1.0), 5L,
-                PlaceListCursor.filterPrintOf(TOWN_ID, null, null, null), version).encode();
+                PlaceListCursor.filterPrintOf(TOWN_ID, null, null, null),
+                PlaceListCursor.globalScope(version)).encode();
     }
 }

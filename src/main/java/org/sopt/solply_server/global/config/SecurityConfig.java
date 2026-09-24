@@ -6,8 +6,10 @@ import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.global.jwt.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -49,6 +51,33 @@ public class SecurityConfig {
                         .requestMatchers(EndpointRequest.to("health","info","prometheus")).permitAll()
                         .requestMatchers(EndpointRequest.toAnyEndpoint()).denyAll()
                 )
+                .build();
+    }
+
+    /**
+     * 비교 측정 통로 {@code /bench/**}의 보안 경계 — <b>세 겹 중 마지막 겹</b>이다.
+     *
+     * <p>이 체인은 {@code solply.bench.enabled=true}일 때만 선다. 통로의 빈도 프로파일과 같은
+     * 프로퍼티를 함께 요구하므로({@code BenchProperties}), 셋 중 하나라도 어긋나면 열리지 않는다.
+     * 꺼져 있으면 이 체인 자체가 없고 {@code /bench/**}는 아래 {@code appChain}의
+     * {@code anyRequest().authenticated()}에 걸린다 — 인증 없이는 닿지 못한다.
+     *
+     * <p><b>바이트코드는 jar에 남는다.</b> {@code @Profile}·{@code @ConditionalOnProperty}는 빈
+     * 등록을 막을 뿐 클래스를 지우지 않는다. 그래서 프로퍼티를 <b>기본 false</b>로 두고, 운영
+     * 설정에 그 키를 두지 않는 것이 실제 방어선이다. 바이트코드까지 없애려면 별도 source set이
+     * 필요한데, 빌드 경로가 둘로 갈려 측정 담당자가 "같은 이미지"를 굽기 어려워진다 —
+     * 그 맞교환을 알고 이쪽을 골랐다(docs/verification/2026-09-21-comparison-integration.md).
+     */
+    @Bean
+    @Order(-1)
+    @Profile("bench")
+    @ConditionalOnProperty(prefix = "solply.bench", name = "enabled", havingValue = "true")
+    public SecurityFilterChain benchChain(HttpSecurity http) throws Exception {
+        return http
+                .securityMatcher("/bench/**")
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(a -> a.anyRequest().permitAll())
                 .build();
     }
 

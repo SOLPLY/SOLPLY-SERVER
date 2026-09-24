@@ -22,6 +22,9 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
+import org.sopt.solply_server.domain.place.cache.town.TownCommitPublisher;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionRepository;
+import org.sopt.solply_server.domain.place.cache.town.TownVersionService;
 import org.sopt.solply_server.domain.place.config.PlaceStatsProperties;
 import org.sopt.solply_server.domain.place.dto.PlaceStatsView;
 import org.sopt.solply_server.domain.place.entity.PlaceStats;
@@ -31,6 +34,7 @@ import org.sopt.solply_server.support.MySqlContainerSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
 import org.springframework.orm.jpa.EntityManagerFactoryUtils;
@@ -53,8 +57,13 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({QueryDslConfig.class, PlaceStatsBatchProcessor.class, PlaceStatsProperties.class,
-        SnapshotMetadataService.class, SnapshotMetadataRepository.class})
+        SnapshotMetadataService.class, SnapshotMetadataRepository.class,
+        // 정기 전체 배치가 처리 대상 전 동네의 번호를 올린다 — 같은 트랜잭션이라 슬라이스에도 있어야 한다
+        TownVersionService.class, TownVersionRepository.class})
 class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
+
+    /** 커밋 뒤 공유 사본 발행은 이 슬라이스의 관심 밖이다 — 검증은 TownRedisIntegrationIT가 한다. */
+    @MockBean TownCommitPublisher townCommitPublisher;
 
     private static final double BOOKMARK_WEIGHT = 1.0;
     private static final double REVIEW_WEIGHT = 2.0;
@@ -501,22 +510,33 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
      * 아무것도 안 쓰는 문장"과 구분하기 위해서다.
      */
     /**
-     * <b>회차마다 목록 쪽에 UPDATE 한 행이 섞인다.</b>
+     * <b>회차마다 목록 쪽에 섞이는 UPDATE 행 수.</b> {@code Innodb_rows_updated}는 테이블을
+     * 가리지 않으므로 이 몫을 빼야 place_stats에 실제로 쓴 행이 남는다.
      *
-     * <p>통계 트랜잭션은 자기 마지막 문장으로 {@code place_list_snapshot_metadata}의 번호 둘을
-     * <b>UPDATE</b>로 올린다. {@code Innodb_rows_updated}는 테이블을 가리지 않으므로 그 한 행이
-     * 이 측정에 그대로 섞인다 — 여기서 빼는 몫이 그것이다.
+     * <p>섞이는 것은 둘이다.
+     * <ul>
+     *   <li>{@code place_list_snapshot_metadata}의 전역 번호 한 행.
+     *   <li>{@code place_list_town_versions}의 <b>처리 대상 동네마다 한 행</b> (2026-09-21) —
+     *       정기 전체 배치는 값이 실제로 바뀌었는지 보지 않고 전 동네를 올린다. 값으로 거르면
+     *       표시값만 갈린 동네가 영구히 갱신 대상에서 빠지기 때문이다.
+     * </ul>
      *
-     * <p>이 값을 상수로 세워 두는 것은, 목록 쪽 쓰기가 늘거나 줄면 <b>여기가 먼저 빨개져</b>
-     * "회차 하나가 목록에 남기는 쓰기는 정확히 한 행"이라는 사실을 다시 확인하게 하려는 것이다.
+     * <p>동네 수를 상수로 박지 않고 지금 데이터에서 세는 이유는, 시드가 늘 때 이 테스트가
+     * <b>엉뚱한 이유로</b> 빨개지지 않게 하려는 것이다. 목록 쪽 쓰기의 <b>모양</b>이 바뀌면
+     * (동네마다 한 행이 아니게 되면) 여기가 여전히 먼저 빨개진다.
      */
-    private static final long REQUEST_ROW_WRITES_PER_ROUND = 1L;
+    private long listRowWritesPerRound() {
+        Object towns = em.createNativeQuery(
+                "SELECT COUNT(DISTINCT town_id) FROM place_stats").getSingleResult();
+        return 1L + Long.parseLong(String.valueOf(towns));
+    }
 
     @Test
     void 카운트_회차는_값이_달라진_행만_쓴다() {
         clearStats();
         batchProcessor.rebuildRowsFromSource(CALCULATED_AT);
         batchProcessor.recalculateCounts(CALCULATED_AT);
+        long listWrites = listRowWritesPerRound();
 
         long beforeIdleRound = innodbRowsUpdated();
         batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
@@ -527,10 +547,10 @@ class PlaceStatsBatchProcessorIT extends MySqlContainerSupport {
         batchProcessor.recalculateCounts(NEXT_CALCULATED_AT);
         long realRoundWrites = innodbRowsUpdated() - beforeRealRound;
 
-        assertThat(idleRoundWrites - REQUEST_ROW_WRITES_PER_ROUND)
+        assertThat(idleRoundWrites - listWrites)
                 .as("원본이 그대로면 place_stats에는 한 행도 쓰지 않는다")
                 .isZero();
-        assertThat(realRoundWrites - REQUEST_ROW_WRITES_PER_ROUND)
+        assertThat(realRoundWrites - listWrites)
                 .as("북마크가 생긴 장소 한 행만 쓴다")
                 .isEqualTo(1);
         assertThat(statsOf(placeA).getBookmarkCount()).isEqualTo(1);

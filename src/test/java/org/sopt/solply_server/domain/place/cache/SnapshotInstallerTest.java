@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.junit.jupiter.api.Test;
+import org.sopt.solply_server.support.TestMeters;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,7 +46,7 @@ class SnapshotInstallerTest {
 
     private SnapshotInstaller installer() {
         return new SnapshotInstaller(loader, snapshotBox, placeViewHolder, tagViewHolder,
-                writeLock);
+                writeLock, TestMeters.noop());
     }
 
     /**
@@ -272,7 +273,7 @@ class SnapshotInstallerTest {
             }
         };
         SnapshotInstaller installer = new SnapshotInstaller(
-                loader, snapshotBox, watching, tagViewHolder, writeLock);
+                loader, snapshotBox, watching, tagViewHolder, writeLock, TestMeters.noop());
         given(loader.readSourceState(any()))
                 .willReturn(source(4L, 2L, place(1L, "처음이름")))
                 .willReturn(source(5L, 2L, place(1L, "옛이름")));

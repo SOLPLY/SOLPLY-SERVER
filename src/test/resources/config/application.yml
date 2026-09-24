@@ -1,0 +1,8 @@
+# 테스트 classpath에만 있는 덧붙임 설정. classpath:/config/application.yml은 main의
+# application.yml을 가리지 않고 그 위에 얹히며, @DynamicPropertySource가 이보다 앞선다.
+solply:
+  place-list-town-cache:
+    redis:
+      # 동네 공유 사본은 실제 Redis 컨테이너를 띄우는 IT만 켠다(TownRedisIntegrationIT).
+      # 켜 둔 채 두면 로컬에 떠 있는 Redis 유무에 따라 과거 번호 커서가 만료/재시도로 갈린다.
+      enabled: false

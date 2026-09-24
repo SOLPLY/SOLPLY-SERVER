@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadata;
 import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataRepository;
+import org.sopt.solply_server.domain.place.metrics.PlaceListMeters;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -66,6 +67,7 @@ public class SnapshotLoadCoordinator {
 
     private final SnapshotInstaller installer;
     private final SnapshotMetadataRepository metadataRepository;
+    private final PlaceListMeters meters;
     private final ExecutorService loader;
 
     /**
@@ -96,16 +98,17 @@ public class SnapshotLoadCoordinator {
     // 생성자가 둘이라 어느 쪽을 쓸지 명시해야 한다 — 없으면 컨텍스트가 no-arg를 찾다 실패한다
     @Autowired
     public SnapshotLoadCoordinator(SnapshotInstaller installer,
-            SnapshotMetadataRepository metadataRepository) {
-        this(installer, metadataRepository, newLoaderExecutor());
+            SnapshotMetadataRepository metadataRepository, PlaceListMeters meters) {
+        this(installer, metadataRepository, meters, newLoaderExecutor());
     }
 
     /** 테스트가 실행 시점을 잡기 위한 생성자. 운영 경로는 위 생성자만 쓴다. */
     SnapshotLoadCoordinator(SnapshotInstaller installer,
-            SnapshotMetadataRepository metadataRepository,
+            SnapshotMetadataRepository metadataRepository, PlaceListMeters meters,
             ExecutorService loader) {
         this.installer = installer;
         this.metadataRepository = metadataRepository;
+        this.meters = meters;
         this.loader = loader;
     }
 
@@ -142,8 +145,13 @@ public class SnapshotLoadCoordinator {
             return;
         }
         if (!head.isNewerThan(installer.installed())) {
-            return;     // 다시 지을 것이 없다
+            // 발화했으나 다시 지을 것이 없었다 — 번호 조회 하나로 끝난 폴이다
+            meters.pollFired(false);
+            return;
         }
+        // ⚠️ 폴은 끄지 않는다. 기준선 구성이 실제로 지는 비용이라, 없애면 기준선을 실물보다
+        //    싸게 재는 것이 된다. 대신 발화와 그중 실제 리빌드를 나눠 남긴다.
+        meters.pollFired(true);
         start(head);
     }
 

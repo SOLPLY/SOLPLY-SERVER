@@ -20,7 +20,7 @@ import org.sopt.solply_server.domain.place.util.TagMasks;
  * ({@link PlaceViewHolder}·{@link TagViewHolder})에 한 벌로 살면서 어드민 수정 때 그 항목만 갈린다.
  * 만들어진 뒤에는 아무것도 바뀌지 않으며, 갱신은 {@link SnapshotBox}의 참조 교체 한 번이다.
  *
- * <p><b>이 클래스의 계약은 하나다 — 순서가 DB와 같아야 한다.</b> 아래 {@link Axis}의 비교자는
+ * <p><b>이 클래스의 계약은 하나다 — 순서가 DB와 같아야 한다.</b> {@link PlaceOrder}의 비교자는
  * {@code PlaceListDbQueryRepository}의 ORDER BY를, 커서 비교는 그 쿼리의 seek 술어를 그대로 옮긴
  * 것이고, 방향 하나만 어긋나도 두 방식의 응답이 갈린다. 정본은 언제나 그쪽 SQL이다.
  *
@@ -90,7 +90,7 @@ public final class SortedPlaces {
         Map<PlaceSortType, Map<Long, PlaceEntry[]>> orders =
                 new EnumMap<>(PlaceSortType.class);
         int arrayCount = 0;
-        for (Axis axis : Axis.values()) {
+        for (PlaceOrder axis : PlaceOrder.values()) {
             Map<Long, PlaceEntry[]> perTown = new HashMap<>(grouped.size() * 2);
             for (Map.Entry<Long, List<PlaceEntry>> town : grouped.entrySet()) {
                 // 정렬 축은 순서만 정한다 — 어느 축도 원소를 걸러내지 않는다 (DISTANCE_SOURCE의 전제)
@@ -99,7 +99,7 @@ public final class SortedPlaces {
                 perTown.put(town.getKey(), sorted);
                 arrayCount++;
             }
-            orders.put(axis.sortType, perTown);
+            orders.put(axis.sortType(), perTown);
         }
         return new SortedPlaces(orders, entries.size(), grouped.size(), arrayCount);
     }
@@ -222,7 +222,7 @@ public final class SortedPlaces {
         if (limit <= 0) {
             return List.of();
         }
-        Axis axis = Axis.of(sort);
+        PlaceOrder axis = PlaceOrder.of(sort);
         Map<Long, PlaceEntry[]> perTown = orders.get(sort);
 
         if (townIds.size() == 1) {
@@ -267,7 +267,7 @@ public final class SortedPlaces {
      * 여기가 묻는 것도 "그 좌표보다 뒤인가"뿐이고, 배열이 같은 전순서로 정렬돼 있으므로 그 술어는
      * 배열 위에서 단조다(거짓…거짓,참…참). 그래서 이진 탐색의 전제가 성립한다.
      */
-    private static int seek(PlaceEntry[] sorted, Axis axis, PlaceListCursor cursor) {
+    private static int seek(PlaceEntry[] sorted, PlaceOrder axis, PlaceListCursor cursor) {
         if (cursor == null) {
             return 0;
         }
@@ -302,7 +302,8 @@ public final class SortedPlaces {
      * 같은 스냅샷을 동시에 읽는 요청들이 서로의 상태를 보지 못한다.
      */
     private static List<PlaceEntry> merge(Map<Long, PlaceEntry[]> perTown,
-            List<Long> townIds, Axis axis, TagMasks masks, PlaceListCursor cursor, int limit) {
+            List<Long> townIds, PlaceOrder axis, TagMasks masks, PlaceListCursor cursor,
+            int limit) {
 
         PriorityQueue<Leg> heap = new PriorityQueue<>(townIds.size(),
                 (left, right) -> axis.compare(left.head(), right.head()));
@@ -389,8 +390,8 @@ public final class SortedPlaces {
      */
     private SortedPlaces withTownsPatched(Map<Long, TownPatch> byTown, int created, int deleted) {
         Map<PlaceSortType, Map<Long, PlaceEntry[]>> next = new EnumMap<>(PlaceSortType.class);
-        for (Axis axis : Axis.values()) {
-            next.put(axis.sortType, new HashMap<>(orders.get(axis.sortType)));
+        for (PlaceOrder axis : PlaceOrder.values()) {
+            next.put(axis.sortType(), new HashMap<>(orders.get(axis.sortType())));
         }
 
         int townDelta = 0;
@@ -403,7 +404,7 @@ public final class SortedPlaces {
 
         int nextTownCount = townCount + townDelta;
         return new SortedPlaces(next, placeCount + created - deleted, nextTownCount,
-                Axis.values().length * nextTownCount);
+                PlaceOrder.values().length * nextTownCount);
     }
 
     /**
@@ -418,8 +419,8 @@ public final class SortedPlaces {
      */
     private int swapInTown(Map<PlaceSortType, Map<Long, PlaceEntry[]>> next, long townId,
             TownPatch patch) {
-        for (Axis axis : Axis.values()) {
-            PlaceEntry[] copy = orders.get(axis.sortType).get(townId).clone();
+        for (PlaceOrder axis : PlaceOrder.values()) {
+            PlaceEntry[] copy = orders.get(axis.sortType()).get(townId).clone();
             for (Swap swap : patch.swaps.values()) {
                 int at = Arrays.binarySearch(copy, swap.from(), axis::compare);
                 if (at < 0) {
@@ -428,14 +429,14 @@ public final class SortedPlaces {
                 }
                 copy[at] = swap.to();
             }
-            next.get(axis.sortType).put(townId, copy);
+            next.get(axis.sortType()).put(townId, copy);
         }
         return 0;
     }
 
     /**
      * 원소 집합이 갈린 동네 — 생성·삭제·이동이 섞였으니 그 동네의 다섯 배열을 다시 세운다.
-     * {@link #of}와 같은 {@link Axis} 비교자를 쓰므로 순서의 정본은 변하지 않는다.
+     * {@link #of}와 같은 {@link PlaceOrder} 비교자를 쓰므로 순서의 정본은 변하지 않는다.
      *
      * <p>원소가 하나도 남지 않으면 동네 키째 지운다 — {@code of}가 빈 동네를 만들지 않으므로,
      * 여기서 빈 배열을 남기면 두 경로가 다른 모양의 스냅샷을 낸다.
@@ -457,15 +458,15 @@ public final class SortedPlaces {
         members.addAll(patch.added);
 
         if (members.isEmpty()) {
-            for (Axis axis : Axis.values()) {
-                next.get(axis.sortType).remove(townId);
+            for (PlaceOrder axis : PlaceOrder.values()) {
+                next.get(axis.sortType()).remove(townId);
             }
             return -1;
         }
-        for (Axis axis : Axis.values()) {
+        for (PlaceOrder axis : PlaceOrder.values()) {
             PlaceEntry[] sorted = members.toArray(EMPTY);
             Arrays.sort(sorted, axis::compare);
-            next.get(axis.sortType).put(townId, sorted);
+            next.get(axis.sortType()).put(townId, sorted);
         }
         return before == null ? 1 : 0;
     }
@@ -508,151 +509,4 @@ public final class SortedPlaces {
     private record Swap(PlaceEntry from, PlaceEntry to) {
     }
 
-    /**
-     * 정적 정렬 다섯의 <b>전순서와 seek 술어</b>. 정본은 {@code PlaceListDbQueryRepository}의
-     * ORDER BY와 커서 조건이며, 여기는 그것을 자바로 옮긴 것뿐이다.
-     *
-     * <p><b>{@code compare}와 {@code compareToCursor}는 같은 전순서를 말해야 한다.</b> 커서를 그
-     * 순서 위의 <em>가상 원소</em>로 보면 {@code compareToCursor}는 "원소가 그 가상 원소보다 뒤인가"를
-     * 재는 것이고, 그 일관성이 곧 {@link #seek} 이진 탐색이 성립하는 근거다.
-     *
-     * <p>타이브레이크 방향이 정렬마다 다르다는 점에 주의할 것 — 최신순만 id가 <b>내림차순</b>이다
-     * (인덱스 역방향 스캔이 그 순서를 만든다, V34).
-     */
-    private enum Axis {
-
-        /**
-         * 인기순 — 점수 DESC, id ASC. <b>{@code popular_score} 값 그대로의 정렬이다</b>: 아직
-         * 채점되지 않은 장소는 0으로 그 값 위치에 서고(음수 점수 장소 위), 목록 경로는 채점
-         * 여부를 묻지 않는다 (스펙 결정 2026-09-01).
-         */
-        POPULAR(PlaceSortType.POPULAR) {
-            @Override
-            int compare(PlaceEntry a, PlaceEntry b) {
-                int byScore = Double.compare(b.popularScore(), a.popularScore());
-                return byScore != 0 ? byScore : Long.compare(a.placeId(), b.placeId());
-            }
-
-            @Override
-            int compareToCursor(PlaceEntry entry, PlaceListCursor cursor) {
-                int byScore = Double.compare(cursor.key(0), entry.popularScore());
-                return byScore != 0 ? byScore : Long.compare(entry.placeId(), cursor.placeId());
-            }
-        },
-
-        /** 최신순 — 생성일 DESC, id DESC. 신규 장소가 맨 앞에 오는 것이 이 정렬의 전부다 */
-        LATEST(PlaceSortType.LATEST) {
-            @Override
-            int compare(PlaceEntry a, PlaceEntry b) {
-                int byCreatedAt =
-                        Long.compare(b.createdAtEpochSecond(), a.createdAtEpochSecond());
-                return byCreatedAt != 0 ? byCreatedAt : Long.compare(b.placeId(), a.placeId());
-            }
-
-            @Override
-            int compareToCursor(PlaceEntry entry, PlaceListCursor cursor) {
-                int byCreatedAt =
-                        Long.compare((long) cursor.key(0), entry.createdAtEpochSecond());
-                // 여기만 id가 내림차순이다 — 커서보다 뒤 = id가 더 "작은" 쪽
-                return byCreatedAt != 0 ? byCreatedAt : Long.compare(cursor.placeId(), entry.placeId());
-            }
-        },
-
-        /**
-         * 평점순 — 평점 DESC, 리뷰 수 DESC, id ASC. 리뷰 0건은 0점으로 맨 뒤다 (V37).
-         *
-         * <p>엔트리가 든 평점은 DECIMAL(3,2)의 무척도 정수라({@link PlaceEntry}) 비교도 정수끼리다.
-         * 커서만 double을 실어 오므로 {@link #cursorRatingToInt}로 정수를 되찾아 맞춘다.
-         */
-        RATING(PlaceSortType.RATING) {
-            @Override
-            int compare(PlaceEntry a, PlaceEntry b) {
-                int byRating = Integer.compare(b.ratingToInt(), a.ratingToInt());
-                if (byRating != 0) {
-                    return byRating;
-                }
-                int byReviews = Long.compare(b.reviewCount(), a.reviewCount());
-                return byReviews != 0 ? byReviews : Long.compare(a.placeId(), b.placeId());
-            }
-
-            @Override
-            int compareToCursor(PlaceEntry entry, PlaceListCursor cursor) {
-                int byRating = Integer.compare(cursorRatingToInt(cursor.key(0)), entry.ratingToInt());
-                if (byRating != 0) {
-                    return byRating;
-                }
-                int byReviews = Long.compare((long) cursor.key(1), entry.reviewCount());
-                return byReviews != 0 ? byReviews : Long.compare(entry.placeId(), cursor.placeId());
-            }
-        },
-
-        /** 리뷰순 — 리뷰 수 DESC, id ASC */
-        REVIEW_COUNT(PlaceSortType.REVIEW_COUNT) {
-            @Override
-            int compare(PlaceEntry a, PlaceEntry b) {
-                int byCount = Long.compare(b.reviewCount(), a.reviewCount());
-                return byCount != 0 ? byCount : Long.compare(a.placeId(), b.placeId());
-            }
-
-            @Override
-            int compareToCursor(PlaceEntry entry, PlaceListCursor cursor) {
-                int byCount = Long.compare((long) cursor.key(0), entry.reviewCount());
-                return byCount != 0 ? byCount : Long.compare(entry.placeId(), cursor.placeId());
-            }
-        },
-
-        /** 북마크순 — 북마크 수 DESC, id ASC. 인기순과 <b>다른 축</b>이다(누적 원값 대 복합 점수) */
-        BOOKMARK_COUNT(PlaceSortType.BOOKMARK_COUNT) {
-            @Override
-            int compare(PlaceEntry a, PlaceEntry b) {
-                int byCount = Long.compare(b.bookmarkCount(), a.bookmarkCount());
-                return byCount != 0 ? byCount : Long.compare(a.placeId(), b.placeId());
-            }
-
-            @Override
-            int compareToCursor(PlaceEntry entry, PlaceListCursor cursor) {
-                int byCount = Long.compare((long) cursor.key(0), entry.bookmarkCount());
-                return byCount != 0 ? byCount : Long.compare(entry.placeId(), cursor.placeId());
-            }
-        };
-
-        private final PlaceSortType sortType;
-
-        Axis(PlaceSortType sortType) {
-            this.sortType = sortType;
-        }
-
-        abstract int compare(PlaceEntry a, PlaceEntry b);
-
-        /** 양수면 {@code entry}가 커서 뒤 = 다음 페이지 대상이다 */
-        abstract int compareToCursor(PlaceEntry entry, PlaceListCursor cursor);
-
-        /**
-         * 커서는 double을 싣는다 — 원값이 백분의 일 단위라 ×100 뒤 반올림이 정확히 정수를 되찾는다.
-         * 반올림이어야 한다: {@code 4.35 × 100}처럼 double에서 정수 바로 아래에 떨어지는 값이 있어
-         * 버림이면 1 작다. <b>발급된 커서 값만 전제한다</b> — NaN·Infinity는 막지 않는다
-         * ({@link PlaceListCursor} 참조).
-         *
-         * <p><b>DB 경로와 경계 판정이 같은 근거.</b> 그쪽은 DECIMAL 컬럼을 double로 올려 커서와
-         * 비교하고 여기는 int 공간에서 비교하지만, {@code k → k / 100.0}이 이 범위에서 순서를 지키고
-         * 커서 값이 그런 k에서 나온 것이라 두 판정이 같은 자리에 떨어진다. 등가 IT의 픽스처 평점은
-         * ÷100이 정확한 값뿐이라 이 근거를 지키는 것은 테스트가 아니라 이 문장이다.
-         */
-        private static int cursorRatingToInt(double cursorKey) {
-            return (int) Math.round(cursorKey * 100);
-        }
-
-        static Axis of(PlaceSortType sort) {
-            return switch (sort) {
-                case POPULAR -> POPULAR;
-                case LATEST -> LATEST;
-                case RATING -> RATING;
-                case REVIEW_COUNT -> REVIEW_COUNT;
-                case BOOKMARK_COUNT -> BOOKMARK_COUNT;
-                // 기준점이 요청마다 달라 미리 세워 둘 순서가 없다 — distanceCandidates로 갈 것
-                case DISTANCE -> throw new IllegalArgumentException(
-                        "거리순은 사전 정렬 축이 아니다 - SortedPlaces#distanceCandidates를 쓸 것");
-            };
-        }
-    }
 }

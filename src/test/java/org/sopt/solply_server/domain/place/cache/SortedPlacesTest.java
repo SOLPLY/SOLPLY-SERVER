@@ -144,7 +144,7 @@ class SortedPlacesTest {
                 ratingEntry(13L, 434, 3L),
                 ratingEntry(14L, 434, 3L)));
         PlaceListCursor cursor = new PlaceListCursor(
-                PlaceSortType.RATING, List.of(4.35, 9.0), 11L, "1|||", 1L);
+                PlaceSortType.RATING, List.of(4.35, 9.0), 11L, "1|||", "G1");
 
         List<PlaceEntry> page =
                 sortedPlaces.page(PlaceSortType.RATING, List.of(TOWN_A), NO_FILTER, cursor, 10);
