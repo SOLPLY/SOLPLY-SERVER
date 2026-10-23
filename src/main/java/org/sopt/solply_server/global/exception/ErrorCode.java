@@ -166,6 +166,9 @@ public enum ErrorCode {
    FORBIDDEN_SELF_REVIEW_REPORT(HttpStatus.FORBIDDEN, "PLACE-REVIEW-007", "본인이 작성한 리뷰는 신고할 수 없습니다."),
    ALREADY_REPORTED_REVIEW(HttpStatus.CONFLICT, "PLACE-REVIEW-008", "이미 신고한 리뷰입니다."),
    INVALID_PLACE_REVIEW_RATING(HttpStatus.BAD_REQUEST, "PLACE-REVIEW-009", "평점은 1점 이상 5점 이하여야 합니다."),
+
+    //요일 관련 (DAY-xxx)
+    INVALID_DAY_VALUE(HttpStatus.BAD_REQUEST, "DAY_001", "잘못된 요일 값입니다."),
     ;
 
 
