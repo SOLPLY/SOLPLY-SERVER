@@ -595,4 +595,34 @@ public class OperationHourParserTest {
 				Tuple.tuple(7, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null)
 			);
 	}
+
+	@Test
+	@DisplayName("136번 원문: 월~금 브레이크 두 슬롯, 토·일 13:00~20:00으로 12개 슬롯을 만든다")
+	void parse_place_136_fixed_raw_text_test() {
+		// given
+		String rawText = "월 - 금 13:00 - 21:00 \n브레이크타임 17:00 - 18:00 \n토, 일 13:00 - 20:00";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result)
+			.extracting(OperationTimeDto::getDayOfWeek, OperationTimeDto::isDayOff, OperationTimeDto::getStartTime,
+				OperationTimeDto::getEndTime, OperationTimeDto::isEndNextDay, OperationTimeDto::getLastOrderTime,
+				OperationTimeDto::getDescription)
+			.containsExactlyInAnyOrder(
+				Tuple.tuple(1, false, LocalTime.of(13, 0), LocalTime.of(17, 0), false, null, null),
+				Tuple.tuple(1, false, LocalTime.of(18, 0), LocalTime.of(21, 0), false, null, null),
+				Tuple.tuple(2, false, LocalTime.of(13, 0), LocalTime.of(17, 0), false, null, null),
+				Tuple.tuple(2, false, LocalTime.of(18, 0), LocalTime.of(21, 0), false, null, null),
+				Tuple.tuple(3, false, LocalTime.of(13, 0), LocalTime.of(17, 0), false, null, null),
+				Tuple.tuple(3, false, LocalTime.of(18, 0), LocalTime.of(21, 0), false, null, null),
+				Tuple.tuple(4, false, LocalTime.of(13, 0), LocalTime.of(17, 0), false, null, null),
+				Tuple.tuple(4, false, LocalTime.of(18, 0), LocalTime.of(21, 0), false, null, null),
+				Tuple.tuple(5, false, LocalTime.of(13, 0), LocalTime.of(17, 0), false, null, null),
+				Tuple.tuple(5, false, LocalTime.of(18, 0), LocalTime.of(21, 0), false, null, null),
+				Tuple.tuple(6, false, LocalTime.of(13, 0), LocalTime.of(20, 0), false, null, null),
+				Tuple.tuple(7, false, LocalTime.of(13, 0), LocalTime.of(20, 0), false, null, null)
+			);
+	}
 }

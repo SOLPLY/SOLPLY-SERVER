@@ -29,3 +29,7 @@ WHERE id = 230;
 UPDATE places
 SET opening_hours = '매일 11:00 - 22:00 \n라스트오더 21:30'
 WHERE id = 183;
+
+UPDATE places
+SET opening_hours = '월 - 금 13:00 - 21:00 \n브레이크타임 17:00 - 18:00 \n토, 일 13:00 - 20:00'
+WHERE id = 136;
