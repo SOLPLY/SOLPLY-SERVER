@@ -17,3 +17,15 @@ WHERE id = 121;
 UPDATE places
 SET opening_hours = '매일 10:30 - 19:30'
 WHERE id = 318;
+
+UPDATE places
+SET opening_hours = '매일 11:00 - 21:00 \n브레이크 타임 14:20 - 17:00 \n라스트오더 20:30 \n매주 수 정기휴무'
+WHERE id = 33;
+
+UPDATE places
+SET opening_hours = '수 - 금 11:30 - 16:00 \n라스트오더 15:30 \n토, 일 11:30 - 20:30 \n토, 일 브레이크타임 14:30 - 17:30 \n라스트오더 20:00 \n매주 월, 화 정기휴무'
+WHERE id = 230;
+
+UPDATE places
+SET opening_hours = '매일 11:00 - 22:00 \n라스트오더 21:30'
+WHERE id = 183;

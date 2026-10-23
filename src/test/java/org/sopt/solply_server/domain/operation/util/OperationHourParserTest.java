@@ -6,6 +6,7 @@ import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.sopt.solply_server.domain.place.dto.OperationTimeDto;
@@ -510,5 +511,88 @@ public class OperationHourParserTest {
 			assertThat(slot.isEndNextDay()).isTrue();
 			assertThat(slot.getLastOrderTime()).isEqualTo(LocalTime.of(22, 30));
 		});
+	}
+
+	@Test
+	@DisplayName("33번 원문: 브레이크 14:20, 저녁 슬롯에만 라스트오더 20:30, 수요일 휴무로 13개 슬롯을 만든다")
+	void parse_place_33_fixed_raw_text_test() {
+		// given
+		String rawText = "매일 11:00 - 21:00 \n브레이크 타임 14:20 - 17:00 \n라스트오더 20:30 \n매주 수 정기휴무";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result)
+			.extracting(OperationTimeDto::getDayOfWeek, OperationTimeDto::isDayOff, OperationTimeDto::getStartTime,
+				OperationTimeDto::getEndTime, OperationTimeDto::isEndNextDay, OperationTimeDto::getLastOrderTime,
+				OperationTimeDto::getDescription)
+			.containsExactlyInAnyOrder(
+				Tuple.tuple(1, false, LocalTime.of(11, 0), LocalTime.of(14, 20), false, null, null),
+				Tuple.tuple(1, false, LocalTime.of(17, 0), LocalTime.of(21, 0), false, LocalTime.of(20, 30), null),
+				Tuple.tuple(2, false, LocalTime.of(11, 0), LocalTime.of(14, 20), false, null, null),
+				Tuple.tuple(2, false, LocalTime.of(17, 0), LocalTime.of(21, 0), false, LocalTime.of(20, 30), null),
+				Tuple.tuple(3, true, null, null, false, null, null),
+				Tuple.tuple(4, false, LocalTime.of(11, 0), LocalTime.of(14, 20), false, null, null),
+				Tuple.tuple(4, false, LocalTime.of(17, 0), LocalTime.of(21, 0), false, LocalTime.of(20, 30), null),
+				Tuple.tuple(5, false, LocalTime.of(11, 0), LocalTime.of(14, 20), false, null, null),
+				Tuple.tuple(5, false, LocalTime.of(17, 0), LocalTime.of(21, 0), false, LocalTime.of(20, 30), null),
+				Tuple.tuple(6, false, LocalTime.of(11, 0), LocalTime.of(14, 20), false, null, null),
+				Tuple.tuple(6, false, LocalTime.of(17, 0), LocalTime.of(21, 0), false, LocalTime.of(20, 30), null),
+				Tuple.tuple(7, false, LocalTime.of(11, 0), LocalTime.of(14, 20), false, null, null),
+				Tuple.tuple(7, false, LocalTime.of(17, 0), LocalTime.of(21, 0), false, LocalTime.of(20, 30), null)
+			);
+	}
+
+	@Test
+	@DisplayName("230번 원문: 수~금 11:30~16:00(LO 15:30), 토·일 브레이크 두 슬롯(저녁 LO 20:00), 월·화 휴무로 9개 슬롯을 만든다")
+	void parse_place_230_fixed_raw_text_test() {
+		// given
+		String rawText = "수 - 금 11:30 - 16:00 \n라스트오더 15:30 \n토, 일 11:30 - 20:30 \n토, 일 브레이크타임 14:30 - 17:30 \n라스트오더 20:00 \n매주 월, 화 정기휴무";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result)
+			.extracting(OperationTimeDto::getDayOfWeek, OperationTimeDto::isDayOff, OperationTimeDto::getStartTime,
+				OperationTimeDto::getEndTime, OperationTimeDto::isEndNextDay, OperationTimeDto::getLastOrderTime,
+				OperationTimeDto::getDescription)
+			.containsExactlyInAnyOrder(
+				Tuple.tuple(1, true, null, null, false, null, null),
+				Tuple.tuple(2, true, null, null, false, null, null),
+				Tuple.tuple(3, false, LocalTime.of(11, 30), LocalTime.of(16, 0), false, LocalTime.of(15, 30), null),
+				Tuple.tuple(4, false, LocalTime.of(11, 30), LocalTime.of(16, 0), false, LocalTime.of(15, 30), null),
+				Tuple.tuple(5, false, LocalTime.of(11, 30), LocalTime.of(16, 0), false, LocalTime.of(15, 30), null),
+				Tuple.tuple(6, false, LocalTime.of(11, 30), LocalTime.of(14, 30), false, null, null),
+				Tuple.tuple(6, false, LocalTime.of(17, 30), LocalTime.of(20, 30), false, LocalTime.of(20, 0), null),
+				Tuple.tuple(7, false, LocalTime.of(11, 30), LocalTime.of(14, 30), false, null, null),
+				Tuple.tuple(7, false, LocalTime.of(17, 30), LocalTime.of(20, 30), false, LocalTime.of(20, 0), null)
+			);
+	}
+
+	@Test
+	@DisplayName("183번 원문: 매일 11:00~22:00, 라스트오더 21:30이 last_order_time으로 저장되고 description은 비어 있다")
+	void parse_place_183_fixed_raw_text_test() {
+		// given
+		String rawText = "매일 11:00 - 22:00 \n라스트오더 21:30";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result)
+			.extracting(OperationTimeDto::getDayOfWeek, OperationTimeDto::isDayOff, OperationTimeDto::getStartTime,
+				OperationTimeDto::getEndTime, OperationTimeDto::isEndNextDay, OperationTimeDto::getLastOrderTime,
+				OperationTimeDto::getDescription)
+			.containsExactlyInAnyOrder(
+				Tuple.tuple(1, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null),
+				Tuple.tuple(2, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null),
+				Tuple.tuple(3, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null),
+				Tuple.tuple(4, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null),
+				Tuple.tuple(5, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null),
+				Tuple.tuple(6, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null),
+				Tuple.tuple(7, false, LocalTime.of(11, 0), LocalTime.of(22, 0), false, LocalTime.of(21, 30), null)
+			);
 	}
 }
