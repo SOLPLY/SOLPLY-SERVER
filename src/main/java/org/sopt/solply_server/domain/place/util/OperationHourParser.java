@@ -150,8 +150,9 @@ public class OperationHourParser {
 				.filter(s -> s.getDayOfWeek() == day && !s.isDayOff())
 				.forEach(slot -> {
 					for (LocalTime lo : loTimes) {
-						if (lo.isBefore(slot.getEndTime()) &&
-							(lo.isAfter(slot.getStartTime()) || slot.isEndNextDay())) {
+						if (slot.isEndNextDay()
+							? (lo.isAfter(slot.getStartTime()) || lo.isBefore(slot.getEndTime()))
+							: (lo.isAfter(slot.getStartTime()) && lo.isBefore(slot.getEndTime()))) {
 							slot.setLastOrderTime(lo);
 						}
 					}

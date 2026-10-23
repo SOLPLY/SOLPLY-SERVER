@@ -2,6 +2,7 @@ package org.sopt.solply_server.domain.operation.util;
 
 import static org.assertj.core.api.AssertionsForInterfaceTypes.*;
 
+import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 
@@ -330,5 +331,184 @@ public class OperationHourParserTest {
 		assertThat(saturdaySlots.get(0).getStartTime().toString()).isEqualTo("11:30");
 		assertThat(saturdaySlots.get(0).getEndTime().toString()).isEqualTo("20:00");
 		assertThat(saturdaySlots.get(0).getLastOrderTime().toString()).isEqualTo("19:30"); // 명세서 기준 19:30 매핑
+	}
+
+	// ===== 라스트오더 경계 규칙: 시작·마감 시각과 같은 라스트오더는 저장하지 않는다 =====
+
+	@Test
+	@DisplayName("익일 종료 슬롯(18:00~02:00)에 자정 전 라스트오더(23:00)가 저장된다")
+	void parse_overnight_slot_evening_last_order_test() {
+		// given
+		String rawText = "매일 18:00 - 02:00 \n라스트오더 23:00";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result).hasSize(7);
+		assertThat(result).extracting(OperationTimeDto::getDayOfWeek).containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
+		assertThat(result).allSatisfy(slot -> {
+			assertThat(slot.getStartTime()).isEqualTo(LocalTime.of(18, 0));
+			assertThat(slot.getEndTime()).isEqualTo(LocalTime.of(2, 0));
+			assertThat(slot.isEndNextDay()).isTrue();
+			assertThat(slot.getLastOrderTime()).isEqualTo(LocalTime.of(23, 0));
+		});
+	}
+
+	@Test
+	@DisplayName("익일 종료 슬롯(18:00~02:00)에 자정 후 라스트오더(01:00)가 저장된다")
+	void parse_overnight_slot_dawn_last_order_test() {
+		// given
+		String rawText = "매일 18:00 - 02:00 \n라스트오더 01:00";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result).hasSize(7);
+		assertThat(result).allSatisfy(slot ->
+			assertThat(slot.getLastOrderTime()).isEqualTo(LocalTime.of(1, 0))
+		);
+	}
+
+	@Test
+	@DisplayName("익일 종료 슬롯에서 라스트오더가 영업 시작 시각(18:00)과 같으면 저장하지 않는다")
+	void parse_overnight_slot_last_order_equals_start_test() {
+		// given
+		String rawText = "매일 18:00 - 02:00 \n라스트오더 18:00";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result).hasSize(7);
+		assertThat(result).allSatisfy(slot ->
+			assertThat(slot.getLastOrderTime()).isNull()
+		);
+	}
+
+	@Test
+	@DisplayName("익일 종료 슬롯에서 라스트오더가 마감 시각(02:00)과 같으면 저장하지 않는다")
+	void parse_overnight_slot_last_order_equals_end_test() {
+		// given
+		String rawText = "매일 18:00 - 02:00 \n라스트오더 02:00";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result).hasSize(7);
+		assertThat(result).allSatisfy(slot ->
+			assertThat(slot.getLastOrderTime()).isNull()
+		);
+	}
+
+	@Test
+	@DisplayName("익일 종료 슬롯에서 영업하지 않는 시간(02:00~18:00 사이)의 라스트오더는 저장하지 않는다")
+	void parse_overnight_slot_last_order_outside_operation_test() {
+		// given
+		List<String> rawTexts = List.of(
+			"매일 18:00 - 02:00 \n라스트오더 17:00",
+			"매일 18:00 - 02:00 \n라스트오더 03:00",
+			"매일 18:00 - 02:00 \n라스트오더 14:00"
+		);
+
+		for (String rawText : rawTexts) {
+			// when
+			List<OperationTimeDto> result = parser.parse(rawText);
+
+			// then
+			assertThat(result).as(rawText).hasSize(7);
+			assertThat(result).as(rawText).allSatisfy(slot ->
+				assertThat(slot.getLastOrderTime()).isNull()
+			);
+		}
+	}
+
+	@Test
+	@DisplayName("일반 슬롯에서 라스트오더가 영업 시작 시각(11:00)과 같으면 저장하지 않는다")
+	void parse_normal_slot_last_order_equals_start_test() {
+		// given
+		String rawText = "매일 11:00 - 20:00 \n라스트오더 11:00";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result).hasSize(7);
+		assertThat(result).allSatisfy(slot -> {
+			assertThat(slot.isEndNextDay()).isFalse();
+			assertThat(slot.getLastOrderTime()).isNull();
+		});
+	}
+
+	@Test
+	@DisplayName("일반 슬롯에서 라스트오더가 마감 시각(19:00)과 같으면 저장하지 않는다 (V2 45번 원문)")
+	void parse_normal_slot_last_order_equals_end_test() {
+		// given
+		String rawText = "11:00 -19:00 \n라스트오더 19:00 \n매주 월, 화 정기휴무";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result).hasSize(7);
+
+		// 월(1), 화(2) 휴무
+		assertThat(result.stream().filter(r -> r.getDayOfWeek() == 1 || r.getDayOfWeek() == 2).toList())
+			.hasSize(2)
+			.allMatch(OperationTimeDto::isDayOff);
+
+		// 수~일(3~7) 영업, 라스트오더 없음
+		List<OperationTimeDto> workingDays = result.stream().filter(r -> r.getDayOfWeek() >= 3).toList();
+		assertThat(workingDays).hasSize(5);
+		assertThat(workingDays).allSatisfy(slot -> {
+			assertThat(slot.isDayOff()).isFalse();
+			assertThat(slot.getStartTime()).isEqualTo(LocalTime.of(11, 0));
+			assertThat(slot.getEndTime()).isEqualTo(LocalTime.of(19, 0));
+			assertThat(slot.getLastOrderTime()).isNull();
+		});
+	}
+
+	@Test
+	@DisplayName("일반 슬롯에서 시작·마감 바로 안쪽(11:01, 19:59)의 라스트오더는 저장된다")
+	void parse_normal_slot_last_order_just_inside_boundary_test() {
+		// given
+		String afterStartText = "매일 11:00 - 20:00 \n라스트오더 11:01";
+		String beforeEndText = "매일 11:00 - 20:00 \n라스트오더 19:59";
+
+		// when
+		List<OperationTimeDto> afterStartResult = parser.parse(afterStartText);
+		List<OperationTimeDto> beforeEndResult = parser.parse(beforeEndText);
+
+		// then
+		assertThat(afterStartResult).hasSize(7);
+		assertThat(afterStartResult).allSatisfy(slot ->
+			assertThat(slot.getLastOrderTime()).isEqualTo(LocalTime.of(11, 1))
+		);
+		assertThat(beforeEndResult).hasSize(7);
+		assertThat(beforeEndResult).allSatisfy(slot ->
+			assertThat(slot.getLastOrderTime()).isEqualTo(LocalTime.of(19, 59))
+		);
+	}
+
+	@Test
+	@DisplayName("24:00 종료 슬롯(11:00~00:00)에 저녁 라스트오더(22:30)가 저장된다 (V2 123번 원문)")
+	void parse_midnight_end_slot_evening_last_order_test() {
+		// given
+		String rawText = "매일 11:00 - 24:00 \n라스트오더 22:30";
+
+		// when
+		List<OperationTimeDto> result = parser.parse(rawText);
+
+		// then
+		assertThat(result).hasSize(7);
+		assertThat(result).extracting(OperationTimeDto::getDayOfWeek).containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
+		assertThat(result).allSatisfy(slot -> {
+			assertThat(slot.getStartTime()).isEqualTo(LocalTime.of(11, 0));
+			assertThat(slot.getEndTime()).isEqualTo(LocalTime.of(0, 0));
+			assertThat(slot.isEndNextDay()).isTrue();
+			assertThat(slot.getLastOrderTime()).isEqualTo(LocalTime.of(22, 30));
+		});
 	}
 }
