@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import org.sopt.solply_server.domain.place.dto.request.PlaceFilterGetRequest;
 import org.sopt.solply_server.domain.place.dto.request.PlaceRequestCreateRequest;
@@ -15,6 +16,7 @@ import org.sopt.solply_server.domain.place.dto.response.PlaceFolderPreviewListGe
 import org.sopt.solply_server.domain.place.dto.response.PlaceRequestCreateResponse;
 import org.sopt.solply_server.domain.place.dto.response.PlaceSearchResponse;
 import org.sopt.solply_server.domain.place.service.facade.PlaceBookmarkFacade;
+import org.sopt.solply_server.domain.place.service.PlaceListRequestOrchestrator;
 import org.sopt.solply_server.domain.place.service.PlaceReportService;
 import org.sopt.solply_server.domain.place.service.PlaceRequestService;
 import org.sopt.solply_server.domain.place.service.PlaceService;
@@ -33,6 +35,8 @@ import org.springframework.web.bind.annotation.*;
 public class PlaceController {
 
     private final PlaceService placeService;
+    /** 목록 조회만 이쪽을 거친다 — 회차가 뒤처졌을 때 설치를 앞당겨 기다리는 껍데기다 */
+    private final PlaceListRequestOrchestrator placeListRequestOrchestrator;
     private final PlaceBookmarkFacade placeBookmarkFacade;
     private final PlaceReportService placeReportService;
     private final PlaceRequestService placeRequestService;
@@ -51,30 +55,48 @@ public class PlaceController {
 
     @Operation(
             summary = "장소 리스트 조회",
-            description = "동네, 장소 태그, 북마크 여부를 기반으로 장소를 필터링합니다.",
+            description = """
+                    동네(leaf) 또는 시 단위(하위 동네 합집합), 장소 태그, 북마크 여부, 정렬 기준으로 장소를 조회합니다.
+                    sort=latest 의미 — 일반 조회: 장소 등록 최신순 / 북마크 검색: 내 북마크 최신순.
+                    cursor·size 모두 미지정 시 페이징 없이 전체 반환(기존 동작). 북마크 검색은 페이징 미적용이며 popular 외의 정렬은 내 북마크 최신순으로 동작합니다.
+
+                    거리순(sort=DISTANCE)은 사용자의 현재 위치(latitude, longitude)를 기준으로 정렬합니다.
+                    - 첫 페이지에 좌표가 없으면 400(PLACE-005)으로 거절합니다.
+                    - 두 번째 페이지부터는 커서에 박제된 기준 좌표를 사용하며, 함께 보낸 좌표 파라미터는 무시합니다
+                      (걸으면서 스크롤해도 목록이 중복·누락되지 않도록 하기 위함입니다).
+                    - 좌표가 등록되지 않은 장소는 거리순 결과에서 제외됩니다.
+                    평점순(sort=RATING)은 평점이 없는 장소(리뷰 0건)를 제외합니다.
+                    """,
             parameters = {
-                    @Parameter(name = "townId", description = "동네 ID", required = true, example = "1"),
+                    @Parameter(name = "townId", description = "동네 또는 시 ID (시면 하위 동네 합집합 조회)", required = true, example = "1"),
                     @Parameter(name = "isBookmarkSearch", description = "북마크 검색 여부", required = true, example = "true"),
                     @Parameter(name = "mainTagId", description = "메인 태그 ID", example = "5"),
                     @Parameter(name = "subTagAIdList", description = "서브 태그(옵션1) ID 목록 (쉼표 구분)", example = "8,9,10"),
-                    @Parameter(name = "subTagBIdList", description = "서브 태그(옵션2) ID 목록 (쉼표 구분)", example = "11,12")
+                    @Parameter(name = "subTagBIdList", description = "서브 태그(옵션2) ID 목록 (쉼표 구분)", example = "11,12"),
+                    @Parameter(name = "sort", description = "정렬 기준 (LATEST 기본 | POPULAR: 인기 점수순 | RATING: 평점 높은 순 | REVIEW_COUNT: 리뷰 많은 순 | BOOKMARK_COUNT: 북마크 많은 순 | DISTANCE: 가까운 순)", example = "POPULAR"),
+                    @Parameter(name = "cursor", description = "이전 응답의 nextCursor (무한 스크롤)"),
+                    @Parameter(name = "size", description = "페이지 크기 (1~50, cursor 지정 시 기본 10)"),
+                    @Parameter(name = "latitude", description = "사용자 현재 위도 (거리순 첫 페이지 필수)", example = "37.5665"),
+                    @Parameter(name = "longitude", description = "사용자 현재 경도 (거리순 첫 페이지 필수)", example = "126.9780")
             }
     )
+    /**
+     * <b>서블릿 비동기로 답한다.</b> 커서가 가리키는 회차가 공유 {@code cursor_version}과 같은데
+     * 이 인스턴스만 아직 그 회차를 짓지 못한 경우에 한해, 리빌드를 앞당겨 기다렸다가 그 회차로
+     * 답하기 위해서다 — 기다리는 동안 요청 스레드를 붙잡지 않는 것이 비동기인 이유다.
+     *
+     * <p>기다릴 일이 없는 보통 요청은 <b>이미 완료된</b> future가 나가므로 응답 내용도 쿼리도
+     * 그대로다. 판정과 대기 규칙은 {@link PlaceListRequestOrchestrator}.
+     *
+     * <p>{@code userId}는 여기서 받아 그대로 넘긴다 — 재개가 다른 스레드에서 돌아도 인증
+     * ThreadLocal을 다시 뒤지지 않는다.
+     */
     @GetMapping
-    public ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>> getPlacesByTag(
+    public CompletableFuture<ResponseEntity<CustomApiResponse<PlaceFilterGetResponse>>> getPlacesByTag(
             @CurrentUserId Long userId,
             @Parameter(hidden = true) @ModelAttribute @Validated PlaceFilterGetRequest placeFilterGetRequest) {
-        return CustomApiResponse.success(
-                "장소 리스트 조회 성공",
-                placeService.getPlacesByTownAndTag(
-                        userId,
-                        placeFilterGetRequest.townId(),
-                        placeFilterGetRequest.isBookmarkSearch(),
-                        placeFilterGetRequest.mainTagId(),
-                        placeFilterGetRequest.subTagAIdList(),
-                        placeFilterGetRequest.subTagBIdList()
-                )
-        );
+        return placeListRequestOrchestrator.getPlaces(userId, placeFilterGetRequest)
+                .thenApply(places -> CustomApiResponse.success("장소 리스트 조회 성공", places));
     }
 
 

@@ -60,6 +60,12 @@ public class Tag {
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
     private boolean active;
 
+    /**
+     * ⚠️ {@code @Builder.Default}가 없으면 롬복이 이 초기식을 <b>무시하고</b> null로 짓는다.
+     * {@link #create}가 빌더를 쓰고 그 직후 {@link #replacePersonaMappings}가 호출되므로,
+     * 빠지는 순간 어드민 태그 생성이 NPE로 죽는다.
+     */
+    @Builder.Default
     @OneToMany(mappedBy = "tag", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TagPersonaMapping> personaMappings = new ArrayList<>();
 

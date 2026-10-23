@@ -16,7 +16,7 @@ import org.sopt.solply_server.global.entity.BaseTimeEntity;
 @Table(
         name = "place_reviews",
         indexes = {
-                @Index(name = "idx_place_reviews_place_id_created_at", columnList = "place_id, created_at DESC"),
+                @Index(name = "idx_place_reviews_place_created_rating", columnList = "place_id, created_at, rating"),
                 @Index(name = "idx_place_reviews_user_id_created_at", columnList = "user_id, created_at DESC")
         }
 )
@@ -46,6 +46,12 @@ public class PlaceReview extends BaseTimeEntity {
   @Column(name = "content", nullable = false, length = 500)
   private String content;
 
+  // 1~5 정수. primitive int가 아니라 Integer인 이유는 미설정 값을 드러내기 위해서다.
+  // int면 값을 안 넣었을 때 조용히 0이 되어 CHECK 제약 위반으로 터지지만,
+  // Integer는 null로 남아 NOT NULL 위반이 되므로 "안 넣었다"는 원인이 더 분명하다.
+  @Column(name = "rating", nullable = false)
+  private Integer rating;
+
   @OneToMany(mappedBy = "placeReview", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<PlaceReviewImage> placeReviewImages = new ArrayList<>();
 
@@ -55,13 +61,15 @@ public class PlaceReview extends BaseTimeEntity {
       Place place,
       LocalDate visitedAt,
       VisitTime visitTimeSlot,
-      String content
+      String content,
+      Integer rating
   ) {
     this.user = user;
     this.place = place;
     this.visitedAt = visitedAt;
     this.visitTimeSlot = visitTimeSlot;
     this.content = content;
+    this.rating = rating;
   }
 
   public static PlaceReview create(
@@ -69,7 +77,8 @@ public class PlaceReview extends BaseTimeEntity {
       Place place,
       LocalDate visitedAt,
       VisitTime visitTimeSlot,
-      String content
+      String content,
+      Integer rating
   ) {
     return PlaceReview.builder()
         .user(user)
@@ -77,6 +86,7 @@ public class PlaceReview extends BaseTimeEntity {
         .visitedAt(visitedAt)
         .visitTimeSlot(visitTimeSlot)
         .content(content)
+        .rating(rating)
         .build();
   }
 

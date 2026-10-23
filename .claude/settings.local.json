@@ -1,7 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep \"INSERT INTO \\\\`courses\\\\`\" /Users/mkyu/Desktop/SOPT/solply-server/src/main/resources/db/migration/V2__create_initial_data.sql -A 200)"
+      "Bash(grep \"INSERT INTO \\\\`courses\\\\`\" /Users/mkyu/Desktop/SOPT/solply-server/src/main/resources/db/migration/V2__create_initial_data.sql -A 200)",
+      "Bash(ls -t load-test/campaigns/2026-08-02_post-removal-regression/results/reports/)",
+      "Bash(orca orchestration *)",
+      "Bash(time docker exec solply-bench-mysql mysql -uroot -prootpwd solply_bench_db -e ' *)",
+      "Bash(git check-ignore *)",
+      "Bash(./gradlew compileJava -q)",
+      "Bash(./gradlew compileTestJava -q)",
+      "Bash(./gradlew compileTestJava)",
+      "Bash(./gradlew test *)",
+      "Bash(./gradlew cleanTest test)",
+      "Bash(awk -F'\"' '{t+=$2;s+=$4;f+=$6;e+=$8} END {print \"총 tests=\"t, \"skipped=\"s, \"failures=\"f, \"errors=\"e}')",
+      "Bash(python3 -c ' *)",
+      "Bash(./gradlew compileJava compileTestJava -q --console=plain)",
+      "Bash(awk -F'\"' '{t+=$2;s+=$4;f+=$6;e+=$8} END {print \"관련 tests=\"t, \"skipped=\"s, \"failures=\"f, \"errors=\"e}')",
+      "Bash(./gradlew build *)",
+      "Bash(echo \"build exit=$?\")",
+      "Bash(echo \"diff-check exit=$?\")"
     ]
   }
 }

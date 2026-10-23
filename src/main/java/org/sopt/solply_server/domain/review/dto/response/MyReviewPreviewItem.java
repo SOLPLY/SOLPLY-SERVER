@@ -5,6 +5,7 @@ import org.sopt.solply_server.global.util.s3.ImageUrlProvider;
 
 public record MyReviewPreviewItem(
     Long reviewId,
+    Long placeId,
     String placeName,
     String previewImageUrl,
     String content
@@ -21,6 +22,7 @@ public record MyReviewPreviewItem(
 
     return new MyReviewPreviewItem(
         review.getId(),
+        review.getPlace().getId(),
         review.getPlace().getName(),
         previewImage,
         review.getContent()

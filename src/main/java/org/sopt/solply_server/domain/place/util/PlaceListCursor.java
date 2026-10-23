@@ -1,0 +1,321 @@
+package org.sopt.solply_server.domain.place.util;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.sopt.solply_server.domain.place.dto.request.PlaceSortType;
+import org.sopt.solply_server.global.exception.BusinessException;
+import org.sopt.solply_server.global.exception.ErrorCode;
+
+/**
+ * 무한 스크롤 커서. 정렬 키 복합값을 불투명 토큰으로 인코딩한다.
+ *
+ * <p><b>v5에서 정렬 키를 튜플로 일반화했다 (2026-08-16).</b> v4까지는 "sortKey 하나 + placeId"였고,
+ * 그것으로 충분했던 이유는 정렬이 둘뿐이라 정렬 축이 언제나 한 컬럼이었기 때문이다. 정렬을 여섯으로
+ * 늘리면서 그 전제가 깨졌다 — 평점순은 <b>(평점, 리뷰 수)</b> 2단으로 seek해야 동점 구간에서
+ * 항목을 흘리지 않고, 거리순은 정렬 축(거리)만으로는 다음 페이지를 재현할 수 없어 <b>기준 좌표</b>
+ * 자체를 커서가 들고 다녀야 한다. 그래서 sortKey 한 칸을 <b>정렬마다 길이가 다른 double 튜플</b>로
+ * 넓혔고, 길이는 {@link PlaceSortType#keyArity()}가 정한다.
+ *
+ * <p>정렬별 튜플:
+ * <ul>
+ *   <li>POPULAR — (인기 점수)
+ *   <li>LATEST — (생성일 epoch 초, UTC)
+ *   <li>RATING — (평점, 리뷰 수)
+ *   <li>REVIEW_COUNT — (리뷰 수) / BOOKMARK_COUNT — (북마크 수)
+ *   <li>DISTANCE — (기준 위도, 기준 경도, 거리 m)
+ * </ul>
+ *
+ * <p><b>거리순의 기준 좌표는 커서에 박제된 것이 항상 이긴다.</b> 걸으면서 페이지를 넘기는 것이
+ * 정상 시나리오라 2페이지 요청의 좌표 파라미터는 1페이지와 다른 것이 당연하고, 그때마다 기준점이
+ * 바뀌면 같은 장소가 페이지마다 다른 거리를 가져 중복·누락이 난다. 그래서 파라미터 불일치는
+ * 오류가 아니라 <b>무시</b>다 ({@code PlaceService#listPlaces}).
+ *
+ * <p><b>v6의 버전은 회차 고정 장치다 (2026-09-01).</b> 목록이 통계 커밋·어드민 수정마다 스냅샷을 다시 짓는데,
+ * 스크롤 세션이 그 교체를 넘으면 다음 페이지가 다른 회차에서 재개돼 항목이 흘리거나 겹친다.
+ * 그래서 커서가 <b>자기가 시작한 회차의 번호</b>를 싣고 다니고, 서버는 지금 들고 있는 스냅샷이
+ * 그 회차일 때만 이어 서빙한다. 캐시는 <b>최신 한 장</b>만 들므로({@code SnapshotBox}) 회차가
+ * 한 번만 바뀌어도 그 앞의 커서는 {@code EXPIRED_PLACE_CURSOR}로 명시 만료된다.
+ *
+ * <p><b>그 번호는 {@code place_list_snapshot_metadata.cursor_version} 한 칸이다.</b> 스냅샷 자체는
+ * 인스턴스마다 자기 원본을 읽어 자기 힙에 짓지만, 번호를 각자 세지 않고 그 칸에서 읽어 오기
+ * 때문에 <b>같은 시점을 읽은 인스턴스들은 같은 번호를 든다</b> — 커서가 인스턴스를 건너다녀도
+ * 통하는 근거가 그것이다. 다만 인스턴스마다 폴·리빌드 시점이 달라 교체가 동시에 일어나지는
+ * 않으므로, 로컬 회차 불일치만으로 만료를 판정하지 않고 공유 번호와 견준다
+ * ({@code PlaceListRequestOrchestrator}).
+ *
+ * <p><b>번호가 오르는 것은 순서가 갈릴 때뿐이다.</b> 목록에 실리는 무엇이든 바뀌면 오르는 번호는
+ * {@code revision}으로 따로 있고, 커서가 싣는 이 번호는 집계 회차와 어드민이 명시로 고른
+ * 재시작에만 오른다 ({@code SnapshotCursorPolicy}). 그래서 이름 한 칸 고친 수정이 스크롤을
+ * 끊지 않는다.
+ *
+ * <p><b>v3의 세대와 혼동하지 말 것.</b> 세대는 인기 점수 <b>배치</b>가 좌표계를 통째로 바꾸는 문제의
+ * 장치였고, 배치를 새벽 01:00 1회로 내려 그 창이 트래픽 최저 시각의 수 초로 줄면서 걷어냈다(v4).
+ * v6이 다시 든 것은 <b>다른 문제</b>(주기적 스냅샷 교체를 넘는 스크롤)를 <b>다른 재료</b>(DB 세대 행이
+ * 아니라 캐시가 든 회차와의 대조 + 명시 만료)로 푸는 것이다. 점수 배치 주기는 v6의 근거가 아니다.
+ *
+ * <p><b>필터 지문은 그대로 남는다.</b> 세대와 달리 이 구멍은 배치 주기와 무관하다 — 동네 A의
+ * 커서를 동네 B 요청에 그대로 쓰면 서버는 아무 불평 없이 "동네 B에서 점수 X 아래"를 돌려주고,
+ * 요청한 적 없는 페이지가 정상 응답으로 나간다.
+ *
+ * <p><b>v5 이하 토큰은 거부한다.</b> 받아들이면 정렬 키 자리와 회차 버전의 해석이 달라져 어차피
+ * 오답이 되고, 어느 쪽이든 오류라면 코덱 수준에서 명확히 끊는 편이 낫다. 운영 전이라 하위호환이
+ * 필요 없다.
+ *
+ * <p><b>포맷:</b> {@code v6:SORT:k1,k2,...:placeId:filterPrint:version}을 URL-safe base64로 감싼다.
+ * 구분자 ':'와 충돌하는 필드가 없다 — {@code Double.toString}은 ':'를 만들지 않고(지수 표기
+ * {@code 1.0E10}도 마찬가지), 지문은 숫자와 {@code '|'}·{@code ','}로만 이뤄진다.
+ * 키 구분자 {@code ','}가 지문 안에서도 쓰이지만 <b>둘은 다른 필드</b>라 섞이지 않는다.
+ * 지문은 통째로 비거나 빈 축으로 끝날 수 있어({@code "1|||"}) 조각 수가 값에 따라 흔들리면 안 된다 —
+ * {@code split(":", -1)}의 {@code -1}이 빈 조각을 버리지 않게 고정한다.
+ *
+ * <p><b>정밀도:</b> 유효자릿수 약 15자리는 double 고유의 한계이고, popular_score는
+ * DECIMAL(18,6) — 즉 18자리라 double보다 넓다. 그래서 좁은 쪽에 담는 셈이지만 문제되지 않는다.
+ * 여기서 "정확하다"고 말할 수 있는 것은 값의 표현이 아니라 <b>왕복과 순서</b>뿐이다
+ * ({@code 1234.567891}부터가 이미 이진 double로 정확히 표현되지 않는다). 코드가 의존하는 것도
+ * 그 둘뿐이다. 서로 다른 두 DECIMAL 값이 같은 double로 뭉개지더라도 id 타이브레이크가
+ * 전순서를 유지하므로 페이징은 깨지지 않는다 — 뭉개진 두 장소의 상대 순위만 id 순으로 정해진다.
+ * 카운트 축(리뷰 수·북마크 수)은 INT라 double에 <b>정확히</b> 담긴다.
+ *
+ * <p>NaN/Infinity에 별도 방어를 두지 않는 근거는 <b>타입 수준의 불가능성</b>이다. 점수 산출
+ * SQL의 {@code SUM(POW(0.5, ...))}은 MySQL에서 DOUBLE로 계산되므로 "집계라서 유한하다"는 보장이
+ * 되지 못한다. 막아주는 것은 {@code popular_score DECIMAL(18,6) NOT NULL} 컬럼과, 그것을 받는
+ * BigDecimal이 NaN/Infinity를 표현조차 못 한다는 사실이다. 설령 들어와도 코덱 왕복 자체는
+ * 성립하고, 정렬·커서 비교가 무너지는 것은 코덱이 아니라 점수 산출 쪽 버그이므로 여기서 삼키면
+ * 오히려 은폐가 된다.
+ *
+ * @param sortKeys    정렬 축의 값들. 길이는 반드시 {@link PlaceSortType#keyArity()}와 같다
+ * @param filterPrint 요청 필터의 정규형. {@link #filterPrintOf}가 만든 것이어야 한다
+ * @param scope       이 탐색이 선 <b>범위와 그 번호들</b>. 다음 요청에서 다시 만든 표현과 글자
+ *                    하나라도 다르면 만료다. 동네 경로는 {@code T12@5,13@7}처럼 동네마다의 번호를,
+ *                    거리순·전역 경로는 {@code G41}처럼 전역 회차 하나를 싣는다
+ */
+public record PlaceListCursor(
+        PlaceSortType sort, List<Double> sortKeys, long placeId, String filterPrint,
+        String scope) {
+
+    /** 토큰 <b>포맷</b>의 버전. 필드 {@code version}(목록 회차)과는 다른 것이다 */
+    /**
+     * <b>{@code v6}에서 올린 이유는 회차 번호의 출처가 갈렸기 때문이다.</b> 회차는 이제
+     * {@code place_list_snapshot_metadata.cursor_version} 한 칸이고, 옛 배포는 다른 테이블의
+     * 번호를 실었다. 롤아웃 중에는 두 바이너리가 함께 도는데, 두 번호가 <b>우연히 같으면</b>
+     * 서로의 커서가 만료 판정을 통과해 다른 좌표계에서 해석된다 — 항목이 흘리거나 겹치는데
+     * 200이라 클라이언트가 알아챌 방법이 없다. 형식을 가르면 그 우연이 성립하지 않는다.
+     *
+     * <p><b>배포 시점의 진행 중 커서는 전부 만료된다 — 그것이 고른 정책이다.</b> 마이그레이션이
+     * 새 칸을 옛 회차의 최대값 <b>다음</b> 번호에서 시작시키므로(V46), 직전에 발급된 커서는 자기가
+     * 싣고 있는 번호와 달라 한 건도 통과하지 못한다. 그대로 이어받았다면 마지막 회차의 커서만
+     * 조용히 통과했을 텐데, 그 커서가 가리키는 정렬 배열은 새 구조가 다시 지은 것이라
+     * <b>번호만 맞고 내용이 다른 커서</b>가 된다.
+     *
+     * <p><b>다음 배포부터는</b> 커서가 이어진다 — 번호가 DB에 있고 기동이 그것을 그대로 읽기
+     * 때문이다.
+     */
+    /**
+     * 전역 회차 하나를 싣는 토큰의 포맷 번호. 거리순과 전역 구조가 쓴다.
+     *
+     * <p><b>동네 경로가 생겼다고 이 번호를 올리지 않았다 (2026-09-21).</b> 올렸다면 진행 중이던
+     * 거리순 스크롤이 이번 변경과 아무 상관 없이 전부 끊겼을 것이다. 거리순은 이번 작업의 범위
+     * 밖이고, 범위 밖의 경로를 만료로 흔드는 것은 이 변경이 살 자리가 아니다.
+     */
+    private static final String GLOBAL_FORMAT_VERSION = "v7";
+
+    /**
+     * 동네별 번호 목록을 싣는 토큰의 포맷 번호 (2026-09-21).
+     *
+     * <p>정합성의 단위가 "전역 한 번호"에서 "동네마다 한 번호"로 좁아지면서, 마지막 필드가 숫자
+     * 하나가 아니라 <b>범위와 번호들</b>을 담는 문자열이 됐다. 그 필드가 <b>범위</b>까지 담는 것이
+     * 핵심이다 — 같은 {@code townId} 파라미터라도 어드민이 하위 동네를 켜고 끄면 풀어 낸 leaf
+     * 집합이 달라지는데, 번호만 비교하면 탐색 대상이 조용히 바뀐 채로 통과한다.
+     *
+     * <p>포맷을 갈라 두면 두 좌표계의 토큰이 서로를 통과시킬 수 없다 — 마지막 칸의 뜻이 번호마다
+     * 고정이라 "우연히 같은 문자열"이 성립하지 않는다.
+     */
+    private static final String TOWN_FORMAT_VERSION = "v8";
+
+    /** 토큰의 필드 수. 버전·정렬·정렬키 튜플·id·지문·회차 */
+    private static final int FIELD_COUNT = 6;
+
+    private static final String FIELD_DELIMITER = ":";
+
+    /**
+     * 거리순·전역 경로의 범위 표현 머리글자. 동네 경로는 {@code "T"}로 시작한다
+     * ({@code TownVersions}). 두 경로의 번호 체계가 달라 <b>우연히 같은 문자열</b>이 되면 서로의
+     * 커서가 만료 판정을 통과해 다른 좌표계에서 해석된다 — 머리글자가 그 우연을 막는다.
+     */
+    private static final String GLOBAL_PREFIX = "G";
+
+    /**
+     * 동네 경로의 범위 표현 머리글자. 표현을 만드는 것은 {@code TownVersions}지만, <b>두 좌표계를
+     * 가르는 규칙의 주인은 커서</b>라 상수를 여기 둔다 — 갈라 두면 한쪽만 고쳐진다.
+     */
+    public static final String TOWN_PREFIX = "T";
+
+    /** 정렬 키 튜플 안에서 키를 가르는 구분자 */
+    private static final String KEY_DELIMITER = ",";
+
+    /** 지문 안에서 축을 가르는 구분자 */
+    private static final String AXIS_DELIMITER = "|";
+
+    /** 지문 안에서 한 축의 여러 id를 가르는 구분자 */
+    private static final String ID_DELIMITER = ",";
+
+    /**
+     * <b>튜플 길이는 정렬이 정한다.</b> 어긋난 커서를 만들면 그 자리에서 터진다 — 발급부의 실수는
+     * 500으로 드러나고, 클라이언트가 보낸 토큰의 어긋남은 {@link #decode}가 이 예외를 받아
+     * {@code INVALID_PLACE_CURSOR}로 바꾼다.
+     */
+    public PlaceListCursor {
+        if (sortKeys == null || sortKeys.size() != sort.keyArity()) {
+            throw new IllegalArgumentException(
+                    "정렬 " + sort + "의 커서 키는 " + sort.keyArity() + "개여야 한다: " + sortKeys);
+        }
+        sortKeys = List.copyOf(sortKeys);
+    }
+
+    /** 정렬 키 튜플의 {@code index}번째 값. 범위는 생성자가 이미 보장한다 */
+    public double key(int index) {
+        return sortKeys.get(index);
+    }
+
+    /**
+     * 요청 필터의 <b>정규형</b>을 만든다. 커서에 실려 다음 페이지 요청과 대조되며,
+     * 다르면 {@code INVALID_PLACE_CURSOR}다.
+     *
+     * <p><b>거리순의 기준 좌표는 지문에 넣지 않는다.</b> 지문이 묻는 것은 "같은 결과 집합인가"인데
+     * 좌표는 집합이 아니라 그 집합의 <em>순서</em>만 정하고, 페이지를 넘기는 동안 사용자가 움직이는
+     * 것이 정상이라 좌표를 지문에 넣으면 정상 스크롤이 통째로 오류가 된다.
+     *
+     * <p><b>해시가 아니라 원값인 이유:</b> 토큰이 수십 바이트 늘 뿐이고, 대신 장애 때 커서를
+     * base64 디코딩하는 것만으로 "어떤 필터로 발급된 커서인가"가 그대로 읽힌다. 해시는 그 자리에서
+     * 아무것도 말해주지 않는다.
+     *
+     * <p><b>정렬해서 잇는 이유:</b> 클라이언트가 서브 태그를 다른 순서로 보내는 것은 흔한 일인데
+     * (체크박스 선택 순서 등) 지문이 갈리면 정상 스크롤이 오류로 죽는다. 같은 필터의 지문은 하나여야 한다.
+     *
+     * <p><b>leaf 확장 <em>전</em>의 원본 파라미터를 쓴다.</b> 확장 결과({@code leafTownIds})는
+     * 동네 트리가 바뀌면 같은 요청에서도 달라지고, 사용자가 실제로 고른 것은 확장 전 값이다.
+     * 지문이 물어야 하는 것은 "같은 요청인가"이지 "같은 실행 계획인가"가 아니다.
+     *
+     * <p>{@code null}과 빈 리스트는 같은 뜻(그 축으로 거르지 않음)이라 같은 지문을 낸다.
+     */
+    public static String filterPrintOf(
+            Long townId, Long mainTagId, List<Long> subTagAIds, List<Long> subTagBIds) {
+        return String.join(AXIS_DELIMITER,
+                nullToEmpty(townId),
+                nullToEmpty(mainTagId),
+                sortedIds(subTagAIds),
+                sortedIds(subTagBIds));
+    }
+
+    /**
+     * 범위 표현의 좌표계가 <b>토큰의 포맷 번호를 고른다.</b>
+     *
+     * <p>전역 경로({@code G41})는 예전 그대로 {@code v7}로 나간다 — 마지막 칸이 숫자 하나인
+     * 옛 토큰과 <b>바이트 단위로 같다.</b> 동네 경로에 필요해서 포맷을 늘렸다는 이유로 진행 중인
+     * 거리순 스크롤을 일괄 만료시키지 않는다. 동네 경로({@code T10@5})만 {@code v8}이다.
+     */
+    public String encode() {
+        boolean town = scope.startsWith(TOWN_PREFIX);
+        String raw = String.join(FIELD_DELIMITER,
+                town ? TOWN_FORMAT_VERSION : GLOBAL_FORMAT_VERSION,
+                sort.name(),
+                sortKeys.stream().map(String::valueOf).collect(Collectors.joining(KEY_DELIMITER)),
+                Long.toString(placeId),
+                filterPrint,
+                town ? scope : scope.substring(GLOBAL_PREFIX.length()));
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static PlaceListCursor decode(String token) {
+        try {
+            String raw = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
+            // -1: 지문이 비어도 조각 수가 줄지 않게 고정한다("1|||", "")
+            String[] parts = raw.split(FIELD_DELIMITER, -1);
+            if (parts.length != FIELD_COUNT) {
+                throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+            }
+            // 키 개수가 정렬과 어긋나면 생성자가 IllegalArgumentException을 던지고 아래가 받는다.
+            // 정렬 이름이 낯설 때(valueOf)도 같은 예외 계열이라 한 자리에서 끊긴다.
+            return new PlaceListCursor(
+                    PlaceSortType.valueOf(parts[1]),
+                    parseKeys(parts[2]),
+                    Long.parseLong(parts[3]),
+                    parts[4],
+                    scopeOf(parts[0], parts[5])
+            );
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+        }
+    }
+
+    /**
+     * 포맷 번호가 마지막 칸의 뜻을 정한다 — {@code v7}은 전역 회차 숫자, {@code v8}은 동네별
+     * 범위 표현이다. 그 밖의 번호는 해석할 규칙이 없으므로 잘못된 커서다.
+     */
+    private static String scopeOf(String formatVersion, String field) {
+        if (GLOBAL_FORMAT_VERSION.equals(formatVersion)) {
+            return globalScope(Long.parseLong(field));   // 숫자가 아니면 아래가 받는다
+        }
+        if (TOWN_FORMAT_VERSION.equals(formatVersion) && field.startsWith(TOWN_PREFIX)) {
+            return requireScope(field);
+        }
+        throw new BusinessException(ErrorCode.INVALID_PLACE_CURSOR);
+    }
+
+    /**
+     * 범위 표현이 비어 있으면 만료 판정의 근거가 없다 — 어떤 번호와도 다르지 않다고 말하게 된다.
+     * 그래서 빈 값은 잘못된 커서로 끊는다.
+     */
+    private static String requireScope(String field) {
+        if (field.isEmpty()) {
+            throw new IllegalArgumentException("커서에 범위 표현이 없다");
+        }
+        return field;
+    }
+
+    /** 거리순·전역 경로가 싣는 표현. 동네 경로의 {@code T...}와 섞이지 않는다. */
+    public static String globalScope(long cursorVersion) {
+        return GLOBAL_PREFIX + cursorVersion;
+    }
+
+    /**
+     * 전역 경로의 회차. <b>다른 좌표계의 표현이면 {@code fallback}을 돌려준다</b> — 전역 경로가
+     * 동네 경로의 커서를 받았을 때의 정답은 "잘못된 커서"가 아니라 <b>만료</b>다. 클라이언트가
+     * 할 일이 처음부터 다시 조회하는 것으로 같고, 구조를 바꿔 띄운 서버가 옛 좌표계의 커서를
+     * 조용히 통과시키지 않는다.
+     */
+    public long globalVersionOrElse(long fallback) {
+        if (!scope.startsWith(GLOBAL_PREFIX)) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(scope.substring(GLOBAL_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static List<Double> parseKeys(String field) {
+        String[] raw = field.split(KEY_DELIMITER, -1);
+        List<Double> keys = new ArrayList<>(raw.length);
+        for (String value : raw) {
+            keys.add(Double.parseDouble(value));
+        }
+        return keys;
+    }
+
+    private static String nullToEmpty(Long value) {
+        return value == null ? "" : Long.toString(value);
+    }
+
+    private static String sortedIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return "";
+        }
+        return ids.stream().sorted().map(String::valueOf).collect(Collectors.joining(ID_DELIMITER));
+    }
+}

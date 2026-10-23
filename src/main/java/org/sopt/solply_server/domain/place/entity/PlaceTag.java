@@ -30,7 +30,9 @@ import org.sopt.solply_server.domain.tag.entity.TagType;
         },
         indexes = {
                 @Index(name = "idx_place_tag_place_id", columnList = "place_id"),
-                @Index(name = "idx_place_tag_tag_id", columnList = "tag_id")
+                // (tag_id) 단일 컬럼이면 리프에 PK인 id만 실려 place_id를 얻으려 클러스터드 인덱스를
+                // 다시 봐야 한다. place_id를 함께 실어 커버링으로 만든다 (V33).
+                @Index(name = "idx_place_tag_tag_place", columnList = "tag_id, place_id")
         }
 )
 public class PlaceTag {

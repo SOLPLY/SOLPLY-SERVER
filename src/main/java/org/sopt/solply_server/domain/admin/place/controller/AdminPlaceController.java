@@ -76,9 +76,14 @@ public class AdminPlaceController {
     @DeleteMapping("/{id}")
     public ResponseEntity<CustomApiResponse<Void>> deletePlace(
             @Parameter(description = "장소 ID", required = true, example = "10")
-            @PathVariable("id") Long placeId
+            @PathVariable("id") Long placeId,
+            @Parameter(description = "true면 사용자 목록을 새로 시작시킵니다(진행 중인 스크롤이"
+                    + " 전부 만료). 기본값 false — 스크롤 중이던 사용자는 하던 페이지를 계속"
+                    + " 받습니다.", example = "false")
+            @RequestParam(value = "restartPlaceList", defaultValue = "false")
+            boolean restartPlaceList
     ) {
-        adminPlaceFacade.deletePlace(placeId);
+        adminPlaceFacade.deletePlace(placeId, restartPlaceList);
         return CustomApiResponse.success("장소 삭제 성공", null);
     }
 

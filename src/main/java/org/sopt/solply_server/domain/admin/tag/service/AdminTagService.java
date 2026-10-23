@@ -14,6 +14,10 @@ import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagDetailsRespo
 import org.sopt.solply_server.domain.admin.tag.dto.response.AdminTagListResponse;
 import org.sopt.solply_server.domain.admin.tag.repository.AdminTagRepository;
 import org.sopt.solply_server.domain.admin.tag.util.AdminTagValidator;
+import org.sopt.solply_server.domain.place.cache.SnapshotViewPatcher;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotCursorPolicy;
+import org.sopt.solply_server.domain.place.cache.metadata.SnapshotMetadataService;
+import org.sopt.solply_server.domain.place.util.TagBitmask;
 import org.sopt.solply_server.domain.tag.entity.Tag;
 import org.sopt.solply_server.global.exception.BusinessException;
 import org.sopt.solply_server.global.exception.ErrorCode;
@@ -22,6 +26,19 @@ import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * <b>태그 쓰기는 커밋 후 태그 맵을 통째로 다시 읽는다(수십 행).</b> 목록이 태그에서 읽는 것은
+ * 이름과 활성 여부뿐이고 그 둘은 배열 밖 태그 맵에 있다. <b>어느 태그가 바뀌었는지 모으지
+ * 않는다</b> — 쓰기 경로마다 훅 한 번이면 되고, 비활성 캐스케이드처럼 한 요청이 여러 태그를
+ * 건드려도 셀 것이 없다.
+ *
+ * <p><b>태그 쓰기는 재빌드를 걸지 않는다.</b> 스냅샷에 실리는 태그 값은 대표 태그 id 하나뿐인데
+ * 그것을 흔드는 유일한 수정이 타입 변경이고, 그것은 {@link #updateTag}에서 거부한다 — 대표 태그가
+ * 낡을 경로가 아예 없다.
+ *
+ * <p>태그를 단 장소를 찾아다니지 않는 것이 이 구조의 요점이다. 대표 태그 이름은 조회 시점에
+ * 합쳐지므로, 태그 하나를 고치면 그 태그를 단 장소 전부가 함께 바뀐다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -32,7 +49,23 @@ public class AdminTagService {
     private final AdminEntityLoader adminEntityLoader;
     private final AdminTagValidator adminTagValidator;
     private final EntityManager entityManager;
+    /** 태그 맵을 <b>커밋 뒤에</b> 다시 읽게 한다 — 시점의 근거는 리프레셔 javadoc */
+    private final SnapshotMetadataService snapshotMetadataService;
+    private final SnapshotViewPatcher snapshotViewPatcher;
 
+    /**
+     * <b>태그 id는 {@code place_stats.tag_bitmask}의 비트 자리다</b> — 62를 넘는 id가 생기면 목록
+     * 조회의 태그 필터가 성립하지 않는다 ({@code TagBitmask}). 그래서 여기서 거부한다.
+     *
+     * <p><b>저장한 뒤에 판정하고 롤백하는 것이 의도다.</b> id가 auto-increment라 저장 전에는 어떤
+     * 값을 받을지 알 수 없고, {@code MAX(id) + 1}로 예측하면 삭제된 id·동시 생성에서 어긋난다.
+     * 실제로 받은 값을 보고 트랜잭션째 되돌리는 것이 유일하게 정확한 판정이다. auto-increment
+     * 카운터는 롤백해도 되돌아가지 않지만, 그것은 이 가드가 이미 "더 못 만든다"를 확정한 뒤의 일이라
+     * 무해하다.
+     *
+     * <p>여기서 막히면 <b>스키마 결정이 필요하다</b>는 뜻이다 — 마스크를 넓히거나(BINARY(n)) 태그
+     * 소속을 다시 조인으로 되돌리거나. 우회로를 코드에 두지 말 것.
+     */
     @Transactional
     public Long createTag(AdminTagUpsertRequest req) {
 
@@ -59,7 +92,13 @@ public class AdminTagService {
         // 하드코딩: 가중치
         tag.replacePersonaMappings(req.personas(), 1);
 
-        return adminTagRepository.save(tag).getId();
+        Long tagId = adminTagRepository.save(tag).getId();
+        if (tagId > TagBitmask.MAX_TAG_ID) {
+            throw new BusinessException(ErrorCode.TAG_ID_BIT_LIMIT_EXCEEDED);
+        }
+
+        markTagsChanged();
+        return tagId;
     }
 
     @Transactional(readOnly = true)
@@ -79,9 +118,18 @@ public class AdminTagService {
         return AdminTagDetailsResponse.from(tag);
     }
 
+    /**
+     * <b>타입은 못 바꾼다.</b> MAIN↔OPTION이 갈리면 그 태그를 <em>대표로 쓰던</em> 장소들의
+     * {@code mainTagId}가 낡는다 — 대표 태그를 뽑는 규칙이 "첫 MAIN 태그"이고 그 값은 배열 밖 표시
+     * 맵이 아니라 <b>스냅샷과 함께 지어지기</b> 때문이다. 그 장소들을 찾아다니거나 스냅샷을 다시 짓는
+     * 대신 수정 자체를 막는다. 타입을 실제로 바꿔야 하면 태그를 새로 만들어 옮기는 것이 맞다.
+     */
     @Transactional
     public Long updateTag(Long id, AdminTagUpsertRequest req) {
         Tag tag = adminEntityLoader.getTag(id);
+        if (tag.getType() != req.type()) {
+            throw new BusinessException(ErrorCode.TAG_TYPE_IMMUTABLE);
+        }
 
         Tag parent = null;
         if (req.parentId() != null) {
@@ -107,6 +155,7 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
+        markTagsChanged();
         return id;
     }
 
@@ -125,9 +174,28 @@ public class AdminTagService {
             deactivateCascade(tag.getId());
         }
 
+        markTagsChanged();
         return AdminTagActivationResponse.of(id, req.active());
     }
 
+
+    /**
+     * 태그가 바뀌었음을 알리고, 태그 표시값은 커밋 직후 메모리에도 얹는다.
+     *
+     * <p><b>여기에는 "새 목록 전환" 선택지가 없다 — 태그 변경은 목록의 순서를 바꾸지 않는다.</b>
+     * 정렬 배열이 들고 있는 것은 장소의 태그 <em>비트마스크</em>이고, 그 비트는 장소–태그 관계가
+     * 바뀔 때(어드민 장소 수정) 달라진다. 태그의 이름·활성 여부는 화면에 찍히는 값일 뿐이라
+     * 커서가 가리키는 자리를 흔들지 않는다. 그래서 언제나 {@code PRESERVE}다.
+     *
+     * <p>같은 이유로 <b>동네 번호도 올리지 않는다</b>({@code TownVersionService}). 태그 이름 한
+     * 칸을 고쳤다고 전 동네의 탐색을 끊을 이유가 없다. 동네 캐시가 들고 있는 대표 태그 이름은
+     * 다음 성공한 정기 전체 배치가 그 동네의 번호를 올린 <b>뒤 그 동네가 다시 적재될 때</b>
+     * 갈린다 — 배치까지가 상한이 아니라 그 뒤의 적재까지다.
+     */
+    private void markTagsChanged() {
+        snapshotMetadataService.markChanged(SnapshotCursorPolicy.PRESERVE);
+        snapshotViewPatcher.patchTagsAfterCommit();
+    }
 
     public List<Long> collectSubtreeIds(Long rootId) {
         List<Long> ids = new ArrayList<>();
@@ -142,6 +210,12 @@ public class AdminTagService {
         return ids;
     }
 
+    /**
+     * <b>여기서는 훅을 부르지 않는다.</b> 함께 내려간 자식도 맵에 반영돼야 하지만 — 목록이 대표
+     * 태그 이름을 비우는 판정이 맵의 {@code active}로 이뤄지므로 빠뜨리면 그 자식이 대표인 장소는
+     * 다음 전량 재빌드까지 내려간 태그의 이름을 계속 달고 나간다 — 진입 메서드의 훅 하나가
+     * 맵을 통째로 다시 읽으므로 자식을 따로 셀 것이 없다.
+     */
     private void deactivateCascade(Long parentId) {
         List<Tag> children = adminTagRepository.findChildren(parentId);
         for (Tag child : children) {

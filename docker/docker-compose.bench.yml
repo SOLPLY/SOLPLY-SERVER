@@ -1,0 +1,140 @@
+# 벤치마크 전용 환경 (#379 북마크 인덱스 → 인기순 정렬 벤치로 확장)
+# - MySQL: 2 CPU / 3G, 버퍼풀 2G. 전체 데이터(2,770M)는 안 들어가지만 Zipf 분포라
+#          hot working set만 상주해 hit rate 99.9999% (실측) — 증설 불필요
+# - 앱: bench-app 컨테이너 1대. 호스트 bootRun(run-app.sh)은 디버깅용
+# - nginx(bench-lb)는 부하 분산이 아니라 **운영 경로 재현용 edge**다 — 진입점은 그대로 localhost:8082
+# - 부하는 항상 edge(localhost:8082)로 보낸다 — 앱 포트는 노출하지 않는다
+# 기동: ./gradlew bootJar && docker compose -f docker/docker-compose.bench.yml up -d --build
+#
+# ⚠️ --remove-orphans 금지: docker/ 안 compose 5개가 프로젝트명을 공유해 무관한 컨테이너까지 지운다
+# ⚠️ 환경변수 변경은 docker restart로 반영되지 않는다 — up -d --force-recreate 사용
+#
+# 컨테이너 배정 총합 5G / Docker VM 7.65G (앱 2G + MySQL 3G)
+services:
+  bench-mysql:
+    container_name: solply-bench-mysql
+    image: mysql:8.0
+    ports:
+      - "3310:3306"
+    environment:
+      MYSQL_DATABASE: solply_bench_db
+      MYSQL_USER: solplyuser
+      MYSQL_PASSWORD: solplyuserpwd
+      MYSQL_ROOT_PASSWORD: rootpwd
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=2G
+      - --innodb-redo-log-capacity=1G
+      - --max-connections=200
+    # 실측 기반 스펙 (2026-07-30). 종전 4 CPU / 4G는 #379 인덱스 벤치 때
+    # "DB가 병목이 되지 않게" 잡은 값인데, 캐시 도입 후 근거가 사라졌다.
+    #   깨끗한 라운드 MySQL CPU 피크 31.5~41.6% (= 0.32~0.42코어) — 400% 배정 대비 활용률 10%
+    #   요청당 MySQL CPU 2.01ms → 2 vCPU의 70%면 약 697 req/s. 병목은 여전히 앱(559 req/s)
+    # 컨테이너 배정 총합도 8.5G → 7.5G가 되어 Docker VM 용량(7.65G) 안에 들어온다
+    # (앱 1대 전환 후 Redis까지 제거한 현재는 5G).
+    cpus: 2
+    mem_limit: 3g
+    volumes:
+      - solply-bench-mysql-data:/var/lib/mysql
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.10
+
+  # 부하 모델(DAU 2만, 예상 피크 22 req/s, 목표 120 req/s = 5.5배 헤드룸) 기준 실서버 체급 재현.
+  # 2 vCPU/2G ≈ 비용 현실적인 단일 인스턴스. Little's law: 120 req/s × 30ms ≈ 동시 ~4
+  #
+  # 2026-08-05: 인스턴스 2대 + 부하 분산을 접었다 — 가용성 요구 철회(결제 없는 서비스라 잠깐의
+  # 중단 수용, DB까지 이중화해야 완결되는 논리라 반쪽 HA는 접는다. 설계 §6). 스펙(2 vCPU/2G)은
+  # 그대로 둔다 — 스펙까지 바꾸면 비교축이 둘이 되어 이후 측정의 해석이 불가능해진다.
+  bench-app:
+    container_name: solply-bench-app
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      # 드라이버 문장 캐시 + 서버 prepstmt (#394 채택 구성 ③b — 2026-08-29 같은 창 4구성 비교,
+      # load-test/campaigns/2026-08-29_394-stmt-shape). 다중 동네 목록 문장(최대 9,378자)의
+      # 실행당 재파싱·전문 전송·서버 파싱을 지운다. 목표 부하 실측: 스로틀 21.6→1.4%,
+      # p95 308→7ms, 요청당 앱 2.536→2.165ms·DB 1.905→1.539ms.
+      # ⚠️ prepStmtCacheSqlLimit(기본 256자)을 빼면 정작 그 문장만 캐시에서 조용히 빠진다.
+      # prepStmtCacheSize=512는 벤치 실동작 114문장 기준 — 운영 개시 시 실트래픽 형상 수로
+      # 재산정(동네 수 축 2~18이 살아나 형상이 최대 17배). 캠페인 오버레이가 URL을 통째로
+      # 덮으므로 A/B 재실행에는 영향 없다.
+      SPRING_DATASOURCE_URL: "jdbc:mysql://bench-mysql:3306/solply_bench_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8&cachePrepStmts=true&prepStmtCacheSqlLimit=16384&prepStmtCacheSize=512&useServerPrepStmts=true"
+      SPRING_DATASOURCE_USERNAME: solplyuser
+      SPRING_DATASOURCE_PASSWORD: solplyuserpwd
+      SERVER_PORT: "8082"
+      SERVER_TOMCAT_THREADS_MAX: "50"
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "10"
+      # 기본 메모리 형상은 모든 라운드에서 고정하고, 진단 라운드만 JFR·컴파일 옵션을 덧붙인다.
+      # BENCH_JAVA_TOOL_OPTIONS가 기본값 전체를 대체하면 A/B의 힙 조건이 달라질 수 있다.
+      # -Xms=-Xmx + AlwaysPreTouch: fresh JVM 벤치에서 부하 계단마다 힙 확장이 6초짜리
+      # CPU 버스트(스로틀 ~20초분)를 만들어 스로틀 비율 측정을 오염시켰다
+      # (2026-08-16_sort6-target-load r1 — 전량이 확장 1회분). 시작 시 힙을 전부 잡아
+      # 커밋해서 그 비용을 부하 전으로 밀어낸다. 2026-08-17부터의 라운드는 이 형상이다.
+      JAVA_TOOL_OPTIONS: >-
+        -Xms1280m
+        -Xmx1280m
+        -XX:+AlwaysPreTouch
+        -XX:MaxMetaspaceSize=256m
+        ${BENCH_JAVA_TOOL_OPTIONS:-}
+      # 쿼리 로깅을 끈다. application.yml의 p6spy: INFO를 그대로 두면 초당 240쿼리를
+      # 전문(full SQL text)으로 로깅해 앱 CPU가 2 vCPU에 포화되고, PK 단건 조회가
+      # 495ms까지 늘어나 레이턴시 측정이 무의미해진다 (실측으로 확인).
+      # 쿼리 "카운트"를 재야 할 때만 LOGGING_LEVEL_P6SPY=INFO로 별도 라운드를 돌리고,
+      # 그 라운드의 레이턴시는 다른 라운드와 비교하지 않는다.
+      LOGGING_LEVEL_P6SPY: "OFF"
+      LOGGING_LEVEL_ORG_FLYWAYDB: "WARN"
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_JDBC_CORE: "WARN"
+      # 모드 전환 예: BENCH_APP_JSON='{"solply.place-list.skeleton-source":"projection"}' docker compose ... up -d
+      # (snapshot / projection / entity — 옛 popular-read-mode 키는 캐시 철거와 함께 사라졌다)
+      SPRING_APPLICATION_JSON: ${BENCH_APP_JSON:-{}}
+    cpus: 2
+    mem_limit: 2g
+    depends_on:
+      - bench-mysql
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.21
+
+  # **LB가 아니라 edge다.** 프로세스 수와 edge는 다른 축이라, 가용성을 포기한 것이 edge의
+  # 역할(TLS 종단·보안 헤더·요청 제어·앱 비노출)을 포기할 근거가 되지 않는다 — 운영에도
+  # edge가 있으므로 벤치가 그 경로를 재현한다(설계 §6). 컨테이너 이름은 지난 캠페인의
+  # 샘플러·문서가 참조하므로 그대로 둔다.
+  bench-lb:
+    container_name: solply-bench-lb
+    image: nginx:1.27-alpine
+    ports:
+      - "8082:80"
+    volumes:
+      - ./nginx-bench.conf:/etc/nginx/conf.d/default.conf:ro
+      # worker_connections·worker_rlimit_nofile은 main 컨텍스트라 conf.d 조각에 못 넣는다.
+      # 기본 1024가 500 req/s 측정에서 고갈돼 HTTP 500을 만들었으므로 메인 설정을 덮어쓴다.
+      - ./nginx-bench-main.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - bench-app
+    # nginx는 upstream 호스트명을 설정 파싱 시점에 해석한다. 앱 컨테이너가 아직 생성되지
+    # 않은 순간에 뜨면 [emerg] host not found로 즉시 죽으므로 자동 복구시킨다.
+    restart: unless-stopped
+    networks:
+      bench-net:
+        ipv4_address: 172.28.0.30
+
+volumes:
+  solply-bench-mysql-data:
+
+# 고정 IP를 쓰는 이유:
+# nginx OSS는 upstream 호스트명을 설정 파싱 시점에 한 번만 해석하고 프로세스 수명 내내
+# 그 IP를 캐시한다 (재해석은 nginx Plus의 `resolve` 파라미터 전용). Docker 기본 네트워크는
+# 컨테이너 재기동 시 IP를 재할당하므로, 앱만 재기동하면 nginx가 stale IP를 붙들고
+# 전 요청이 502가 된다 — 실제로 겪었고 원인 파악에 시간이 걸리는 종류의 함정이다.
+# 코드 변경마다 앱을 재기동하게 되므로 규율(= 앱 재기동 시 edge도 재기동)에 의존하지 않고
+# 주소를 고정해 실패 모드 자체를 제거한다.
+networks:
+  bench-net:
+    name: solply-bench-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

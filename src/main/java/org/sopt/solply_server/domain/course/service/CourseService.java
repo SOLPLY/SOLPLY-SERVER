@@ -102,7 +102,7 @@ public class CourseService {
         Course originCourse = entityLoader.getActiveCourse(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId, originCourse.getTown().getId());
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         List<PlaceInCourseInfo> placeInfosInCourseForOrder = PlaceInCourseInfo.from(request.places());
 
@@ -156,7 +156,7 @@ public class CourseService {
         Course originCourse = entityLoader.getActiveCourseWithTagsAndPlaces(courseId);
 
         // 코스 북마크 검증
-        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId, originCourse.getTown().getId());
+        courseBookmarkFacade.checkCourseIsBookmarked(userId, courseId);
 
         // 장소를 코스에 추가할 수 있는지 검증
         coursePlaceValidator.validateCanAddPlace(originCourse, place);
@@ -209,7 +209,7 @@ public class CourseService {
         Tag courseTag = course.getTag();
         tagValidator.validateCourseTag(courseTag);
 
-        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId, course.getTown().getId());
+        boolean isCourseBookmarked = courseBookmarkFacade.isBookmarked(userId, courseId);
 
 
         if (course.getCoursePlaces().isEmpty()) {
@@ -274,7 +274,7 @@ public class CourseService {
             candidatePlace = null;
         }
 
-        // town-scoped ZSET에서 북마크된 courseId 목록 조회 (최신순, backfill 포함)
+        // DB에서 북마크된 courseId 목록을 최신순(created_at DESC)으로 조회
         List<Long> orderedCourseIds = courseBookmarkFacade.getBookmarkedCourseIdsForTown(userId, targetTownId);
         if (orderedCourseIds.isEmpty()) {
             log.info("사용자 {}의 동네 {}에 북마크된 코스가 없습니다.", userId, targetTownId);
@@ -307,7 +307,7 @@ public class CourseService {
      * 동네별로 가장 최근에 북마크한 코스를 반환
      */
     public CourseFolderPreviewListGetResponse getBookmarkedCourseFolderPreview(final Long userId) {
-        // 동네별 최신 courseId (towns-set 기반, cache miss 시 전체 backfill)
+        // 동네별 최신 courseId (DB 직행 윈도우 함수 쿼리)
         Map<Long, Long> latestCourseIdByTown = courseBookmarkFacade.getLatestBookmarkedCourseIdPerTown(userId);
 
         if (latestCourseIdByTown.isEmpty()) {
@@ -435,9 +435,9 @@ public class CourseService {
     }
 
     /**
-     * ZSET 순서(최신순)를 기준으로 CourseInfoDto 리스트 생성.
+     * 북마크 최신순(DB 조회 기준)으로 CourseInfoDto 리스트 생성.
      *
-     * @param orderedCourseIds ZSET에서 최신순으로 정렬된 courseId 목록
+     * @param orderedCourseIds DB에서 최신순으로 정렬된 courseId 목록
      */
     private List<CourseInfoDto> createSortedCourseInfoDtoList(
             final List<Course> filteredCourses,
@@ -464,7 +464,7 @@ public class CourseService {
                         }
                 ));
 
-        // ZSET 순서(최신순) 복원
+        // DB 조회 순서(북마크 최신순) 복원
         return orderedCourseIds.stream()
                 .map(dtoMap::get)
                 .filter(Objects::nonNull)

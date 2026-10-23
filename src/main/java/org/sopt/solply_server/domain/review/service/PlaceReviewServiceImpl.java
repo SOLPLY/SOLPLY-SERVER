@@ -39,6 +39,11 @@ import org.springframework.util.StringUtils;
 public class PlaceReviewServiceImpl implements PlaceReviewService {
 
   private static final int MAX_IMAGE_COUNT = 5;
+  private static final int MIN_RATING = 1;
+  private static final int MAX_RATING = 5;
+  // 한시 조치: 앱이 평점을 아직 보내지 않아 null이면 중립값으로 채운다. rating 컬럼은 NOT NULL이고,
+  // 3점은 (rating - 3) 환산에서 점수에 0을 더해 인기순 순위를 흔들지 않는다(V22).
+  private static final int NEUTRAL_RATING = 3;
 
   private final PlaceReviewRepository placeReviewRepository;
   private final UserRepository userRepository;
@@ -62,11 +67,15 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
         place,
         request.visitedAt(),
         request.visitTimeSlot(),
-        request.content().trim()
+        request.content().trim(),
+        resolveRating(request.rating())
     );
 
     PlaceReview savedPlaceReview = placeReviewRepository.save(placeReview);
 
+    // 여기 있던 PlaceReviewCreatedEvent 발행은 걷어냈다 (2026-08-07). place_stats.review_count를
+    // 준실시간 증분하던 리스너가 폐지된 뒤로 소비자 없이 발행만 남아 있었다 — 그 값을 고치는
+    // 주체는 매시 카운트 배치 하나다.
     List<String> imageKeys = request.imageKeys() == null
         ? Collections.emptyList()
         : request.imageKeys();
@@ -104,6 +113,20 @@ public class PlaceReviewServiceImpl implements PlaceReviewService {
     validateVisitedAt(request.visitedAt());
     validateContent(request.content());
     validateImages(request.imageKeys());
+    validateRating(request.rating());
+  }
+
+  private void validateRating(Integer rating) {
+    if (rating == null) {
+      return;
+    }
+    if (rating < MIN_RATING || rating > MAX_RATING) {
+      throw new BusinessValidationException(ErrorCode.INVALID_PLACE_REVIEW_RATING);
+    }
+  }
+
+  private int resolveRating(Integer rating) {
+    return rating == null ? NEUTRAL_RATING : rating;
   }
 
   private void validateVisitedAt(LocalDate visitedAt) {

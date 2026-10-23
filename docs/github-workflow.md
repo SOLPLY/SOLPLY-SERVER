@@ -126,7 +126,7 @@ resolves #<issue-number>
 ```
 
 - Assignee: `uykm`
-- Reviewer: `uykm`, `ImHyungsuk`, `88guri`
+- **Reviewer는 지정하지 않는다** — `--reviewer` 옵션을 붙이지 않는다.
 - Label: 이슈와 동일한 라벨을 붙인다.
 - 반드시 이슈를 `resolves #<issue-number>`로 연결한다.
 - PR 생성 전 사용자 확인을 받는다.
